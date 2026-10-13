@@ -154,3 +154,25 @@ Each adapter also has tests for `AuthError` (bad credentials) and `NetworkError`
 - How does a web build reach Nextcloud with CORS: a recommended reverse-proxy snippet, or a Nextcloud app?
 - Do GitHub Pages and Codeberg Pages expose `ETag` to cross-origin scripts? If not, `fetchSnapshot` on the web falls back to a full `GET` (size and `Last-Modified` may also be hidden).
 - Should `fetchSnapshot` use a conditional `GET` (`If-None-Match`, `304`) instead of `HEAD` then `GET`? That saves a round trip when the index changed, but it needs CORS to allow the `If-None-Match` request header.
+
+## Tested against real servers
+
+`test/integration/real-servers.test.ts` runs the conformance suite against real, separately running servers
+(start them with `scripts/real-servers.sh`, then `TL_REAL_SERVERS=1 npx vitest run test/integration`).
+Results on 2026-10-13:
+
+| Server | Result | Notes |
+|---|---|---|
+| Apache httpd 2.4 `mod_dav` | ✅ passes | Enforces If-Match / If-None-Match. A file modified less than 1 s ago gets a **weak** ETag (`W/"…"`), which never matches If-Match; the adapter then emulates the check (HEAD + PUT, not atomic). |
+| WsgiDAV 4.3 | ⚠️ works, coarse ETags | ETag = inode + mtime in **whole seconds** + size: two same-size writes within one second keep the same ETag, so a concurrent writer can go unnoticed. Not run through the conformance suite; a characterization test documents it. |
+| moto server 5.2 (S3 API emulator) | ✅ passes | Enforces conditional PUT. Real AWS S3 / MinIO / R2 / Garage still to test (T-202). |
+| OpenSSH `internal-sftp` | ✅ passes | Conditional writes emulated by the adapter. |
+
+Bugs found and fixed by these runs: the WebDAV adapter did not create the storage root folder when it was missing
+(every write failed with HTTP 409), and it sent weak ETags in If-Match.
+
+**Consequence for sync (T-204)**: ETag-based compare-and-swap is best effort on some servers. The sync layer must
+not rely on it alone: after publishing, re-read the index and check that it carries our `seq`; packs whose content
+is missing from the index are merged and republished on the next sync.
+
+Still to test: Nextcloud, ownCloud/oCIS, Synology/QNAP WebDAV, real S3 providers.

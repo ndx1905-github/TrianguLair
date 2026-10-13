@@ -141,7 +141,11 @@ export class WebDavAdapter implements StorageAdapter {
   async put(path: string, data: Uint8Array, opts: PutOptions = {}): Promise<{ etag: string }> {
     checkPath(path);
     const cond: Record<string, string> = { 'Content-Type': opts.contentType ?? 'application/octet-stream' };
-    if (!this.nativeConditional) {
+    // A weak ETag (Apache marks files modified in the last second as W/"…")
+    // never matches If-Match, which uses strong comparison (RFC 9110 13.1.1):
+    // fall back to the emulated check for that request.
+    const weak = opts.ifMatch?.startsWith('W/') ?? false;
+    if (!this.nativeConditional || weak) {
       await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, opts.ifNoneMatch);
     } else {
       if (opts.ifMatch !== undefined) cond['If-Match'] = opts.ifMatch;
@@ -149,9 +153,10 @@ export class WebDavAdapter implements StorageAdapter {
     }
     const body = copyBytes(data);
     let res = await this.req(path, 'PUT', { body }, cond);
-    if ((res.status === 409 || res.status === 404) && path.includes('/')) {
-      // Parent collection missing: create it, then retry once.
-      await this.mkcols(path);
+    if (res.status === 409 || res.status === 404) {
+      // Parent collection (or the storage root itself) missing: create, then retry once.
+      await this.ensureRoot();
+      if (path.includes('/')) await this.mkcols(path);
       res = await this.req(path, 'PUT', { body }, cond);
     }
     if (res.status === 412) throw new PreconditionFailed(path, { status: 412 });
@@ -164,6 +169,27 @@ export class WebDavAdapter implements StorageAdapter {
     const h = await this.head(path);
     if (!h) throw new ProtocolError(`PUT ${path} succeeded but object is missing`, { path });
     return { etag: h.etag };
+  }
+
+  private rootReady = false;
+
+  /**
+   * Create the base collection (e.g. `.../files/alice/triangulair/`) and any
+   * missing ancestors. Ancestors above it may legitimately refuse MKCOL
+   * (`/remote.php/` on Nextcloud): only the base itself must end up existing.
+   */
+  private async ensureRoot(): Promise<void> {
+    if (this.rootReady) return;
+    const u = new URL(this.base);
+    const segs = u.pathname.split('/').filter(Boolean);
+    for (let i = 1; i <= segs.length; i++) {
+      const url = `${u.origin}/${segs.slice(0, i).join('/')}/`;
+      const res = await doFetch(this.fetch, url, { method: 'MKCOL', headers: this.headers() }, '');
+      if (i === segs.length && !(res.ok || res.status === 405 || res.status === 301)) {
+        if (!(await this.propfind('', '0'))?.[0]) throw httpError(res, 'MKCOL <root>', '');
+      }
+    }
+    this.rootReady = true;
   }
 
   private async mkcols(path: string): Promise<void> {
@@ -187,7 +213,7 @@ export class WebDavAdapter implements StorageAdapter {
     checkPath(path);
     const extra: Record<string, string> = {};
     if (opts.ifMatch !== undefined) {
-      if (this.nativeConditional) extra['If-Match'] = opts.ifMatch;
+      if (this.nativeConditional && !opts.ifMatch.startsWith('W/')) extra['If-Match'] = opts.ifMatch;
       else await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, undefined);
     }
     const res = await this.req(path, 'DELETE', {}, extra);
