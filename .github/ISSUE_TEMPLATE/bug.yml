@@ -1,0 +1,14 @@
+name: Bug
+description: Un comportement incorrect
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: {label: Ce qui se passe, description: "Et ce qui devrait se passer"}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Comment reproduire}
+  - type: input
+    id: env
+    attributes: {label: Appareil et version, placeholder: "iPhone 15, iOS 26, build web du …"}

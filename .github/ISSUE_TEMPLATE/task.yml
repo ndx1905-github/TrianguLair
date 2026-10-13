@@ -1,0 +1,15 @@
+name: Tâche
+description: Une tâche du découpage de la spec (docs/TASKS.md)
+title: "T-xxx — "
+body:
+  - type: textarea
+    id: desc
+    attributes: {label: Description, description: "Ce qu'il faut faire, avec lien vers la section de la spec"}
+    validations: {required: true}
+  - type: textarea
+    id: accept
+    attributes: {label: Critères d'acceptation, value: "- [ ] "}
+    validations: {required: true}
+  - type: input
+    id: deps
+    attributes: {label: Dépend de}

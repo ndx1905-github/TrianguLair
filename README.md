@@ -28,7 +28,8 @@ Early development: **phase 0** (prototypes). Nothing is usable yet.
 | `packages/crypto` | Encrypted format: keys, wraps, signatures, signed index |
 | `packages/storage` | Storage adapters: WebDAV, S3, SFTP, HTTPS |
 | `apps/mobile` | Expo / React Native app (iOS, Android, web for testing) |
-| `docs/` | Specification and design notes |
+| `docs/SPEC.md` | Full specification (French) — the source of truth |
+| `docs/TASKS.md` | Spec broken down into tasks (also GitHub issues) |
 
 ## Stack
 
@@ -36,6 +37,7 @@ React Native + Expo, MapLibre, SQLite, Automerge, libsodium. TypeScript everywhe
 
 ## Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) and pick a task in [docs/TASKS.md](docs/TASKS.md).
 Contributions are accepted under the [Developer Certificate of Origin](https://developercertificate.org/):
 sign off your commits (`git commit -s`).
 
