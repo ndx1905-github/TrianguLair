@@ -164,12 +164,16 @@ Results on 2026-10-13:
 | Server | Result | Notes |
 |---|---|---|
 | Apache httpd 2.4 `mod_dav` | ✅ passes | Enforces If-Match / If-None-Match. A file modified less than 1 s ago gets a **weak** ETag (`W/"…"`), which never matches If-Match; the adapter then emulates the check (HEAD + PUT, not atomic). |
-| WsgiDAV 4.3 | ⚠️ works, coarse ETags | ETag = inode + mtime in **whole seconds** + size: two same-size writes within one second keep the same ETag, so a concurrent writer can go unnoticed. Not run through the conformance suite; a characterization test documents it. |
+| WsgiDAV 4.3 | ✅ passes (with guard) | Coarse ETags (mtime in whole seconds + size), handled by the coarse-ETag guard. Also ignores If-Match on a missing resource: use `conditionalWrites: false`. |
+| Nextcloud (real instance behind nginx) | ✅ passes 17/17 (with guard) | **Coarse ETags**: same-size writes within one second keep the same ETag. Before the guard, 3 of 17 conformance tests failed because of it. |
 | moto server 5.2 (S3 API emulator) | ✅ passes | Enforces conditional PUT. Real AWS S3 / MinIO / R2 / Garage still to test (T-202). |
 | OpenSSH `internal-sftp` | ✅ passes | Conditional writes emulated by the adapter. |
 
 Bugs found and fixed by these runs: the WebDAV adapter did not create the storage root folder when it was missing
-(every write failed with HTTP 409), and it sent weak ETags in If-Match.
+(every write failed with HTTP 409), it sent weak ETags in If-Match, and coarse ETags (Nextcloud, WsgiDAV, many NAS)
+hid same-second overwrites. The adapter now has a **coarse-ETag guard** (`guardCoarseEtags`, on by default): if a
+write returns the previous ETag, it rewrites the same bytes once the clock has ticked, guarded by If-Match, until the
+ETag changes. Run against your own server with `test/integration/remote-webdav.test.ts`.
 
 **Consequence for sync (T-204)**: ETag-based compare-and-swap is best effort on some servers. The sync layer must
 not rely on it alone: after publishing, re-read the index and check that it carries our `seq`; packs whose content

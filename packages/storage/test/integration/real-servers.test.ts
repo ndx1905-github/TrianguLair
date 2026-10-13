@@ -42,19 +42,32 @@ if (ON) {
     };
   });
 
-  // WsgiDAV builds ETags from inode + mtime in whole seconds + size: two writes
-  // of the same size within one second keep the same ETag, so a concurrent
-  // writer can go unnoticed. It is NOT run through the conformance suite;
-  // this characterization test documents the limitation (see README).
-  describe('WsgiDAV (real server) — coarse ETags', () => {
-    it('same-size overwrite within one second keeps the same ETag', async () => {
+  // WsgiDAV builds ETags from inode + mtime in whole seconds + size, like
+  // Nextcloud: same-size writes within one second keep the same ETag. The
+  // adapter's coarse-ETag guard must hide that.
+  runAdapterConformance('WsgiDAV (real server, coarse ETags)', async () => {
+    const dir = `t-${randomUUID()}/`;
+    return {
+      // WsgiDAV also ignores If-Match on a missing resource (creates it): use
+      // emulated conditions for it.
+      adapter: new WebDavAdapter({ baseUrl: `http://127.0.0.1:8082/dav/${dir}`, auth, conditionalWrites: false }),
+      nonAtomicConditionals: true,
+      cleanup: () => davCleanup(`http://127.0.0.1:8082/dav/${dir}`),
+    };
+  });
+
+  describe('WsgiDAV without the guard', () => {
+    it('really has coarse ETags (same-size overwrite keeps the ETag)', async () => {
       const dir = `t-${randomUUID()}/`;
-      const a = new WebDavAdapter({ baseUrl: `http://127.0.0.1:8082/dav/${dir}`, auth });
-      const e1 = (await a.put('index.json', new TextEncoder().encode('aaaa'))).etag;
-      const e2 = (await a.put('index.json', new TextEncoder().encode('bbbb'))).etag;
+      const a = new WebDavAdapter({ baseUrl: `http://127.0.0.1:8082/dav/${dir}`, auth, guardCoarseEtags: false });
+      let same = false;
+      for (let i = 0; i < 3 && !same; i++) {
+        const e1 = (await a.put('i.json', new TextEncoder().encode('aaaa'))).etag;
+        const e2 = (await a.put('i.json', new TextEncoder().encode('bbbb'))).etag;
+        same = e1 === e2;
+      }
       await davCleanup(`http://127.0.0.1:8082/dav/${dir}`);
-      if (e1 !== e2) console.warn('WsgiDAV ETags changed: the writes straddled a second boundary');
-      expect(typeof e2).toBe('string');
+      expect(same).toBe(true);
     });
   });
 

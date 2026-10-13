@@ -5,7 +5,7 @@
  *
  *   TL_WEBDAV_URL=https://cloud.example.org/remote.php/dav/files/USER/ \
  *   TL_WEBDAV_USER=USER TL_WEBDAV_PASSWORD=... \
- *   npx vitest run test/integration/remote-webdav.test.ts
+ *   npx vitest run --testTimeout=120000 test/integration/remote-webdav.test.ts
  *
  * Optional: TL_WEBDAV_PUBLIC_URL = anonymous HTTPS URL of the same folder.
  */

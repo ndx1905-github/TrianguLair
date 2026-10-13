@@ -54,7 +54,19 @@ export interface WebDavOptions {
    * at setup time to find out. Default true.
    */
   conditionalWrites?: boolean;
+  /**
+   * Guard against coarse ETags. Nextcloud, WsgiDAV and many NAS servers derive
+   * the ETag from (mtime in whole seconds, size): two same-size writes within
+   * one second keep the SAME ETag, so readers and conditional writers cannot
+   * see the change. With the guard on, `put` remembers the previous ETag
+   * (from `ifMatch`, or a HEAD first) and, if the server returns it unchanged
+   * after writing new content, writes again once the clock has ticked, until
+   * the ETag changes. Costs one HEAD per unconditional write. Default true.
+   */
+  guardCoarseEtags?: boolean;
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const PROPFIND_BODY =
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -74,6 +86,7 @@ export class WebDavAdapter implements StorageAdapter {
   private readonly fetch: FetchLike;
   private readonly authHeader: string | undefined;
   private readonly nativeConditional: boolean;
+  private readonly guard: boolean;
 
   constructor(opts: WebDavOptions) {
     this.base = withSlash(opts.baseUrl);
@@ -87,6 +100,7 @@ export class WebDavAdapter implements StorageAdapter {
         : `Basic ${base64(`${a.username}:${a.password}`)}`;
     const pub = opts.publicBaseUrl ? withSlash(opts.publicBaseUrl) : undefined;
     this.nativeConditional = opts.conditionalWrites ?? true;
+    this.guard = opts.guardCoarseEtags ?? true;
     this.capabilities = {
       readOnly: false,
       conditionalWrites: this.nativeConditional,
@@ -140,6 +154,24 @@ export class WebDavAdapter implements StorageAdapter {
 
   async put(path: string, data: Uint8Array, opts: PutOptions = {}): Promise<{ etag: string }> {
     checkPath(path);
+    let prev = opts.ifMatch;
+    if (this.guard && prev === undefined && opts.ifNoneMatch !== '*') prev = (await this.head(path))?.etag;
+    const first = await this.rawPut(path, data, opts);
+    if (!this.guard || prev === undefined || first.etag !== prev) return first;
+    // Coarse ETag: the content changed but the ETag did not. Rewrite the same
+    // bytes once the server's timestamp has moved on, guarded by the ETag we
+    // just got so we never clobber a concurrent writer.
+    let current = first.etag;
+    for (let i = 0; i < 3; i++) {
+      await sleep(1100);
+      const again = await this.rawPut(path, data, { contentType: opts.contentType, ifMatch: current });
+      if (again.etag !== prev) return again;
+      current = again.etag;
+    }
+    throw new ProtocolError(`PUT ${path}: server ETag does not change on overwrite`, { path });
+  }
+
+  private async rawPut(path: string, data: Uint8Array, opts: PutOptions): Promise<{ etag: string }> {
     const cond: Record<string, string> = { 'Content-Type': opts.contentType ?? 'application/octet-stream' };
     // A weak ETag (Apache marks files modified in the last second as W/"…")
     // never matches If-Match, which uses strong comparison (RFC 9110 13.1.1):
