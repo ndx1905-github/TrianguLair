@@ -6,13 +6,13 @@
  *   public/lists.geojson   public lists (plain GeoJSON, uMap-compatible)
  *
  * There is deliberately no `inbox/`: friends never write to your storage;
- * they send a "lien retour" (link to their own storage) instead.
+ * they send a return link (pointing to their own storage) instead.
  */
 import { InvalidPath } from './errors.ts';
 
 export const INDEX_PATH = 'index.json';
 export const PACKS_DIR = 'packs/';
-export const PUBLIC_LISTES_PATH = 'public/lists.geojson';
+export const PUBLIC_LISTS_PATH = 'public/lists.geojson';
 
 const PACK_ID = /^[A-Za-z0-9_-]{1,128}$/;
 

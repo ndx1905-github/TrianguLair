@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AuthError, NetworkError } from '../src/index.ts';
+import { AuthError, NetworkError, PreconditionFailed } from '../src/index.ts';
 import { SftpAdapter, type SftpOptions } from '../src/sftp.ts';
 import { runAdapterConformance } from '../src/testing/conformance.ts';
 import { startSftpServer } from './support/sftp-server.ts';
@@ -39,6 +39,20 @@ describe('SFTP specifics', () => {
       await adapter.put('packs/a.bin', new Uint8Array([1]));
       await adapter.put('packs/a.bin', new Uint8Array([2]));
       expect(readdirSync(join(dir, 'home/alice/triangulair/packs'))).toEqual(['a.bin']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('ifNoneMatch "*" is atomic under concurrency (rename refuses an existing target)', async () => {
+    const { adapter, cleanup } = await setup();
+    try {
+      const results = await Promise.allSettled(
+        Array.from({ length: 5 }, (_, i) => adapter.put('index.json', new Uint8Array([i]), { ifNoneMatch: '*' })),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      for (const r of results) if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(PreconditionFailed);
+      expect((await adapter.list('')).map((e) => e.path)).toEqual(['index.json']);
     } finally {
       await cleanup();
     }

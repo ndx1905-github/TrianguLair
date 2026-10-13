@@ -96,6 +96,8 @@ export class SftpAdapter implements StorageAdapter {
         const client = new Client();
         client
           .on('ready', () => {
+            // Request/response protocol: disable Nagle to avoid delayed-ACK stalls per round trip.
+            client.setNoDelay(true);
             client.sftp((err, sftp) => {
               if (err) {
                 client.end();

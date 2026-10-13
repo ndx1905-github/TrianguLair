@@ -15,6 +15,7 @@ import {
   checkPrefix,
   copyBytes,
   doFetch,
+  emulatePrecondition,
   encodePath,
   httpError,
   normEtag,
@@ -44,6 +45,15 @@ export interface WebDavOptions {
    * returns `null` when unset.
    */
   publicBaseUrl?: string;
+  /**
+   * Whether the server enforces `If-Match` / `If-None-Match` on PUT and
+   * DELETE. Nextcloud (sabre/dav) does; some servers (e.g. the `webdav-server`
+   * npm package, some NAS firmwares) silently ignore them. With `false` the
+   * adapter emulates them with a HEAD first (racy, best effort) and reports
+   * `capabilities.conditionalWrites === false`. Use `probeConditionalWrites()`
+   * at setup time to find out. Default true.
+   */
+  conditionalWrites?: boolean;
 }
 
 const PROPFIND_BODY =
@@ -63,6 +73,7 @@ export class WebDavAdapter implements StorageAdapter {
   private readonly basePath: string;
   private readonly fetch: FetchLike;
   private readonly authHeader: string | undefined;
+  private readonly nativeConditional: boolean;
 
   constructor(opts: WebDavOptions) {
     this.base = withSlash(opts.baseUrl);
@@ -75,9 +86,10 @@ export class WebDavAdapter implements StorageAdapter {
         ? `Bearer ${a.bearer}`
         : `Basic ${base64(`${a.username}:${a.password}`)}`;
     const pub = opts.publicBaseUrl ? withSlash(opts.publicBaseUrl) : undefined;
+    this.nativeConditional = opts.conditionalWrites ?? true;
     this.capabilities = {
       readOnly: false,
-      conditionalWrites: true,
+      conditionalWrites: this.nativeConditional,
       list: true,
       publicUrl: (path) => (pub ? pub + encodePath(checkPath(path)) : null),
     };
@@ -129,8 +141,12 @@ export class WebDavAdapter implements StorageAdapter {
   async put(path: string, data: Uint8Array, opts: PutOptions = {}): Promise<{ etag: string }> {
     checkPath(path);
     const cond: Record<string, string> = { 'Content-Type': opts.contentType ?? 'application/octet-stream' };
-    if (opts.ifMatch !== undefined) cond['If-Match'] = opts.ifMatch;
-    if (opts.ifNoneMatch === '*') cond['If-None-Match'] = '*';
+    if (!this.nativeConditional) {
+      await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, opts.ifNoneMatch);
+    } else {
+      if (opts.ifMatch !== undefined) cond['If-Match'] = opts.ifMatch;
+      if (opts.ifNoneMatch === '*') cond['If-None-Match'] = '*';
+    }
     const body = copyBytes(data);
     let res = await this.req(path, 'PUT', { body }, cond);
     if ((res.status === 409 || res.status === 404) && path.includes('/')) {
@@ -170,7 +186,10 @@ export class WebDavAdapter implements StorageAdapter {
   async delete(path: string, opts: DeleteOptions = {}): Promise<void> {
     checkPath(path);
     const extra: Record<string, string> = {};
-    if (opts.ifMatch !== undefined) extra['If-Match'] = opts.ifMatch;
+    if (opts.ifMatch !== undefined) {
+      if (this.nativeConditional) extra['If-Match'] = opts.ifMatch;
+      else await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, undefined);
+    }
     const res = await this.req(path, 'DELETE', {}, extra);
     if (res.status === 404) {
       if (opts.ifMatch !== undefined) throw new PreconditionFailed(path, { status: 404, detail: 'missing' });

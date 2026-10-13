@@ -1,5 +1,5 @@
 import { NotFound } from './errors.ts';
-import { INDEX_PATH, PUBLIC_LISTES_PATH, packPath } from './layout.ts';
+import { INDEX_PATH, PUBLIC_LISTS_PATH, packPath } from './layout.ts';
 import type { ETag, StorageAdapter } from './types.ts';
 
 export interface PublishInput {
@@ -13,7 +13,7 @@ export interface PublishInput {
    */
   previousIndexEtag: ETag | null;
   /** Optional public GeoJSON lists, written unconditionally after the index. */
-  publicListes?: Uint8Array;
+  publicLists?: Uint8Array;
   /** Max parallel pack uploads (default 4). */
   concurrency?: number;
 }
@@ -56,8 +56,8 @@ export async function publishSnapshot(adapter: StorageAdapter, input: PublishInp
       : { ifMatch: input.previousIndexEtag, contentType: 'application/json' },
   );
 
-  if (input.publicListes) {
-    await adapter.put(PUBLIC_LISTES_PATH, input.publicListes, { contentType: 'application/geo+json' });
+  if (input.publicLists) {
+    await adapter.put(PUBLIC_LISTS_PATH, input.publicLists, { contentType: 'application/geo+json' });
   }
   return { indexEtag, packEtags };
 }

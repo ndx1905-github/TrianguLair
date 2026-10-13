@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { InvalidPath, MemoryAdapter, packIdOf, packPath, probeConditionalWrites } from '../src/index.ts';
 import { runAdapterConformance } from '../src/testing/conformance.ts';
 
-runAdapterConformance('Memory', async () => ({ adapter: new MemoryAdapter() }));
+// Unnamed form: runAdapterConformance(factory).
+runAdapterConformance(async () => ({ adapter: new MemoryAdapter() }));
 
 runAdapterConformance('Memory (read-only)', async () => {
   const adapter = new MemoryAdapter({ readOnly: true });
