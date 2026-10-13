@@ -1,0 +1,245 @@
+/**
+ * Shared conformance suite: every adapter must pass it.
+ *
+ *   runAdapterConformance('WebDAV', async () => ({ adapter, cleanup }))
+ *
+ * The factory is called before each test and must return an adapter on an
+ * EMPTY root. Read-only adapters provide `seed` to write fixture data through
+ * a writable path to the same backing store.
+ */
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  InvalidPath,
+  NotFound,
+  PreconditionFailed,
+  ReadOnly,
+  Unsupported,
+} from '../errors.ts';
+import { INDEX_PATH, PUBLIC_LISTES_PATH, packPath } from '../layout.ts';
+import { fetchPack, fetchSnapshot, publishSnapshot } from '../snapshot.ts';
+import type { StorageAdapter } from '../types.ts';
+
+export interface ConformanceFixture {
+  adapter: StorageAdapter;
+  /** Required for read-only adapters: write `data` at `path` out of band. */
+  seed?: (path: string, data: Uint8Array) => Promise<void>;
+  /** If true, `capabilities.publicUrl()` must be anonymously fetchable with global fetch. */
+  publicUrlFetchable?: boolean;
+  cleanup?: () => Promise<void>;
+}
+
+export type ConformanceFactory = () => Promise<ConformanceFixture>;
+
+const enc = (s: string) => new TextEncoder().encode(s);
+const allBytes = () => Uint8Array.from({ length: 256 * 3 }, (_, i) => i % 256);
+
+export function runAdapterConformance(name: string, factory: ConformanceFactory): void {
+  describe(`${name} adapter conformance`, () => {
+    let fx: ConformanceFixture;
+    let a: StorageAdapter;
+
+    beforeEach(async () => {
+      fx = await factory();
+      a = fx.adapter;
+    });
+    afterEach(async () => {
+      await fx.cleanup?.();
+    });
+
+    /** Write via the adapter, or via seed for read-only adapters. */
+    async function write(path: string, data: Uint8Array): Promise<void> {
+      if (a.capabilities.readOnly) {
+        if (!fx.seed) throw new Error('read-only fixture needs seed()');
+        await fx.seed(path, data);
+      } else {
+        await a.put(path, data);
+      }
+    }
+
+    it('returns null for missing objects', async () => {
+      expect(await a.get('nope.bin')).toBeNull();
+      expect(await a.head('nope.bin')).toBeNull();
+      expect(await a.get('no/such/dir/x.bin')).toBeNull();
+    });
+
+    it('rejects invalid paths', async () => {
+      for (const p of ['', '/abs', '../up', 'a/../b', 'a//b', 'dir/', './x']) {
+        await expect(a.get(p), p).rejects.toBeInstanceOf(InvalidPath);
+      }
+    });
+
+    it('round-trips binary data (nested path) with consistent ETags', async () => {
+      const data = allBytes();
+      await write('packs/abc.bin', data);
+      const g = await a.get('packs/abc.bin');
+      expect(g).not.toBeNull();
+      expect(Array.from(g!.data)).toEqual(Array.from(data));
+      expect(g!.etag).toBeTruthy();
+      const h = await a.head('packs/abc.bin');
+      expect(h).toEqual({ etag: g!.etag, size: data.byteLength });
+    });
+
+    it('handles empty files and odd-but-valid names', async () => {
+      await write('public/empty file é.txt', new Uint8Array());
+      const g = await a.get('public/empty file é.txt');
+      expect(g?.data.byteLength).toBe(0);
+      expect((await a.head('public/empty file é.txt'))?.size).toBe(0);
+    });
+
+    it('capabilities are coherent', () => {
+      const c = a.capabilities;
+      expect(typeof c.readOnly).toBe('boolean');
+      expect(typeof c.conditionalWrites).toBe('boolean');
+      expect(typeof c.list).toBe('boolean');
+      const u = c.publicUrl(INDEX_PATH);
+      expect(u === null || /^https?:\/\//.test(u)).toBe(true);
+    });
+
+    it('publicUrl serves the object anonymously (when configured)', async () => {
+      if (!fx.publicUrlFetchable) return;
+      await write(PUBLIC_LISTES_PATH, enc('{"type":"FeatureCollection","features":[]}'));
+      const url = a.capabilities.publicUrl(PUBLIC_LISTES_PATH);
+      expect(url).toBeTruthy();
+      const res = await fetch(url!);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('{"type":"FeatureCollection","features":[]}');
+    });
+
+    it('read-only adapters refuse writes with ReadOnly', async () => {
+      if (!a.capabilities.readOnly) return;
+      await expect(a.put('x.bin', enc('x'))).rejects.toBeInstanceOf(ReadOnly);
+      await expect(a.delete('x.bin')).rejects.toBeInstanceOf(ReadOnly);
+    });
+
+    it('list is sorted, recursive, prefix-filtered (or Unsupported)', async () => {
+      await write('index.json', enc('{}'));
+      await write('packs/b.bin', enc('bb'));
+      await write('packs/a.bin', enc('a'));
+      await write('packs/sub/c.bin', enc('ccc'));
+      await write('public/listes.geojson', enc('{}'));
+      if (!a.capabilities.list) {
+        await expect(a.list('packs/')).rejects.toBeInstanceOf(Unsupported);
+        return;
+      }
+      const packs = await a.list('packs/');
+      expect(packs.map((e) => e.path)).toEqual(['packs/a.bin', 'packs/b.bin', 'packs/sub/c.bin']);
+      expect(packs.map((e) => e.size)).toEqual([1, 2, 3]);
+      for (const e of packs) expect(e.etag).toBe((await a.head(e.path))!.etag);
+      expect((await a.list('')).map((e) => e.path)).toEqual([
+        'index.json',
+        'packs/a.bin',
+        'packs/b.bin',
+        'packs/sub/c.bin',
+        'public/listes.geojson',
+      ]);
+      expect((await a.list('packs/a')).map((e) => e.path)).toEqual(['packs/a.bin']);
+      expect(await a.list('nothing/')).toEqual([]);
+    });
+
+    describe('writes', () => {
+      it('overwrite changes the ETag', async () => {
+        if (a.capabilities.readOnly) return;
+        const p1 = await a.put('index.json', enc('v1'));
+        const p2 = await a.put('index.json', enc('v2'));
+        expect(p1.etag).not.toBe(p2.etag);
+        expect((await a.head('index.json'))!.etag).toBe(p2.etag);
+        expect(new TextDecoder().decode((await a.get('index.json'))!.data)).toBe('v2');
+      });
+
+      it('ifNoneMatch "*" creates only when absent', async () => {
+        if (a.capabilities.readOnly) return;
+        const { etag } = await a.put('index.json', enc('first'), { ifNoneMatch: '*' });
+        await expect(a.put('index.json', enc('second'), { ifNoneMatch: '*' })).rejects.toBeInstanceOf(
+          PreconditionFailed,
+        );
+        const g = await a.get('index.json');
+        expect(new TextDecoder().decode(g!.data)).toBe('first');
+        expect(g!.etag).toBe(etag);
+      });
+
+      it('ifMatch succeeds on current ETag and fails on stale/missing', async () => {
+        if (a.capabilities.readOnly) return;
+        const { etag: e1 } = await a.put('index.json', enc('one'));
+        const { etag: e2 } = await a.put('index.json', enc('two'), { ifMatch: e1 });
+        expect(e2).not.toBe(e1);
+        await expect(a.put('index.json', enc('three'), { ifMatch: e1 })).rejects.toBeInstanceOf(PreconditionFailed);
+        expect(new TextDecoder().decode((await a.get('index.json'))!.data)).toBe('two');
+        await expect(a.put('missing.json', enc('x'), { ifMatch: e2 })).rejects.toBeInstanceOf(PreconditionFailed);
+        expect(await a.head('missing.json')).toBeNull();
+      });
+
+      it('delete: idempotent, conditional with ifMatch', async () => {
+        if (a.capabilities.readOnly) return;
+        await a.delete('never-existed.bin');
+        const { etag: e1 } = await a.put('packs/x.bin', enc('1'));
+        const { etag: e2 } = await a.put('packs/x.bin', enc('22'));
+        await expect(a.delete('packs/x.bin', { ifMatch: e1 })).rejects.toBeInstanceOf(PreconditionFailed);
+        expect(await a.head('packs/x.bin')).not.toBeNull();
+        await a.delete('packs/x.bin', { ifMatch: e2 });
+        expect(await a.get('packs/x.bin')).toBeNull();
+        await expect(a.delete('packs/x.bin', { ifMatch: e2 })).rejects.toBeInstanceOf(PreconditionFailed);
+        await a.delete('packs/x.bin');
+      });
+
+      it('caller mutation after put does not affect stored data', async () => {
+        if (a.capabilities.readOnly) return;
+        const buf = enc('abc');
+        await a.put('m.bin', buf);
+        buf[0] = 0x7a;
+        expect(new TextDecoder().decode((await a.get('m.bin'))!.data)).toBe('abc');
+      });
+    });
+
+    describe('snapshot helpers', () => {
+      it('publish then fetch, skip when unchanged, detect concurrent publisher', async () => {
+        if (a.capabilities.readOnly) {
+          // Friend side only: fetch what the owner published.
+          await fx.seed!(packPath('p1'), enc('pack-1'));
+          await fx.seed!(INDEX_PATH, enc('{"v":1}'));
+          const f1 = await fetchSnapshot(a, null);
+          expect(f1.changed).toBe(true);
+          const f2 = await fetchSnapshot(a, f1.etag);
+          expect(f2).toEqual({ changed: false, etag: f1.etag });
+          expect(new TextDecoder().decode(await fetchPack(a, 'p1'))).toBe('pack-1');
+          return;
+        }
+        await expect(fetchSnapshot(a, null)).rejects.toBeInstanceOf(NotFound);
+
+        const r1 = await publishSnapshot(a, {
+          index: enc('{"v":1}'),
+          packs: { p1: enc('pack-1'), p2: enc('pack-2') },
+          previousIndexEtag: null,
+          publicListes: enc('{"type":"FeatureCollection","features":[]}'),
+        });
+        expect(Object.keys(r1.packEtags).sort()).toEqual(['p1', 'p2']);
+
+        const f1 = await fetchSnapshot(a, null);
+        expect(f1.changed && new TextDecoder().decode(f1.index)).toBe('{"v":1}');
+        expect(f1.etag).toBe(r1.indexEtag);
+        expect(await fetchSnapshot(a, r1.indexEtag)).toEqual({ changed: false, etag: r1.indexEtag });
+        expect(new TextDecoder().decode(await fetchPack(a, 'p2'))).toBe('pack-2');
+        expect(await a.head(PUBLIC_LISTES_PATH)).not.toBeNull();
+
+        // A second "first publish" must not clobber the existing index.
+        await expect(
+          publishSnapshot(a, { index: enc('{"v":"x"}'), packs: {}, previousIndexEtag: null }),
+        ).rejects.toBeInstanceOf(PreconditionFailed);
+
+        // Device A publishes v2 based on v1.
+        const r2 = await publishSnapshot(a, {
+          index: enc('{"v":2}'),
+          packs: new Map([['p3', enc('pack-3')]]),
+          previousIndexEtag: r1.indexEtag,
+        });
+        // Device B, still based on v1, loses the race: packs uploaded, index rejected.
+        await expect(
+          publishSnapshot(a, { index: enc('{"v":"B"}'), packs: { p4: enc('pack-4') }, previousIndexEtag: r1.indexEtag }),
+        ).rejects.toBeInstanceOf(PreconditionFailed);
+        const f2 = await fetchSnapshot(a, r1.indexEtag);
+        expect(f2.changed).toBe(true);
+        expect(f2.etag).toBe(r2.indexEtag);
+        expect(f2.changed && new TextDecoder().decode(f2.index)).toBe('{"v":2}');
+      });
+    });
+  });
+}

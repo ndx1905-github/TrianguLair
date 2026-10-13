@@ -1,0 +1,46 @@
+{
+  "name": "@triangulair/storage",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MPL-2.0",
+  "description": "TrianguLair storage adapters: WebDAV, S3, HTTPS (read-only), SFTP (Node only), in-memory",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sftp": "./src/sftp.ts",
+    "./testing": "./src/testing/conformance.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@nephele/adapter-file-system": "^1.0.0-alpha.67",
+    "@nephele/authenticator-none": "^1.0.0-alpha.67",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/ssh2": "^1.15.6",
+    "express": "^5.3.0",
+    "nephele": "^1.0.0-alpha.67",
+    "ssh2": "^1.17.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  },
+  "peerDependencies": {
+    "ssh2": "^1.17.0",
+    "vitest": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "ssh2": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
+  }
+}

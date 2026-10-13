@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "TrianguLair",
+    "slug": "triangulair",
+    "version": "0.0.1",
+    "orientation": "default",
+    "scheme": "triangulair",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "org.triangulair.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "org.triangulair.app",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "@maplibre/maplibre-react-native"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
