@@ -1,33 +1,34 @@
-# Contribuer à TrianguLair
+# Contributing to TrianguLair
 
-Merci de votre intérêt ! Le projet est en phase 0 ; les contributions sont sur invitation pour l'instant.
+Thanks for your interest! The project is in phase 0; contributions are by invitation for now.
 
-## Par où commencer
+## Getting started
 
-1. Lire la [spécification](docs/SPEC.md) : c'est la source de vérité.
-2. Choisir une tâche dans [docs/TASKS.md](docs/TASKS.md) ou dans les issues (`T-xxx` dans le titre), avec le statut « à faire » et des dépendances terminées.
-3. Commenter l'issue pour la prendre, afin d'éviter le travail en double.
+1. Read the [specification](docs/SPEC.md): it is the source of truth.
+2. Pick a task in [docs/TASKS.md](docs/TASKS.md) or in the issues (`T-xxx` in the title) that is "to do" and whose dependencies are done.
+3. Comment on the issue to claim it, so nobody works on the same thing twice.
 
-## Règles
+## Rules
 
-- **Une branche par tâche**, nommée `t-xxx-description-courte`, et une pull request qui référence l'issue (`Closes #n`).
-- **Les tests sont le contrat** : une PR n'est fusionnée que si ses tests et ceux du projet passent (`npm test`, `npm run typecheck`).
-- **Parties sensibles** (chiffrement, synchronisation, clés) : relecture obligatoire par quelqu'un qui n'a pas écrit le code.
-- **La spec d'abord** : un changement de comportement ou de format passe par une PR sur `docs/SPEC.md`, discutée avant d'être codée.
-- **TypeScript strict**, pas de dépendance à un service propriétaire.
+- **One branch per task**, named `t-xxx-short-description`, and a pull request that references the issue (`Closes #n`).
+- **Tests are the contract**: a PR is merged only if its own tests and the project's tests pass (`npm test`, `npm run typecheck`).
+- **Sensitive areas** (encryption, sync, keys): review by someone who did not write the code is mandatory.
+- **Spec first**: any change of behavior or format goes through a PR on `docs/SPEC.md`, discussed before it is coded.
+- **Strict TypeScript**, no dependency on proprietary services.
+- **English** for code, comments, commits, issues and docs.
 
-## Attestation d'origine (DCO)
+## Developer Certificate of Origin (DCO)
 
-Chaque commit doit être signé avec `git commit -s`, ce qui ajoute :
+Every commit must be signed off with `git commit -s`, which adds:
 
-    Signed-off-by: Prénom Nom <email>
+    Signed-off-by: Your Name <email>
 
-Vous attestez ainsi avoir le droit de soumettre ce code sous la licence du projet ([Developer Certificate of Origin 1.1](https://developercertificate.org/)). Aucun accord de cession n'est demandé.
+This certifies that you have the right to submit the code under the project's license ([Developer Certificate of Origin 1.1](https://developercertificate.org/)). No copyright assignment is required.
 
-## Licence
+## License
 
-Code sous [MPL-2.0](LICENSE). Icônes et visuels : CC0 ou licence compatible.
+Code under [MPL-2.0](LICENSE). Icons and visuals: CC0 or a compatible license.
 
-## Conduite
+## Conduct
 
-Voir le [code de conduite](CODE_OF_CONDUCT.md). Failles de sécurité : voir [SECURITY.md](SECURITY.md), jamais dans une issue publique.
+See the [code of conduct](CODE_OF_CONDUCT.md). Security vulnerabilities: see [SECURITY.md](SECURITY.md), never in a public issue.

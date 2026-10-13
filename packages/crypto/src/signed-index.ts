@@ -11,7 +11,7 @@ import { signBody, verifyBody } from './sign';
  *   "seq": 42,                            // monotonic counter, +1 on every publication
  *   "updated": "2026-10-13T12:00:00.000Z",
  *   "packs": [{"file":"packs/7c1e.bin","etag":"<packEtag(bytes)>"}],
- *   "public": "public/listes.geojson",    // optional
+ *   "public": "public/lists.geojson",    // optional
  *   "signature": "<b64url Ed25519>"
  * }
  * Signature: see sign.ts (domain "index", canonical JSON without "signature").

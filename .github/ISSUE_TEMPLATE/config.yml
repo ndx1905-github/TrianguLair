@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Faille de sécurité
+  - name: Security vulnerability
     url: https://github.com/ndx1905-github/TrianguLair/security/advisories/new
-    about: Signalement privé, jamais dans une issue publique.
+    about: Private report, never in a public issue.

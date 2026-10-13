@@ -1,520 +1,520 @@
-# Tâches
+# Tasks
 
-Découpage de la [spécification](SPEC.md) en tâches. Chaque tâche existe aussi sous forme d'issue GitHub (même identifiant dans le titre).
-Généré depuis `scripts/tasks.py` : modifier ce fichier-là puis lancer `python3 scripts/gen_tasks_md.py`.
+The [specification](SPEC.md) broken down into tasks. Each task is also a GitHub issue (same ID in the title).
+Generated from `scripts/tasks.py`: edit that file, then run `python3 scripts/gen_tasks_md.py`.
 
-Pour contribuer : choisir une tâche « à faire » dont les dépendances sont terminées, commenter l'issue pour la prendre, puis ouvrir une PR (voir [CONTRIBUTING](../CONTRIBUTING.md)).
+To contribute: pick a "to do" task whose dependencies are done, comment on the issue to claim it, then open a PR (see [CONTRIBUTING](../CONTRIBUTING.md)).
 
-## Phase 0 — cadrage et prototypes
+## Phase 0 — scoping and prototypes
 
-| ID | Tâche | Domaines | Dépend de | Statut |
+| ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-001 | Prototype du format chiffré (packages/crypto) | crypto | — | en relecture |
-| T-002 | Relecture indépendante du prototype de chiffrement | crypto, review | T-001 | à faire |
-| T-003 | Prototype des adaptateurs de stockage (packages/storage) | storage | — | en cours |
-| T-004 | Squelette de l'app Expo avec carte et épingles (apps/mobile) | app, map | — | en cours |
-| T-005 | Maquettes des écrans principaux | design | — | à faire |
-| T-006 | Intégration continue GitHub Actions | infra | — | à faire |
-| T-007 | Déploiement automatique de la version web de test | infra, app | T-004, T-006 | à faire |
-| T-008 | Vérifications administratives et juridiques | legal, humain | — | à faire |
-| T-009 | Formats d'export Mapstr et Pin Drop | import, humain | — | à faire |
-| T-010 | Miroir Forgejo du dépôt | infra, humain | — | à faire |
+| T-001 | Encrypted format prototype (packages/crypto) | crypto | — | in review |
+| T-002 | Independent review of the crypto prototype | crypto, review | T-001 | to do |
+| T-003 | Storage adapters prototype (packages/storage) | storage | — | in progress |
+| T-004 | Expo app skeleton with map and pins (apps/mobile) | app, map | — | in progress |
+| T-005 | Mockups of the main screens | design | — | to do |
+| T-006 | Continuous integration with GitHub Actions | infra | — | to do |
+| T-007 | Automatic deployment of the web test build | infra, app | T-004, T-006 | to do |
+| T-008 | Administrative and legal checks | legal, maintainer | — | to do |
+| T-009 | Mapstr and Pin Drop export formats | import, maintainer | — | to do |
+| T-010 | Forgejo mirror of the repository | infra, maintainer | — | to do |
 
-## Phase 1 — app locale
+## Phase 1 — local app
 
-| ID | Tâche | Domaines | Dépend de | Statut |
+| ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-101 | Base locale SQLite avec index spatial | data | — | à faire |
-| T-102 | Modèle Automerge et fusion entre appareils | sync, data | T-101 | à faire |
-| T-103 | Carte : regroupement au dézoom et affichage filtré | map | T-004, T-101 | à faire |
-| T-104 | Vue liste : tri, recherche texte | app | T-101 | à faire |
-| T-105 | Ajout d'un lieu : lieux proches, recherche, appui long | app, osm | T-106, T-101 | à faire |
-| T-106 | Client OSM : Overpass, Photon/Nominatim | osm | — | à faire |
-| T-107 | Fiche lieu enrichie : infos, horaires, photos libres | osm, app | T-106 | à faire |
-| T-108 | Tags personnels, couleurs, icônes, sous-tags | app, design | T-101 | à faire |
-| T-109 | Barre de filtres complète | app, osm | T-107, T-108 | à faire |
-| T-110 | Zones : quartiers, bouts de rue, dessin libre | map, app | T-103 | à faire |
-| T-111 | Commentaires, statut, prix, photos perso | app | T-101 | à faire |
-| T-112 | Listes par filtre enregistré ou sélection manuelle | app | T-109, T-110 | à faire |
-| T-113 | Détection mensuelle des lieux fermés | osm | T-106 | à faire |
-| T-114 | Import Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON | import | T-009, T-106 | à faire |
-| T-115 | Export GeoJSON complet | import | T-101 | à faire |
-| T-116 | Itinéraire et ouverture dans Plans / Google Maps | app | — | à faire |
-| T-117 | Adaptation aux écrans : pliables, iPad, Mac, tailles de police | app, design | — | à faire |
-| T-118 | Langues et mode sombre | app, i18n | — | à faire |
-| T-119 | Tests de bout en bout sur simulateurs | infra, tests | T-006 | à faire |
+| T-101 | Local SQLite database with spatial index | data | — | to do |
+| T-102 | Automerge model and merging across devices | sync, data | T-101 | to do |
+| T-103 | Map: clustering when zoomed out and filtered display | map | T-004, T-101 | to do |
+| T-104 | List view: sorting, text search | app | T-101 | to do |
+| T-105 | Add a place: nearby places, search, long press | app, osm | T-106, T-101 | to do |
+| T-106 | OSM client: Overpass, Photon/Nominatim | osm | — | to do |
+| T-107 | Enriched place card: info, opening hours, free photos | osm, app | T-106 | to do |
+| T-108 | Personal tags, colors, icons, sub-tags | app, design | T-101 | to do |
+| T-109 | Full filter bar | app, osm | T-107, T-108 | to do |
+| T-110 | Zones: neighborhoods, street segments, freehand drawing | map, app | T-103 | to do |
+| T-111 | Comments, status, price, personal photos | app | T-101 | to do |
+| T-112 | Lists from saved filters or manual selection | app | T-109, T-110 | to do |
+| T-113 | Monthly detection of closed places | osm | T-106 | to do |
+| T-114 | Import from Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON | import | T-009, T-106 | to do |
+| T-115 | Full GeoJSON export | import | T-101 | to do |
+| T-116 | Directions and opening in Apple Maps / Google Maps | app | — | to do |
+| T-117 | Screen adaptation: foldables, iPad, Mac, font sizes | app, design | — | to do |
+| T-118 | Languages and dark mode | app, i18n | — | to do |
+| T-119 | End-to-end tests on simulators | infra, tests | T-006 | to do |
 
-## Phase 2 — partage
+## Phase 2 — sharing
 
-| ID | Tâche | Domaines | Dépend de | Statut |
+| ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-201 | Format chiffré v1 définitif et vecteurs de test | crypto | T-002 | à faire |
-| T-202 | Adaptateurs de stockage en production et tests contre vrais serveurs | storage | T-003 | à faire |
-| T-203 | Réglages de stockage et migration entre stockages | app, storage | T-202 | à faire |
-| T-204 | Synchronisation : publication et lecture des paquets | sync | T-102, T-201, T-202 | à faire |
-| T-205 | Kit de récupération et premier lancement | crypto, app | T-201 | à faire |
-| T-206 | Ajout d'un appareil (code de transfert, QR) | crypto, app | T-205, T-204 | à faire |
-| T-207 | Perte et vol : rotation de clé, effacement à distance | crypto, sync | T-206 | à faire |
-| T-208 | Invitation par lien, QR code et lien retour | crypto, app | T-204 | à faire |
-| T-209 | Gestion des accès et révocation | crypto, sync | T-208 | à faire |
-| T-210 | Lieux des amis, compteurs et vue Nouveautés | app, sync | T-204 | à faire |
-| T-211 | Listes publiques (GeoJSON) et lien « Voir sur uMap » | sharing | T-112, T-204 | à faire |
-| T-212 | Listes par lien (clé dans le fragment) | sharing, crypto | T-211 | à faire |
-| T-213 | Cas d'erreur de la spec | app, sync | T-204 | à faire |
-| T-214 | Audit de sécurité externe | crypto, humain | T-209 | à faire |
+| T-201 | Final v1 encrypted format and test vectors | crypto | T-002 | to do |
+| T-202 | Production storage adapters and tests against real servers | storage | T-003 | to do |
+| T-203 | Storage settings and migration between storages | app, storage | T-202 | to do |
+| T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | to do |
+| T-205 | Recovery kit and first launch | crypto, app | T-201 | to do |
+| T-206 | Adding a device (transfer code, QR) | crypto, app | T-205, T-204 | to do |
+| T-207 | Loss and theft: key rotation, remote wipe | crypto, sync | T-206 | to do |
+| T-208 | Invitation by link, QR code and return link | crypto, app | T-204 | to do |
+| T-209 | Access management and revocation | crypto, sync | T-208 | to do |
+| T-210 | Friends' places, counters and What's new view | app, sync | T-204 | to do |
+| T-211 | Public lists (GeoJSON) and "View on uMap" link | sharing | T-112, T-204 | to do |
+| T-212 | Link-only lists (key in the URL fragment) | sharing, crypto | T-211 | to do |
+| T-213 | Error cases from the spec | app, sync | T-204 | to do |
+| T-214 | External security audit | crypto, maintainer | T-209 | to do |
 
-## Phase 3 — ouverture
+## Phase 3 — opening up
 
-| ID | Tâche | Domaines | Dépend de | Statut |
+| ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-301 | Publication App Store, Play Store, F-Droid | release, humain | T-214 | à faire |
-| T-302 | Documentation utilisateur et auto-hébergement | docs | — | à faire |
-| T-303 | Guide de contribution, code de conduite, politique de sécurité | docs | — | à faire |
-| T-304 | Financement : Liberapay / Open Collective, NLnet | humain | — | à faire |
+| T-301 | Release on App Store, Play Store, F-Droid | release, maintainer | T-214 | to do |
+| T-302 | User and self-hosting documentation | docs | — | to do |
+| T-303 | Contribution guide, code of conduct, security policy | docs | — | to do |
+| T-304 | Funding: Liberapay / Open Collective, NLnet | maintainer | — | to do |
 
-## Détail
+## Details
 
-### T-001 — Prototype du format chiffré (packages/crypto)
+### T-001 — Encrypted format prototype (packages/crypto)
 
-Identité depuis 12 mots, clé maîtresse Ed25519 et clé de partage X25519 remplaçable, paquets XChaCha20-Poly1305, enveloppes anonymes par destinataire, groupes, index signé, invitation 7 jours et lien retour, code de transfert Argon2id, révocation. Voir « Architecture › Partage chiffré » et « Versions du format ».
+Identity from 12 words, Ed25519 master key and replaceable X25519 sharing key, XChaCha20-Poly1305 packs, anonymous per-recipient wraps, groups, signed index, 7-day invitation and return link, Argon2id transfer code, revocation. See "Architecture › Encrypted sharing" and "Format versions".
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] `npm test` et `npm run typecheck` passent
-- [ ] README du format (octets, JSON, algorithmes) et THREATS.md présents
+- [ ] `npm test` and `npm run typecheck` pass
+- [ ] Format README (byte layout, JSON, algorithms) and THREATS.md present
 
-### T-002 — Relecture indépendante du prototype de chiffrement
+### T-002 — Independent review of the crypto prototype
 
-Relecture par un agent ou une personne qui n'a pas écrit T-001 : choix des primitives, anonymat des enveloppes, sérialisation canonique, anti-retour arrière, invitation, code de transfert. Trancher les 5 questions ouvertes listées dans le rapport de T-001 (champ `seq`, sens de `etag`, identifiant de paquet stable, taille du lien d'invitation, vérification hors bande du lien retour).
+Review by an agent or a person who did not write T-001: primitive choices, wrap anonymity, canonical serialization, anti-rollback, invitation, transfer code. Decide the 5 open questions from T-001 (`seq` field, meaning of `etag`, stable pack id, invitation link size, out-of-band verification of the return link).
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Rapport de relecture dans docs/reviews/
-- [ ] Questions ouvertes tranchées et reportées dans la spec
+- [ ] Review report in docs/reviews/
+- [ ] Open questions decided and reflected in the spec
 
-Dépend de : T-001
+Depends on: T-001
 
-### T-003 — Prototype des adaptateurs de stockage (packages/storage)
+### T-003 — Storage adapters prototype (packages/storage)
 
-Interface commune get/put/delete/list/head avec écritures conditionnelles (ETag), erreurs typées ; adaptateurs WebDAV, S3, HTTPS lecture seule, SFTP (Node seulement) ; adaptateur mémoire ; suite de conformité commune ; publishSnapshot/fetchSnapshot. Voir « Protocoles de stockage » et « Organisation sur le stockage ».
+Common get/put/delete/list/head interface with conditional writes (ETag) and typed errors; WebDAV, S3, read-only HTTPS and SFTP (Node only) adapters; in-memory adapter; shared conformance suite; publishSnapshot/fetchSnapshot. See "Storage protocols" and "Layout on storage".
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Suite de conformité verte sur chaque adaptateur contre un serveur local
-- [ ] README par protocole (CORS, lecture publique, sémantique ETag)
+- [ ] Conformance suite green on every adapter against a local server
+- [ ] Per-protocol README (CORS, public read, ETag semantics)
 
-### T-004 — Squelette de l'app Expo avec carte et épingles (apps/mobile)
+### T-004 — Expo app skeleton with map and pins (apps/mobile)
 
-Expo + expo-router, MapLibre natif / MapLibre GL JS web derrière une interface commune, style OpenFreeMap Positron configurable, épingles SVG (icône blanche à halo fort, bandes multi-tags, épingles des amis estompées), fiche en bas d'écran, barre de filtres repliable, mode sombre. Voir « Interface » et « Fond de carte ».
+Expo + expo-router, native MapLibre / web MapLibre GL JS behind a common interface, configurable OpenFreeMap Positron style, SVG pins (white icon with strong halo, multi-tag bands, faded friends' pins), bottom sheet, collapsible filter bar, dark mode. See "Interface" and "Base map".
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] `tsc --noEmit` passe, export web réussi
-- [ ] Capture d'écran web dans apps/mobile/docs/
-- [ ] eas.json prêt pour un build de développement
+- [ ] `tsc --noEmit` passes, web export succeeds
+- [ ] Web screenshot in apps/mobile/docs/
+- [ ] eas.json ready for a development build
 
-### T-005 — Maquettes des écrans principaux
+### T-005 — Mockups of the main screens
 
-Carte, liste, ajout de lieu, fiche lieu, filtres, liste de partage, invitation, premier lancement, réglages de stockage. Respecter palette, épingles et feuille de style des icônes (grille 24 px, trait 2 px).
+Map, list, add place, place card, filters, sharing list, invitation, first launch, storage settings. Follow the palette, pins and icon style sheet (24 px grid, 2 px stroke).
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Maquettes publiées et liées depuis la spec
+- [ ] Mockups published and linked from the spec
 
-### T-006 — Intégration continue GitHub Actions
+### T-006 — Continuous integration with GitHub Actions
 
-Workflow lint + typecheck + tests de tous les espaces de travail à chaque PR ; export web ; Dependabot ; permissions en lecture seule par défaut.
+Lint + typecheck + tests of all workspaces on every PR; web export; Dependabot; read-only permissions by default.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Badge CI vert sur main
-- [ ] PR bloquée si les tests échouent
+- [ ] Green CI badge on main
+- [ ] PR blocked when tests fail
 
-### T-007 — Déploiement automatique de la version web de test
+### T-007 — Automatic deployment of the web test build
 
-Déployer l'export web sur un hébergement statique à chaque merge (GitHub Pages ou équivalent), avec un stockage WebDAV de test configuré pour CORS.
+Deploy the web export to static hosting on every merge (GitHub Pages or similar), with a test WebDAV storage configured for CORS.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Lien de test publié dans le README
+- [ ] Test link published in the README
 
-Dépend de : T-004, T-006
+Depends on: T-004, T-006
 
-### T-008 — Vérifications administratives et juridiques
+### T-008 — Administrative and legal checks
 
-Déclaration du moyen de cryptologie à l'ANSSI (procédure à jour) ; impact de l'ODbL sur les listes publiques ; domaines triangulair / triangulaire ; marques TMview classes 9 et 42.
+Cryptology declaration to ANSSI (current procedure); ODbL impact on public lists; triangulair / triangulaire domains; TMview trademarks in classes 9 and 42.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Résultats reportés dans « Légal et publication »
+- [ ] Results reflected in "Legal and publishing"
 
-### T-009 — Formats d'export Mapstr et Pin Drop
+### T-009 — Mapstr and Pin Drop export formats
 
-Obtenir un export réel depuis un compte Mapstr et Pin Drop, documenter colonnes et formats, anonymiser un échantillon pour les tests.
+Get a real export from a Mapstr and a Pin Drop account, document columns and formats, anonymize a sample for tests.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Échantillons dans packages/import/fixtures/
-- [ ] Colonnes documentées dans la spec
+- [ ] Samples in packages/import/fixtures/
+- [ ] Columns documented in the spec
 
-### T-010 — Miroir Forgejo du dépôt
+### T-010 — Forgejo mirror of the repository
 
-Miroir automatique depuis GitHub vers la forge Forgejo du porteur, avec jeton en lecture seule.
+Automatic mirror from GitHub to the maintainer's Forgejo instance, with a read-only token.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Miroir à jour après chaque push
+- [ ] Mirror up to date after each push
 
-### T-101 — Base locale SQLite avec index spatial
+### T-101 — Local SQLite database with spatial index
 
-Schéma du « Modèle de données » (people, groups, places, saves, tags, save_tags, tag_mappings, lists, list_items, access, media), migrations, requêtes « lieux dans cette zone ».
+Schema from "Data model" (people, groups, places, saves, tags, save_tags, tag_mappings, lists, list_items, access, media), migrations, "places in this area" queries.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests sur 10 000 lieux sous les cibles de performance
+- [ ] Tests on 10,000 places within performance targets
 
-### T-102 — Modèle Automerge et fusion entre appareils
+### T-102 — Automerge model and merging across devices
 
-Documents CRDT pour lieux, tags, listes ; projection vers SQLite ; tests par propriétés de la fusion.
+CRDT documents for places, tags, lists; projection to SQLite; property-based tests of merging.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Deux appareils simulés convergent après modifications concurrentes
+- [ ] Two simulated devices converge after concurrent edits
 
-Dépend de : T-101
+Depends on: T-101
 
-### T-103 — Carte : regroupement au dézoom et affichage filtré
+### T-103 — Map: clustering when zoomed out and filtered display
 
-Clusters, épingles filtrées en couleur / autres grisées plus petites, zones affichées, performance 10 000 lieux.
+Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] 60 i/s sur l'appareil de référence
+- [ ] 60 fps on the reference device
 
-Dépend de : T-004, T-101
+Depends on: T-004, T-101
 
-### T-104 — Vue liste : tri, recherche texte
+### T-104 — List view: sorting, text search
 
-Tri récent / distance / nom, recherche plein texte, mention « N amis ».
+Sort by recent / distance / name, full-text search, "N friends" mention.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests unitaires du tri et de la recherche
+- [ ] Unit tests for sorting and search
 
-Dépend de : T-101
+Depends on: T-101
 
-### T-105 — Ajout d'un lieu : lieux proches, recherche, appui long
+### T-105 — Add a place: nearby places, search, long press
 
-Écran d'ajout listant les lieux OSM autour par distance croissante, recherche Photon/Nominatim, appui long, position actuelle ; indication « déjà chez moi / chez des amis ».
+Add screen listing nearby OSM places by increasing distance, Photon/Nominatim search, long press, current location; "already mine / saved by friends" indicator.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Parcours de bout en bout sur simulateur
+- [ ] End-to-end flow on simulator
 
-Dépend de : T-106, T-101
+Depends on: T-106, T-101
 
-### T-106 — Client OSM : Overpass, Photon/Nominatim
+### T-106 — OSM client: Overpass, Photon/Nominatim
 
-Clients avec cache, limites de débit respectées, User-Agent identifié, URL configurables.
+Clients with caching, rate limits respected, identifying User-Agent, configurable URLs.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests avec réponses enregistrées
+- [ ] Tests with recorded responses
 
-### T-107 — Fiche lieu enrichie : infos, horaires, photos libres
+### T-107 — Enriched place card: info, opening hours, free photos
 
-Horaires (opening_hours), cuisine, régimes, terrasse, prix d'entrée ; photos Wikimedia Commons et Panoramax avec attribution.
+Opening hours (opening_hours), cuisine, diets, terrace, entrance fee; Wikimedia Commons and Panoramax photos with attribution.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Attribution affichée pour chaque photo
+- [ ] Attribution shown for every photo
 
-Dépend de : T-106
+Depends on: T-106
 
-### T-108 — Tags personnels, couleurs, icônes, sous-tags
+### T-108 — Personal tags, colors, icons, sub-tags
 
-Création et édition de tags, palette, icônes CC0, sous-tags « Resto › Pizza ».
+Create and edit tags, palette, CC0 icons, sub-tags ("Restaurant › Pizza").
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests de la palette et du rendu des bandes
+- [ ] Tests of the palette and band rendering
 
-Dépend de : T-101
+Depends on: T-101
 
-### T-109 — Barre de filtres complète
+### T-109 — Full filter bar
 
-Catégories, sous-filtres, critères OSM (ouvert maintenant, happy hour, terrasse, régime, réservation, entrée gratuite, prix), statut, visibilité, prix, texte ; repliable, état mémorisé.
+Categories, sub-filters, OSM criteria (open now, happy hour, terrace, diet, reservation, free entry, price), status, visibility, price level, text; collapsible, state remembered.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests unitaires de chaque critère
+- [ ] Unit tests for each criterion
 
-Dépend de : T-107, T-108
+Depends on: T-107, T-108
 
-### T-110 — Zones : quartiers, bouts de rue, dessin libre
+### T-110 — Zones: neighborhoods, street segments, freehand drawing
 
-Quartier OSM existant, un ou plusieurs bouts de rue, dessin par points ou peinture au doigt ; icône de zone.
+Existing OSM neighborhood, one or more street segments, drawing by points or finger painting; zone icon.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Zones stockées en GeoJSON valide
+- [ ] Zones stored as valid GeoJSON
 
-Dépend de : T-103
+Depends on: T-103
 
-### T-111 — Commentaires, statut, prix, photos perso
+### T-111 — Comments, status, price, personal photos
 
-Visibilité du commentaire (privé / amis / public), statut à tester / testé / favori, €–€€€€, photos perso.
+Comment visibility (private / friends / public), to try / tried / favorite status, €–€€€€, personal photos.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Visibilité respectée dans les exports
+- [ ] Visibility respected in exports
 
-Dépend de : T-101
+Depends on: T-101
 
-### T-112 — Listes par filtre enregistré ou sélection manuelle
+### T-112 — Lists from saved filters or manual selection
 
-Listes dynamiques (catégories, tags, zones par nom via limites OSM ou détourées) et manuelles ; un lieu privé n'entre jamais dans une liste.
+Dynamic lists (categories, tags, zones by name via OSM boundaries or drawn) and manual lists; a private place never enters a list.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests par propriétés sur l'exclusion des lieux privés
+- [ ] Property-based tests on excluding private places
 
-Dépend de : T-109, T-110
+Depends on: T-109, T-110
 
-### T-113 — Détection mensuelle des lieux fermés
+### T-113 — Monthly detection of closed places
 
-Vérification mensuelle via OSM (disused:, shop=vacant, suppression), signalement à l'utilisateur.
+Monthly check via OSM (disused:, shop=vacant, deletion), notify the user.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests avec cas OSM enregistrés
+- [ ] Tests with recorded OSM cases
 
-Dépend de : T-106
+Depends on: T-106
 
-### T-114 — Import Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON
+### T-114 — Import from Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON
 
-Analyse, rapprochement avec les lieux OSM, aperçu avant import, dédoublonnage.
+Parsing, matching with OSM places, preview before import, deduplication.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Échantillons de T-009 importés sans perte
+- [ ] T-009 samples imported without loss
 
-Dépend de : T-009, T-106
+Depends on: T-009, T-106
 
-### T-115 — Export GeoJSON complet
+### T-115 — Full GeoJSON export
 
-Export de tous ses lieux, zones, tags, commentaires.
+Export all places, zones, tags, comments.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Réimport sans perte
+- [ ] Re-import without loss
 
-Dépend de : T-101
+Depends on: T-101
 
-### T-116 — Itinéraire et ouverture dans Plans / Google Maps
+### T-116 — Directions and opening in Apple Maps / Google Maps
 
-Liens profonds vers les apps de navigation.
+Deep links to navigation apps.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Testé sur iOS et Android
+- [ ] Tested on iOS and Android
 
-### T-117 — Adaptation aux écrans : pliables, iPad, Mac, tailles de police
+### T-117 — Screen adaptation: foldables, iPad, Mac, font sizes
 
-Mise en page adaptative, double écran (Galaxy Fold, iPhone Duo), iPad, Mac Apple Silicon, police dynamique, zoom d'affichage iOS.
+Adaptive layout, dual screens (Galaxy Fold, iPhone Duo), iPad, Apple Silicon Mac, dynamic type, iOS display zoom.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Captures automatiques par format
+- [ ] Automatic screenshots per form factor
 
-### T-118 — Langues et mode sombre
+### T-118 — Languages and dark mode
 
-i18n français et anglais, Weblate ; mode sombre complet.
+i18n (English and French first), Weblate; complete dark mode.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Aucune chaîne en dur
+- [ ] No hard-coded strings
 
-### T-119 — Tests de bout en bout sur simulateurs
+### T-119 — End-to-end tests on simulators
 
-Maestro ou Detox : premier lancement, ajout, filtre, liste, import.
+Maestro or Detox: first launch, add, filter, list, import.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Exécutés en CI
+- [ ] Run in CI
 
-Dépend de : T-006
+Depends on: T-006
 
-### T-201 — Format chiffré v1 définitif et vecteurs de test
+### T-201 — Final v1 encrypted format and test vectors
 
-Figer le format après T-002, publier la spécification dans docs/format/ et des vecteurs de test.
+Freeze the format after T-002, publish the specification in docs/format/ and test vectors.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Vecteurs relus par une seconde implémentation
+- [ ] Vectors checked by a second implementation
 
-Dépend de : T-002
+Depends on: T-002
 
-### T-202 — Adaptateurs de stockage en production et tests contre vrais serveurs
+### T-202 — Production storage adapters and tests against real servers
 
-Nextcloud, MinIO, SFTP, serveur web en CI ; pannes simulées (délai, quota, identifiants, écriture interrompue). SFTP sur mobile : module natif ou non supporté.
+Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Suite de conformité verte contre chaque serveur
+- [ ] Conformance suite green against each server
 
-Dépend de : T-003
+Depends on: T-003
 
-### T-203 — Réglages de stockage et migration entre stockages
+### T-203 — Storage settings and migration between storages
 
-Choix local seul / WebDAV / S3 / SFTP, adresse HTTPS de lecture, test de connexion, recopie complète lors d'un changement.
+Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, full copy when switching.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Migration sans perte testée
+- [ ] Lossless migration tested
 
-Dépend de : T-202
+Depends on: T-202
 
-### T-204 — Synchronisation : publication et lecture des paquets
+### T-204 — Sync: publishing and reading packs
 
-Pendant l'usage et juste après la fermeture, sans tâche périodique ; ETag, index signé, cache des amis.
+While in use and right after closing, no periodic task; ETag, signed index, friends' cache.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Simulation multi-utilisateurs sans interface
+- [ ] Headless multi-user simulation
 
-Dépend de : T-102, T-201, T-202
+Depends on: T-102, T-201, T-202
 
-### T-205 — Kit de récupération et premier lancement
+### T-205 — Recovery kit and first launch
 
-Trois entrées, phrase de 12 mots, kit de récupération, parcours standard.
+Three entry points, 12-word phrase, recovery kit, standard flow.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Parcours de bout en bout
+- [ ] End-to-end flow
 
-Dépend de : T-201
+Depends on: T-201
 
-### T-206 — Ajout d'un appareil (code de transfert, QR)
+### T-206 — Adding a device (transfer code, QR)
 
-Code Argon2id et QR code.
+Argon2id code and QR code.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Deux appareils synchronisés
+- [ ] Two devices in sync
 
-Dépend de : T-205, T-204
+Depends on: T-205, T-204
 
-### T-207 — Perte et vol : rotation de clé, effacement à distance
+### T-207 — Loss and theft: key rotation, remote wipe
 
-Rotation de la clé de partage, rechiffrement, suppression de la clé à la synchro sur l'appareil retiré.
+Sharing key rotation, re-encryption, key deletion at sync on the removed device.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Scénario « appareil volé » simulé
+- [ ] "Stolen device" scenario simulated
 
-Dépend de : T-206
+Depends on: T-206
 
-### T-208 — Invitation par lien, QR code et lien retour
+### T-208 — Invitation by link, QR code and return link
 
-Clé d'invitation temporaire 7 jours, contenu visible immédiatement, lien retour, relations asymétriques.
+7-day temporary invitation key, content visible immediately, return link, asymmetric relationships.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Scénario complet entre deux utilisateurs simulés
+- [ ] Full scenario between two simulated users
 
-Dépend de : T-204
+Depends on: T-204
 
-### T-209 — Gestion des accès et révocation
+### T-209 — Access management and revocation
 
-Choisir ce que chaque ami peut ouvrir ; retirer un accès retire le contenu du cache de l'ami.
+Choose what each friend can open; revoking access removes the content from the friend's cache.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests de révocation de bout en bout
+- [ ] End-to-end revocation tests
 
-Dépend de : T-208
+Depends on: T-208
 
-### T-210 — Lieux des amis, compteurs et vue Nouveautés
+### T-210 — Friends' places, counters and What's new view
 
-Filtres « Aussi chez mes amis », choix des amis affichés, tags inconnus gardant la couleur d'origine, vue Nouveautés.
+"Also saved by friends" filters, choice of displayed friends, unknown tags keeping their original color, What's new view.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Tests de la correspondance des tags
+- [ ] Tests of tag matching
 
-Dépend de : T-204
+Depends on: T-204
 
-### T-211 — Listes publiques (GeoJSON) et lien « Voir sur uMap »
+### T-211 — Public lists (GeoJSON) and "View on uMap" link
 
-Publication en clair de public/listes.geojson, attribution ODbL, lien uMap.
+Publish public/lists.geojson in clear, ODbL attribution, uMap link.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Liste ouverte dans uMap
+- [ ] List opened in uMap
 
-Dépend de : T-112, T-204
+Depends on: T-112, T-204
 
-### T-212 — Listes par lien (clé dans le fragment)
+### T-212 — Link-only lists (key in the URL fragment)
 
-Suivre une liste sans suivre la personne.
+Follow a list without following the person.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Lien ouvert sur un second appareil
+- [ ] Link opened on a second device
 
-Dépend de : T-211
+Depends on: T-211
 
-### T-213 — Cas d'erreur de la spec
+### T-213 — Error cases from the spec
 
-Implémenter chaque ligne du tableau « Cas d'erreur ».
+Implement every row of the "Error cases" table.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Un test par ligne
+- [ ] One test per row
 
-Dépend de : T-204
+Depends on: T-204
 
-### T-214 — Audit de sécurité externe
+### T-214 — External security audit
 
-Audit du chiffrement et de la synchronisation avant publication.
+Audit of encryption and sync before release.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Rapport publié et corrections faites
+- [ ] Report published and fixes made
 
-Dépend de : T-209
+Depends on: T-209
 
-### T-301 — Publication App Store, Play Store, F-Droid
+### T-301 — Release on App Store, Play Store, F-Droid
 
-Fiches, captures, builds reproductibles F-Droid.
+Store listings, screenshots, reproducible F-Droid builds.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Apps publiées
+- [ ] Apps published
 
-Dépend de : T-214
+Depends on: T-214
 
-### T-302 — Documentation utilisateur et auto-hébergement
+### T-302 — User and self-hosting documentation
 
-Guides Nextcloud, NAS, S3, tuiles auto-hébergées.
+Guides for Nextcloud, NAS, S3, self-hosted tiles.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Guides relus par un non-technicien
+- [ ] Guides reviewed by a non-technical person
 
-### T-303 — Guide de contribution, code de conduite, politique de sécurité
+### T-303 — Contribution guide, code of conduct, security policy
 
-Compléter CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.
+Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Fichiers présents et liés depuis le README
+- [ ] Files present and linked from the README
 
-### T-304 — Financement : Liberapay / Open Collective, NLnet
+### T-304 — Funding: Liberapay / Open Collective, NLnet
 
-Ouvrir les dons, candidater à NLnet.
+Open donations, apply to NLnet.
 
-Critères d'acceptation :
+Acceptance criteria:
 
-- [ ] Candidature envoyée
+- [ ] Application sent

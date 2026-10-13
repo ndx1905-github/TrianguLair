@@ -3,9 +3,6 @@
 **Local-first, end-to-end encrypted app to save and share your favorite places with friends.**
 Your data stays on your own storage (WebDAV, S3, SFTP). Built on OpenStreetMap.
 
-> 🇫🇷 Une app pour enregistrer et partager vos lieux préférés, sans serveur central :
-> vos données restent chez vous, chiffrées, et vous décidez qui peut les lire.
-
 ## Status
 
 Early development: **phase 0** (prototypes). Nothing is usable yet.
@@ -28,7 +25,7 @@ Early development: **phase 0** (prototypes). Nothing is usable yet.
 | `packages/crypto` | Encrypted format: keys, wraps, signatures, signed index |
 | `packages/storage` | Storage adapters: WebDAV, S3, SFTP, HTTPS |
 | `apps/mobile` | Expo / React Native app (iOS, Android, web for testing) |
-| `docs/SPEC.md` | Full specification (French) — the source of truth |
+| `docs/SPEC.md` | Full specification — the source of truth |
 | `docs/TASKS.md` | Spec broken down into tasks (also GitHub issues) |
 
 ## Stack

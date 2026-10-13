@@ -116,7 +116,7 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
       await write('packs/b.bin', enc('bb'));
       await write('packs/a.bin', enc('a'));
       await write('packs/sub/c.bin', enc('ccc'));
-      await write('public/listes.geojson', enc('{}'));
+      await write('public/lists.geojson', enc('{}'));
       if (!a.capabilities.list) {
         await expect(a.list('packs/')).rejects.toBeInstanceOf(Unsupported);
         return;
@@ -130,7 +130,7 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
         'packs/a.bin',
         'packs/b.bin',
         'packs/sub/c.bin',
-        'public/listes.geojson',
+        'public/lists.geojson',
       ]);
       expect((await a.list('packs/a')).map((e) => e.path)).toEqual(['packs/a.bin']);
       expect(await a.list('nothing/')).toEqual([]);

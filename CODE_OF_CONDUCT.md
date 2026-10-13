@@ -1,7 +1,7 @@
-# Code de conduite
+# Code of conduct
 
-Le projet adopte le [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/fr/version/2/1/code_of_conduct/).
+This project adopts the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-En résumé : bienveillance, respect des opinions différentes, critiques constructives, aucun harcèlement.
+In short: be kind, respect differing opinions, give constructive criticism, no harassment.
 
-Pour signaler un comportement inacceptable, contacter les responsables du projet en privé (adresse à venir). Les signalements sont traités de façon confidentielle.
+To report unacceptable behavior, contact the project maintainers privately (address to come). Reports are handled confidentially.

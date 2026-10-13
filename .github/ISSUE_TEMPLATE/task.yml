@@ -1,15 +1,15 @@
-name: Tâche
-description: Une tâche du découpage de la spec (docs/TASKS.md)
+name: Task
+description: A task from the spec breakdown (docs/TASKS.md)
 title: "T-xxx — "
 body:
   - type: textarea
     id: desc
-    attributes: {label: Description, description: "Ce qu'il faut faire, avec lien vers la section de la spec"}
+    attributes: {label: Description, description: "What needs to be done, with a link to the spec section"}
     validations: {required: true}
   - type: textarea
     id: accept
-    attributes: {label: Critères d'acceptation, value: "- [ ] "}
+    attributes: {label: Acceptance criteria, value: "- [ ] "}
     validations: {required: true}
   - type: input
     id: deps
-    attributes: {label: Dépend de}
+    attributes: {label: Depends on}

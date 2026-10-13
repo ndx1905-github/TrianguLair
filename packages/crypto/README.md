@@ -111,7 +111,7 @@ distributed in an ordinary pack (`sealGroupKey(group, memberPks)` / `openGroupKe
 ## Signed index
 
 ```json
-{"owner":"ed25519:…","packs":[{"etag":"…","file":"packs/7c1e.bin"}],"public":"public/listes.geojson",
+{"owner":"ed25519:…","packs":[{"etag":"…","file":"packs/7c1e.bin"}],"public":"public/lists.geojson",
  "seq":42,"signature":"…","updated":"2026-10-13T12:00:00.000Z","version":1}
 ```
 

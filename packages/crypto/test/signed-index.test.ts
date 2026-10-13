@@ -20,13 +20,13 @@ const t1 = new Date('2026-10-13T11:00:00.000Z');
 describe('signed index', () => {
   const alice = person();
   const pack = sealPack(te.encode('x'), [alice.sharing.publicKey]);
-  const idx = signIndex(alice.id, { seq: 1, packs: [{ file: 'packs/7c1e.bin', etag: packEtag(pack) }], public: 'public/listes.geojson', now: t0 });
+  const idx = signIndex(alice.id, { seq: 1, packs: [{ file: 'packs/7c1e.bin', etag: packEtag(pack) }], public: 'public/lists.geojson', now: t0 });
   const json = serialize(idx);
 
   it('has the spec shape and canonical serialization', () => {
     const o = JSON.parse(json);
     expect(Object.keys(o)).toEqual(['owner', 'packs', 'public', 'seq', 'signature', 'updated', 'version']);
-    expect(o).toMatchObject({ version: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: 'public/listes.geojson' });
+    expect(o).toMatchObject({ version: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: 'public/lists.geojson' });
     expect(json).toBe(canonicalize(JSON.parse(json)));
     expect(json).not.toMatch(/\s/);
   });

@@ -1,17 +1,17 @@
-# Politique de sécurité
+# Security policy
 
-TrianguLair chiffre les données de bout en bout ; les failles de sécurité sont prises très au sérieux.
+TrianguLair encrypts data end to end; security vulnerabilities are taken very seriously.
 
-## Signaler une faille
+## Reporting a vulnerability
 
-- **Ne pas ouvrir d'issue publique.**
-- Utiliser le signalement privé de GitHub (onglet *Security* → *Report a vulnerability*), ou l'adresse dédiée (à venir).
-- Décrire la faille, son impact et comment la reproduire.
+- **Do not open a public issue.**
+- Use GitHub private reporting (*Security* tab → *Report a vulnerability*), or the dedicated address (to come).
+- Describe the vulnerability, its impact and how to reproduce it.
 
-## Divulgation coordonnée
+## Coordinated disclosure
 
-Accusé de réception sous 7 jours ; correction et publication coordonnée sous 90 jours au plus. Les corrections de sécurité sont publiées en priorité.
+Acknowledgment within 7 days; fix and coordinated publication within 90 days at most. Security fixes are released first.
 
-## Périmètre
+## Scope
 
-Format chiffré (`packages/crypto`), synchronisation, gestion des clés, adaptateurs de stockage, app. Le projet est en prototype : aucune version n'est encore destinée à un usage réel.
+Encrypted format (`packages/crypto`), sync, key management, storage adapters, app. The project is a prototype: no version is intended for real use yet.

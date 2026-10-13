@@ -1,686 +1,686 @@
-# TrianguLair — spécifications de l'app de lieux local-first et chiffrée
+# TrianguLair — specification of the local-first, encrypted places app
 
-> Source de vérité du projet. Toute évolution passe par une pull request sur ce fichier (voir [CONTRIBUTING](../CONTRIBUTING.md)). Découpage en tâches : [TASKS.md](TASKS.md).
+> Source of truth for the project. Any change goes through a pull request on this file (see [CONTRIBUTING](../CONTRIBUTING.md)). Breakdown into tasks: [TASKS.md](TASKS.md).
 
-Version du 13 octobre 2026.
+Version of October 13, 2026.
 
-## Résumé
+## Summary
 
-Nom du projet : **TrianguLair**, triple jeu de mots entre « triangulaire » et la triangulation (une bonne adresse se trouve en croisant les avis de plusieurs amis), et *lair*, le repaire en anglais (un coin privé et chiffré). Le L majuscule rend le jeu de mots visible et l'orthographe évidente. Identifiants techniques sans majuscule : `triangulair` (dépôt, domaine, identifiant de l'app).
+Project name: **TrianguLair**, a triple pun on "triangulaire" (French for "triangular"), triangulation (a good address is found by cross-checking the recommendations of several friends), and *lair*, a den or hideout (a private, encrypted corner). The capital L makes the pun visible and the spelling obvious. Technical identifiers are lowercase: `triangulair` (repository, domain, app identifier).
 
-Oui, c'est faisable, et sans serveur à maintenir : une app « mes lieux favoris » local-first, dont le contenu est stocké chiffré sur un stockage choisi par l'utilisateur (WebDAV, S3, SFTP ou simple hébergement web), et qui n'utilise que des standards ouverts (OpenStreetMap, GeoJSON, protocoles de stockage standards, chiffrement standard).
+Yes, it is feasible, and with no server to maintain: a "my favorite places" local-first app whose content is stored encrypted on a storage chosen by the user (WebDAV, S3, SFTP or plain web hosting), and which uses only open standards (OpenStreetMap, GeoJSON, standard storage protocols, standard encryption).
 
-Le principe : chaque personne a une seule clé. Mon app écrit tout mon contenu, chiffré, sur mon stockage. J'envoie à un ami un lien d'invitation qui pointe vers ce contenu ; il me renvoie un lien retour avec sa clé ; je décide ce que sa clé peut ouvrir. Son app lit mon stockage directement et ne déchiffre que ce que je lui ai autorisé. Le stockage, lui, ne voit que des données illisibles.
+The principle: each person has a single key. My app writes all my content, encrypted, to my storage. I send a friend an invitation link that points to this content; they send me back a return link with their key; I decide what their key can open. Their app reads my storage directly and decrypts only what I have authorized. The storage itself sees only unreadable data.
 
-Le prix de ce choix : pas de notifications instantanées (les ajouts des amis apparaissent à la synchronisation suivante), pas d'annuaire de comptes, et une clé à ne pas perdre. En échange : aucun serveur à exploiter, pas de modération centralisée, et une confidentialité qui ne dépend pas de l'hébergeur.
+The price of this choice: no instant notifications (friends' additions appear at the next sync), no account directory, and a key that must not be lost. In exchange: no server to operate, no centralized moderation, and privacy that does not depend on the host.
 
-Choix arrêtés à ce stade : apps Android et iOS en React Native, local-first, stockage au choix (WebDAV, S3, SFTP, HTTPS), partage chiffré par personne avec lien d'invitation et lien retour ; épingles colorées par tag avec icône blanche cernée de gris, bandes de couleur pour les lieux à plusieurs tags ; barre de filtres repliable qui estompe les lieux hors filtre ; filtres pratiques tirés d'OpenStreetMap ; zones (quartiers, rues, dessin libre) en plus des lieux ; vérification mensuelle des lieux fermés.
+Decisions made so far: Android and iOS apps in React Native, local-first, storage of your choice (WebDAV, S3, SFTP, HTTPS), per-person encrypted sharing with an invitation link and a return link; pins colored by tag with a white icon outlined in gray, color bands for places with several tags; collapsible filter bar that fades places outside the filter; practical filters drawn from OpenStreetMap; zones (neighborhoods, streets, free drawing) in addition to places; monthly check for closed places.
 
-## Objectifs et non-objectifs
+## Goals and non-goals
 
-Objectifs :
+Goals:
 
-- **Aucun serveur obligatoire** : l'app fonctionne seule ; pour partager, un stockage existant suffit : WebDAV (Nextcloud, NAS), S3, SFTP ou hébergement web.
-- **Chiffré de bout en bout** : le stockage ne voit jamais le contenu ; chaque personne a une seule clé, et c'est le propriétaire qui décide ce qu'elle ouvre.
-- **Interopérable** : formats ouverts (GeoJSON), protocoles de stockage standards (WebDAV, S3, SFTP, HTTPS), chiffrement standard, export complet en clair à tout moment.
-- **Sans dépendance à Google** : fonds de carte, recherche et données de lieux issus d'OpenStreetMap.
-- **Parité avec l'usage courant des applis de lieux** : enregistrer un lieu, le tagger, le retrouver sur une carte ou en liste, partager, voir les lieux de ses amis.
-- **Clients Android et iOS** : une seule base de code React Native (TypeScript), publiée sur Play Store, App Store et F-Droid, pour téléphones, pliables, tablettes et iPad, et disponible sur Mac Apple Silicon ; connectable à n'importe quel stockage compatible.
-- **Pas de verrouillage** : on change de stockage quand on veut, l'app recopie tout ; export GeoJSON en clair.
-- **Licence libre** : MPL-2.0, compatible avec les stores (voir Légal et publication).
+- **No mandatory server**: the app works on its own; to share, an existing storage is enough: WebDAV (Nextcloud, NAS), S3, SFTP or web hosting.
+- **End-to-end encrypted**: the storage never sees the content; each person has a single key, and the owner decides what it opens.
+- **Interoperable**: open formats (GeoJSON), standard storage protocols (WebDAV, S3, SFTP, HTTPS), standard encryption, full plaintext export at any time.
+- **No dependence on Google**: base maps, search and place data come from OpenStreetMap.
+- **Parity with everyday place-saving apps**: save a place, tag it, find it on a map or in a list, share, see your friends' places.
+- **Android and iOS clients**: a single React Native (TypeScript) codebase, published on the Play Store, App Store and F-Droid, for phones, foldables, tablets and iPad, and available on Apple Silicon Mac; connectable to any compatible storage.
+- **No lock-in**: you can change storage whenever you want, the app copies everything over; plaintext GeoJSON export.
+- **Free license**: MPL-2.0, compatible with the stores (see Legal and publication).
 
-Non-objectifs (au moins pour la v1) :
+Non-goals (at least for v1):
 
-- Navigation GPS, itinéraires détaillés.
-- Avis publics notés type Google/TripAdvisor.
-- Contenu sponsorisé, guides d'influenceurs, monétisation.
-- Fonctionnement hors-ligne complet de la carte du monde (seulement le cache des zones consultées).
+- GPS navigation, detailed routing.
+- Rated public reviews like Google/TripAdvisor.
+- Sponsored content, influencer guides, monetization.
+- Fully offline world map (only the cache of viewed zones).
 
-## Architecture : local-first, stockage au choix, partage chiffré
+## Architecture: local-first, storage of your choice, encrypted sharing
 
-L'app garde toutes ses données sur le téléphone, les recopie chiffrées sur un stockage choisi par l'utilisateur, et partage avec chaque ami via sa clé unique. Il n'existe aucun serveur propre au projet.
+The app keeps all its data on the phone, copies it encrypted to a storage chosen by the user, and shares with each friend via their unique key. There is no project-owned server.
 
-### Principe
+### Principle
 
-- **Local-first** : la base de lieux vit sur le téléphone (SQLite) ; l'app marche sans réseau, sauf pour le fond de carte non mis en cache et la recherche.
-- **Stockage au choix** : l'app recopie le contenu sur un stockage choisi par le propriétaire (WebDAV, S3, SFTP ou HTTPS, détail ci-dessous). Le propriétaire y a accès en lecture et écriture, depuis tous ses appareils. Sans stockage, l'app fonctionne en local seul, sans partage.
-- **Tout est chiffré avant de quitter le téléphone** : le stockage, son hébergeur ou quiconque y accède ne voient que des blocs illisibles.
-- **Une personne, une clé** : chaque utilisateur a une paire de clés créée sur son téléphone. La clé publique sert d'identité ; la clé privée ne quitte jamais l'appareil, sauf dans une sauvegarde chiffrée. Techniquement, une clé maîtresse issue de la phrase de récupération certifie une clé de partage, remplaçable en cas de vol sans changer d'identité (voir Perte et vol).
-- **Le propriétaire décide** : pour chaque lieu, zone, commentaire ou liste, l'app emballe la clé du contenu pour la clé publique de chaque ami autorisé. Les groupes (« amis », « famille ») ne sont que des raccourcis locaux pour cocher plusieurs personnes ; personne d'autre ne les voit.
-- **Les amis lisent à la source** : l'app d'un ami lit directement le stockage du propriétaire, en lecture seule, et ne déchiffre que ce qui lui est ouvert. Rien n'est envoyé ni copié chez un tiers.
+- **Local-first**: the places database lives on the phone (SQLite); the app works without a network, except for the uncached base map and search.
+- **Storage of your choice**: the app copies the content to a storage chosen by the owner (WebDAV, S3, SFTP or HTTPS, details below). The owner has read and write access to it, from all their devices. Without storage, the app works locally only, with no sharing.
+- **Everything is encrypted before leaving the phone**: the storage, its host or anyone who accesses it sees only unreadable blocks.
+- **One person, one key**: each user has a key pair created on their phone. The public key serves as identity; the private key never leaves the device, except in an encrypted backup. Technically, a master key derived from the recovery phrase certifies a sharing key, which can be replaced in case of theft without changing identity (see Loss and theft).
+- **The owner decides**: for each place, zone, comment or list, the app wraps the content key for the public key of each authorized friend. Groups ("friends", "family") are only local shortcuts for ticking several people at once; nobody else sees them.
+- **Friends read at the source**: a friend's app reads the owner's storage directly, read-only, and decrypts only what is opened to them. Nothing is sent or copied to a third party.
 
-### Protocoles de stockage
+### Storage protocols
 
-Le propriétaire écrit avec le protocole de son choix ; ses amis lisent toujours par une simple adresse HTTPS, incluse dans le lien d'invitation. Comme tout est chiffré, cette adresse de lecture peut être publique sans risque.
+The owner writes with the protocol of their choice; their friends always read through a simple HTTPS address, included in the invitation link. Since everything is encrypted, this read address can safely be public.
 
-| Protocole | Écriture par le propriétaire | Lecture par les amis | Exemples |
+| Protocol | Write by the owner | Read by friends | Examples |
 | --- | --- | --- | --- |
-| WebDAV | Oui | Lien de partage en lecture seule, ou dossier public | Nextcloud, NAS, hébergeurs |
-| S3 compatible | Oui, avec une clé d'accès limitée au bucket | Adresse HTTPS publique du bucket ou d'un CDN | Scaleway, OVH, Backblaze B2, AWS, MinIO, Garage |
-| SFTP | Oui, avec une clé SSH | Adresse HTTPS d'un serveur web qui sert le même dossier | Serveur perso, hébergement mutualisé |
-| HTTPS seul | Non : publication par un autre moyen (export depuis l'app, Git, outil de synchronisation) | Oui | Pages statiques (Codeberg Pages, GitHub Pages), site perso |
+| WebDAV | Yes | Read-only share link, or public folder | Nextcloud, NAS, hosting providers |
+| S3-compatible | Yes, with an access key limited to the bucket | Public HTTPS address of the bucket or of a CDN | Scaleway, OVH, Backblaze B2, AWS, MinIO, Garage |
+| SFTP | Yes, with an SSH key | HTTPS address of a web server that serves the same folder | Personal server, shared hosting |
+| HTTPS only | No: publishing by another means (export from the app, Git, sync tool) | Yes | Static pages (Codeberg Pages, GitHub Pages), personal site |
 
-Dans l'app, un adaptateur par protocole expose les mêmes opérations (lister, lire, écrire, supprimer, connaître la version d'un fichier) ; le reste de l'app ignore quel protocole est utilisé. Pour savoir si un fichier a changé, l'app utilise l'ETag ou la date de modification selon le protocole.
+In the app, one adapter per protocol exposes the same operations (list, read, write, delete, get a file's version); the rest of the app does not know which protocol is used. To tell whether a file has changed, the app uses the ETag or the modification date depending on the protocol.
 
-Le mode HTTPS seul convient à quelqu'un qui publie rarement (une liste de voyage, un guide) ; les trois autres permettent la synchronisation automatique et l'usage sur plusieurs appareils.
+HTTPS-only mode suits someone who publishes rarely (a travel list, a guide); the other three allow automatic synchronization and use on several devices.
 
-### Invitation par lien et lien retour
+### Invitation link and return link
 
-1. J'envoie à un ami un lien d'invitation, par n'importe quelle messagerie. Il contient l'adresse de lecture de mon contenu, ma clé publique, et une clé d'invitation temporaire (valable 7 jours) qui permet à l'invité de voir tout de suite ce que je partage avec mes amis, en attendant que j'accepte son lien retour ; elle est retirée dès l'acceptation ou à expiration.
-2. Son app ouvre le lien, enregistre ma clé, puis génère un lien retour qui contient sa clé publique (et l'adresse de son propre contenu s'il partage aussi).
-3. Il me renvoie ce lien ; je l'ouvre et je choisis ce qu'il peut voir (par défaut : tout ce que je partage avec « amis »).
-4. Mon app ajoute les emballages pour sa clé ; il voit mon contenu à sa synchronisation suivante. Si nous partageons tous les deux, l'échange vaut dans les deux sens.
+1. I send a friend an invitation link, through any messaging app. It contains the read address of my content, my public key, and a temporary invitation key (valid for 7 days) that lets the invitee immediately see what I share with my friends, while waiting for me to accept their return link; it is removed upon acceptance or expiry.
+2. Their app opens the link, saves my key, then generates a return link containing their public key (and the address of their own content if they also share).
+3. They send me this link; I open it and choose what they can see (by default: everything I share with "friends").
+4. My app adds the wraps for their key; they see my content at their next sync. If we both share, the exchange works in both directions.
 
-En face à face, un échange de QR codes remplace les deux liens et garantit qu'on a la bonne clé.
+When meeting face to face, an exchange of QR codes replaces the two links and guarantees that the key is the right one.
 
-### Relations asymétriques
+### Asymmetric relationships
 
-Chaque sens de la relation est indépendant :
+Each direction of the relationship is independent:
 
-- **Suivre quelqu'un** : mon app lit son stockage et affiche ce qu'il m'a ouvert. C'est lui qui décide, puisqu'il lui faut ma clé.
-- **Être suivi** : j'ai ouvert du contenu à quelqu'un, avec sa clé.
-- L'un n'implique pas l'autre. Le lien retour est donc une demande (« Paul aimerait voir tes lieux ») que le destinataire accepte, accepte partiellement ou ignore.
-- Suivre une liste publique ou reçue par lien ne demande rien à personne, ni clé ni accord.
-- Chaque contact affiche deux interrupteurs : « je vois ses lieux » et « il voit mes lieux ». Le mot « amis » dans l'app désigne les personnes que je suis ; les filtres et la vue Nouveautés portent sur elles.
+- **Following someone**: my app reads their storage and displays what they have opened to me. They are the one who decides, since they need my key.
+- **Being followed**: I have opened content to someone, with their key.
+- One does not imply the other. The return link is therefore a request ("Paul would like to see your places") that the recipient accepts, partially accepts or ignores.
+- Following a public list or one received by link asks nothing of anyone, neither key nor consent.
+- Each contact shows two switches: "I see their places" and "they see my places". The word "friends" in the app refers to the people I follow; the filters and the What's new view apply to them.
 
-### Partage chiffré
+### Encrypted sharing
 
-- Chaque élément (lieu, zone, commentaire, photo) est chiffré avec une clé aléatoire.
-- Les éléments qui ont exactement les mêmes destinataires partagent une clé de lot, emballée une fois pour chaque destinataire : le contenu reste léger même avec beaucoup d'amis.
-- Les emballages ne portent pas le nom du destinataire : l'app d'un ami essaie sa clé, et personne ne peut lire sur le stockage la liste de mes contacts.
-- Tout est signé avec ma clé : l'app de mes amis vérifie que le contenu vient de moi et n'a pas été modifié par le stockage.
-- Retirer quelqu'un : ses emballages disparaissent et les clés de lot concernées sont renouvelées ; son app ne peut plus déchiffrer ce contenu et l'efface de son cache à la synchronisation suivante ; seules échappent les copies faites volontairement (capture d'écran, export) ou une app modifiée exprès.
-- Liste « avec le lien » : une clé propre à la liste, placée après le # de l'URL, partie jamais envoyée au serveur ; le lien s'ouvre dans l'app.
-- Liste « publique » : publiée en clair (GeoJSON) sur le stockage, lisible par tous, y compris dans uMap.
+- Each item (place, zone, comment, photo) is encrypted with a random key.
+- Items that have exactly the same recipients share a pack key, wrapped once for each recipient: the content stays light even with many friends.
+- Wraps do not carry the recipient's name: a friend's app tries its key, and nobody can read my contact list on the storage.
+- Everything is signed with my key: my friends' apps verify that the content comes from me and has not been modified by the storage.
+- Removing someone: their wraps disappear and the affected pack keys are renewed; their app can no longer decrypt this content and erases it from its cache at the next sync; only copies deliberately made (screenshot, export) or a purposely modified app escape this.
+- "Link-only" list: a key specific to the list, placed after the # in the URL, a part that is never sent to the server; the link opens in the app.
+- "Public" list: published in plaintext (GeoJSON) on the storage, readable by all, including in uMap.
 
-### Organisation sur le stockage
+### Organization on the storage
 
-- Un petit index signé, des paquets chiffrés (par lot de lieux ou par zone géographique) et les photos en fichiers séparés, chiffrées aussi.
-- Seuls les paquets modifiés sont réécrits ; les amis demandent « est-ce que ça a changé ? » (en-tête ETag) et ne téléchargent que le nécessaire.
-- Le contenu des amis est gardé en cache dans l'app (déchiffré dans la base locale, elle-même protégée par le chiffrement du téléphone) pour un affichage instantané. Il est rafraîchi à l'ouverture, régulièrement tant que l'app reste ouverte, et sur demande (tirer pour rafraîchir) , et termine juste après la fermeture de l'app ; aucune tâche périodique. En comparant l'ancienne et la nouvelle version, l'app sait exactement ce qui a changé : c'est ce qui alimente la vue Nouveautés.
-- Plusieurs appareils du même utilisateur écrivent sur le même stockage ; une technique de fusion automatique (CRDT, bibliothèque Automerge) évite les conflits.
-- Le stockage voit malgré tout la taille des fichiers et les dates de mise à jour ; l'app ajoute du remplissage pour limiter ce qu'on peut en déduire.
+- A small signed index, encrypted packs (by batch of places or by geographic zone) and photos as separate files, also encrypted.
+- Only modified packs are rewritten; friends ask "has it changed?" (ETag header) and download only what is needed.
+- Friends' content is kept in cache in the app (decrypted in the local database, itself protected by the phone's encryption) for instant display. It is refreshed on opening, regularly as long as the app stays open, and on demand (pull to refresh) , and ends just after the app is closed; no periodic task. By comparing the old and new versions, the app knows exactly what has changed: this is what feeds the What's new view.
+- Several devices of the same user write to the same storage; an automatic merge technique (CRDT, Automerge library) avoids conflicts.
+- The storage still sees file sizes and update dates; the app adds padding to limit what can be inferred from them.
 
-### Pas de doublons, des stockages légers
+### No duplicates, lightweight storages
 
-Dans l'app, un lieu n'existe qu'une fois, quel que soit le nombre d'amis qui l'ont enregistré :
+In the app, a place exists only once, regardless of how many friends have saved it:
 
-- Les lieux sont identifiés par leur identifiant OpenStreetMap : si trois amis ont le même restaurant, l'app garde une seule fiche et trois enregistrements (un par personne, avec son commentaire, ses tags, son statut). Sur la carte, une seule épingle ; dans la fiche, « 3 amis ».
-- Pour un point placé à la main (lieu absent d'OSM), l'app propose de fusionner quand deux points sont à moins d'une trentaine de mètres avec un nom proche ; l'utilisateur confirme.
-- Les zones identiques (même quartier OSM) sont reconnues de la même façon ; les zones dessinées restent distinctes.
-- « Ajouter à mes lieux » depuis un lieu d'ami crée seulement mon propre enregistrement, qui pointe vers la même fiche.
+- Places are identified by their OpenStreetMap identifier: if three friends have the same restaurant, the app keeps a single place card and three records (one per person, with their comment, tags, status). On the map, a single pin; in the card, "3 friends".
+- For a manually placed point (place absent from OSM), the app offers to merge when two points are within about thirty meters of each other with a similar name; the user confirms.
+- Identical zones (same OSM neighborhood) are recognized the same way; drawn zones remain distinct.
+- "Add to my places" from a friend's place creates only my own record, which points to the same place card.
 
-Chaque stockage ne contient que le contenu de son propriétaire :
+Each storage contains only its owner's content:
 
-- Rien n'est recopié chez les autres : mes amis lisent mon stockage, je lis le leur.
-- Les paquets ne contiennent que les données personnelles (identifiant OSM, nom, coordonnées, tags, commentaire, statut, prix), jamais la fiche OSM (horaires, photos libres, infos pratiques), que chaque app récupère et met en cache elle-même. Ordre de grandeur : quelques centaines d'octets par lieu, soit moins de 1 Mo pour 1 000 lieux.
-- Une clé de lot est emballée par groupe de destinataires identiques, pas par lieu : ajouter des amis n'alourdit presque pas le contenu.
-- Photos perso facultatives, recompressées à l'envoi (environ 1 600 px de large, format WebP ou AVIF) avec une vignette séparée ; les amis ne téléchargent la photo entière qu'en l'ouvrant.
-- Les zones dessinées sont simplifiées avant enregistrement.
-- L'app regroupe de temps en temps les petits paquets de mises à jour et supprime les fichiers devenus inutiles ; avec Nextcloud, elle recommande de limiter l'historique des versions sur son dossier.
+- Nothing is copied to others: my friends read my storage, I read theirs.
+- Packs contain only personal data (OSM identifier, name, coordinates, tags, comment, status, price), never the OSM record (opening hours, free photos, practical info), which each app fetches and caches itself. Order of magnitude: a few hundred bytes per place, so under 1 MB for 1,000 places.
+- A pack key is wrapped per group of identical recipients, not per place: adding friends barely increases the content size.
+- Optional personal photos, recompressed on upload (about 1,600 px wide, WebP or AVIF format) with a separate thumbnail; friends download the full photo only when opening it.
+- Drawn zones are simplified before saving.
+- The app occasionally merges small update packs and deletes files that have become unnecessary; with Nextcloud, it recommends limiting the version history on its folder.
 
-Côté téléphone, le cache des amis a une taille maximale réglable : leurs données restent en cache, leurs photos sont évincées en premier quand la limite est atteinte.
+On the phone side, the friends' cache has an adjustable maximum size: their data stays in cache, their photos are evicted first when the limit is reached.
 
-### Versions du format
+### Format versions
 
-Objectif : des amis qui n'ont pas la même version de l'app continuent de se lire, sans serveur pour coordonner.
+Goal: friends who do not have the same app version continue to read each other, with no server to coordinate.
 
-- **Deux niveaux de version** dans l'index : mineure pour les ajouts compatibles (nouveaux champs), majeure pour les changements incompatibles.
-- **Ignorer l'inconnu** : une app ignore sans erreur les champs et types d'éléments qu'elle ne connaît pas, et les conserve tels quels quand elle réécrit son propre contenu (cas de deux appareils d'un même utilisateur avec des versions différentes).
-- **Chacun annonce ce qu'il sait lire** : l'index publie la liste des versions que l'app de son propriétaire comprend. En écrivant, l'app choisit pour chaque lot la version la plus récente que tous ses destinataires savent lire. Pas besoin de serveur : l'information est déjà dans les index que chacun lit.
-- **Transition douce** : lors d'une version majeure, l'app écrit dans l'ancien et le nouveau format tant qu'un ami n'a pas mis à jour, dans la limite d'un an.
-- **Message clair** quand un contenu reste illisible : « Mets à jour l'app pour voir les lieux de Léa ».
-- **Algorithmes identifiés** dans chaque lot (chiffrement, emballage, signature) : on peut en changer plus tard, par exemple vers un chiffrement résistant aux ordinateurs quantiques, sans casser les anciens contenus.
-- **Lecture garantie** des anciens formats pendant au moins deux ans après leur remplacement.
-- **Spécification publique** du format, versionnée, avec vecteurs de test, et tests automatiques de lecture croisée entre les dernières versions de l'app.
+- **Two version levels** in the index: minor for compatible additions (new fields), major for incompatible changes.
+- **Ignore the unknown**: an app silently ignores the fields and item types it does not know, and keeps them as is when it rewrites its own content (the case of two devices of the same user with different versions).
+- **Everyone announces what they can read**: the index publishes the list of versions that its owner's app understands. When writing, the app chooses for each pack the most recent version that all its recipients can read. No server needed: the information is already in the indexes everyone reads.
+- **Gentle transition**: during a major version, the app writes in both the old and new format as long as a friend has not updated, within a limit of one year.
+- **Clear message** when content remains unreadable: "Update the app to see Léa's places".
+- **Identified algorithms** in each pack (encryption, wrap, signature): they can be changed later, for example to quantum-resistant encryption, without breaking old content.
+- **Guaranteed reading** of old formats for at least two years after their replacement.
+- **Public specification** of the format, versioned, with test vectors, and automated cross-reading tests between the latest app versions.
 
-### Ce qu'on accepte de perdre
+### What we accept to lose
 
-| Sans serveur | Conséquence | Parade |
+| Without a server | Consequence | Mitigation |
 | --- | --- | --- |
-| Pas de notifications instantanées | Les ajouts des amis apparaissent à la synchronisation suivante | Synchro à l'ouverture et sur demande |
-| Pas d'annuaire | On ne trouve personne par pseudo | Liens d'invitation, QR codes |
-| Clé privée sur le téléphone | Perdre la clé, c'est perdre l'accès | Phrase de récupération et sauvegarde chiffrée sur le stockage |
-| Un stockage est nécessaire pour partager | Il faut un stockage (WebDAV, S3, SFTP) | Nextcloud et S3 sont proposés par de nombreux hébergeurs ; local seul possible sans partage |
-| Lecture par lien de partage | L'ami doit pouvoir lire le dossier | Lien de partage en lecture seule, ou dossier public : sans danger puisque tout est chiffré |
+| No instant notifications | Friends' additions appear at the next sync | Sync on opening and on demand |
+| No directory | You cannot find anyone by username | Invitation links, QR codes |
+| Private key on the phone | Losing the key means losing access | Recovery phrase and encrypted backup on the storage |
+| A storage is needed to share | A storage is required (WebDAV, S3, SFTP) | Nextcloud and S3 are offered by many hosting providers; local-only possible without sharing |
+| Reading through a share link | The friend must be able to read the folder | Read-only share link, or public folder: harmless since everything is encrypted |
 
-## Standards et formats interopérables
+## Interoperable standards and formats
 
-Toutes les briques utilisent un standard existant ; le seul format propre au projet est l'organisation des paquets chiffrés, documentée et ouverte.
+All building blocks use an existing standard; the only project-specific format is the organization of the encrypted packs, documented and open.
 
-| Besoin | Standard retenu | Remarque |
+| Need | Chosen standard | Note |
 | --- | --- | --- |
-| Stockage | WebDAV (RFC 4918), API S3, SFTP, HTTPS en lecture | Un adaptateur par protocole ; les amis lisent toujours en HTTPS |
-| Chiffrement des contenus | XChaCha20-Poly1305 (libsodium) | Bibliothèque éprouvée, disponible en TypeScript |
-| Emballage des clés | X25519 (boîtes scellées libsodium), structure inspirée de JWE (RFC 7516) | Une clé publique par personne |
-| Signature | Ed25519 | Authenticité du contenu |
-| Synchronisation multi-appareils | CRDT (Automerge) | Fusion automatique des modifications |
-| Liens de partage | URL avec clé dans le fragment (#) | Le fragment n'est jamais envoyé au serveur |
-| Données des lieux | OpenStreetMap (licence ODbL) | Nom, catégorie, horaires, cuisine, régimes, terrasse, réservation, prix d'entrée, site, téléphone ; photos libres via Wikimedia Commons et Panoramax ; limites de quartiers et tracés de rues pour les zones |
-| Identifiants de lieux | OpenStreetMap (node/123, way/456) | Nom et coordonnées copiés localement |
-| Fonds de carte | Vector tiles (MVT), PMTiles, style MapLibre | Un seul fichier, hébergeable en statique |
-| Recherche d'adresses | API Nominatim / Photon | Services publics ou auto-hébergés |
-| Export / import | GeoJSON (principal), GPX, KML, CSV | Ouvrables dans uMap, QGIS, Google My Maps, Organic Maps |
-| Import depuis Google | Google Takeout « Saved places » (GeoJSON) | Pour migrer ses favoris |
-| Import depuis Mapstr | Export CSV de Mapstr | Colonnes à vérifier sur un vrai export |
+| Storage | WebDAV (RFC 4918), S3 API, SFTP, HTTPS for reading | One adapter per protocol; friends always read over HTTPS |
+| Content encryption | XChaCha20-Poly1305 (libsodium) | Proven library, available in TypeScript |
+| Key wrapping | X25519 (libsodium sealed boxes), structure inspired by JWE (RFC 7516) | One public key per person |
+| Signature | Ed25519 | Content authenticity |
+| Multi-device synchronization | CRDT (Automerge) | Automatic merging of modifications |
+| Sharing links | URL with key in the fragment (#) | The fragment is never sent to the server |
+| Place data | OpenStreetMap (ODbL license) | Name, category, hours, cuisine, diets, terrace, reservation, entry price, website, phone; free photos via Wikimedia Commons and Panoramax; neighborhood boundaries and street paths for zones |
+| Place identifiers | OpenStreetMap (node/123, way/456) | Name and coordinates copied locally |
+| Base maps | Vector tiles (MVT), PMTiles, MapLibre style | A single file, hostable statically |
+| Address search | Nominatim / Photon API | Public or self-hosted services |
+| Export / import | GeoJSON (main), GPX, KML, CSV | Openable in uMap, QGIS, Google My Maps, Organic Maps |
+| Import from Google | Google Takeout "Saved places" (GeoJSON) | To migrate your favorites |
+| Import from Mapstr | Mapstr CSV export | Columns to verify on a real export |
 
-Une limite connue : les identifiants OpenStreetMap ne sont pas parfaitement stables (un objet peut être supprimé ou recréé). Chaque lieu enregistré garde donc aussi ses coordonnées et son nom en copie locale, l'ID OSM n'étant qu'un lien d'enrichissement.
+A known limitation: OpenStreetMap identifiers are not perfectly stable (an object can be deleted or recreated). Each saved place therefore also keeps its coordinates and name as a local copy, the OSM ID being only an enrichment link.
 
-## Fonctionnalités
+## Features
 
-Le MVP couvre l'usage solo et le partage entre amis via stockage WebDAV et chiffrement par personne.
+The MVP covers solo use and sharing between friends via WebDAV storage and per-person encryption.
 
 ### MVP (v1)
 
-- [ ] Création de l'identité (paire de clés sur le téléphone, phrase de récupération), profil (nom, avatar) ; connexion facultative à un stockage WebDAV
-- [ ] Carte plein écran avec ses lieux et zones, regroupés au dézoom
-- [ ] Vue liste avec tri (récent, distance, nom) et recherche texte
-- [ ] **Ajouter un lieu** : l'écran d'ajout affiche d'emblée les lieux connus autour de la zone visible (ou de ma position), triés par distance croissante ; puis recherche par nom (Photon/Nominatim), appui long sur la carte, ou position actuelle
-  - [ ] Chaque lieu proposé indique s'il est déjà dans mes lieux ou enregistré par des amis
-- [ ] **Ajouter une zone** : quartier existant, un ou plusieurs bouts de rue, ou dessin libre (par points ou par peinture au doigt) — détail ci-dessous
-- [ ] Fiche lieu enrichie automatiquement : infos pratiques, photos libres et horaires d'ouverture quand ils existent (détail ci-dessous)
-- [ ] Tags personnels avec couleur et icône, sous-tags possibles (« Resto › Pizza napolitaine »)
-- [ ] **Barre de filtres** sur la carte et la liste : catégories, sous-filtres de la catégorie (types de cuisine, de musée, de boutique), critères pratiques issus d'OSM (ouvert maintenant, happy hour, terrasse, régime, réservation, entrée gratuite, prix d'entrée), statut, visibilité, niveau de prix, recherche texte ; repliable en une ligne de résumé, état mémorisé
-- [ ] Affichage filtré : les épingles qui correspondent restent en couleur, les autres sont grisées, estompées et plus petites
-- [ ] Commentaire avec sa propre visibilité : privé, amis ou public (amis par défaut ; « public » le rend visible dans les listes publiques) ; statut « à tester / testé / favori », niveau de prix (€ à €€€€), photos perso
-- [ ] **Partage d'un lieu** : partagé avec les amis par défaut ; la section Partage de la fiche permet de le passer en privé, ou de l'ajouter à une ou plusieurs listes de partage ; un lieu privé n'apparaît jamais chez les autres, ni dans les compteurs « amis », ni dans aucune liste
-- [ ] Suivre et partager, de façon indépendante dans chaque sens : lien d'invitation, demande par lien retour, QR code en face à face, ou simple abonnement à une liste publique ou par lien
-- [ ] **Lieux des amis** : filtre « Aussi chez mes amis » / « Lieux de mes amis », avec choix des amis affichés (tous, aucun ou une sélection mémorisée) ; mention « 3 amis » dans la liste, la fiche et l'écran d'ajout (pas sur l'épingle), qui ouvre qui l'a enregistré, quand, et leurs commentaires, dans la limite de ce que chacun a rendu visible ; vue Nouveautés qui liste ce qui a changé chez les amis depuis la dernière consultation
-- [ ] **Listes** : sous-ensembles à partager, définies par un filtre enregistré, qui se met à jour seul, ou par une sélection manuelle (détail ci-dessous)
-- [ ] **Visibilité des listes de partage** : réglée dans la liste elle-même : publique (visible de tous) ou accessible seulement avec le lien ; une liste n'affiche jamais un lieu privé
-- [ ] **Lieux fermés** : vérification automatique mensuelle et signalement (détail ci-dessous)
-- [ ] Partage d'un lieu, d'une zone ou d'une liste par lien web (consultable sans compte pour une liste publique ou par lien)
-- [ ] Ouvrir l'itinéraire dans l'app de navigation du téléphone, et ouvrir le lieu dans Plans ou Google Maps pour consulter avis et photos
-- [ ] Import depuis Google Maps, Mapstr, Pin Drop et autres (Takeout, CSV, KML, GeoJSON) ; export GeoJSON complet
-- [ ] Apps Android et iOS (React Native) + lien « Voir sur uMap » pour les listes publiques
+- [ ] Identity creation (key pair on the phone, recovery phrase), profile (name, avatar); optional connection to a WebDAV storage
+- [ ] Full-screen map with your places and zones, clustered when zoomed out
+- [ ] List view with sorting (recent, distance, name) and text search
+- [ ] **Add a place**: the add screen immediately displays the known places around the visible area (or my position), sorted by increasing distance; then search by name (Photon/Nominatim), long press on the map, or current position
+  - [ ] Each suggested place indicates whether it is already in my places or saved by friends
+- [ ] **Add a zone**: existing neighborhood, one or more street segments, or free drawing (by points or by finger painting) — details below
+- [ ] Place card automatically enriched: practical info, free photos and opening hours when they exist (details below)
+- [ ] Personal tags with color and icon, sub-tags possible ("Restaurant › Neapolitan pizza")
+- [ ] **Filter bar** on the map and the list: categories, sub-filters of the category (types of cuisine, museum, shop), practical criteria from OSM (open now, happy hour, terrace, diet, reservation, free entry, entry price), status, visibility, price level, text search; collapsible into a one-line summary, state remembered
+- [ ] Filtered display: matching pins stay in color, the others are grayed out, faded and smaller
+- [ ] Comment with its own visibility: private, friends or public (friends by default; "public" makes it visible in public lists); status "to try / tried / favorite", price level (€ to €€€€), personal photos
+- [ ] **Sharing a place**: shared with friends by default; the Sharing section of the card lets you make it private, or add it to one or more sharing lists; a private place never appears for others, nor in the "friends" counters, nor in any list
+- [ ] Follow and share, independently in each direction: invitation link, request by return link, QR code face to face, or simple subscription to a public or link-only list
+- [ ] **Friends' places**: "Also at my friends'" / "My friends' places" filter, with choice of the friends displayed (all, none or a remembered selection); "3 friends" mention in the list, the card and the add screen (not on the pin), which opens who saved it, when, and their comments, within the limit of what each has made visible; What's new view that lists what has changed at friends' since the last visit
+- [ ] **Lists**: subsets to share, defined by a saved filter, which updates itself, or by a manual selection (details below)
+- [ ] **Visibility of sharing lists**: set in the list itself: public (visible to all) or accessible only with the link; a list never displays a private place
+- [ ] **Closed places**: automatic monthly check and flagging (details below)
+- [ ] Sharing a place, a zone or a list by web link (viewable without an account for a public or link-only list)
+- [ ] Open directions in the phone's navigation app, and open the place in Maps or Google Maps to view reviews and photos
+- [ ] Import from Google Maps, Mapstr, Pin Drop and others (Takeout, CSV, KML, GeoJSON); full GeoJSON export
+- [ ] Android and iOS apps (React Native) + "View on uMap" link for public lists
 
-### Créer une liste de partage
+### Creating a sharing list
 
-Une liste combine des critères ; tout nouveau lieu qui les remplit y entre automatiquement.
+A list combines criteria; any new place that meets them enters it automatically.
 
-- **Catégories et tags** : un ou plusieurs (Resto, Bar, « brunch »…), avec les sous-filtres et statuts habituels (testé, favori…).
-- **Zones, par nom** : chercher une ville, une région ou un pays ; les limites viennent d'OpenStreetMap (limites administratives), plusieurs zones possibles (« Lyon » + « Portugal »).
-- **Zones, par détourage** : dézoomer et entourer une partie de la carte au doigt, avec les mêmes outils que pour dessiner une zone (par points ou par peinture).
-- **Exceptions** : retirer ou ajouter un lieu à la main, sans casser le filtre.
-- **Aperçu** : carte des zones choisies, lieux retenus en couleur et autres estompés, et nombre de lieux avant de valider.
-- **Partage** : avec le lien ou publique, comme pour toute liste.
+- **Categories and tags**: one or more (Restaurant, Bar, "brunch"…), with the usual sub-filters and statuses (tried, favorite…).
+- **Zones, by name**: search for a city, a region or a country; boundaries come from OpenStreetMap (administrative boundaries), several zones possible ("Lyon" + "Portugal").
+- **Zones, by outlining**: zoom out and circle part of the map with a finger, with the same tools as for drawing a zone (by points or by painting).
+- **Exceptions**: remove or add a place by hand, without breaking the filter.
+- **Preview**: map of the chosen zones, retained places in color and others faded, and number of places before confirming.
+- **Sharing**: link-only or public, as for any list.
 
-Technique : une zone par nom est enregistrée comme identifiant OSM (relation de limite administrative) plus une forme simplifiée, pour rester légère même pour un pays ; une zone détourée est un polygone simplifié. Le filtre de la liste est stocké en JSON (tags, catégories, statuts, zones, exceptions).
+Technical: a zone by name is saved as an OSM identifier (administrative boundary relation) plus a simplified shape, to stay light even for a country; an outlined zone is a simplified polygon. The list filter is stored as JSON (tags, categories, statuses, zones, exceptions).
 
-### Suivre une liste sans suivre la personne
+### Following a list without following the person
 
-Une liste publique ou reçue par lien se suit sans compte, sans demande et sans clé personnelle : le lien suffit.
+A public list or one received by link can be followed without an account, without a request and without a personal key: the link is enough.
 
-Ouvrir un lien de liste :
+Opening a list link:
 
-- **App installée** : aperçu (carte et liste des lieux, nom de l'auteur, date de mise à jour), puis trois actions : « Suivre cette liste », « Ajouter des lieux à mes lieux » (un par un ou tous), « Demander à suivre l'auteur » (envoie une demande par lien retour).
-- **App non installée** : une liste publique s'affiche dans uMap ; une liste par lien renvoie vers la page du store.
+- **App installed**: preview (map and list of places, author's name, update date), then three actions: "Follow this list", "Add places to my places" (one by one or all), "Ask to follow the author" (sends a request by return link).
+- **App not installed**: a public list is displayed in uMap; a link-only list redirects to the store page.
 
-Une fois suivie :
+Once followed:
 
-- La liste apparaît dans un panneau « Listes suivies », chacune avec un interrupteur pour l'afficher sur la carte.
-- Ses lieux s'affichent avec le même style que les lieux des amis, et répondent aux mêmes filtres ; un filtre « Source » permet de choisir mes lieux, mes amis, ou telle liste.
-- Les ajouts et modifications de la liste apparaissent dans les Nouveautés.
-- Les lieux déjà présents chez moi ou chez mes amis ne sont pas doublés : même fiche, avec la mention de la liste.
+- The list appears in a "Followed lists" panel, each with a switch to display it on the map.
+- Its places are displayed with the same style as friends' places, and respond to the same filters; a "Source" filter lets you choose my places, my friends, or a given list.
+- Additions and changes to the list appear in What's new.
+- Places already present in my places or my friends' are not duplicated: same place card, with the mention of the list.
 
-Côté auteur :
+Author side:
 
-- Il ne sait pas qui suit sa liste : la lecture se fait directement sur son stockage, sans inscription.
-- Pour couper l'accès à une liste « avec le lien », il en génère un nouveau ; l'ancien cesse de fonctionner et les abonnés voient « Ce lien ne fonctionne plus ».
+- They do not know who follows their list: reading is done directly on their storage, without registration.
+- To cut off access to a "link-only" list, they generate a new link; the old one stops working and subscribers see "This link no longer works".
 
-Technique : la liste porte la clé publique de son auteur et sa signature, ce qui permet de vérifier qu'elle n'a pas été modifiée, et de la rattacher automatiquement à l'auteur si on le suit plus tard. L'app garde, pour chaque liste suivie, son adresse, la clé du lien, la clé de l'auteur et la dernière version lue. Limite : l'hébergeur du stockage de l'auteur voit l'adresse IP de ceux qui lisent la liste, comme pour n'importe quelle page web.
+Technical: the list carries its author's public key and signature, which makes it possible to verify that it has not been modified, and to automatically attach it to the author if they are followed later. For each followed list, the app keeps its address, the link key, the author's key and the last version read. Limitation: the host of the author's storage sees the IP address of those who read the list, as with any web page.
 
-### Consulter sans l'app
+### Viewing without the app
 
-En v1, aucune page web maison :
+In v1, no custom web page:
 
-- **Liste publique** : déjà publiée en GeoJSON en clair sur le stockage de l'auteur ; l'app propose un lien « Voir sur uMap », qui ouvre la liste sur une carte web uMap (instance publique d'OpenStreetMap France ou autre instance). uMap lit les données distantes en passant au besoin par son serveur, ce qui évite les questions de CORS, et se met à jour quand le fichier change. Les couleurs de l'auteur sont incluses dans le GeoJSON sous une forme que uMap sait lire, au moins en partie.
-- **Liste « avec le lien »** : chiffrée, donc illisible pour uMap ; le lien ouvre l'app si elle est installée, sinon la page du store.
-- Limites acceptées : rendu propre à uMap (pas nos épingles ni nos filtres) ; le serveur de uMap voit les données, ce qui ne pose pas de problème pour une liste publique.
+- **Public list**: already published as plaintext GeoJSON on the author's storage; the app offers a "View on uMap" link, which opens the list on a uMap web map (public instance of OpenStreetMap France or another instance). uMap reads remote data, going through its server if needed, which avoids CORS issues, and updates when the file changes. The author's colors are included in the GeoJSON in a form that uMap can read, at least in part.
+- **"Link-only" list**: encrypted, therefore unreadable by uMap; the link opens the app if it is installed, otherwise the store page.
+- Accepted limitations: uMap's own rendering (not our pins or our filters); the uMap server sees the data, which is not a problem for a public list.
 
-En v2, si le partage chiffré hors app manque : page web maison, statique, qui déchiffre dans le navigateur (clé dans le fragment de l'URL), avec carte, liste, fiches et appels à installer l'app ; hébergée sur le stockage de l'auteur quand il sait servir des pages web, ou sur un hébergement statique du projet (lecture CORS à vérifier, notamment pour Nextcloud).
+In v2, if encrypted sharing outside the app is missing: a custom static web page that decrypts in the browser (key in the URL fragment), with map, list, place cards and calls to install the app; hosted on the author's storage when it can serve web pages, or on static hosting run by the project (CORS reading to be verified, especially for Nextcloud).
 
-### Modifier et supprimer
+### Editing and deleting
 
-Modifier :
+Editing:
 
-- Tout se modifie depuis la fiche (tags, commentaire, statut, prix, photos, partage, géométrie d'une zone) ; la modification part à la synchronisation suivante.
-- Chez les amis, seules les modifications qui ont du sens apparaissent dans les Nouveautés (nouveau commentaire, passage à « testé » ou « favori », nouvelle photo), pas les retouches mineures (couleur d'un tag, correction d'une faute).
-- Deux appareils qui modifient le même lieu sont fusionnés automatiquement (CRDT) ; si l'un supprime pendant que l'autre modifie, la suppression l'emporte, et le lieu reste récupérable dans la corbeille.
+- Everything is edited from the card (tags, comment, status, price, photos, sharing, geometry of a zone); the change goes out at the next sync.
+- At friends', only meaningful changes appear in What's new (new comment, switch to "tried" or "favorite", new photo), not minor touch-ups (color of a tag, fixing a typo).
+- Two devices editing the same place are merged automatically (CRDT); if one deletes while the other edits, the deletion wins, and the place remains recoverable from the trash.
 
-Supprimer :
+Deleting:
 
-| Action | Chez moi | Chez mes amis |
+| Action | On my side | On my friends' side |
 | --- | --- | --- |
-| Supprimer un lieu, une zone ou un commentaire | Corbeille pendant 30 jours, synchronisée entre mes appareils et restaurable | Disparaît de leur cache à la synchronisation suivante |
-| Retirer l'accès d'un ami à un lieu ou une liste | Rien ne change | Disparaît de son cache à sa synchronisation suivante |
-| Supprimer une liste | Les lieux restent, seule la liste disparaît | Le lien affiche « Cette liste n'existe plus » |
-| Retirer un ami | Ses lieux disparaissent de mon cache, il perd tous ses accès | Il ne voit plus mes mises à jour |
-| Supprimer tout mon contenu | Effacement local et de tous les fichiers sur le stockage | Leurs apps effacent mon contenu de leur cache |
+| Delete a place, a zone or a comment | Trash for 30 days, synchronized across my devices and restorable | Disappears from their cache at the next sync |
+| Remove a friend's access to a place or a list | Nothing changes | Disappears from their cache at their next sync |
+| Delete a list | The places remain, only the list disappears | The link displays "This list no longer exists" |
+| Remove a friend | Their places disappear from my cache, they lose all their access | They no longer see my updates |
+| Delete all my content | Local erasure and of all files on the storage | Their apps erase my content from their cache |
 
-Mécanique :
+Mechanics:
 
-- Une suppression laisse un marqueur signé (identifiant et date) dans un paquet ; les apps des amis effacent l'élément correspondant de leur cache.
-- Filet de sécurité : l'index liste tous les éléments existants ; une app qui revient après une longue absence efface de son cache tout ce qui n'y figure plus, même si les marqueurs ont été purgés entre-temps (ils sont conservés six mois).
-- Supprimer tout son contenu : l'app efface les fichiers du stockage, mais laisse pendant quelques mois un marqueur signé « contenu supprimé » pour que les apps des amis vident leur cache, puis le retire. Le kit de récupération devient alors inutile, ce que l'app indique.
-- Si j'ai ajouté à mes lieux un lieu vu chez un ami, mon enregistrement est indépendant : il reste si l'ami supprime le sien.
-- Rappel discret au moment de retirer un accès : le contenu disparaît de l'app de l'ami à sa synchronisation suivante, mais une copie faite volontairement (capture d'écran) ne peut pas être reprise.
+- A deletion leaves a signed marker (identifier and date) in a pack; friends' apps erase the corresponding item from their cache.
+- Safety net: the index lists all existing items; an app that returns after a long absence erases from its cache everything that no longer appears in it, even if the markers have been purged in the meantime (they are kept for six months).
+- Deleting all your content: the app erases the files from the storage, but leaves for a few months a signed "content deleted" marker so that friends' apps empty their cache, then removes it. The recovery kit then becomes useless, which the app indicates.
+- If I have added to my places a place seen at a friend's, my record is independent: it remains if the friend deletes theirs.
+- Discreet reminder when removing access: the content disappears from the friend's app at their next sync, but a deliberately made copy (screenshot) cannot be taken back.
 
-### Importer ses lieux
+### Importing your places
 
-L'import sert d'abord à faire venir les utilisateurs de Mapstr, Pin Drop ou Google Maps sans ressaisie ; il fait donc partie du MVP.
+Import is primarily meant to bring over users from Mapstr, Pin Drop or Google Maps without re-entering anything; it is therefore part of the MVP.
 
-| Source | Format | État |
+| Source | Format | Status |
 | --- | --- | --- |
-| Google Maps | Google Takeout (GeoJSON, CSV) | Format connu |
-| Mapstr | Export CSV, mentionné dans la fiche App Store de Mapstr | Colonnes et éventuelle restriction à l'offre payante à vérifier sur un vrai compte |
-| Pin Drop et apps similaires | KML ou CSV selon l'app | Export de Pin Drop à vérifier |
-| Autres apps, tableurs | CSV générique, avec assistant de correspondance des colonnes (nom, coordonnées ou adresse, note, tags) | — |
-| Cette app | GeoJSON | Format connu |
+| Google Maps | Google Takeout (GeoJSON, CSV) | Known format |
+| Mapstr | CSV export, mentioned in Mapstr's App Store listing | Columns and possible restriction to the paid plan to be verified on a real account |
+| Pin Drop and similar apps | KML or CSV depending on the app | Pin Drop export to be verified |
+| Other apps, spreadsheets | Generic CSV, with a column-mapping wizard (name, coordinates or address, note, tags) | — |
+| This app | GeoJSON | Known format |
 
-Traitement :
+Processing:
 
-- Chaque lieu importé est rapproché d'un lieu OpenStreetMap par son nom et sa position, ou par son adresse. Les correspondances sûres sont automatiques ; les douteuses sont présentées pour validation, sur la carte ; sans correspondance, le lieu devient un point placé à la main.
-- Les tags de la source deviennent mes tags, avec leurs couleurs si l'export les contient ; les notes deviennent des commentaires ; les statuts connus (testé, à tester) sont repris.
-- Pas de doublons : réimporter un fichier ou importer depuis deux sources fusionne les lieux identiques.
-- Résumé final : nombre de lieux importés, rattachés à OSM, à vérifier, ignorés ; import annulable en un geste pendant quelques jours.
+- Each imported place is matched to an OpenStreetMap place by its name and position, or by its address. Confident matches are automatic; doubtful ones are presented for validation, on the map; with no match, the place becomes a manually placed point.
+- The source's tags become my tags, with their colors if the export contains them; notes become comments; known statuses (tried, to try) are carried over.
+- No duplicates: re-importing a file or importing from two sources merges identical places.
+- Final summary: number of places imported, linked to OSM, to check, ignored; import can be undone in one gesture for a few days.
 
-### Détection des lieux fermés
+### Closed place detection
 
-Une tâche de fond revérifie chaque lieu enregistré une fois par mois, et aussi quand on ouvre sa fiche si la dernière vérification date de plus d'un mois, et le marque « peut-être fermé » au premier signal ; c'est l'utilisateur qui confirme, rien n'est supprimé automatiquement.
+A background task rechecks every saved place once a month, and also when its place card is opened if the last check is more than a month old. It marks the place "maybe closed" at the first signal; the user confirms, and nothing is deleted automatically.
 
-Signaux détectés :
+Signals detected:
 
-| Source | Signal | Fiabilité |
+| Source | Signal | Reliability |
 | --- | --- | --- |
-| OpenStreetMap | Objet supprimé de la base | Forte |
-| OpenStreetMap | Étiquette passée en préfixe de cycle de vie : `disused:shop`, `was:amenity`, `abandoned:` | Forte |
-| OpenStreetMap | Nom ou catégorie changé au même endroit (nouveau commerce) | Moyenne |
-| OpenStreetMap | Horaires retirés ou passés à `off` | Faible |
-| Utilisateurs | Toi ou un ami signalez « fermé » | Moyenne, forte à partir de 2 signalements |
-| Amis | Signalement « fermé » d'un ami, lu dans son contenu partagé | Moyenne |
+| OpenStreetMap | Object deleted from the database | High |
+| OpenStreetMap | Tag switched to a lifecycle prefix: `disused:shop`, `was:amenity`, `abandoned:` | High |
+| OpenStreetMap | Name or category changed at the same location (new business) | Medium |
+| OpenStreetMap | Opening hours removed or set to `off` | Low |
+| Users | You or a friend report "closed" | Medium, high from 2 reports |
+| Friends | A friend's "closed" report, read from their shared content | Medium |
 
-Ce qui se passe ensuite :
+What happens next:
 
-1. Le lieu prend un badge « peut-être fermé » sur la carte et dans la liste, avec la raison et la date du signal.
-2. À l'ouverture de l'app, un encart groupé (au plus une fois par mois) liste les lieux concernés.
-3. L'utilisateur confirme « fermé », « toujours ouvert » ou « a déménagé » (avec nouvelle adresse).
-4. Un lieu fermé reste dans l'historique avec ses commentaires, masqué par défaut via le filtre statut ; il sort des listes publiques.
-5. Si l'information vient d'un utilisateur et pas d'OSM, l'app propose de la corriger dans OpenStreetMap, ce qui profite à tous.
+1. The place gets a "maybe closed" badge on the map and in the list, with the reason and the date of the signal.
+2. When the app is opened, a grouped notice (at most once a month) lists the places concerned.
+3. The user confirms "closed", "still open" or "moved" (with the new address).
+4. A closed place stays in the history with its comments, hidden by default through the status filter; it is removed from public lists.
+5. If the information comes from a user and not from OSM, the app offers to correct it in OpenStreetMap, which benefits everyone.
 
-Côté technique : c'est l'app qui interroge l'API Overpass, par petits lots d'identifiants à l'ouverture de l'app, au plus une fois par mois par lieu ; une charge très légère pour les services OSM.
+Technical side: the app itself queries the Overpass API, in small batches of identifiers when the app is opened, at most once a month per place; a very light load for OSM services.
 
-### Fiche lieu : infos, photos, horaires
+### Place card: info, photos, opening hours
 
-À l'ajout d'un lieu, l'app récupère tout ce qui existe dans des sources libres et le met en cache ; les champs vides restent simplement masqués.
+When a place is added, the app fetches everything available from free sources and caches it; empty fields are simply hidden.
 
-| Donnée | Source | Remarque |
+| Data | Source | Note |
 | --- | --- | --- |
-| Catégorie, cuisine, adresse | OpenStreetMap | Détermine l'icône par défaut |
-| Téléphone, site web, e-mail, réseaux sociaux | OpenStreetMap | Boutons d'action directs (appeler, ouvrir le site) |
-| Horaires d'ouverture | OpenStreetMap (`opening_hours`) | Interprétés avec la bibliothèque opening\_hours.js : « Ouvert, ferme à 22 h », jours fériés, et filtre « ouvert maintenant » |
-| Accessibilité, terrasse, Wi-Fi, végétarien | OpenStreetMap | Affichés en pictogrammes |
-| Photos du lieu | Wikimedia Commons et Wikidata (liens `image`, `wikimedia_commons`, `wikidata` dans OSM) | Photos libres, avec crédit de l'auteur affiché |
-| Photos de rue | Panoramax (libre), Mapillary en option | Vue de la façade quand aucune photo n'existe |
-| Photos des utilisateurs | Toi et tes amis | Visibles selon la visibilité du lieu |
-| Description | Wikipédia via Wikidata, si l'article existe | Surtout pour monuments et musées |
+| Category, cuisine, address | OpenStreetMap | Determines the default icon |
+| Phone, website, e-mail, social networks | OpenStreetMap | Direct action buttons (call, open the website) |
+| Opening hours | OpenStreetMap (`opening_hours`) | Interpreted with the opening\_hours.js library: "Open, closes at 10 pm", public holidays, and the "open now" filter |
+| Accessibility, terrace, Wi-Fi, vegetarian | OpenStreetMap | Shown as pictograms |
+| Photos of the place | Wikimedia Commons and Wikidata (`image`, `wikimedia_commons`, `wikidata` links in OSM) | Free photos, with the author's credit displayed |
+| Street photos | Panoramax (free), Mapillary as an option | View of the façade when no photo exists |
+| User photos | You and your friends | Visible according to the place's visibility |
+| Description | Wikipedia via Wikidata, if the article exists | Mainly for monuments and museums |
 
-Pas de récupération des photos de Google ou des sites des établissements : elles sont protégées par le droit d'auteur. Les horaires et infos sont rafraîchis en même temps que la vérification mensuelle des fermetures.
+No photos are fetched from Google or from the businesses' websites: they are protected by copyright. Opening hours and info are refreshed at the same time as the monthly closure check.
 
-### Filtres issus des données sources
+### Filters based on source data
 
-Les filtres pratiques s'appuient sur des champs OpenStreetMap ; chaque catégorie de lieu a son propre jeu de filtres.
+The practical filters rely on OpenStreetMap fields; each place category has its own set of filters.
 
-| Catégorie | Filtre | Champ OSM | Affichage |
+| Category | Filter | OSM field | Display |
 | --- | --- | --- | --- |
-| Toutes | Ouvert maintenant / ouvert à une heure choisie | `opening_hours` | « Ouvert, ferme à 22 h » ; jours fériés gérés |
-| Restos, bars, cafés | Happy hour en cours | `happy_hours` | « Happy hour jusqu'à 20 h » |
-| Restos, bars, cafés | Terrasse | `outdoor_seating=yes` | Oui / non / inconnu |
-| Restos | Type de cuisine | `cuisine` (plusieurs valeurs possibles) | Sous-filtres : burger, italien, chinois, indien, régional… |
-| Restos, commerces | Régime | `diet:vegetarian`, `diet:vegan`, `diet:gluten_free`, `diet:halal`, `diet:kosher` | « Options » ou « exclusivement » selon la valeur (yes / only) |
-| Restos | Réservation | `reservation` | Recommandée, obligatoire, possible, non |
-| Musées, monuments, sites | Ouvert maintenant | `opening_hours` | Comme ci-dessus |
-| Musées, monuments, sites | Entrée gratuite / payante | `fee` | Gratuit / payant / inconnu |
-| Musées, monuments, sites | Prix d'entrée | `charge` (ex. « 12 EUR ») | Montant affiché dans la fiche, filtre « moins de X € » quand il est renseigné |
-| Musées | Type de musée | `museum` (art, histoire, sciences…) | Sous-filtres |
-| Boutiques | Ouvert maintenant | `opening_hours` | Comme ci-dessus |
-| Boutiques | Type de boutique | `shop` (librairie, vêtements, fromager…) | Sous-filtres |
-| Boutiques | Seconde main, bio | `second_hand`, `organic` | Oui / non / inconnu |
+| All | Open now / open at a chosen time | `opening_hours` | "Open, closes at 10 pm"; public holidays handled |
+| Restaurants, bars, cafés | Happy hour in progress | `happy_hours` | "Happy hour until 8 pm" |
+| Restaurants, bars, cafés | Terrace | `outdoor_seating=yes` | Yes / no / unknown |
+| Restaurants | Type of cuisine | `cuisine` (several values possible) | Sub-filters: burger, Italian, Chinese, Indian, regional… |
+| Restaurants, shops | Diet | `diet:vegetarian`, `diet:vegan`, `diet:gluten_free`, `diet:halal`, `diet:kosher` | "Options" or "exclusively" depending on the value (yes / only) |
+| Restaurants | Reservation | `reservation` | Recommended, required, possible, no |
+| Museums, monuments, sites | Open now | `opening_hours` | As above |
+| Museums, monuments, sites | Free / paid admission | `fee` | Free / paid / unknown |
+| Museums, monuments, sites | Admission price | `charge` (e.g. "12 EUR") | Amount shown in the place card, "under €X" filter when it is filled in |
+| Museums | Type of museum | `museum` (art, history, science…) | Sub-filters |
+| Shops | Open now | `opening_hours` | As above |
+| Shops | Type of shop | `shop` (bookshop, clothing, cheesemonger…) | Sub-filters |
+| Shops | Second-hand, organic | `second_hand`, `organic` | Yes / no / unknown |
 
-Niveau de prix des restos et bars : absent d'OSM (une proposition de tag a été abandonnée), donc saisi par l'utilisateur de € à €€€€, avec la moyenne des amis quand ils l'ont renseigné.
+Price level for restaurants and bars: absent from OSM (a tag proposal was abandoned), so it is entered by the user from € to €€€€, with the friends' average when they have filled it in.
 
-Règles communes :
+Common rules:
 
-- Un filtre n'apparaît que si assez de lieux affichés ont l'information, avec leur nombre.
-- Un lieu sans l'information n'est pas exclu en silence : il apparaît dans un groupe « info inconnue », estompé comme les lieux hors filtre.
-- La fiche propose de compléter une information manquante, et de la contribuer à OpenStreetMap si l'utilisateur le souhaite.
+- A filter only appears if enough displayed places have the information, with their count.
+- A place without the information is not silently excluded: it appears in an "unknown info" group, faded like places outside the filter.
+- The place card offers to fill in missing information, and to contribute it to OpenStreetMap if the user wishes.
 
-### Zones : quartiers, bouts de rue
+### Zones: neighborhoods, street segments
 
-On peut enregistrer une zone au lieu d'un point : elle a les mêmes tags, notes, photos, visibilité et filtres qu'un lieu, et s'affiche comme un aplat ou un trait à la couleur de son tag, avec un badge en son centre.
+A zone can be saved instead of a point: it has the same tags, notes, photos, visibility and filters as a place, and is displayed as a filled area or a line in the color of its tag, with a badge at its center.
 
-Trois façons d'en créer une :
+Three ways to create one:
 
-| Mode | Geste | Géométrie | Source |
+| Mode | Gesture | Geometry | Source |
 | --- | --- | --- | --- |
-| Quartier existant | Toucher un quartier sur la carte ou le chercher par nom | Polygone | Limites OSM (`place=neighbourhood`, `quarter`, `suburb`), copiées localement |
-| Bout de rue | Toucher une rue, puis glisser deux poignées pour choisir le début et la fin ; « Ajouter un tronçon » pour en enchaîner d'autres, contigus (le tracé suit les rues à travers les carrefours) ou séparés | Une ou plusieurs lignes qui suivent les rues | Tracé de la rue dans OSM, découpé entre les deux points |
-| Dessin libre | Deux variantes. Par points : poser les sommets un à un, toucher le premier point pour fermer, puis déplacer ou ajouter des points. Par peinture : ombrer la zone au doigt comme au feutre (épaisseur réglable, gomme), l'app en déduit une forme lissée | Polygone | Saisie de l'utilisateur ; la variante peinte est marquée « contour flou » |
+| Existing neighborhood | Tap a neighborhood on the map or search for it by name | Polygon | OSM boundaries (`place=neighbourhood`, `quarter`, `suburb`), copied locally |
+| Street segment | Tap a street, then drag two handles to choose the start and the end; "Add a segment" to chain others, contiguous (the path follows the streets through intersections) or separate | One or more lines following the streets | Street path in OSM, cut between the two points |
+| Freehand drawing | Two variants. By points: place the vertices one by one, tap the first point to close, then move or add points. By painting: shade the zone with a finger like a marker (adjustable thickness, eraser), and the app derives a smoothed shape | Polygon | User input; the painted variant is marked "fuzzy outline" |
 
-Affichage :
+Display:
 
-- Zone : aplat transparent (environ 20 %) avec contour de 2,5 px à la couleur du tag principal. Zone peinte (contour flou) : pas de contour, mais un bord dégradé en trois anneaux d'opacité décroissante, pour signaler une limite approximative.
-- Bout de rue : trait épais transparent le long de la rue, avec un trait fin plein au centre.
-- Icône de zone : un badge carré aux coins arrondis (même taille, couleurs, icône, liseré et bandes multi-tags que les épingles), mais sans pointe, pour signaler une surface et pas un point précis. Il est placé au point le plus central à l'intérieur de la forme (même pour une forme en L ou en croissant), et au milieu du plus long tronçon pour une rue. Au dézoom, il ne reste que le badge.
-- Hors filtre, la zone s'estompe comme les épingles.
-- La fiche d'une zone liste aussi les lieux enregistrés à l'intérieur (les siens et ceux des amis visibles).
-- Pas d'horaires ni de détection de fermeture pour une zone.
+- Zone: transparent fill (about 20%) with a 2.5 px outline in the color of the main tag. Painted zone (fuzzy outline): no outline, but a gradient edge in three rings of decreasing opacity, to signal an approximate boundary.
+- Street segment: thick transparent line along the street, with a thin solid line at the center.
+- Zone icon: a square badge with rounded corners (same size, colors, icon, border and multi-tag bands as pins), but without a tip, to signal an area and not a precise point. It is placed at the most central point inside the shape (even for an L-shaped or crescent-shaped one), and at the middle of the longest segment for a street. When zoomed out, only the badge remains.
+- Outside the filter, the zone fades like pins.
+- A zone's card also lists the places saved inside it (your own and those of visible friends).
+- No opening hours or closure detection for a zone.
 
-Technique : la base locale (SQLite avec extension spatiale) accepte point, ligne ou polygone, avec un indicateur edge (net / flou). Une zone peinte est calculée sur le téléphone : chaque trait est élargi à son épaisseur, les traits sont fusionnés, puis la forme est lissée et simplifiée (bibliothèque Turf.js) ; seule la forme finale est enregistrée. À l'export comme dans les paquets partagés, la zone est un objet GeoJSON Polygon, LineString ou MultiLineString (plusieurs tronçons).
+Technical: the local database (SQLite with a spatial extension) accepts a point, line or polygon, with an edge indicator (sharp / fuzzy). A painted zone is computed on the phone: each stroke is widened to its thickness, the strokes are merged, then the shape is smoothed and simplified (Turf.js library); only the final shape is saved. In exports as in shared packs, the zone is a GeoJSON Polygon, LineString or MultiLineString object (several segments).
 
-### v2 — partage avancé
+### v2 — advanced sharing
 
-- [ ] Listes collaboratives à plusieurs auteurs (chacun écrit sur son propre stockage, l'app fusionne)
-- [ ] Autres stockages : Remote Storage, publication automatique via Git
-- [ ] Migration d'un stockage à un autre en un geste
-- [ ] Historique des accès accordés et renouvellement automatique des clés
-- [ ] Page web maison pour consulter sans l'app, y compris les listes chiffrées par lien
+- [ ] Collaborative lists with several authors (each writes to their own storage, the app merges)
+- [ ] Other storage options: Remote Storage, automatic publishing via Git
+- [ ] Migration from one storage to another in one gesture
+- [ ] History of granted accesses and automatic key renewal
+- [ ] Home-made web page to browse without the app, including link-encrypted lists
 
-### v3 et plus — confort
+### v3 and beyond — comfort
 
-- [ ] Cartes hors-ligne : téléchargement d'une région en PMTiles
-- [ ] Lieux suggérés : lieux de ses amis près de soi
-- [ ] Widget « lieux les plus proches »
-- [ ] Réactions (« j'aime ») sur les lieux des amis
-- [ ] Partage depuis Google Maps vers l'app (intent Android, share extension iOS)
-- [ ] Contribution facilitée vers OpenStreetMap (signaler un horaire faux)
+- [ ] Offline maps: download a region as PMTiles
+- [ ] Suggested places: places from your friends near you
+- [ ] "Nearest places" widget
+- [ ] Reactions ("likes") on friends' places
+- [ ] Sharing from Google Maps to the app (Android intent, iOS share extension)
+- [ ] Easier contribution to OpenStreetMap (report wrong opening hours)
 
-## Fonctionnalités des applis de lieux existantes : ce qu'on porte
+## Features of existing place-saving apps: what we port
 
-Sur 25 fonctionnalités recensées dans les applis de lieux existantes, 13 sont reprises dès la v1, 1 en v2, 5 plus tard, et 6 écartées car elles reposent sur des partenariats commerciaux, la monétisation ou une IA propriétaire, ou n'apportent rien à l'usage visé. La colonne Décision est modifiable.
+Of the 25 features identified in existing place-saving apps, 13 are carried over from v1, 1 in v2, 5 later, and 6 are dropped because they rely on commercial partnerships, monetization or proprietary AI, or add nothing to the intended use. The Decision column can be edited.
 
-| Fonctionnalité | Décision | Chez nous |
+| Feature | Decision | In our app |
 | --- | --- | --- |
-| Enregistrer un lieu : recherche, autour de moi, point sur la carte | Oui, v1 | Avec la liste des lieux proches triés par distance |
-| Tags personnalisés et colorés, filtre par tag | Oui, v1 | Étendu à des filtres combinables |
-| Commentaires personnels sur un lieu | Oui, v1 | Visibilité au choix pour chaque commentaire : privé, amis ou public |
-| Photos personnelles | Oui, v1 | Métadonnées GPS supprimées à l'envoi |
-| Fiche pratique : adresse, horaires, téléphone, site, photos | Oui, v1 | Via OpenStreetMap ; moins de photos |
-| Voir les adresses et commentaires des amis | Oui, v1 | Filtre « aussi chez mes amis », choix des amis affichés, détail et commentaires dans la fiche |
-| Carte privée ou publique, partage sélectif | Oui, v1 | Plus fin : visibilité par lieu et par liste |
-| Partage par lien, même à des amis sans l'app | Oui, v1 | Listes publiques visibles dans uMap ; listes par lien dans l'app |
-| Itinéraire via Google Maps, Citymapper, Uber | Oui, v1 | Ouverture de l'app de navigation choisie |
-| Import depuis Google Maps, Foursquare | Oui, v1 | Google Takeout en v1, autres formats ensuite |
-| Version web | Oui, v1 | Listes publiques via uMap en v1 ; page maison en v2 |
-| Suivre des amis | Oui, v1 | Par lien d'invitation et lien retour, ou QR code |
-| Préparer un voyage | Oui, v1 | Couvert par les listes filtrées par zone |
-| Cartes officielles de magazines et influenceurs | Oui, v2 | Tout utilisateur peut publier une liste publique, consultable sur le web ; pas de partenariats |
-| Scanner une adresse en photo (OCR) | Plus tard | Utile mais secondaire |
-| Carte collaborative à plusieurs | Plus tard | Listes collaboratives |
-| Alertes de proximité | Non | Écartées : inutiles pour l'usage visé, et elles demanderaient une activité en arrière-plan |
-| Widget « lieux les plus proches » | Plus tard | Android et iOS |
-| Usage hors connexion | Plus tard | Lieux toujours disponibles hors ligne dès la v1 (local-first) ; cartes hors ligne par région plus tard |
-| Import depuis Instagram et TikTok | Plus tard | Via le menu de partage du téléphone vers l'app |
-| Suggestions personnalisées par IA | Non | Remplacé par « lieux de mes amis autour de moi » |
-| Réservation de table en un clic | Non | Repose sur des partenariats commerciaux |
-| Cartes payantes à acheter | Non | Hors du modèle libre |
-| Limite de lieux en gratuit, abonnement payant | Non | Illimité ; seule limite, la place sur ton stockage |
-| Offre payante pour restaurants, hôtels, marques | Non | Hors périmètre |
+| Save a place: search, around me, point on the map | Yes, v1 | With the list of nearby places sorted by distance |
+| Custom, colored tags, filter by tag | Yes, v1 | Extended to combinable filters |
+| Personal comments on a place | Yes, v1 | Visibility chosen for each comment: private, friends or public |
+| Personal photos | Yes, v1 | GPS metadata removed on upload |
+| Practical card: address, opening hours, phone, website, photos | Yes, v1 | Via OpenStreetMap; fewer photos |
+| See friends' addresses and comments | Yes, v1 | "Also at my friends'" filter, choice of which friends are displayed, details and comments in the place card |
+| Private or public map, selective sharing | Yes, v1 | Finer-grained: visibility per place and per list |
+| Sharing by link, even with friends without the app | Yes, v1 | Public lists viewable in uMap; link-only lists in the app |
+| Directions via Google Maps, Citymapper, Uber | Yes, v1 | Opens the chosen navigation app |
+| Import from Google Maps, Foursquare | Yes, v1 | Google Takeout in v1, other formats afterwards |
+| Web version | Yes, v1 | Public lists via uMap in v1; home-made page in v2 |
+| Follow friends | Yes, v1 | By invitation link and return link, or QR code |
+| Plan a trip | Yes, v1 | Covered by lists filtered by zone |
+| Official maps from magazines and influencers | Yes, v2 | Any user can publish a public list, viewable on the web; no partnerships |
+| Scan an address from a photo (OCR) | Later | Useful but secondary |
+| Collaborative map with several people | Later | Collaborative lists |
+| Proximity alerts | No | Dropped: useless for the intended use, and they would require background activity |
+| "Nearest places" widget | Later | Android and iOS |
+| Offline use | Later | Places always available offline from v1 (local-first); offline maps by region later |
+| Import from Instagram and TikTok | Later | Via the phone's share menu to the app |
+| AI-powered personalized suggestions | No | Replaced by "my friends' places around me" |
+| One-click table booking | No | Relies on commercial partnerships |
+| Paid maps to buy | No | Outside the free model |
+| Place limit on a free tier, paid subscription | No | Unlimited; the only limit is the space on your storage |
+| Paid offer for restaurants, hotels, brands | No | Out of scope |
 
-Ce que le projet ajoute : stockage chez soi, chiffrement de bout en bout, export complet en GeoJSON, filtres combinables issus d'OpenStreetMap (ouvert maintenant, terrasse, régime, prix d'entrée…), listes définies par un filtre qui se mettent à jour seules, zones (quartiers, bouts de rue, dessin libre), détection des lieux fermés.
+What the project adds: storage at home, end-to-end encryption, full export as GeoJSON, combinable filters based on OpenStreetMap (open now, terrace, diet, admission price…), lists defined by a filter that update themselves, zones (neighborhoods, street segments, freehand drawing), closed place detection.
 
 
 ## Interface
 
-L'interface reprend les codes visuels qui font la lisibilité des applis de lieux : des épingles colorées par tag avec une icône par catégorie, une barre de filtres claire, et une fiche lieu qui monte du bas de l'écran. Les icônes et le design restent originaux : on s'inspire des principes, pas des fichiers ni de l'identité graphique d'une autre appli.
+The interface adopts the visual conventions that make place-saving apps readable: pins colored by tag with one icon per category, a clear filter bar, and a place card that rises from the bottom of the screen. The icons and design remain original: we draw on the principles, not on another app's files or visual identity.
 
-Épingles sur la carte :
+Pins on the map:
 
-- **Forme** : pastille ronde avec pointe, couleur pleine = couleur du tag principal du lieu, icône blanche cernée de gris foncé au centre ; liseré blanc de 2,5 px plus un contour sombre de 1 px, pour rester visible sur tous les fonds (ville, parc, eau, mode sombre).
-- **Icône** : celle choisie pour le tag ; à défaut, celle de la catégorie OSM (restaurant, café, bar, musée, boutique…).
-- **Taille** : environ 34 px de base, 40 px pour le lieu sélectionné, 24 px au dézoom ; icône à environ 60 % du diamètre (21 px à taille normale), au tracé épaissi pour la lisibilité ; zone tactile d'au moins 44 px dans tous les cas.
-- **Lieux des amis** : aucun badge sur les épingles ; un filtre « Aussi chez mes amis » (ou « Lieux de mes amis ») les met en évidence, et le détail (qui, quand, commentaires) est dans la fiche.
-- **Statuts** : « peut-être fermé » signalé par une petite croix grise ; les autres statuts passent par les filtres, pas par l'apparence de l'épingle.
-- **Regroupement** : au dézoom, une bulle avec le nombre de lieux, dans la couleur du tag majoritaire.
+- **Shape**: round badge with a tip, solid color = color of the place's main tag, white icon outlined in dark gray at the center; 2.5 px white border plus a 1 px dark outline, to stay visible on every background (city, park, water, dark mode).
+- **Icon**: the one chosen for the tag; failing that, the one for the OSM category (restaurant, café, bar, museum, shop…).
+- **Size**: about 34 px by default, 40 px for the selected place, 24 px when zoomed out; icon at about 60% of the diameter (21 px at normal size), with a thickened stroke for legibility; touch target of at least 44 px in all cases.
+- **Friends' places**: no badge on the pins; an "Also at my friends'" (or "My friends' places") filter highlights them, and the details (who, when, comments) are in the place card.
+- **Statuses**: "maybe closed" is signaled by a small gray cross; other statuses go through filters, not through the pin's appearance.
+- **Clustering**: when zoomed out, a bubble with the number of places, in the color of the majority tag.
 
-Couleurs et catégories :
+Colors and categories:
 
-- Palette vive de 17 couleurs prédéfinies : rouge #EF4444, rose #EC4899, fuchsia #C026D3, violet #8B5CF6, indigo #6366F1, bleu #3B82F6, ciel #0284C7, cyan #0891B2, turquoise #0D9488, vert #16A34A, citron #65A30D, jaune #FACC15, ambre #D97706, orange #EA580C, terre #A16207, ardoise #475569, encre #1E293B. L'icône est toujours blanche, cernée d'un contour gris foncé (#1F2937) d'environ 1 px sur toutes les couleurs, ce qui la rend lisible même sur le jaune et garde un rendu homogène. Ce contour est dessiné dans les fichiers d'icônes eux-mêmes, pas ajouté par un effet. Toute couleur libre est donc possible, y compris très claire.
-- Bibliothèque d'environ 150 icônes sous licence libre, regroupées par catégorie (manger, boire, sortir, culture, nature, shopping, services, voyage) : base Maki et Temaki (CC0), complétée au besoin.
-- Chaque nouveau tag reçoit une couleur et une icône suggérées selon son nom (« sushi » → icône sushi), modifiables.
-- Un lieu peut avoir plusieurs tags : la moitié haute de l'épingle, où se trouve l'icône, prend la couleur et l'icône du tag principal ; la moitié basse, vers la pointe, est découpée en bandes horizontales égales aux couleurs des autres tags (3 bandes maximum, donc 4 tags affichés ; au-delà, un petit « +N » à côté de l'épingle). Au dézoom (24 px), l'épingle repasse à la seule couleur du tag principal. Quand un filtre est actif, l'épingle prend la couleur et l'icône du tag filtré. Filtres actifs : les épingles qui correspondent restent en couleur, les autres passent en gris, à environ 35 % d'opacité et en plus petit (28 px), pour garder le contexte sans gêner la lecture ; sans filtre, toutes sont en couleur. Dans la fiche, tous les tags sont affichés en pastilles ; les réordonner change le tag principal.
+- Vivid palette of 17 predefined colors: red #EF4444, pink #EC4899, fuchsia #C026D3, violet #8B5CF6, indigo #6366F1, blue #3B82F6, sky #0284C7, cyan #0891B2, turquoise #0D9488, green #16A34A, lime #65A30D, yellow #FACC15, amber #D97706, orange #EA580C, earth #A16207, slate #475569, ink #1E293B. The icon is always white, outlined in dark gray (#1F2937) of about 1 px on all colors, which keeps it legible even on yellow and gives a consistent look. This outline is drawn in the icon files themselves, not added by an effect. Any free color is therefore possible, including very light ones.
+- Library of about 150 freely licensed icons, grouped by category (eat, drink, go out, culture, nature, shopping, services, travel): Maki and Temaki base (CC0), completed as needed.
+- Each new tag gets a suggested color and icon based on its name ("sushi" → sushi icon), which can be changed.
+- A place can have several tags: the upper half of the pin, where the icon sits, takes the color and icon of the main tag; the lower half, toward the tip, is cut into equal horizontal bands in the colors of the other tags (3 bands maximum, hence 4 tags displayed; beyond that, a small "+N" next to the pin). When zoomed out (24 px), the pin goes back to the main tag's color only. When a filter is active, the pin takes the color and icon of the filtered tag. Active filters: matching pins stay in color, the others turn gray, at about 35% opacity and smaller (28 px), to keep context without hindering reading; with no filter, all are in color. In the place card, all tags are displayed as pills; reordering them changes the main tag.
 
-Tags des autres : sur ma carte, mon vocabulaire et mes couleurs s'appliquent toujours ; les tags des personnes suivies s'y raccrochent ainsi :
+Others' tags: on my map, my vocabulary and my colors always apply; the tags of the people I follow attach to it as follows:
 
-- **Par la catégorie commune** : chacun de mes tags peut être relié à des catégories OSM (« Resto » ↔ restaurant, fast-food) ; un lieu d'ami de cette catégorie prend ma couleur et mon icône, quel que soit le nom de son tag.
-- **Par le nom** : rapprochement automatique des tags équivalents (majuscules, accents, pluriels, synonymes courants comme « resto » et « restaurant »).
-- **Par correspondance manuelle** : « le "Bouffe" de Léa = mon "Resto" », mémorisée et réutilisée pour tous ses lieux.
-- **Sans correspondance** : le tag garde la couleur et l'icône choisies par son auteur, tant que je ne les change pas pour moi ; il apparaît dans une section « Tags de mes amis » du panneau de filtres (avec sa couleur et le nom de l'auteur), où je peux le filtrer, le recolorer pour moi, le relier à un de mes tags, ou l'adopter en un tap. Si sa couleur est identique à celle d'un de mes tags, l'app le signale dans ce panneau pour éviter la confusion.
-- **Filtres** : filtrer sur un de mes tags inclut les lieux des amis qui ont un tag correspondant ou la bonne catégorie.
-- **Listes suivies** : option pour afficher une liste avec les couleurs de son auteur, quand sa mise en forme fait partie du contenu (guide, recommandations de voyage).
-- **Ajout à mes lieux** depuis un lieu d'ami : tags pré-remplis grâce aux correspondances.
+- **Through the common category**: each of my tags can be linked to OSM categories ("Restaurant" ↔ restaurant, fast-food); a friend's place in that category takes my color and my icon, whatever the name of its tag.
+- **By name**: automatic matching of equivalent tags (capitalization, accents, plurals, common synonyms such as "resto" and "restaurant").
+- **By manual mapping**: "Léa's 'Bouffe' = my 'Resto'", remembered and reused for all her places.
+- **With no match**: the tag keeps the color and icon chosen by its author, as long as I don't change them for myself; it appears in a "My friends' tags" section of the filter panel (with its color and the author's name), where I can filter on it, recolor it for myself, link it to one of my tags, or adopt it in one tap. If its color is identical to that of one of my tags, the app flags it in this panel to avoid confusion.
+- **Filters**: filtering on one of my tags includes friends' places that have a matching tag or the right category.
+- **Followed lists**: option to display a list with its author's colors, when its formatting is part of the content (guide, travel recommendations).
+- **Adding to my places** from a friend's place: tags pre-filled thanks to the mappings.
 
-Écrans principaux :
+Main screens:
 
-- **Carte** plein écran, barre de recherche et barre de filtres en haut, bouton « + » pour ajouter. La barre de filtres montre les catégories, puis les sous-filtres de la catégorie choisie (types de cuisine présents dans tes lieux, issus d'OSM ou de tes sous-tags, avec leur nombre), puis les critères pratiques (aussi chez mes amis, végétarien, ouvert maintenant), le nombre de lieux correspondants et un bouton « Effacer les filtres ». La barre se replie en une seule ligne de résumé (une pastille par filtre actif, avec une croix pour le retirer, et un bouton « Filtres (3) » pour redéplier) ; elle se replie d'elle-même quand on fait défiler la carte, et l'état choisi est mémorisé. Le filtre amis ouvre un panneau de choix : « Tous mes amis », « Aucun » ou une sélection, avec recherche, avatar et nombre de lieux par ami ; la sélection est mémorisée.
-- **Gestion des tags** : chaque tag avec sa couleur, son icône, son nombre de lieux, ses catégories OSM reliées et ses correspondances avec les tags des amis.
-- **Fiche lieu** en panneau glissant du bas : photo, nom, statut d'ouverture, tags colorés, ta note, puis les amis qui l'ont enregistré et leurs commentaires.
-- **Liste** : mêmes pastilles colorées en début de ligne, distance à droite.
-- **Nouveautés** : activité des amis depuis la dernière consultation (lieux ajoutés, commentaires, listes partagées avec moi, fermetures signalées), groupée par jour, filtrable par type et par ami ; les éléments non vus sont marqués d'un point. Un bouton « Voir sur la carte » active le filtre « nouveautés » (les autres lieux sont estompés). Badge sur l'onglet ; pas de notification, les nouveautés apparaissent à l'ouverture de l'app.
+- **Map** full screen, search bar and filter bar at the top, "+" button to add. The filter bar shows the categories, then the sub-filters of the chosen category (types of cuisine present in your places, coming from OSM or from your sub-tags, with their count), then the practical criteria (also at my friends', vegetarian, open now), the number of matching places and a "Clear filters" button. The bar collapses into a single summary line (one pill per active filter, with a cross to remove it, and a "Filters (3)" button to expand again); it collapses by itself when the map is scrolled, and the chosen state is remembered. The friends filter opens a selection panel: "All my friends", "None" or a selection, with search, avatar and number of places per friend; the selection is remembered.
+- **Tag management**: each tag with its color, its icon, its number of places, its linked OSM categories and its mappings with friends' tags.
+- **Place card** as a panel sliding up from the bottom: photo, name, opening status, colored tags, your note, then the friends who saved it and their comments.
+- **List**: same colored pills at the start of the line, distance on the right.
+- **What's new**: friends' activity since the last visit (places added, comments, lists shared with me, closures reported), grouped by day, filterable by type and by friend; unseen items are marked with a dot. A "See on the map" button activates the "what's new" filter (other places are faded). Badge on the tab; no notifications, the news appears when the app is opened.
 
-À produire en phase 0 : maquettes de ces quatre écrans et planche des icônes et couleurs, à valider avant développement.
+To produce in phase 0: mockups of these four screens and a board of icons and colors, to be validated before development.
 
-## Premier lancement
+## First launch
 
-Principe : arriver sur la carte en moins d'une minute. La clé est créée sans rien demander, la sauvegarde est proposée quand il y a quelque chose à perdre, et le stockage seulement quand on veut partager.
+Principle: reach the map in under a minute. The key is created without asking anything, backup is offered when there is something to lose, and storage only when the user wants to share.
 
-### Trois entrées
+### Three entry points
 
-| Entrée | Quand | Ce qui se passe |
+| Entry | When | What happens |
 | --- | --- | --- |
-| **Commencer** | Nouvel utilisateur | Parcours standard ci-dessous |
-| **J'ai reçu une invitation** | L'app est ouverte depuis le lien d'un ami (ou le lien est collé après installation) | « Marie partage ses lieux avec toi », puis prénom ; ses lieux partagés avec ses amis s'affichent tout de suite grâce à la clé d'invitation temporaire, sans configurer de stockage ; l'app prépare le lien retour à lui renvoyer |
-| **J'ai déjà mes lieux** | Nouvel appareil ou réinstallation | Ajout depuis un autre appareil par QR code, ou restauration avec la phrase de récupération et l'adresse du stockage |
+| **Get started** | New user | Standard flow below |
+| **I received an invitation** | The app is opened from a friend's link (or the link is pasted after installation) | "Marie is sharing her places with you", then first name; her places shared with friends are displayed right away thanks to the temporary invitation key, without setting up any storage; the app prepares the return link to send back to her |
+| **I already have my places** | New device or reinstall | Add from another device by QR code, or restore with the recovery phrase and the storage address |
 
-### Parcours standard
+### Standard flow
 
-1. **Bienvenue** : un écran, la promesse en une phrase (« Tes lieux, chez toi, chiffrés »), bouton « Commencer ».
-2. **Prénom et photo** (facultative) : ce que tes amis verront. La paire de clés est créée en arrière-plan pendant ce temps, sans écran dédié.
-3. **Localisation** (facultative) : expliquée avant la demande du système (« pour centrer la carte, jamais envoyée »).
-4. **Importer ?** : Google Takeout, Mapstr, GeoJSON, ou « Plus tard ».
-5. **La carte**, avec une bulle d'aide sur le bouton « + » pour ajouter un premier lieu.
+1. **Welcome**: one screen, the promise in one sentence ("Your places, at home, encrypted"), "Get started" button.
+2. **First name and photo** (optional): what your friends will see. The key pair is created in the background meanwhile, with no dedicated screen.
+3. **Location** (optional): explained before the system prompt ("to center the map, never sent").
+4. **Import?**: Google Takeout, Mapstr, GeoJSON, or "Later".
+5. **The map**, with a help bubble on the "+" button to add a first place.
 
-### Plus tard, au bon moment
+### Later, at the right moment
 
-- **Sauvegarde** : après une dizaine de lieux ou quelques jours, une carte « Protège tes lieux » propose de connecter un stockage (sauvegarde chiffrée automatique), et enregistrer son kit de récupération (phrase de 12 mots, vérifiée en redemandant 3 mots, et adresse du stockage) dans un gestionnaire de mots de passe ou sur papier (détail ci-dessous). Rappel discret tant que rien n'est fait.
-- **Stockage** : proposé la première fois qu'on veut partager (inviter un ami, créer une liste par lien ou publique). Assistant par protocole :
-  - Nextcloud : connexion par le navigateur (Login Flow de Nextcloud), qui crée un mot de passe d'application dédié ; l'app crée son dossier et le lien de partage en lecture seule automatiquement.
-  - WebDAV, S3, SFTP : formulaire adapté à chaque protocole (adresse, identifiant, mot de passe ou clé), plus l'adresse HTTPS de lecture si elle diffère.
-  - HTTPS seul : explication de la publication manuelle.
-  - Test complet avant validation : écriture, lecture, suppression d'un fichier test, et vérification que l'adresse de lecture répond bien depuis l'extérieur.
-- **Premier ami** : bouton « Inviter un ami » qui génère le lien d'invitation et ouvre le menu de partage du téléphone.
+- **Backup**: after about ten places or a few days, a "Protect your places" card offers to connect a storage (automatic encrypted backup), and to save one's recovery kit (12-word phrase, verified by asking for 3 words again, and the storage address) in a password manager or on paper (details below). Discreet reminder as long as nothing has been done.
+- **Storage**: offered the first time the user wants to share (invite a friend, create a link-only or public list). Wizard per protocol:
+  - Nextcloud: connection through the browser (Nextcloud Login Flow), which creates a dedicated app password; the app creates its folder and the read-only sharing link automatically.
+  - WebDAV, S3, SFTP: form adapted to each protocol (address, username, password or key), plus the HTTPS read address if it differs.
+  - HTTPS only: explanation of manual publishing.
+  - Full test before validation: write, read, delete a test file, and check that the read address does respond from the outside.
+- **First friend**: "Invite a friend" button that generates the invitation link and opens the phone's share menu.
 
-### Kit de récupération
+### Recovery kit
 
-Pour tout retrouver après une perte, il suffit de deux éléments, faciles à ranger dans un gestionnaire de mots de passe (KeePass, Bitwarden, Trousseau d'Apple…) :
+To recover everything after a loss, two items are enough, easy to store in a password manager (KeePass, Bitwarden, Apple Keychain…):
 
-- **La phrase de récupération** (12 mots) : elle recrée la clé.
-- **L'adresse de lecture du stockage** (HTTPS) : elle mène au contenu chiffré.
+- **The recovery phrase** (12 words): it recreates the key.
+- **The storage read address** (HTTPS): it leads to the encrypted content.
 
-Tout le reste est rangé, chiffré avec la clé, dans un « coffre de récupération » sur le stockage : identifiants d'écriture du stockage, liste des amis et de leurs clés, groupes, réglages. À la restauration, l'app recrée la clé, lit le coffre et reconstruit tout. Si les identifiants du stockage ont changé depuis, l'app les redemande.
+Everything else is stored, encrypted with the key, in a "recovery vault" on the storage: storage write credentials, list of friends and their keys, groups, settings. On restore, the app recreates the key, reads the vault and rebuilds everything. If the storage credentials have changed since, the app asks for them again.
 
-Formats d'export du kit, au choix :
+Kit export formats, to choose from:
 
-- **Fiche pour gestionnaire de mots de passe** : partage vers l'app de son choix (KeePassDX, Strongbox, Bitwarden…) avec des champs prêts à l'emploi : titre, phrase dans le champ mot de passe, adresse dans le champ URL, empreinte de la clé et protocole en notes.
-- **Copie dans le presse-papiers** : les deux éléments, champ par champ, à coller dans n'importe quel gestionnaire ; presse-papiers vidé automatiquement après une minute.
-- **Page à imprimer** (PDF) avec la phrase et un QR code de l'adresse.
+- **Password manager entry**: share to the app of your choice (KeePassDX, Strongbox, Bitwarden…) with ready-to-use fields: title, phrase in the password field, address in the URL field, key fingerprint and protocol in the notes.
+- **Copy to the clipboard**: the two items, field by field, to paste into any manager; clipboard cleared automatically after one minute.
+- **Printable page** (PDF) with the phrase and a QR code of the address.
 
-En mode local seul, la phrase ne suffit pas, puisqu'aucune copie des lieux n'existe ailleurs : l'app propose alors un fichier de sauvegarde chiffré, à déposer où l'on veut (cloud, clé USB), et l'indique dans le kit.
+In local-only mode, the phrase is not enough, since no copy of the places exists elsewhere: the app then offers an encrypted backup file, to drop wherever you like (cloud, USB stick), and notes this in the kit.
 
-### Ajouter un appareil
+### Adding a device
 
-Ce qui passe d'un appareil à l'autre : la clé privée, les accès au stockage et les clés des amis. Trois façons, de la plus sûre à la plus dépannante :
+What passes from one device to the other: the private key, storage access and friends' keys. Three ways, from the safest to the last resort:
 
-1. **QR code (par défaut)** : les deux appareils côte à côte ; le nouveau scanne l'écran de l'ancien. Les deux appareils créent une clé temporaire commune, et le transfert est chiffré avec elle ; rien ne transite en clair.
-2. **Lien + code (à distance)** : l'ancien appareil chiffre le paquet de transfert et le dépose temporairement sur le stockage, puis produit un lien à s'envoyer par mail ou messagerie, et affiche un code de 6 mots à taper sur le nouvel appareil. Le lien seul ne permet rien ; le code ne doit jamais être envoyé par le même canal. Le lien expire après 15 minutes et ne sert qu'une fois ; le paquet est ensuite supprimé du stockage. La clé de chiffrement est dérivée du code par une fonction volontairement lente (Argon2), pour décourager les tentatives de deviner le code.
-3. **Phrase de récupération** : si l'ancien appareil n'est plus disponible ; il faut aussi l'adresse et les identifiants du stockage pour retrouver ses lieux.
+1. **QR code (default)**: both devices side by side; the new one scans the old one's screen. The two devices create a shared temporary key, and the transfer is encrypted with it; nothing travels in the clear.
+2. **Link + code (remote)**: the old device encrypts the transfer pack and temporarily drops it on the storage, then produces a link to send to oneself by mail or messaging, and displays a 6-word code to type on the new device. The link alone allows nothing; the code must never be sent through the same channel. The link expires after 15 minutes and works only once; the pack is then deleted from the storage. The encryption key is derived from the code by a deliberately slow function (Argon2), to discourage attempts to guess the code.
+3. **Recovery phrase**: if the old device is no longer available; the storage address and credentials are also needed to get one's places back.
 
-Chaque appareil apparaît dans les réglages (nom, date d'ajout), et peut être retiré : l'app crée alors une nouvelle clé de partage, que les amis adoptent à leur synchronisation suivante (voir Perte et vol).
+Each device appears in the settings (name, date added), and can be removed: the app then creates a new sharing key, which friends adopt at their next sync (see Loss and theft).
 
-### Perte et vol
+### Loss and theft
 
-Les clés sont organisées en deux niveaux pour qu'un vol ne coûte pas ses amis :
+Keys are organized in two levels so that a theft does not cost you your friends:
 
-- **Clé maîtresse** : recréée à partir de la phrase de récupération, elle ne sert qu'à signer. C'est elle que les amis connaissent comme « ton identité ».
-- **Clé de partage** : celle pour laquelle les amis emballent leurs contenus ; elle est certifiée par la clé maîtresse et présente sur chacun de tes appareils.
+- **Master key**: recreated from the recovery phrase, it is used only for signing. This is the one friends know as "your identity".
+- **Sharing key**: the one for which friends wrap their content; it is certified by the master key and present on each of your devices.
 
-**Perte (téléphone cassé ou égaré sans risque particulier)** : sur le nouvel appareil, le kit de récupération suffit ; tout est restauré, rien d'autre à faire.
+**Loss (phone broken or misplaced without particular risk)**: on the new device, the recovery kit is enough; everything is restored, nothing else to do.
 
-**Vol** : depuis un autre appareil, ou depuis un nouveau téléphone restauré avec le kit, l'action « Déclarer un appareil perdu » :
+**Theft**: from another device, or from a new phone restored with the kit, the "Declare a device lost" action:
 
-1. Retire l'appareil volé de la liste et crée une nouvelle clé de partage, signée par la clé maîtresse.
-2. Rechiffre son propre contenu avec de nouvelles clés de lot : le voleur ne voit plus aucune mise à jour.
-3. Publie le changement de clé sur le stockage : les apps des amis le vérifient grâce à la signature de la clé maîtresse, l'acceptent automatiquement et emballent désormais leurs contenus pour la nouvelle clé. Pas besoin de ré-inviter qui que ce soit ; les amis voient « Marie a changé de clé » dans leurs Nouveautés.
-4. Guide le changement des accès au stockage (révocation du mot de passe d'application Nextcloud, nouvelle clé S3 ou SSH), pour que le téléphone volé ne puisse plus écrire.
-5. Montre les modifications faites sur le stockage depuis la date du vol, avec possibilité de revenir à l'état précédent (copie locale des autres appareils, ou historique de versions du stockage).
+1. Removes the stolen device from the list and creates a new sharing key, signed by the master key.
+2. Re-encrypts its own content with new batch keys: the thief no longer sees any update.
+3. Publishes the key change on the storage: friends' apps verify it thanks to the master key's signature, accept it automatically and from then on wrap their content for the new key. No need to re-invite anyone; friends see "Marie changed her key" in their What's new.
+4. Guides the change of storage access (revoking the Nextcloud app password, new S3 or SSH key), so that the stolen phone can no longer write.
+5. Shows the changes made on the storage since the date of the theft, with the option to revert to the previous state (local copy from other devices, or the storage's version history).
 
-**Effacement à distance** : la déclaration inscrit sur le stockage une révocation de l'appareil, signée par la clé maîtresse. À sa prochaine synchronisation, l'app du téléphone volé la lit, vérifie la signature et efface ses clés et tout son contenu local. L'app vérifie les révocations avant d'afficher quoi que ce soit à chaque ouverture, dès qu'elle a du réseau.
+**Remote wipe**: the declaration writes a device revocation on the storage, signed by the master key. At its next sync, the stolen phone's app reads it, verifies the signature and erases its keys and all its local content. The app checks revocations before displaying anything each time it is opened, as soon as it has network access.
 
-Limite : si le téléphone est coupé du réseau avant de se synchroniser, la révocation n'arrive pas ; le verrouillage de l'app et l'option « verrouiller si pas de synchronisation depuis X jours » (avec effacement facultatif) couvrent ce cas. Ce que le téléphone avait déjà copié avant la déclaration reste hors de portée, d'où le changement de clé pour les mises à jour suivantes.
+Limit: if the phone is cut off from the network before syncing, the revocation does not arrive; the app lock and the "lock if no sync for X days" option (with optional wipe) cover this case. What the phone had already copied before the declaration remains out of reach, hence the key change for subsequent updates.
 
-Protections sur l'appareil :
+Protections on the device:
 
-- Verrouillage de l'app par code ou biométrie, proposé à l'installation et activé par défaut si le téléphone n'a pas de verrouillage d'écran ; verrouillage automatique après quelques minutes en arrière-plan ; option de verrouillage, voire d'effacement, si aucune synchronisation réussie depuis un nombre de jours choisi.
-- Clé de partage et identifiants du stockage dans le coffre sécurisé du système, accessibles seulement téléphone déverrouillé. La base locale (y compris le cache des amis) est chiffrée avec une clé rangée dans ce même coffre : supprimer cette clé suffit à rendre toute la base illisible instantanément.
-- La phrase de récupération n'est jamais stockée sur l'appareil après la configuration.
+- App lock by code or biometrics, offered at installation and enabled by default if the phone has no screen lock; automatic lock after a few minutes in the background; option to lock, or even wipe, if there has been no successful sync for a chosen number of days.
+- Sharing key and storage credentials in the system's secure vault, accessible only when the phone is unlocked. The local database (including the friends' cache) is encrypted with a key stored in that same vault: deleting this key is enough to make the whole database instantly unreadable.
+- The recovery phrase is never stored on the device after setup.
 
-### Points d'attention du premier lancement
+### First launch points of attention
 
-- Lire les lieux d'un ami ne demande aucun stockage : seul le partage de ses propres lieux en a besoin. L'invité peut donc profiter de l'app immédiatement.
-- En mode local seul sans phrase notée, perdre le téléphone fait perdre les lieux : l'app le dit clairement, sans dramatiser.
-- Un lien d'invitation ne survit pas toujours à l'installation de l'app ; après installation, l'app propose de coller le lien reçu.
+- Reading a friend's places requires no storage: only sharing one's own places needs it. The invitee can therefore enjoy the app immediately.
+- In local-only mode with no phrase written down, losing the phone means losing the places: the app says so clearly, without dramatizing.
+- An invitation link does not always survive the app's installation; after installation, the app offers to paste the received link.
 
-## Cas d'erreur
+## Error cases
 
-Principes : ne jamais perdre une donnée locale, continuer à fonctionner en mode dégradé, et expliquer chaque problème en mots simples avec une action possible. Les erreurs passagères se règlent seules ; l'utilisateur n'est alerté que si elles durent.
+Principles: never lose local data, keep working in degraded mode, and explain each problem in plain words with a possible action. Transient errors resolve themselves; the user is alerted only if they last.
 
-| Situation | Comportement de l'app | Ce que voit l'utilisateur |
+| Situation | App behavior | What the user sees |
 | --- | --- | --- |
-| Pas de réseau | Tout fonctionne en local ; les modifications attendent en file | Petite mention « Hors ligne · 3 modifications en attente » |
-| Mon stockage injoignable | Nouvelles tentatives espacées ; rien n'est perdu | Rien au début ; après 24 h, bandeau « Ton stockage ne répond pas depuis hier » |
-| Identifiants refusés (mot de passe changé, accès révoqué) | Arrêt des écritures, file conservée | « Reconnecte ton stockage », avec relance de la connexion Nextcloud le cas échéant |
-| Quota plein | Les photos attendent, le texte passe en priorité | Place utilisée par type de contenu, avec propositions : réduire la qualité des photos, purger l'historique des versions |
-| Écriture interrompue | Les paquets sont écrits d'abord, l'index en dernier : un index pointe toujours vers des paquets complets | Rien |
-| Deux de mes appareils écrivent en même temps | Écriture conditionnelle (ETag) ; en cas de conflit, relecture, fusion automatique, nouvel essai | Rien |
-| Stockage d'un ami injoignable | Son contenu reste affiché depuis le cache | Sur son profil, « Mis à jour il y a 12 jours » ; après 3 mois, proposition de garder ou retirer son contenu |
-| Un ami change de stockage | L'ancien stockage garde quelques mois un renvoi signé vers le nouveau ; sinon, un nouveau lien de sa part est reconnu grâce à la même clé maîtresse et reprend là où on en était | « Léa a déménagé son contenu », sans action |
-| Contenu altéré (signature invalide) | Rejet, conservation de la dernière version valide | « Le contenu de Léa n'a pas pu être vérifié », sans détail technique |
-| Version du format non prise en charge | Contenu ignoré | « Mets à jour l'app pour voir les lieux de Léa » |
-| Lien d'invitation ou de liste invalide | — | « Ce lien ne fonctionne plus » ou « Cette liste n'existe plus », avec suggestion de demander un nouveau lien |
-| Tuiles de carte indisponibles | Cache des zones vues, puis adresse de secours | Carte éventuellement moins détaillée, sans message tant que le cache suffit |
-| Recherche ou données OSM indisponibles | Service de secours ; ajout d'un lieu par appui long toujours possible ; enrichissement de la fiche réessayé plus tard | « Recherche indisponible, place le lieu sur la carte » |
-| App non ouverte depuis longtemps | Synchronisation à chaque ouverture | Rien |
-| Clé absente du coffre du téléphone (restauration système) | Blocage avant toute écriture | Demande du kit de récupération |
+| No network | Everything works locally; changes wait in a queue | Small note "Offline · 3 changes pending" |
+| My storage unreachable | Retries at spaced intervals; nothing is lost | Nothing at first; after 24 h, banner "Your storage hasn't responded since yesterday" |
+| Credentials rejected (password changed, access revoked) | Writes stop, queue kept | "Reconnect your storage", with the Nextcloud connection relaunched where applicable |
+| Quota full | Photos wait, text goes first | Space used by content type, with suggestions: reduce photo quality, purge version history |
+| Interrupted write | Packs are written first, the index last: an index always points to complete packs | Nothing |
+| Two of my devices write at the same time | Conditional write (ETag); on conflict, re-read, automatic merge, retry | Nothing |
+| A friend's storage unreachable | Their content stays displayed from the cache | On their profile, "Updated 12 days ago"; after 3 months, offer to keep or remove their content |
+| A friend changes storage | The old storage keeps a signed redirect to the new one for a few months; otherwise, a new link from them is recognized thanks to the same master key and picks up where we left off | "Léa moved her content", no action |
+| Tampered content (invalid signature) | Rejected, last valid version kept | "Léa's content could not be verified", with no technical detail |
+| Unsupported format version | Content ignored | "Update the app to see Léa's places" |
+| Invalid invitation or list link | — | "This link no longer works" or "This list no longer exists", with a suggestion to ask for a new link |
+| Map tiles unavailable | Cache of viewed areas, then fallback address | Map possibly less detailed, no message as long as the cache is sufficient |
+| OSM search or data unavailable | Fallback service; adding a place by long press still possible; place card enrichment retried later | "Search unavailable, place the place on the map" |
+| App not opened for a long time | Sync at each opening | Nothing |
+| Key missing from the phone's vault (system restore) | Blocked before any write | Request for the recovery kit |
 
-Écran « État de la synchronisation » dans les réglages : dernière synchronisation réussie de mon stockage et de chaque personne suivie, éléments en attente, place utilisée. Un journal technique peut être exporté pour aider au dépannage ; il reste sur l'appareil et ne contient jamais de contenu ni de clé.
+"Sync status" screen in the settings: last successful sync of my storage and of each followed person, pending items, space used. A technical log can be exported to help with troubleshooting; it stays on the device and never contains any content or key.
 
-## Exigences non fonctionnelles
+## Non-functional requirements
 
-### Performances cibles
+### Performance targets
 
-Référence : un téléphone Android de milieu de gamme d'il y a 4 ans, en 4G.
+Reference: a mid-range Android phone from 4 years ago, on 4G.
 
-| Domaine | Cible |
+| Area | Target |
 | --- | --- |
-| Volumes supportés | 10 000 lieux personnels, 200 personnes suivies, 50 000 lieux au total en cache, 500 listes |
-| Ouverture de l'app | Carte affichée avec ses lieux en moins de 2 s à froid, 0,5 s depuis l'arrière-plan ; jamais d'attente du réseau |
-| Carte | Déplacement et zoom fluides (60 images/s) avec 10 000 épingles ; application d'un filtre en moins de 100 ms sur 50 000 lieux |
-| Ajout d'un lieu | Lieux proches affichés en moins de 1 s ; résultats de recherche en moins de 300 ms pour la partie locale |
-| Synchronisation | Vérification de 50 personnes sans changement en moins de 5 s ; première lecture d'un ami avec 1 000 lieux en moins de 10 s |
-| Chiffrement | 1 000 lieux déchiffrés en moins de 1 s |
-| Taille | App de moins de 50 Mo ; cache plafonné par défaut à 500 Mo, réglable |
-| Batterie | Aucune activité hors usage de l'app (sauf la fin de synchronisation juste après fermeture) ; aucune localisation en arrière-plan |
+| Supported volumes | 10,000 personal places, 200 people followed, 50,000 places in cache in total, 500 lists |
+| App launch | Map displayed with its places in under 2 s from a cold start, 0.5 s from the background; never waiting on the network |
+| Map | Smooth panning and zooming (60 frames/s) with 10,000 pins; applying a filter in under 100 ms across 50,000 places |
+| Adding a place | Nearby places displayed in under 1 s; search results in under 300 ms for the local part |
+| Synchronization | Checking 50 people with no changes in under 5 s; first read of a friend with 1,000 places in under 10 s |
+| Encryption | 1,000 places decrypted in under 1 s |
+| Size | App under 50 MB; cache capped at 500 MB by default, adjustable |
+| Battery | No activity outside use of the app (except finishing a synchronization right after closing); no background location |
 
-Choix techniques qui en découlent :
+Resulting technical choices:
 
-- Épingles dessinées par le moteur de carte (calques de symboles MapLibre, rendus par la carte graphique), jamais comme composants d'interface React Native, qui ne tiendraient pas 10 000 éléments.
-- Regroupement des épingles et filtres calculés sur l'appareil, sur des données indexées (SQLite et index spatial).
-- Requêtes de synchronisation en parallèle, avec vérification de version (ETag) avant tout téléchargement.
-- Tests de performance automatisés sur un jeu de données de référence (10 000 lieux, 200 amis), à chaque version.
+- Pins drawn by the map engine (MapLibre symbol layers, rendered by the graphics card), never as React Native interface components, which could not handle 10,000 elements.
+- Pin clustering and filters computed on the device, on indexed data (SQLite and a spatial index).
+- Synchronization requests run in parallel, with a version check (ETag) before any download.
+- Automated performance tests on a reference dataset (10,000 places, 200 friends), on every release.
 
-### Synchronisation et arrière-plan
+### Synchronization and background
 
-La synchronisation tourne en tâche de fond, sans jamais bloquer l'interface, mais seulement autour de l'usage de l'app : pas de réveil périodique.
+Synchronization runs in the background, never blocking the interface, but only around use of the app: no periodic wake-ups.
 
-- **À l'ouverture** : synchronisation immédiate, la carte s'affiche d'abord depuis le cache.
-- **Pendant l'utilisation** : rafraîchissement régulier, et sur demande (tirer pour rafraîchir).
-- **Juste après la fermeture** (ou le passage en arrière-plan) : l'app termine la synchronisation en cours et envoie les modifications en attente, dans le court délai que le système accorde (de l'ordre de quelques dizaines de secondes sur iOS ; tâche ponctuelle sur Android).
-- **Ensuite, rien** : aucune tâche périodique, aucun réveil programmé.
+- **On launch**: immediate synchronization; the map is displayed first from the cache.
+- **During use**: regular refresh, and on demand (pull to refresh).
+- **Right after closing** (or moving to the background): the app finishes the synchronization in progress and sends pending changes, within the short grace period the system allows (on the order of a few dozen seconds on iOS; a one-off task on Android).
+- **After that, nothing**: no periodic task, no scheduled wake-up.
 
-Avantages : pas de consommation de batterie hors usage, pas de dépendance aux règles changeantes d'iOS et d'Android sur les tâches périodiques, code plus simple, publication F-Droid facilitée.
+Benefits: no battery drain outside use, no dependence on iOS and Android's changing rules on periodic tasks, simpler code, easier F-Droid publication.
 
-Conséquences acceptées : pas de notification des nouveautés (elles apparaissent à l'ouverture, avec un badge sur l'onglet) ; une révocation d'appareil n'agit qu'à la prochaine ouverture de l'app volée, d'où le verrouillage de l'app et l'option de verrouillage sans synchronisation récente ; les vérifications de fermeture des lieux se font par petits lots pendant l'utilisation.
+Accepted consequences: no notifications for new items (they appear on launch, with a badge on the tab); a device revocation only takes effect the next time the stolen app is opened, hence the app lock and the option to lock after no recent synchronization; closed-place checks are done in small batches during use.
 
-### Adaptation aux écrans
+### Screen adaptation
 
-Pas de travail d'accessibilité spécifique à ce stade (lecteurs d'écran, daltonisme…). En revanche, l'interface doit résister à toutes les tailles d'écran et à tous les réglages d'affichage :
+No specific accessibility work at this stage (screen readers, color blindness, etc.). However, the interface must withstand all screen sizes and all display settings:
 
-- **Formats** : petits téléphones (environ 320 points de large, type iPhone SE), grands téléphones, pliables et tablettes ; portrait et paysage ; écran partagé sur tablette et multi-fenêtres sur Android. Sur tablette, la fiche lieu s'ouvre en panneau latéral plutôt qu'en bas.
-- **Résolutions** : icônes vectorielles et épingles rendues par MapLibre à la densité de l'écran ; aucune image qui ne s'adapte pas.
-- **Taille de police** : respect du réglage du système (Dynamic Type sur iOS, échelle des polices sur Android), jusqu'aux plus grandes tailles ; les textes passent à la ligne au lieu d'être coupés, boutons et pastilles grandissent avec le texte, la barre de filtres défile horizontalement, et aucun élément contenant du texte n'a de hauteur fixe.
-- **Zoom d'affichage d'iOS** (« Affichage agrandi ») et taille d'affichage d'Android : l'écran devient logiquement plus petit, un grand iPhone se comportant comme un modèle plus étroit ; toutes les mises en page sont prévues et testées dans ce cas.
-- **Découpes d'écran** (encoche, îlot dynamique, barre de gestes) : marges de sécurité du système respectées.
-- **Épingles** : leur taille ne suit pas celle du texte, pour rester lisibles sans envahir la carte.
-- **Tests** : captures automatiques de chaque écran sur une matrice de formats (petit, standard, grand, tablette) × tailles de police (normale, grande, maximale) × zoom d'affichage, à chaque version.
+- **Form factors**: small phones (about 320 points wide, such as the iPhone SE), large phones, foldables and tablets; portrait and landscape; split screen on tablets and multi-window on Android. On tablets, the place card opens in a side panel rather than at the bottom.
+- **Resolutions**: vector icons and pins rendered by MapLibre at the screen's density; no image that does not scale.
+- **Font size**: respect for the system setting (Dynamic Type on iOS, font scale on Android), up to the largest sizes; text wraps instead of being cut off, buttons and chips grow with the text, the filter bar scrolls horizontally, and no element containing text has a fixed height.
+- **iOS Display Zoom** ("Zoomed" view) and Android display size: the screen logically becomes smaller, with a large iPhone behaving like a narrower model; all layouts are designed and tested for this case.
+- **Screen cutouts** (notch, Dynamic Island, gesture bar): system safe margins respected.
+- **Pins**: their size does not follow the text size, so they stay readable without overwhelming the map.
+- **Tests**: automatic screenshots of every screen across a matrix of form factors (small, standard, large, tablet) × font sizes (normal, large, maximum) × display zoom, on every release.
 
-Pliables et doubles écrans (Galaxy Z Fold et Z Flip, Pixel Fold, iPhone Duo présenté par Apple en septembre 2026, avec un écran extérieur de 5,4 pouces et un écran intérieur de 7,6 pouces de même format, et des interfaces dédiées dans iOS 27) :
+Foldables and dual-screen devices (Galaxy Z Fold and Z Flip, Pixel Fold, iPhone Duo presented by Apple in September 2026, with a 5.4-inch outer screen and a 7.6-inch inner screen of the same aspect ratio, and dedicated interfaces in iOS 27):
 
-- **Continuité** : plier ou déplier ne recharge rien ; position de la carte, filtres, fiche ouverte et saisie en cours sont conservés.
-- **Déplié** : mise en page en deux volets, carte d'un côté et liste ou fiche de l'autre, comme sur tablette.
-- **Charnière** : aucun bouton ni texte placé sur la pliure ou l'espace entre deux écrans ; l'app lit sa position via les interfaces du système (Jetpack WindowManager sur Android).
-- **Mode chevalet** (à moitié plié, type Z Flip posé sur une table) : carte en haut, commandes en bas.
-- **Petit écran extérieur** : l'app reste utilisable en largeur très réduite (consultation de la carte et des fiches).
-- **Tests** sur émulateurs de pliables et sur au moins un appareil réel par famille (livre, clapet).
+- **Continuity**: folding or unfolding reloads nothing; map position, filters, the open card and any input in progress are preserved.
+- **Unfolded**: two-pane layout, with the map on one side and the list or card on the other, as on a tablet.
+- **Hinge**: no button or text placed on the fold or the gap between two screens; the app reads its position through system interfaces (Jetpack WindowManager on Android).
+- **Tabletop mode** (half-folded, like a Z Flip standing on a table): map on top, controls at the bottom.
+- **Small outer screen**: the app remains usable at a very narrow width (viewing the map and cards).
+- **Tests** on foldable emulators and on at least one real device per family (book, flip).
 
-iPad et Mac (Apple Silicon) : une vraie mise en page de grand écran, pas un téléphone agrandi.
+iPad and Mac (Apple Silicon): a real large-screen layout, not an enlarged phone.
 
-- **iPad** : trois zones côte à côte en paysage (filtres et listes, carte, fiche), deux en portrait ; fenêtres redimensionnables (Split View, Stage Manager) avec passage fluide d'une mise en page à l'autre selon la place disponible.
-- **Clavier, souris, trackpad** : survol des épingles (aperçu du nom), clic droit pour les actions contextuelles, raccourcis clavier (recherche, nouveau lieu, filtres), défilement et zoom au trackpad.
-- **Apple Pencil** : dessin des zones avec le crayon, plus précis qu'au doigt.
-- **Mac Apple Silicon** : en v1, la version iPad est proposée sur le Mac App Store (les Mac Apple Silicon exécutent nativement les apps iPad), avec les mêmes adaptations souris, clavier et fenêtres redimensionnables ; en v2, une version Mac plus native (Mac Catalyst : menus, barre d'outils, plusieurs fenêtres) si l'usage le justifie.
-- **Tests** : iPad en plusieurs tailles et orientations, fenêtres réduites en Stage Manager, et Mac.
+- **iPad**: three panes side by side in landscape (filters and lists, map, card), two in portrait; resizable windows (Split View, Stage Manager) with a fluid transition from one layout to another depending on the available space.
+- **Keyboard, mouse, trackpad**: hovering over pins (name preview), right-click for contextual actions, keyboard shortcuts (search, new place, filters), trackpad scrolling and zooming.
+- **Apple Pencil**: drawing zones with the pencil, more precise than with a finger.
+- **Mac Apple Silicon**: in v1, the iPad version is offered on the Mac App Store (Apple Silicon Macs run iPad apps natively), with the same mouse, keyboard and resizable-window adaptations; in v2, a more native Mac version (Mac Catalyst: menus, toolbar, multiple windows) if usage justifies it.
+- **Tests**: iPad in several sizes and orientations, reduced windows in Stage Manager, and Mac.
 
-### Langues
+### Languages
 
-- **v1 en français et en anglais** ; textes externalisés dès le départ (format ICU, avec pluriels), traductions communautaires via Weblate (plateforme libre).
-- **Mise en page compatible avec l'écriture de droite à gauche** dès le départ, pour ajouter l'arabe ou l'hébreu sans refonte.
-- **Noms de lieux** dans la langue de l'utilisateur quand OSM la fournit (champs name:fr, name:en…), sinon nom local.
-- **Unités et formats** selon la région : kilomètres ou miles, dates, heures, devises pour les prix d'entrée.
-- **Synonymes de tags** (pour rapprocher les tags des amis) définis par langue.
+- **v1 in French and English**; texts externalized from the start (ICU format, with plurals), community translations via Weblate (a free software platform).
+- **Right-to-left compatible layout** from the start, so Arabic or Hebrew can be added without a redesign.
+- **Place names** in the user's language when OSM provides it (name:fr, name:en fields, etc.), otherwise the local name.
+- **Units and formats** by region: kilometers or miles, dates, times, currencies for entry prices.
+- **Tag synonyms** (to match friends' tags) defined per language.
 
-### Mode sombre
+### Dark mode
 
-- Suit le réglage du système, avec choix manuel possible (clair, sombre, automatique).
-- Carte sombre dérivée du style Dark d'OpenFreeMap (ou Fiord), avec les mêmes ajustements que le style clair.
-- Mêmes couleurs d'épingles dans les deux modes : le liseré blanc et le contour sombre garantissent la lisibilité.
-- Interface construite sur des couleurs nommées (jetons de thème), pour qu'aucun écran ne soit oublié.
+- Follows the system setting, with a manual choice possible (light, dark, automatic).
+- Dark map derived from the OpenFreeMap Dark style (or Fiord), with the same adjustments as the light style.
+- Same pin colors in both modes: the white edge and the dark outline guarantee legibility.
+- Interface built on named colors (theme tokens), so that no screen is overlooked.
 
-## Modèle de données
+## Data model
 
-Sur le téléphone, une base SQLite locale ; sur le stockage, uniquement des paquets chiffrés. La distinction clé reste entre le lieu (fiche commune, issue d'OSM) et l'enregistrement personnel sur ce lieu.
+On the phone, a local SQLite database; on the storage, only encrypted packs. The key distinction remains between the place (shared card, derived from OSM) and the personal record on that place.
 
-| Table locale | Champs principaux | Rôle |
+| Local table | Main fields | Role |
 | --- | --- | --- |
-| people | id, display\_name, avatar, public\_key, read\_url (adresse HTTPS de lecture), is\_me, i\_follow, follows\_me, request\_state (demande reçue / envoyée / acceptée), last\_etag, last\_sync | Moi et mes amis ; une clé par personne |
-| groups, group\_members | id, name ; group\_id, person\_id | Raccourcis locaux (« amis », « famille »), jamais partagés |
-| places | id, osm\_type, osm\_id, name, category, geom (point, ligne ou polygone), kind (lieu / zone), edge (net / flou), address, opening\_hours, website, phone, osm\_tags (JSON : cuisine, diet:\*, outdoor\_seating, happy\_hours, reservation, fee, charge, museum, shop…), photos (liens Commons, Panoramax), osm\_synced\_at, status (ouvert / peut-être fermé / fermé), closed\_signals | Fiche commune, cache des données OSM |
-| saves | id, owner\_id, place\_id, comment, comment\_visibility (private / friends / public), status, price\_level (1 à 4), sharing (private / friends, friends par défaut), main\_tag\_id, created\_at, updated\_at | « J'ai enregistré ce lieu » ; contient aussi les enregistrements déchiffrés des amis |
-| tags, save\_tags | id, owner\_id, parent\_id (sous-tags), name, color, icon, osm\_categories ; save\_id, tag\_id ; tag\_mappings : person\_id, their\_tag, my\_tag\_id | Tags personnels |
-| lists, list\_items | id, owner\_id, name, description, visibility (link / public), link\_key, kind (filter / manual), filter (JSON : tags, catégories, statuts, zones par identifiant OSM ou polygone, exceptions) ; list\_id, save\_id | Listes de partage |
-| access | save\_id ou list\_id, person\_id | Qui peut ouvrir quoi : sert à calculer les emballages de clés |
-| media | id, save\_id, file, blurhash, width, height | Photos perso, chiffrées sur le stockage |
+| people | id, display\_name, avatar, public\_key, read\_url (HTTPS read address), is\_me, i\_follow, follows\_me, request\_state (received / sent / accepted request), last\_etag, last\_sync | Me and my friends; one key per person |
+| groups, group\_members | id, name ; group\_id, person\_id | Local shortcuts ("friends", "family"), never shared |
+| places | id, osm\_type, osm\_id, name, category, geom (point, line or polygon), kind (place / zone), edge (sharp / blurred), address, opening\_hours, website, phone, osm\_tags (JSON: cuisine, diet:\*, outdoor\_seating, happy\_hours, reservation, fee, charge, museum, shop…), photos (Commons, Panoramax links), osm\_synced\_at, status (open / maybe closed / closed), closed\_signals | Shared place card, cache of OSM data |
+| saves | id, owner\_id, place\_id, comment, comment\_visibility (private / friends / public), status, price\_level (1 to 4), sharing (private / friends, friends by default), main\_tag\_id, created\_at, updated\_at | "I saved this place"; also contains friends' decrypted saves |
+| tags, save\_tags | id, owner\_id, parent\_id (sub-tags), name, color, icon, osm\_categories ; save\_id, tag\_id ; tag\_mappings: person\_id, their\_tag, my\_tag\_id | Personal tags |
+| lists, list\_items | id, owner\_id, name, description, visibility (link / public), link\_key, kind (filter / manual), filter (JSON: tags, categories, statuses, zones by OSM identifier or polygon, exceptions) ; list\_id, save\_id | Sharing lists |
+| access | save\_id or list\_id, person\_id | Who can open what: used to compute key wraps |
+| media | id, save\_id, file, blurhash, width, height | Personal photos, encrypted on the storage |
 
-Sur le stockage, un index signé décrit les paquets :
+On the storage, a signed index describes the packs:
 
 ```json
 {
@@ -691,318 +691,318 @@ Sur le stockage, un index signé décrit les paquets :
     { "file": "packs/7c1e.bin", "etag": "a41f" },
     { "file": "packs/b902.bin", "etag": "77d0" }
   ],
-  "public": "public/listes.geojson",
+  "public": "public/lists.geojson",
   "signature": "…"
 }
 ```
 
-Chaque paquet contient des lots : une clé de lot emballée pour chaque destinataire, puis les lieux, zones et commentaires chiffrés avec cette clé. Une fois déchiffré, un lieu est un objet GeoJSON (Feature avec nom, tags, statut, commentaire, prix, identifiant OSM), ce qui rend l'export en clair immédiat.
+Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
 
-## Stack technique et auto-hébergement
+## Tech stack and self-hosting
 
-Recommandation : TypeScript partout, avec une app React Native local-first (SQLite, Automerge pour la synchronisation, libsodium pour le chiffrement) et un stockage choisi par l'utilisateur (WebDAV, S3, SFTP). Aucun serveur propre au projet ; seuls des services existants restent nécessaires (tuiles, recherche, OpenStreetMap).
+Recommendation: TypeScript everywhere, with a local-first React Native app (SQLite, Automerge for synchronization, libsodium for encryption) and a storage chosen by the user (WebDAV, S3, SFTP). No server of the project's own; only existing services remain necessary (tiles, search, OpenStreetMap).
 
 ```mermaid
 flowchart LR
-  subgraph Moi["Mon téléphone"]
-    App["App TrianguLair\nSQLite + Automerge\nlibsodium"]
+  subgraph Moi["My phone"]
+    App["TrianguLair app\nSQLite + Automerge\nlibsodium"]
   end
-  Sto[("Mon stockage\nWebDAV · S3 · SFTP\npaquets chiffrés + index signé")]
-  Ami["App d'un ami"]
-  OSM["Services OSM\nOpenFreeMap · Photon/Nominatim\nOverpass · Commons · Panoramax"]
-  uMap["uMap\n(listes publiques)"]
-  App -- "écrit (chiffré)" --> Sto
-  Ami -- "lit en HTTPS" --> Sto
-  App -- "tuiles, recherche, fiches" --> OSM
-  uMap -- "GeoJSON public" --> Sto
+  Sto[("My storage\nWebDAV · S3 · SFTP\nencrypted packs + signed index")]
+  Ami["A friend's app"]
+  OSM["OSM services\nOpenFreeMap · Photon/Nominatim\nOverpass · Commons · Panoramax"]
+  uMap["uMap\n(public lists)"]
+  App -- "writes (encrypted)" --> Sto
+  Ami -- "reads over HTTPS" --> Sto
+  App -- "tiles, search, place details" --> OSM
+  uMap -- "public GeoJSON" --> Sto
 ```
 
-L'app est le seul composant actif : elle lit et écrit les paquets chiffrés sur les stockages, et interroge directement les services OpenStreetMap.
+The app is the only active component: it reads and writes the encrypted packs on the storages, and queries the OpenStreetMap services directly.
 
-| Couche | Choix recommandé | Alternative | Pourquoi |
+| Layer | Recommended choice | Alternative | Why |
 | --- | --- | --- | --- |
-| App Android / iOS | React Native (nouvelle architecture) + Expo, sans services propriétaires | Flutter | Un seul code, carte en vraie vue native, gouvernance neutre (React Foundation), publiable sur F-Droid |
-| Carte dans l'app | MapLibre React Native (MapLibre Native) | — | Bibliothèque maintenue par l'organisation MapLibre ; tuiles vectorielles, packs hors-ligne |
-| Base locale | SQLite avec extension spatiale | — | Requêtes « lieux dans cette zone » rapides, hors ligne |
-| Synchronisation | Automerge (CRDT) | Synchronisation maison | Fusion sans conflit entre appareils |
-| Chiffrement | libsodium | Web Crypto | Primitives éprouvées, mêmes bibliothèques sur téléphone et navigateur |
-| Stockage | WebDAV, S3 ou SFTP, derrière un adaptateur commun | HTTPS en lecture seule | Standard, souvent déjà disponible |
-| Consultation sans l'app | uMap pour les listes publiques (v1) ; page maison en v2 | — | Aucun code web à développer ni héberger en v1 |
-| Fond de carte | OpenFreeMap (tuiles vectorielles gratuites, sans clé) | PMTiles sur son propre stockage ; tuiles vectorielles OSM ; API Protomaps | Gratuit, sans compte ; adresse configurable (détail ci-dessous) |
-| Recherche | Photon ou Nominatim publics | Photon auto-hébergé | Recherche en tapant |
-| Fiches lieux | API Overpass | — | Horaires, cuisine, régimes, terrasse, prix d'entrée |
+| Android / iOS app | React Native (new architecture) + Expo, with no proprietary services | Flutter | One codebase, map as a true native view, neutral governance (React Foundation), publishable on F-Droid |
+| Map in the app | MapLibre React Native (MapLibre Native) | — | Library maintained by the MapLibre organization; vector tiles, offline packs |
+| Local database | SQLite with spatial extension | — | Fast "places in this zone" queries, offline |
+| Synchronization | Automerge (CRDT) | Custom synchronization | Conflict-free merging between devices |
+| Encryption | libsodium | Web Crypto | Proven primitives, same libraries on phone and browser |
+| Storage | WebDAV, S3 or SFTP, behind a common adapter | Read-only HTTPS | Standard, often already available |
+| Viewing without the app | uMap for public lists (v1); custom page in v2 | — | No web code to develop or host in v1 |
+| Base map | OpenFreeMap (free vector tiles, no key) | PMTiles on one's own storage; OSM vector tiles; Protomaps API | Free, no account; configurable address (details below) |
+| Search | Public Photon or Nominatim | Self-hosted Photon | Search as you type |
+| Place cards | Overpass API | — | Opening hours, cuisine, diets, outdoor seating, entry prices |
 
-Configurations possibles :
+Possible configurations:
 
-- **Local seul** : l'app sans stockage ; tout reste sur le téléphone, pas de partage.
-- **WebDAV personnel** : NAS ou serveur à la maison ; partage complet, rien chez un tiers.
-- **Nextcloud chez un hébergeur** : la voie la plus simple pour les non-techniciens ; l'hébergeur ne voit que des données chiffrées.
-- **Tout auto-hébergé** : en plus, tuiles et recherche sur ses propres machines, pour ne dépendre d'aucun service public.
+- **Local only**: the app without storage; everything stays on the phone, no sharing.
+- **Personal WebDAV**: NAS or server at home; full sharing, nothing with a third party.
+- **Nextcloud with a hosting provider**: the simplest route for non-technical users; the provider only sees encrypted data.
+- **Fully self-hosted**: in addition, tiles and search on one's own machines, so as not to depend on any public service.
 
-Au premier lancement, l'utilisateur choisit le mode local seul ou un stockage (WebDAV, S3 ou SFTP : adresse et identifiants, plus l'adresse HTTPS de lecture si elle diffère). Il peut changer plus tard ; l'app recopie tout.
+On first launch, the user chooses local-only mode or a storage (WebDAV, S3 or SFTP: address and credentials, plus the HTTPS read address if it differs). They can change later; the app copies everything over.
 
-### Fond de carte
+### Base map
 
-Recommandation : OpenFreeMap par défaut, avec une adresse de tuiles configurable et la possibilité de servir ses propres tuiles depuis son stockage.
+Recommendation: OpenFreeMap by default, with a configurable tile address and the option of serving one's own tiles from one's storage.
 
-| Option | Coût et conditions | Hors-ligne | Rôle dans l'app |
+| Option | Cost and conditions | Offline | Role in the app |
 | --- | --- | --- | --- |
-| [OpenFreeMap](https://openfreemap.org) (instance publique) | Gratuit, sans inscription, sans clé, sans cookie, sans limite annoncée de vues ou de requêtes ; financé par les dons | Cache des zones consultées | Choix par défaut |
-| PMTiles sur son propre stockage (S3, HTTPS) | Coût de stockage et de bande passante de l'utilisateur ; un fichier par région | Oui, téléchargement d'une région | Option « tout chez moi » et cartes hors-ligne |
-| Tuiles vectorielles OSM (vector.openstreetmap.org) | Gratuit mais ressources limitées : identification de l'app obligatoire, cache d'au moins 7 jours, téléchargement en masse et hors-ligne interdits | Non | Secours |
-| [API Protomaps](https://protomaps.com) | Clé obligatoire ; gratuite pour un usage non commercial, plafond souple d'environ 1 million de requêtes par mois | Via les téléchargements Protomaps | Secours |
+| [OpenFreeMap](https://openfreemap.org) (public instance) | Free, no registration, no key, no cookie, no announced limit on views or requests; funded by donations | Cache of viewed areas | Default choice |
+| PMTiles on one's own storage (S3, HTTPS) | User's own storage and bandwidth costs; one file per region | Yes, by downloading a region | "Everything at home" option and offline maps |
+| OSM vector tiles (vector.openstreetmap.org) | Free but limited resources: app identification mandatory, cache of at least 7 days, bulk and offline downloading prohibited | No | Fallback |
+| [Protomaps API](https://protomaps.com) | Key required; free for non-commercial use, soft cap of about 1 million requests per month | Via Protomaps downloads | Fallback |
 
-Règles :
+Rules:
 
-- L'adresse des tuiles n'est jamais figée dans le code : elle se change dans les réglages ou par une mise à jour de configuration, sans nouvelle version de l'app, comme le recommandent les politiques d'usage d'OSM.
-- Un seul schéma de tuiles (OpenMapTiles, celui d'OpenFreeMap) pour n'avoir qu'un style à maintenir ; les fichiers PMTiles régionaux sont produits dans ce même schéma (OpenFreeMap publie ses données planète en téléchargement, convertibles en PMTiles).
-- L'app s'identifie clairement (User-Agent avec nom, version et contact) et respecte les en-têtes de cache.
-- Attribution visible sur la carte : « OpenFreeMap © OpenMapTiles, données © contributeurs OpenStreetMap », avec un lien « Signaler une erreur » vers OpenStreetMap.
-- Risque : OpenFreeMap repose sur un mainteneur et des dons ; d'où l'adresse configurable, les solutions de secours, et une contribution financière du projet s'il en a les moyens.
+- The tile address is never hardcoded: it can be changed in the settings or by a configuration update, without a new app release, as recommended by OSM's usage policies.
+- A single tile schema (OpenMapTiles, OpenFreeMap's) so there is only one style to maintain; regional PMTiles files are produced in that same schema (OpenFreeMap publishes its planet data for download, convertible to PMTiles).
+- The app identifies itself clearly (User-Agent with name, version and contact) and respects cache headers.
+- Attribution visible on the map: "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors", with a "Report an error" link to OpenStreetMap.
+- Risk: OpenFreeMap relies on one maintainer and on donations; hence the configurable address, the fallback options, and a financial contribution from the project if it can afford it.
 
-Style de carte : OpenFreeMap propose Positron, Bright, Liberty, Dark, Fiord et 3D. L'app utilise un style maison dérivé de Positron (fond clair et sobre sur lequel les épingles colorées ressortent), ajusté avec l'éditeur Maputnik : eau et parcs légèrement colorés, icônes de commerces d'OSM remplacées par de petits points gris visibles seulement au zoom rapproché (les toucher ouvre l'ajout du lieu). En mode sombre, même principe à partir de Dark (ou Fiord, à comparer). Le style est intégré à l'app, seules les tuiles viennent d'OpenFreeMap. Liberty est proposé en option « carte détaillée ».
+Map style: OpenFreeMap offers Positron, Bright, Liberty, Dark, Fiord and 3D. The app uses a custom style derived from Positron (a light, understated background on which colored pins stand out), adjusted with the Maputnik editor: slightly tinted water and parks, OSM shop icons replaced by small gray dots visible only when zoomed in (tapping them opens the add-place flow). In dark mode, same principle starting from Dark (or Fiord, to be compared). The style is bundled in the app; only the tiles come from OpenFreeMap. Liberty is offered as a "detailed map" option.
 
-Option sur iOS (v2) : fond de carte Apple Plans (MapKit, intégré au système et gratuit dans une app native) à la place d'OpenFreeMap, au choix de l'utilisateur. Seul le décor change : les lieux restent identifiés par OpenStreetMap, et épingles, bandes de couleur, zones et estompage sont dessinés par l'app par-dessus. Pas d'équivalent sur Android, où la carte « native » est Google Maps et dépend des services Google Play. Les données de lieux d'Apple ou de Google ne sont pas utilisées comme base, car leurs identifiants ne sont pas communs aux deux systèmes et leurs conditions encadrent fortement le stockage et le partage.
+Option on iOS (v2): Apple Maps base map (MapKit, built into the system and free in a native app) instead of OpenFreeMap, at the user's choice. Only the backdrop changes: places remain identified by OpenStreetMap, and pins, color bands, zones and fading are drawn by the app on top. No equivalent on Android, where the "native" map is Google Maps and depends on Google Play Services. Apple's or Google's place data is not used as a base, because their identifiers are not common to both systems and their terms heavily restrict storing and sharing.
 
-Pourquoi React Native plutôt que Flutter : la carte s'affiche comme une vraie vue native, alors que Flutter doit l'intégrer en « platform view », pleinement fluide seulement sur Android 14+ avec le mode HCPP ; le même TypeScript servira à une future page web ; la gouvernance est neutre depuis le passage à la React Foundation (Linux Foundation). Les deux sont sous licence libre permissive (MIT pour React Native, BSD-3 pour Flutter).
+Why React Native rather than Flutter: the map is displayed as a true native view, whereas Flutter has to embed it as a "platform view", fully smooth only on Android 14+ with HCPP mode; the same TypeScript will serve a future web page; governance has been neutral since the move to the React Foundation (Linux Foundation). Both are under permissive free licenses (MIT for React Native, BSD-3 for Flutter).
 
-Pour rester publiable sur F-Droid : aucune dépendance Firebase ou Google Play Services, aucune tâche périodique en arrière-plan, builds reproductibles depuis le code source.
+To remain publishable on F-Droid: no Firebase or Google Play Services dependency, no periodic background task, reproducible builds from source code.
 
-## Confidentialité, sécurité, modération
+## Privacy, security, moderation
 
-Les lieux sont des données sensibles (domicile, travail, habitudes) : rien n'est public par défaut : un lieu est partagé avec les amis, et seul ce que l'utilisateur met dans une liste publique (ou un commentaire marqué public) est visible de tous.
+Places are sensitive data (home, work, habits): nothing is public by default: a place is shared with friends, and only what the user puts in a public list (or a comment marked public) is visible to everyone.
 
-Confidentialité :
+Privacy:
 
-- Partage par défaut = amis, réglable sur « privé » dans les préférences ; jamais public par défaut : le public passe uniquement par une liste publique, choix explicite.
-- Chiffrement de bout en bout : le stockage et son hébergeur ne voient que des paquets chiffrés ; seules les listes publiques sont en clair.
-- Pas de géolocalisation en continu, pas d'historique de positions : la position sert seulement à centrer la carte.
-- Photos : suppression automatique des métadonnées EXIF (GPS, appareil) avant chiffrement.
-- Avertissement quand un lieu ressemble à un domicile (adresse résidentielle) avant de l'ajouter à une liste publique.
-- Point faible assumé : retirer un accès efface le contenu de l'app de l'ami à sa synchronisation suivante, mais pas les copies faites volontairement (captures d'écran, export, app modifiée). À expliquer clairement dans l'app.
+- Default sharing = friends, adjustable to "private" in the preferences; never public by default: public sharing goes only through a public list, an explicit choice.
+- End-to-end encryption: the storage and its host only see encrypted packs; only public lists are in plaintext.
+- No continuous geolocation, no location history: position is used only to center the map.
+- Photos: automatic removal of EXIF metadata (GPS, device) before encryption.
+- Warning when a place looks like a home (residential address) before adding it to a public list.
+- Acknowledged weak point: removing access erases the content from the friend's app at their next synchronization, but not copies made deliberately (screenshots, export, modified app). To be explained clearly in the app.
 
-Sécurité :
+Security:
 
-- Clé privée gardée dans le coffre sécurisé du téléphone (Keychain sur iOS, Keystore sur Android), sauvegardée uniquement sous forme chiffrée par la phrase de récupération.
-- Identifiants de stockage (mot de passe WebDAV, clés S3, clé SSH) gardés de la même façon ; des accès dédiés et limités au dossier de l'app sont recommandés (mot de passe d'application Nextcloud, clé S3 restreinte à un bucket).
-- Tout contenu lu chez un ami est vérifié (signature) avant affichage ; un contenu modifié est rejeté.
-- Vérification des clés : un échange de QR codes, ou la comparaison d'un code court affiché des deux côtés, confirme qu'on a la bonne clé.
-- Bibliothèques de chiffrement standard (libsodium), aucun algorithme maison ; audit de sécurité externe avant la première version publique.
+- Private key kept in the phone's secure vault (Keychain on iOS, Keystore on Android), backed up only in a form encrypted by the recovery phrase.
+- Storage credentials (WebDAV password, S3 keys, SSH key) kept the same way; dedicated accesses limited to the app's folder are recommended (Nextcloud app password, S3 key restricted to one bucket).
+- All content read from a friend is verified (signature) before display; modified content is rejected.
+- Key verification: a QR code exchange, or comparing a short code displayed on both sides, confirms that the key is the right one.
+- Standard encryption libraries (libsodium), no homemade algorithm; external security audit before the first public release.
 
-Modération :
+Moderation:
 
-- Pas de modération centralisée : chacun ne voit que le contenu des personnes qu'il a acceptées.
-- Bloquer une personne supprime sa clé et ses lieux de l'app, et lui retire tous les accès.
-- Une liste publique est publiée sur le stockage de son auteur, sous sa responsabilité.
+- No centralized moderation: everyone only sees the content of people they have accepted.
+- Blocking a person deletes their key and places from the app, and removes all their accesses.
+- A public list is published on its author's storage, under their responsibility.
 
-### Modèle de menaces
+### Threat model
 
-Ce qu'on protège : les lieux et commentaires (qui peuvent révéler un domicile, des habitudes, des fréquentations), la liste des contacts, les clés et les identifiants de stockage.
+What we protect: places and comments (which can reveal a home, habits, acquaintances), the contact list, keys and storage credentials.
 
-| Qui | Ce qu'il peut tenter | Protection | Ce qui reste possible |
+| Who | What they may attempt | Protection | What remains possible |
 | --- | --- | --- | --- |
-| Hébergeur du stockage, ou quiconque y accède | Lire, modifier ou supprimer les fichiers | Chiffrement, signatures, emballages anonymes, remplissage ; restauration depuis les copies locales | Voir le volume de données, les dates de mise à jour et les adresses IP des lecteurs |
-| Observateur du réseau (Wi-Fi public, fournisseur d'accès) | Écouter les échanges | HTTPS partout | Savoir que l'app est utilisée et quels stockages sont lus, donc deviner qui suit qui |
-| Services OSM, tuiles, recherche | Observer les requêtes | Aucun compte, cache local, auto-hébergement possible | Connaître les zones consultées et les recherches, associées à une adresse IP |
-| Personne suivie ou abonnée | Copier ce qu'on lui a ouvert, modifier son app | Retrait d'accès qui efface son cache à la synchronisation suivante | Garder des copies faites volontairement |
-| Détenteur d'un lien de liste | Transférer le lien | Nouveau lien pour couper l'accès | Le lien reste transférable tant qu'il n'est pas renouvelé |
-| Usurpateur (fausse invitation ou faux lien retour au nom d'un ami) | Obtenir l'accès à mes lieux | Vérification de clé par QR code ou code court comparé, nom et empreinte affichés à chaque demande | Réussir si l'utilisateur accepte sans vérifier |
-| Voleur du téléphone | Lire le contenu local, écrire sur le stockage | Verrouillage de l'app, coffre du système, effacement à distance, changement de clé et des accès au stockage | Lire ce qui était visible entre le vol et la révocation, si l'app n'était pas verrouillée |
-| Accès à ma messagerie ou à mes mails | Intercepter un lien d'invitation ou de transfert | Une invitation ne contient qu'une clé temporaire, valable 7 jours et retirée dès l'acceptation ; un transfert d'appareil exige un code séparé et expire en 15 minutes | Voir à qui j'envoie des invitations, et utiliser une invitation interceptée pendant sa validité |
-| Code de l'app ou de ses dépendances compromis | Exfiltrer les clés | Code ouvert, builds reproductibles, dépendances limitées et auditées, audit externe | Risque résiduel propre à tout logiciel |
-| Auteur malveillant d'une liste publique (adresse privée d'un tiers) | Exposer quelqu'un | Avertissement à la publication, responsabilité de l'auteur, suppression possible par l'hébergeur | Pas de modération centrale pour l'empêcher |
+| Storage host, or anyone with access to it | Read, modify or delete files | Encryption, signatures, anonymous wraps, padding; restoration from local copies | Seeing the data volume, update dates and readers' IP addresses |
+| Network observer (public Wi-Fi, internet provider) | Eavesdrop on exchanges | HTTPS everywhere | Knowing that the app is in use and which storages are read, and so guessing who follows whom |
+| OSM, tile and search services | Observe requests | No account, local cache, self-hosting possible | Knowing the areas viewed and the searches, tied to an IP address |
+| Followed person or follower | Copy what has been opened to them, modify their app | Access removal that erases their cache at the next synchronization | Keeping deliberately made copies |
+| Holder of a list link | Forward the link | New link to cut off access | The link stays forwardable until it is renewed |
+| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | Key verification by QR code or compared short code, name and fingerprint shown on every request | Succeeding if the user accepts without verifying |
+| Phone thief | Read local content, write to the storage | App lock, system vault, remote wipe, key change and storage access change | Reading what was visible between the theft and the revocation, if the app was not locked |
+| Access to my messaging or my emails | Intercept an invitation or transfer link | An invitation only contains a temporary key, valid for 7 days and removed on acceptance; a device transfer requires a separate code and expires in 15 minutes | Seeing whom I send invitations to, and using an intercepted invitation during its validity |
+| Compromised app code or dependencies | Exfiltrate keys | Open code, reproducible builds, limited and audited dependencies, external audit | Residual risk inherent to any software |
+| Malicious author of a public list (a third party's private address) | Expose someone | Warning at publication, author's responsibility, possible removal by the host | No central moderation to prevent it |
 
-Hors périmètre : téléphone infecté par un logiciel espion ou débloqué (root), adversaire étatique ciblant une personne, contrainte physique, anonymat réseau complet (pas de routage de type Tor). La résistance aux futurs ordinateurs quantiques n'est pas assurée en v1, mais prévue grâce à l'identification des algorithmes dans le format.
+Out of scope: a phone infected by spyware or unlocked (rooted), a state-level adversary targeting a person, physical coercion, full network anonymity (no Tor-style routing). Resistance to future quantum computers is not ensured in v1, but is planned for by identifying the algorithms in the format.
 
-## Avantages, inconvénients et risques
+## Advantages, drawbacks and risks
 
-Le bilan est favorable pour un projet communautaire durable, défavorable si l'objectif est de rivaliser vite avec les applis commerciales sur la richesse des fiches et la simplicité d'inscription.
+The balance is favorable for a lasting community project, unfavorable if the goal is to quickly compete with commercial apps on place card richness and ease of sign-up.
 
-Avantages :
+Advantages:
 
-- **Souveraineté des données** : chacun garde ses lieux chez lui, chiffrés, exportables à tout moment.
-- **Rien à exploiter** : pas de serveur, pas de coût d'hébergement pour le projet, pas de base centrale à protéger.
-- **Confidentialité forte** : même l'hébergeur du stockage ne peut rien lire ; chaque personne ne voit que ce qu'on lui a ouvert.
-- **Coût faible** : pas de facture Google Maps ; OSM et les tuiles PMTiles sont gratuits.
-- **Briques mûres** : WebDAV, libsodium, SQLite, OSM, MapLibre et React Native sont tous éprouvés en production.
-- **Pérennité** : sous licence libre, et l'app continue de fonctionner même si le projet s'arrête.
+- **Data sovereignty**: everyone keeps their places at home, encrypted, exportable at any time.
+- **Nothing to operate**: no server, no hosting cost for the project, no central database to protect.
+- **Strong privacy**: even the storage host can read nothing; each person only sees what has been opened to them.
+- **Low cost**: no Google Maps bill; OSM and PMTiles tiles are free.
+- **Mature building blocks**: WebDAV, libsodium, SQLite, OSM, MapLibre and React Native are all proven in production.
+- **Longevity**: under a free license, and the app keeps working even if the project stops.
 
-Inconvénients :
+Drawbacks:
 
-- **Fiches lieux moins riches** que Google : moins de photos, pas d'avis, horaires parfois manquants selon les régions.
-- **Pas de notifications instantanées ni d'annuaire** : les ajouts des amis arrivent à la synchronisation, et on s'ajoute par lien.
-- **Gestion des clés** : perdre sa phrase de récupération, c'est perdre l'accès ; c'est le point d'ergonomie le plus délicat.
-- **Un stockage à configurer pour partager** : un frein pour les non-techniciens.
-- **Pas de retrait réel** au-delà de l'app : une capture d'écran ou une app modifiée échappe au retrait d'accès.
-- **Coût de publication mobile** : compte Apple Developer payant (99 $/an) et revue App Store à chaque version.
+- **Less rich place cards** than Google: fewer photos, no reviews, opening hours sometimes missing depending on the region.
+- **No instant notifications or directory**: friends' additions arrive at synchronization, and people are added by link.
+- **Key management**: losing one's recovery phrase means losing access; this is the most delicate usability point.
+- **A storage to configure in order to share**: a hurdle for non-technical users.
+- **No real removal** beyond the app: a screenshot or a modified app escapes access removal.
+- **Mobile publishing cost**: paid Apple Developer account ($99/year) and App Store review on every release.
 
-Risques :
+Risks:
 
-| Risque | Probabilité | Impact | Parade |
+| Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
-| Configuration du stockage qui décourage | Élevée | Élevé | Assistant de connexion, mode local seul pour commencer, liste d'hébergeurs recommandés (par exemple membres du collectif CHATONS) |
-| Gestion des clés trop compliquée | Moyenne | Élevé | Création automatique, phrase de récupération guidée, sauvegarde chiffrée sur le stockage |
-| Faille dans le chiffrement | Faible | Élevé | libsodium, aucun algorithme maison, audit externe |
-| Peu d'utilisateurs, pas d'effet réseau | Moyenne | Élevé | Listes publiques visibles dans uMap sans l'app, import Google en un clic |
-| Charge sur les services OSM publics | Moyenne | Moyen | Cache local, vérifications mensuelles étalées |
-| Rejet App Store (contenu généré par les utilisateurs) | Faible | Moyen | Blocage de personnes dans l'app ; contenu visible seulement entre personnes qui se sont acceptées |
+| Storage setup that discourages users | High | High | Connection wizard, local-only mode to start, list of recommended hosts (for example members of the CHATONS collective) |
+| Key management too complicated | Medium | High | Automatic creation, guided recovery phrase, encrypted backup on the storage |
+| Flaw in the encryption | Low | High | libsodium, no homemade algorithm, external audit |
+| Few users, no network effect | Medium | High | Public lists viewable in uMap without the app, one-click Google import |
+| Load on public OSM services | Medium | Medium | Local cache, staggered monthly checks |
+| App Store rejection (user-generated content) | Low | Medium | Blocking people in the app; content visible only between people who have accepted each other |
 
-## Projets existants
+## Existing projects
 
-Aucun projet ne fait exactement « une appli de lieux local-first et chiffrée », mais plusieurs briques et exemples sont directement utiles.
+No project does exactly "a local-first, encrypted place-saving app", but several building blocks and examples are directly useful.
 
-| Projet | Ce qu'il fait | Intérêt pour nous |
+| Project | What it does | Relevance for us |
 | --- | --- | --- |
-| CryptPad | Suite collaborative chiffrée dont les liens de partage portent la clé dans le fragment (#) | Modèle éprouvé pour les listes « avec le lien » |
-| Nextcloud | Stockage auto-hébergeable avec WebDAV et liens de partage en lecture seule | Stockage de référence |
-| Automerge | Bibliothèque CRDT pour applications local-first | Synchronisation entre appareils |
-| uMap | Cartes collaboratives sur OSM, auto-hébergeables | Format d'export compatible, pas de dimension sociale |
-| Organic Maps / CoMaps | Cartes hors-ligne libres avec signets | Cible d'export (KML/GPX) |
+| CryptPad | Encrypted collaborative suite whose sharing links carry the key in the fragment (#) | Proven model for "with the link" lists |
+| Nextcloud | Self-hostable storage with WebDAV and read-only sharing links | Reference storage |
+| Automerge | CRDT library for local-first applications | Synchronization between devices |
+| uMap | Collaborative maps on OSM, self-hostable | Compatible export format, no social dimension |
+| Organic Maps / CoMaps | Free offline maps with bookmarks | Export target (KML/GPX) |
 
-## Légal et publication
+## Legal and publishing
 
-### Attributions et licences des données
+### Data attributions and licenses
 
-| Source | Obligation | Dans l'app |
+| Source | Obligation | In the app |
 | --- | --- | --- |
-| OpenStreetMap (ODbL) | Mention visible des contributeurs OSM | « © contributeurs OpenStreetMap » sur la carte, avec lien vers la page de licence ; idem sur les fiches |
-| OpenFreeMap et OpenMapTiles | Mention appréciée (OpenFreeMap) et licence du schéma (OpenMapTiles) | Dans la même ligne d'attribution |
-| Photos Wikimedia Commons et Panoramax | Auteur et licence de chaque photo (souvent CC BY ou CC BY-SA) | Crédit et licence sous chaque photo, avec lien vers la source |
-| Extraits Wikipédia | CC BY-SA : mention et lien | « Source : Wikipédia » sous la description |
-| Listes publiques | Une liste publique contient des données issues d'OSM ; l'ODbL impose alors de la diffuser sous la même licence | Mention ODbL automatique dans le GeoJSON public ; analyse juridique à confirmer |
+| OpenStreetMap (ODbL) | Visible credit to OSM contributors | "© OpenStreetMap contributors" on the map, with a link to the license page; same on the cards |
+| OpenFreeMap and OpenMapTiles | Credit appreciated (OpenFreeMap) and schema license (OpenMapTiles) | In the same attribution line |
+| Wikimedia Commons and Panoramax photos | Author and license of each photo (often CC BY or CC BY-SA) | Credit and license under each photo, with a link to the source |
+| Wikipedia excerpts | CC BY-SA: credit and link | "Source: Wikipedia" under the description |
+| Public lists | A public list contains data derived from OSM; the ODbL then requires distributing it under the same license | Automatic ODbL notice in the public GeoJSON; legal analysis to be confirmed |
 
-### Licence du code
+### Code license
 
-La GPL-3.0 envisagée pose un problème connu avec l'App Store, dont les conditions ajoutent des restrictions incompatibles avec elle. Choix : MPL-2.0, licence libre « copyleft par fichier » (toute modification d'un fichier du projet doit être republiée), acceptée sur l'App Store, le Play Store et F-Droid, sans accord particulier à faire signer aux contributeurs.
+The GPL-3.0 originally considered poses a known problem with the App Store, whose terms add restrictions incompatible with it. Choice: MPL-2.0, a "file-level copyleft" free license (any modification to a project file must be republished), accepted on the App Store, the Play Store and F-Droid, with no special agreement for contributors to sign.
 
-### Règles des stores
+### Store rules
 
-- **Confidentialité** : politique de confidentialité publiée (exigée par Apple et Google) ; fiches « données collectées » d'Apple et « sécurité des données » de Google déclarant qu'aucune donnée n'est collectée par le projet.
-- **Contenu créé par les utilisateurs** : Apple exige des moyens de bloquer et de signaler ; l'app permet de bloquer une personne et de signaler une liste publique à son auteur et à l'hébergeur. Le fait que tout contenu vienne de personnes acceptées est à mettre en avant lors de la revue.
-- **Suppression de compte** : il n'y a pas de compte sur un serveur du projet ; « Supprimer tout mon contenu » couvre l'exigence d'Apple, à documenter pour la revue.
-- **Chiffrement** : déclaration de l'usage de chiffrement à Apple (algorithmes standards et code ouvert, a priori dispense de formalités d'export) ; en France, le chiffrement intégré à l'app pour protéger le contenu (et non celui fourni par le système, comme HTTPS) en fait un moyen de cryptologie assurant la confidentialité, dont la fourniture est soumise à déclaration préalable auprès de l'ANSSI, même avec des algorithmes standards ; Apple demande l'attestation pour publier sur l'App Store français. Décision : faire la déclaration en phase 0 (gratuite, sur dossier, quelques semaines), en confirmant la procédure actuelle.
-- **Coûts** : compte Apple Developer (99 $ par an), compte Google Play (25 $ une fois), F-Droid gratuit avec builds reproductibles.
-- **Nom et identité** : nom, icône et visuels propres pour éviter toute confusion de marque.
+- **Privacy**: published privacy policy (required by Apple and Google); Apple's "data collected" and Google's "data safety" forms declaring that no data is collected by the project.
+- **User-generated content**: Apple requires ways to block and report; the app lets users block a person and report a public list to its author and to the host. The fact that all content comes from accepted people should be highlighted during review.
+- **Account deletion**: there is no account on a project server; "Delete all my content" covers Apple's requirement, to be documented for the review.
+- **Encryption**: declaration of encryption use to Apple (standard algorithms and open code, presumably exempt from export formalities); in France, encryption built into the app to protect content (as opposed to that provided by the system, such as HTTPS) makes it a cryptology means providing confidentiality, whose supply is subject to prior declaration to the ANSSI (French national cybersecurity agency), even with standard algorithms; Apple asks for the certificate to publish on the French App Store. Decision: make the declaration in phase 0 (free, file-based, a few weeks), confirming the current procedure.
+- **Costs**: Apple Developer account ($99 per year), Google Play account ($25 one-time), F-Droid free with reproducible builds.
+- **Name and identity**: name, icon and visuals of its own, to avoid any brand confusion.
 
-### Données personnelles (RGPD)
+### Personal data (GDPR)
 
-- Le projet ne traite aucune donnée personnelle : pas de serveur, pas de compte, pas de mesure d'audience.
-- Chaque utilisateur stocke ses données sur le stockage qu'il choisit ; l'usage entre amis relève de la sphère privée.
-- La politique de confidentialité liste les services tiers contactés directement par l'app et ce qu'ils voient (adresse IP, zone consultée, recherche) : OpenFreeMap, Nominatim ou Photon, Overpass, Wikimedia, Panoramax, uMap, et le stockage de chaque personne suivie.
+- The project processes no personal data: no server, no account, no audience measurement.
+- Each user stores their data on the storage they choose; use between friends falls under the private sphere.
+- The privacy policy lists the third-party services contacted directly by the app and what they see (IP address, area viewed, search): OpenFreeMap, Nominatim or Photon, Overpass, Wikimedia, Panoramax, uMap, and the storage of each person followed.
 
-### Rapports de plantage
+### Crash reports
 
-Aucun envoi automatique. En cas de problème, l'utilisateur peut partager lui-même le journal technique local (sans contenu ni clé) par mail ou dans un ticket du projet ; une option d'envoi automatique, désactivée par défaut et vers un service auto-hébergé, pourra être étudiée plus tard.
+No automatic sending. In case of a problem, the user can share the local technical log themselves (without content or keys) by email or in a project issue; an automatic sending option, disabled by default and going to a self-hosted service, may be considered later.
 
-## Projet : qualité et gouvernance
+## Project: quality and governance
 
-### Méthode de développement
+### Development method
 
-**Une base de code, trois cibles** : l'app est développée avec Expo (React Native), qui produit à partir du même code les apps iOS et Android et une version web. Seule la carte a deux implémentations, derrière une interface commune : MapLibre natif sur téléphone, MapLibre GL JS dans le navigateur.
+**One codebase, three targets**: the app is developed with Expo (React Native), which produces from the same code the iOS and Android apps and a web version. Only the map has two implementations, behind a common interface: native MapLibre on phones, MapLibre GL JS in the browser.
 
-**La version web sert aux tests, pas à la publication** :
+**The web version is for testing, not for publishing**:
 
-- À chaque avancée, une version web est déployée sur un hébergement statique ; il suffit d'ouvrir un lien pour tester sur n'importe quel appareil, sans Mac ni compilation.
-- Limites connues de cette version de test : pas de SFTP, lecture WebDAV et S3 seulement depuis des stockages configurés pour l'autoriser (un stockage de test dédié est fourni), stockage local du navigateur moins fiable, pas de réception de lieux partagés depuis d'autres apps.
-- Elle pourra plus tard servir de base à la page de consultation web prévue en v2.
+- With every milestone, a web version is deployed on static hosting; opening a link is enough to test on any device, with no Mac or compilation.
+- Known limits of this test version: no SFTP, WebDAV and S3 reading only from storages configured to allow it (a dedicated test storage is provided), less reliable browser local storage, no receiving of places shared from other apps.
+- It may later serve as the basis for the web viewing page planned for v2.
 
-**Les apps natives pour les vrais essais et la publication** : compilées dans le cloud (service de build d'Expo, qui produit aussi la version iOS sans Mac, avec le compte Apple Developer) ou sur un Mac ; distribuées en test par TestFlight, le test interne du Play Store et un fichier d'installation Android, puis publiées sur l'App Store, le Play Store et F-Droid.
+**Native apps for real trials and publishing**: built in the cloud (Expo's build service, which also produces the iOS version without a Mac, with the Apple Developer account) or on a Mac; distributed for testing through TestFlight, the Play Store internal test and an Android installation file, then published on the App Store, the Play Store and F-Droid.
 
-**Développement par agents** :
+**Agent-based development**:
 
-- Un agent coordinateur découpe le travail selon cette spec, définit les interfaces entre modules, intègre et vérifie.
-- Des agents travaillent en parallèle, chacun sur sa branche, sur des modules indépendants : chiffrement et format, adaptateurs de stockage, synchronisation et fusion, données OSM, carte et épingles, écrans et parcours.
-- Les tests servent de contrat : un module n'est intégré que s'il passe ses propres tests et les tests d'intégration.
-- Un agent qui n'a pas écrit un module relit chaque partie sensible (chiffrement, synchronisation, clés).
-- La spec et le dépôt sont la seule source de vérité, puisque chaque agent démarre sans mémoire.
-- Restent humains : les tests sur appareils réels, les arbitrages produit, les comptes et démarches (stores, ANSSI), et l'audit externe du chiffrement.
+- A coordinator agent breaks down the work according to this spec, defines the interfaces between modules, integrates and verifies.
+- Agents work in parallel, each on its own branch, on independent modules: encryption and format, storage adapters, synchronization and merging, OSM data, map and pins, screens and flows.
+- Tests act as the contract: a module is only integrated if it passes its own tests and the integration tests.
+- An agent that did not write a module reviews each sensitive part (encryption, synchronization, keys).
+- The spec and the repository are the single source of truth, since every agent starts without memory.
+- Remaining human: tests on real devices, product trade-offs, accounts and procedures (stores, ANSSI), and the external audit of the encryption.
 
-### Stratégie de tests
+### Testing strategy
 
-| Niveau | Ce qui est testé | Comment |
+| Level | What is tested | How |
 | --- | --- | --- |
-| Logique métier | Filtres, listes par filtre, dédoublonnage, correspondance des tags, fusion des modifications, suppressions | Tests unitaires TypeScript, et tests par propriétés (données générées au hasard) pour la fusion et le dédoublonnage |
-| Chiffrement | Chiffrement et déchiffrement, signatures, détection d'altération, rotation et révocation de clés | Vecteurs de test publiés avec la spécification du format ; tests d'altération systématiques ; analyse aléatoire des fichiers reçus (fuzzing) |
-| Compatibilité entre versions | Lecture des contenus produits par les versions précédentes, et inversement | Archive de paquets produits par chaque version publiée, relue à chaque nouvelle version |
-| Stockages | WebDAV, S3, SFTP, HTTPS | Tests d'intégration contre de vrais serveurs lancés pour l'occasion (Nextcloud, MinIO, serveur SFTP, serveur web), avec pannes simulées : délai dépassé, quota plein, identifiants refusés, écriture interrompue |
-| Synchronisation | Plusieurs utilisateurs et appareils, conflits, retrait d'accès, appareil volé | Simulations de scénarios complets, sans interface |
-| Parcours utilisateur | Premier lancement, ajout d'un lieu, invitation, liste, import, perte et vol | Tests de bout en bout sur simulateurs iOS et Android |
-| Affichage | Formats, tailles de police, zoom d'affichage, mode sombre, pliables, iPad, Mac | Captures automatiques comparées à la version précédente |
-| Performances | Cibles de la section Exigences non fonctionnelles | Jeu de référence (10 000 lieux, 200 amis) sur un appareil de référence, à chaque version |
-| Chaîne de production | Builds reproductibles, dépendances | Vérification des builds F-Droid, audit des licences et vulnérabilités des dépendances, liste publique des composants |
+| Business logic | Filters, filter-based lists, deduplication, tag matching, merging of changes, deletions | TypeScript unit tests, and property-based tests (randomly generated data) for merging and deduplication |
+| Encryption | Encryption and decryption, signatures, tamper detection, key rotation and revocation | Test vectors published with the format specification; systematic tampering tests; random analysis of received files (fuzzing) |
+| Cross-version compatibility | Reading content produced by previous versions, and vice versa | Archive of packs produced by each published version, re-read on every new version |
+| Storages | WebDAV, S3, SFTP, HTTPS | Integration tests against real servers started for the occasion (Nextcloud, MinIO, SFTP server, web server), with simulated failures: timeout, full quota, rejected credentials, interrupted write |
+| Synchronization | Multiple users and devices, conflicts, access removal, stolen device | Simulations of complete scenarios, without interface |
+| User flows | First launch, adding a place, invitation, list, import, loss and theft | End-to-end tests on iOS and Android simulators |
+| Display | Form factors, font sizes, display zoom, dark mode, foldables, iPad, Mac | Automatic screenshots compared with the previous version |
+| Performance | Targets from the Non-functional requirements section | Reference dataset (10,000 places, 200 friends) on a reference device, on every release |
+| Production chain | Reproducible builds, dependencies | F-Droid build verification, audit of dependency licenses and vulnerabilities, public list of components |
 
-Avant la première version publique : bêta via TestFlight et le test interne du Play Store, puis audit de sécurité externe du chiffrement et de la synchronisation.
+Before the first public release: beta via TestFlight and the Play Store internal test, then an external security audit of the encryption and synchronization.
 
-### Gouvernance
+### Governance
 
-- **Code** sur la forge Forgejo du porteur du projet, adresse publique du projet ; le développement par agents se fait sur un dépôt GitHub privé, que Forgejo reflète automatiquement (miroir), et qui pourra être abandonné à tout moment sans rien perdre.
-- **Contributions** sous MPL-2.0, avec une simple attestation d'origine dans chaque commit (DCO) plutôt qu'un accord de cession ; guide de contribution et code de conduite.
-- **Format de données** : spécification publique dans le dépôt, versionnée ; toute évolution passe par une proposition écrite, discutée avant d'être codée, pour que d'autres apps puissent lire et écrire le même format.
-- **Sécurité** : politique de signalement des failles (adresse dédiée, divulgation coordonnée sous 90 jours), corrections publiées en priorité.
-- **Traductions** sur Weblate, ouvertes à tous.
-- **Design** : jetons de thème et feuille de style des icônes (grille de 24 px, trait de 2 px, extrémités arrondies, contour sombre) pour que les contributions restent cohérentes ; icônes sous licence CC0 ou compatible.
-- **Versions** : numérotation sémantique, journal des changements, publication régulière.
-- **Financement** : dons récurrents (Liberapay ou Open Collective), et candidature possible aux programmes de financement de logiciels libres axés sur la vie privée (par exemple NLnet) ; besoins identifiés : compte Apple Developer, audit de sécurité, soutien à OpenFreeMap.
+- **Code** on the project owner's Forgejo forge, the project's public address; agent-based development happens on a private GitHub repository, which Forgejo mirrors automatically, and which can be abandoned at any time without losing anything.
+- **Contributions** under MPL-2.0, with a simple certificate of origin in each commit (DCO) rather than an assignment agreement; contribution guide and code of conduct.
+- **Data format**: public specification in the repository, versioned; every change goes through a written proposal, discussed before being coded, so that other apps can read and write the same format.
+- **Security**: vulnerability reporting policy (dedicated address, coordinated disclosure within 90 days), fixes published as a priority.
+- **Translations** on Weblate, open to everyone.
+- **Design**: theme tokens and icon style sheet (24 px grid, 2 px stroke, rounded ends, dark outline) so that contributions stay consistent; icons under CC0 or a compatible license.
+- **Releases**: semantic versioning, changelog, regular publication.
+- **Funding**: recurring donations (Liberapay or Open Collective), and possible applications to funding programs for privacy-focused free software (for example NLnet); identified needs: Apple Developer account, security audit, support for OpenFreeMap.
 
-## Points à spécifier
+## Items to specify
 
-À trancher avant de coder :
+To be decided before coding:
 
-- [ ] Hébergement du fond de carte : tranché (OpenFreeMap par défaut, voir Stack technique)
-- [ ] Parcours de premier lancement : tranché (voir Premier lancement)
-- [ ] Ajout d'un deuxième appareil : tranché (voir Premier lancement)
-- [ ] Perte et vol du téléphone : tranché (voir Premier lancement)
-- [ ] Versions du format chiffré : tranché (voir Architecture)
+- [ ] Base map hosting: decided (OpenFreeMap by default, see Tech stack)
+- [ ] First-launch flow: decided (see First launch)
+- [ ] Adding a second device: decided (see First launch)
+- [ ] Phone loss and theft: decided (see First launch)
+- [ ] Encrypted format versions: decided (see Architecture)
 
-Parcours à détailler :
+Flows to detail:
 
-- [ ] Modifier et supprimer : tranché (voir Fonctionnalités)
-- [ ] Cas d'erreur : tranché (voir Cas d'erreur)
-- [ ] Suivre une liste sans être ami : tranché (voir Fonctionnalités)
-- [ ] Consultation sans l'app : tranché (uMap pour les listes publiques en v1, page maison en v2)
-- [ ] Imports : tranché (voir Fonctionnalités) ; formats d'export de Mapstr et Pin Drop à vérifier
+- [ ] Editing and deleting: decided (see Features)
+- [ ] Error cases: decided (see Error cases)
+- [ ] Following a list without being a friend: decided (see Features)
+- [ ] Viewing without the app: decided (uMap for public lists in v1, custom page in v2)
+- [ ] Imports: decided (see Features); Mapstr and Pin Drop export formats to be verified
 
-Exigences non fonctionnelles :
+Non-functional requirements:
 
-- [ ] Performances cibles : tranché (voir Exigences non fonctionnelles)
-- [ ] Arrière-plan : tranché, synchronisation pendant l'usage et juste après la fermeture, sans tâche périodique
-- [ ] Adaptation aux écrans, langues, mode sombre : tranché (voir Exigences non fonctionnelles) ; pas de travail d'accessibilité spécifique en v1
-- [ ] Modèle de menaces : tranché (voir Confidentialité, sécurité, modération)
+- [ ] Performance targets: decided (see Non-functional requirements)
+- [ ] Background: decided, synchronization during use and right after closing, with no periodic task
+- [ ] Screen adaptation, languages, dark mode: decided (see Non-functional requirements); no specific accessibility work in v1
+- [ ] Threat model: decided (see Privacy, security, moderation)
 
-Légal et publication :
+Legal and publishing:
 
-- [ ] Attributions : tranché (voir Légal et publication) ; impact de l'ODbL sur les listes publiques à confirmer
-- [ ] Règles des stores : tranché ; déclaration ANSSI à faire en phase 0 ; licence du code : MPL-2.0
-- [ ] Rapports de plantage : tranché, aucun envoi automatique
+- [ ] Attributions: decided (see Legal and publishing); impact of the ODbL on public lists to be confirmed
+- [ ] Store rules: decided; ANSSI declaration to be made in phase 0; code license: MPL-2.0
+- [ ] Crash reports: decided, no automatic sending
 
-Projet :
+Project:
 
-- [ ] Stratégie de tests : tranché (voir Projet)
-- [ ] Gouvernance : tranché (voir Projet)
+- [ ] Testing strategy: decided (see Project)
+- [ ] Governance: decided (see Project)
 
-## Questions ouvertes
+## Open questions
 
-- [ ] Format exact des paquets chiffrés : JWE tel quel, ou format plus compact inspiré de JWE ?
-- [ ] Fréquence de rafraîchissement quand l'app reste ouverte.
-- [ ] Proposer un stockage par défaut aux débutants (hébergeur partenaire), ou seulement un assistant ?
-- [ ] Nom du projet : TrianguLair retenu ; vérifier les domaines (triangulair, et triangulaire pour rediriger les fautes) et les marques sur TMview (classes 9 et 42).
-- [ ] Format exact de l'export Mapstr (pour l'import) : à vérifier sur un vrai compte.
-- [ ] Financement du compte Apple Developer et de l'audit de sécurité.
-- [ ] Langue de la communauté (français, anglais, les deux) ?
+- [ ] Exact format of the encrypted packs: JWE as is, or a more compact format inspired by JWE?
+- [ ] Refresh frequency while the app stays open.
+- [ ] Offer a default storage to beginners (partner host), or only a wizard?
+- [ ] Project name: TrianguLair chosen; check the domains (triangulair, and triangulaire to redirect typos) and trademarks on TMview (classes 9 and 42).
+- [ ] Exact format of the Mapstr export (for import): to be verified on a real account.
+- [ ] Funding for the Apple Developer account and the security audit.
+- [x] Community language: English (repository, issues, spec); the app is translated via Weblate.
 
-## Feuille de route
+## Roadmap
 
-1. **Phase 0 — cadrage (2 à 3 semaines)** : valider ces specs, maquettes des écrans principaux, prototype du format chiffré et de l'invitation par lien, déclaration du moyen de cryptologie à l'ANSSI.
-2. **Phase 1 — app locale (3 mois)** : lieux, zones, tags, filtres, fiches OSM, lieux fermés, import et export, adaptation à tous les écrans (pliables, iPad, Mac), sans partage.
-3. **Phase 2 — partage (3 à 4 mois)** : stockages (WebDAV, S3, SFTP), clés et kit de récupération, invitation et lien retour, appareils multiples, perte et vol, lieux des amis et Nouveautés, listes par lien et publiques, lien « Voir sur uMap » ; audit de sécurité.
-4. **Phase 3 — ouverture** : publication sur les stores, documentation, appel aux contributeurs.
+1. **Phase 0 — scoping (2 to 3 weeks)**: validate these specs, mockups of the main screens, prototype of the encrypted format and of invitation by link, declaration of the cryptology means to the ANSSI.
+2. **Phase 1 — local app (3 months)**: places, zones, tags, filters, OSM cards, closed places, import and export, adaptation to all screens (foldables, iPad, Mac), without sharing.
+3. **Phase 2 — sharing (3 to 4 months)**: storages (WebDAV, S3, SFTP), keys and recovery kit, invitation and return link, multiple devices, loss and theft, friends' places and What's new, link-only and public lists, "View on uMap" link; security audit.
+4. **Phase 3 — opening up**: publication on the stores, documentation, call for contributors.
 
-Durées estimées pour une ou deux personnes à temps partiel ; à réajuster après la phase 0.
+Durations estimated for one or two part-time people; to be readjusted after phase 0.
 
 ## Sources
 
 - [WebDAV, RFC 4918](https://www.rfc-editor.org/rfc/rfc4918)
 - [JSON Web Encryption, RFC 7516](https://www.rfc-editor.org/rfc/rfc7516)
-- [Documentation libsodium](https://doc.libsodium.org)
+- [libsodium documentation](https://doc.libsodium.org)
 - [Automerge](https://automerge.org)
-- [Proposition de tag de prix abandonnée (wiki OSM)](https://wiki.openstreetmap.org/wiki/Proposal:Restaurant_Classification)
+- [Abandoned price tag proposal (OSM wiki)](https://wiki.openstreetmap.org/wiki/Proposal:Restaurant_Classification)

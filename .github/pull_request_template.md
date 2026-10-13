@@ -1,10 +1,10 @@
 Closes #
 
-## Ce que fait cette PR
+## What this PR does
 
-## Vérifications
+## Checklist
 
-- [ ] `npm test` et `npm run typecheck` passent
-- [ ] Commits signés (`git commit -s`)
-- [ ] Spec mise à jour si le comportement ou le format change
-- [ ] Relecture par une autre personne si chiffrement, synchronisation ou clés
+- [ ] `npm test` and `npm run typecheck` pass
+- [ ] Commits signed off (`git commit -s`)
+- [ ] Spec updated if behavior or format changes
+- [ ] Reviewed by someone else if it touches encryption, sync or keys
