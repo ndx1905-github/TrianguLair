@@ -71,7 +71,14 @@ HTTPS-only mode suits someone who publishes rarely (a travel list, a guide); the
 3. They send me this link; I open it and choose what they can see (by default: everything I share with "friends").
 4. My app adds the wraps for their key; they see my content at their next sync. If we both share, the exchange works in both directions.
 
-When meeting face to face, an exchange of QR codes replaces the two links and guarantees that the key is the right one.
+Protecting the invitation (decided after the crypto review, T-002):
+
+- **One answer per invitation**: an invitation accepts a single return link. If several answers arrive (the link was forwarded or intercepted), none is accepted automatically: the app shows them all with a warning and I choose.
+- **Re-encryption on acceptance or expiry**: when the invitation is accepted or expires, the content it opened is re-encrypted with new pack keys (not merely re-wrapped), so someone who kept a copy of the link can no longer read anything new.
+- **Optional verification**: each contact shows a safety code computed from both identities (12 groups of 5 digits, or a QR code to scan). Comparing it is not mandatory: each person can mark a contact as "verified" once they have really compared the code, by phone or face to face; until then the contact shows an "unverified" badge, on the request, in the contact card and wherever the friend appears. Marking is a personal declaration, never sent to anyone. If a verified contact's identity changes, the mark is removed and the badge comes back.
+- **Compact link**: the invitation is encoded in a compact binary form (about 300 characters) so that it fits in a readable QR code.
+
+When meeting face to face, an exchange of QR codes replaces the two links: the keys are exchanged directly, without an invitation key, and the contact is marked as verified automatically.
 
 ### Asymmetric relationships
 
@@ -81,7 +88,7 @@ Each direction of the relationship is independent:
 - **Being followed**: I have opened content to someone, with their key.
 - One does not imply the other. The return link is therefore a request ("Paul would like to see your places") that the recipient accepts, partially accepts or ignores.
 - Following a public list or one received by link asks nothing of anyone, neither key nor consent.
-- Each contact shows two switches: "I see their places" and "they see my places". The word "friends" in the app refers to the people I follow; the filters and the What's new view apply to them.
+- Each contact shows two switches: "I see their places" and "they see my places", and a "verified" / "unverified" badge (see Invitation link and return link). The word "friends" in the app refers to the people I follow; the filters and the What's new view apply to them.
 
 ### Encrypted sharing
 
@@ -96,7 +103,8 @@ Each direction of the relationship is independent:
 ### Organization on the storage
 
 - A small signed index, encrypted packs (by batch of places or by geographic zone) and photos as separate files, also encrypted.
-- Only modified packs are rewritten; friends ask "has it changed?" (ETag header) and download only what is needed.
+- Only modified packs are rewritten; friends ask "has it changed?" (ETag header) and download only what is needed. The storage's ETag is only a cache hint: integrity always comes from the content hash recorded in the signed index.
+- Pack files are named after the hash of their content and never modified: a new version of a pack is a new file. The pack's logical identifier is stored inside the encrypted content, so neither the storage nor a former friend can link successive versions of a pack.
 - Friends' content is kept in cache in the app (decrypted in the local database, itself protected by the phone's encryption) for instant display. It is refreshed on opening, regularly as long as the app stays open, and on demand (pull to refresh) , and ends just after the app is closed; no periodic task. By comparing the old and new versions, the app knows exactly what has changed: this is what feeds the What's new view.
 - Several devices of the same user write to the same storage; an automatic merge technique (CRDT, Automerge library) avoids conflicts.
 - The storage still sees file sizes and update dates; the app adds padding to limit what can be inferred from them.
@@ -519,7 +527,7 @@ In local-only mode, the phrase is not enough, since no copy of the places exists
 
 ### Adding a device
 
-What passes from one device to the other: the private key, storage access and friends' keys. Three ways, from the safest to the last resort:
+Each device has its own device key, generated on the device and never copied. What passes from one device to the other: the current sharing key (encrypted for the new device key), storage access and friends' keys. The master key is not transferred: it stays with the recovery phrase and, if the user chooses, on a single **primary device**. Adding a device is therefore done from the primary device, or by typing the 12 words on the new device. Three ways, from the safest to the last resort:
 
 1. **QR code (default)**: both devices side by side; the new one scans the old one's screen. The two devices create a shared temporary key, and the transfer is encrypted with it; nothing travels in the clear.
 2. **Link + code (remote)**: the old device encrypts the transfer pack and temporarily drops it on the storage, then produces a link to send to oneself by mail or messaging, and displays a 6-word code to type on the new device. The link alone allows nothing; the code must never be sent through the same channel. The link expires after 15 minutes and works only once; the pack is then deleted from the storage. The encryption key is derived from the code by a deliberately slow function (Argon2), to discourage attempts to guess the code.
@@ -531,12 +539,15 @@ Each device appears in the settings (name, date added), and can be removed: the 
 
 Keys are organized in two levels so that a theft does not cost you your friends:
 
-- **Master key**: recreated from the recovery phrase, it is used only for signing. This is the one friends know as "your identity".
-- **Sharing key**: the one for which friends wrap their content; it is certified by the master key and present on each of your devices.
+- **Master key**: recreated from the recovery phrase, it is used only for signing. This is the one friends know as "your identity". It is kept only on the primary device (optional) and is otherwise recreated from the 12 words when needed: adding or removing a device, changing the sharing key.
+- **Sharing key**: the one for which friends wrap their content. It is generated at random (it is not derived from the phrase, so a new one cannot be guessed from an old device), certified by the master key, and sent to each device encrypted for that device's own key. The recovery vault on the storage keeps a copy, encrypted with a key derived from the phrase.
+- **Device key**: one per device, never copied.
+
+Why: a stolen ordinary device holds neither the phrase nor the master key, so after the key change it can neither compute the new sharing key nor certify a key of its own.
 
 **Loss (phone broken or misplaced without particular risk)**: on the new device, the recovery kit is enough; everything is restored, nothing else to do.
 
-**Theft**: from another device, or from a new phone restored with the kit, the "Declare a device lost" action:
+**Theft**: from the primary device, or from any device after typing the 12 words, the "Declare a device lost" action:
 
 1. Removes the stolen device from the list and creates a new sharing key, signed by the master key.
 2. Re-encrypts its own content with new batch keys: the thief no longer sees any update.
@@ -545,6 +556,8 @@ Keys are organized in two levels so that a theft does not cost you your friends:
 5. Shows the changes made on the storage since the date of the theft, with the option to revert to the previous state (local copy from other devices, or the storage's version history).
 
 **Remote wipe**: the declaration writes a device revocation on the storage, signed by the master key. At its next sync, the stolen phone's app reads it, verifies the signature and erases its keys and all its local content. The app checks revocations before displaying anything each time it is opened, as soon as it has network access.
+
+**Theft of the primary device**: it holds the master key, so the key change is not enough. The "Declare the primary device lost" action, after typing the 12 words, creates a new identity (new phrase and master key), signs the move with the old master key, and publishes it. Friends' apps show "Marie changed her identity" and remove the "verified" mark until it is compared again; a later certificate signed by the old master key is refused. This is why keeping the master key on a primary device is optional: without it, only the 12 words can certify.
 
 Limit: if the phone is cut off from the network before syncing, the revocation does not arrive; the app lock and the "lock if no sync for X days" option (with optional wipe) cover this case. What the phone had already copied before the declaration remains out of reach, hence the key change for subsequent updates.
 
@@ -685,16 +698,25 @@ On the storage, a signed index describes the packs:
 ```json
 {
   "version": 1,
+  "seq": 42,
   "owner": "ed25519:9fK2…",
   "updated": "2026-10-13T15:10:00Z",
+  "sharing_cert": { "key": "x25519:…", "rotation": 3, "signature": "…" },
+  "revoked_devices": ["ed25519:…"],
+  "reads": ["1"],
   "packs": [
-    { "file": "packs/7c1e.bin", "etag": "a41f" },
-    { "file": "packs/b902.bin", "etag": "77d0" }
+    { "file": "packs/b2b256-7c1e….bin", "hash": "b2b256:7c1e…" },
+    { "file": "packs/b2b256-b902….bin", "hash": "b2b256:b902…" }
   ],
   "public": "public/lists.geojson",
   "signature": "…"
 }
 ```
+
+- `seq`: publication counter, incremented at each publication and claimed with a conditional write; it alone orders indexes. A reader refuses an index with a lower `seq` than the last one seen (rollback), and an index with the same `seq` but different content (fork), which it reports.
+- `updated`: informational only; an index dated more than 24 hours in the future is refused.
+- `sharing_cert`, `revoked_devices`, `reads` (format versions the owner can read): inside the index so they share its signature and rollback protection.
+- `hash`: content hash of each pack (256-bit BLAKE2b, algorithm prefixed); the storage's own ETag is never trusted for integrity.
 
 Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
 
@@ -806,9 +828,9 @@ What we protect: places and comments (which can reveal a home, habits, acquainta
 | OSM, tile and search services | Observe requests | No account, local cache, self-hosting possible | Knowing the areas viewed and the searches, tied to an IP address |
 | Followed person or follower | Copy what has been opened to them, modify their app | Access removal that erases their cache at the next synchronization | Keeping deliberately made copies |
 | Holder of a list link | Forward the link | New link to cut off access | The link stays forwardable until it is renewed |
-| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | Key verification by QR code or compared short code, name and fingerprint shown on every request | Succeeding if the user accepts without verifying |
-| Phone thief | Read local content, write to the storage | App lock, system vault, remote wipe, key change and storage access change | Reading what was visible between the theft and the revocation, if the app was not locked |
-| Access to my messaging or my emails | Intercept an invitation or transfer link | An invitation only contains a temporary key, valid for 7 days and removed on acceptance; a device transfer requires a separate code and expires in 15 minutes | Seeing whom I send invitations to, and using an intercepted invitation during its validity |
+| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | One answer per invitation, warning when several arrive, optional safety code (12 groups of 5 digits or QR) and "unverified" badge until the user marks the contact as verified | Succeeding if the user accepts without verifying |
+| Phone thief | Read local content, write to the storage | App lock, system vault, remote wipe, random sharing key that the device cannot regenerate, master key absent from ordinary devices, key change and storage access change | Reading what was visible between the theft and the revocation, if the app was not locked; if the primary device is stolen, an identity change is needed |
+| Access to my messaging or my emails | Intercept an invitation or transfer link | An invitation only contains a temporary key, valid for 7 days; a single answer is accepted; content is re-encrypted on acceptance or expiry; a device transfer requires a separate code and expires in 15 minutes | Seeing whom I send invitations to, and reading what was shared with friends until the invitation is accepted or expires |
 | Compromised app code or dependencies | Exfiltrate keys | Open code, reproducible builds, limited and audited dependencies, external audit | Residual risk inherent to any software |
 | Malicious author of a public list (a third party's private address) | Expose someone | Warning at publication, author's responsibility, possible removal by the host | No central moderation to prevent it |
 
@@ -982,7 +1004,7 @@ Project:
 
 ## Open questions
 
-- [ ] Exact format of the encrypted packs: JWE as is, or a more compact format inspired by JWE?
+- [x] Exact format of the encrypted packs: compact binary format inspired by JWE, specified in `packages/crypto/README.md` (to be published in `docs/format/`, T-201).
 - [ ] Refresh frequency while the app stays open.
 - [ ] Offer a default storage to beginners (partner host), or only a wizard?
 - [ ] Project name: TrianguLair chosen; check the domains (triangulair, and triangulaire to redirect typos) and trademarks on TMview (classes 9 and 42).
