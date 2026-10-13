@@ -377,11 +377,12 @@ Depends on: T-202
 
 ### T-204 — Sync: publishing and reading packs
 
-While in use and right after closing, no periodic task; ETag, signed index, friends' cache.
+While in use and right after closing, no periodic task; ETag, signed index, friends' cache. ETag compare-and-swap is best effort on some servers: after publishing, re-read the index and check it carries our `seq`; merge and republish otherwise. A real Nextcloud takes ~0.4 s per request: upload packs in parallel and avoid needless round trips.
 
 Acceptance criteria:
 
 - [ ] Headless multi-user simulation
+- [ ] A full sync against a real Nextcloud stays within the performance targets
 
 Depends on: T-102, T-201, T-202
 

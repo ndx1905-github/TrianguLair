@@ -96,7 +96,7 @@ t("T-202","P2","Production storage adapters and tests against real servers",["st
 t("T-203","P2","Storage settings and migration between storages",["app","storage"],
   "Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, full copy when switching.",["Lossless migration tested"],deps=["T-202"])
 t("T-204","P2","Sync: publishing and reading packs",["sync"],
-  "While in use and right after closing, no periodic task; ETag, signed index, friends' cache.",["Headless multi-user simulation"],deps=["T-102","T-201","T-202"])
+  "While in use and right after closing, no periodic task; ETag, signed index, friends' cache. ETag compare-and-swap is best effort on some servers: after publishing, re-read the index and check it carries our `seq`; merge and republish otherwise. A real Nextcloud takes ~0.4 s per request: upload packs in parallel and avoid needless round trips.",["Headless multi-user simulation","A full sync against a real Nextcloud stays within the performance targets"],deps=["T-102","T-201","T-202"])
 t("T-205","P2","Recovery kit and first launch",["crypto","app"],
   "Three entry points, 12-word phrase, recovery kit, standard flow.",["End-to-end flow"],deps=["T-201"])
 t("T-206","P2","Adding a device (transfer code, QR)",["crypto","app"],"Argon2id code and QR code.",["Two devices in sync"],deps=["T-205","T-204"])
