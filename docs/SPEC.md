@@ -697,13 +697,14 @@ On the storage, a signed index describes the packs:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "seq": 42,
   "owner": "ed25519:9fK2…",
   "updated": "2026-10-13T15:10:00Z",
+  "device_cert": { "device": "ed25519:…", "box": "x25519:…", "signature": "…" },
   "sharing_cert": { "key": "x25519:…", "rotation": 3, "signature": "…" },
   "revoked_devices": ["ed25519:…"],
-  "reads": ["1"],
+  "reads": ["2"],
   "packs": [
     { "file": "packs/b2b256-7c1e….bin", "hash": "b2b256:7c1e…" },
     { "file": "packs/b2b256-b902….bin", "hash": "b2b256:b902…" }
@@ -715,7 +716,9 @@ On the storage, a signed index describes the packs:
 
 - `seq`: publication counter, incremented at each publication and claimed with a conditional write; it alone orders indexes. A reader refuses an index with a lower `seq` than the last one seen (rollback), and an index with the same `seq` but different content (fork), which it reports.
 - `updated`: informational only; an index dated more than 24 hours in the future is refused.
-- `sharing_cert`, `revoked_devices`, `reads` (format versions the owner can read): inside the index so they share its signature and rollback protection.
+- The index is signed by the publishing **device's** key (ordinary devices do not hold the master key); `device_cert` is that device's certificate, signed by the master key. A device listed in `revoked_devices` can no longer publish.
+- `sharing_cert` (signed by the master key), `revoked_devices` (covered by that same master signature, so a stolen device that is not yet revoked cannot revoke the real ones; the list is permanent) and `reads` (format versions the owner can read): inside the index so they share its rollback protection.
+- `move` (optional): the signed identity change published after the primary device is stolen.
 - `hash`: content hash of each pack (256-bit BLAKE2b, algorithm prefixed); the storage's own ETag is never trusted for integrity.
 
 Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
