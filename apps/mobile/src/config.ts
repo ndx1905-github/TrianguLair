@@ -18,7 +18,7 @@ export const MAP_STYLE_URL_DARK: string =
 export const MAP_ATTRIBUTION = '© OpenStreetMap contributors, OpenFreeMap';
 export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
 
-/** Initial camera (Paris). */
+/** Fallback camera (Paris), used when there is no place to fit. */
 export const INITIAL_CENTER = { lat: 48.8586, lon: 2.3417 };
 export const INITIAL_ZOOM = 12.3;
 

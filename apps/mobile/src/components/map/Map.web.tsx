@@ -80,9 +80,10 @@ export default function Map({
         // Attribution is drawn by our own always-visible overlay (MapAttribution).
         attributionControl: false,
       });
-      // Zoom buttons only on wide screens (top-right: the filter bar is a left-aligned panel there; on phones it spans the width).
-      if (containerRef.current.clientWidth >= 700) {
-        map.addControl(new lib.NavigationControl({ showCompass: true }), 'top-right');
+      // Zoom buttons for mouse users on wide windows. Bottom-left: the filter
+      // panel is top-left, the place side panel top-right, the attribution bottom-right.
+      if (containerRef.current.clientWidth >= 600) {
+        map.addControl(new lib.NavigationControl({ showCompass: true }), 'bottom-left');
       }
       map.on('click', (e) => cb.current.onMapPress?.({ lat: e.lngLat.lat, lon: e.lngLat.lng }));
       // Right click on desktop, long press on touch screens.
