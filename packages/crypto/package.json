@@ -1,0 +1,23 @@
+{
+  "name": "@triangulair/crypto",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MPL-2.0",
+  "description": "TrianguLair encrypted data format (phase-0 prototype)",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scure/bip39": "^2.4.0",
+    "libsodium-wrappers-sumo": "^0.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
