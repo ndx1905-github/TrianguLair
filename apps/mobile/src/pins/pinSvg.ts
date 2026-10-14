@@ -16,7 +16,9 @@ export const PIN_ANCHOR = { x: 0.5, y: 49 / 52 } as const;
 const HEAD = { cx: 20, cy: 19, r: 16 };
 const PIN_PATH =
   'M20 49C17 42 4 32 4 19A16 16 0 1 1 36 19C36 32 23 42 20 49Z';
-const CLIP_ID = 'tl-pin-clip'; // Same shape for every pin: duplicate ids are harmless on web.
+/** Icon outline color (spec "Interface": dark gray #1F2937). */
+export const ICON_HALO = '#1F2937';
+const CLIP_ID ='tl-pin-clip'; // Same shape for every pin: duplicate ids are harmless on web.
 
 export interface PinSpec {
   /** Tag colors in order (first = primary). */
@@ -49,7 +51,9 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
 
   const bandOpacity = spec.faded ? 0.5 : 1;
   const pinOpacity = spec.faded ? 0.85 : 1;
-  const halo = spec.faded ? 'rgba(15,23,42,0.55)' : 'rgba(15,23,42,0.85)';
+  // Strong dark halo (spec: #1F2937 outline) keeps the white icon legible on
+  // every color, including yellow and amber.
+  const halo = spec.faded ? 'rgba(31,41,55,0.6)' : ICON_HALO;
   const icon = esc(spec.iconPath);
   // Icon: 24 units scaled to 18px, centered on the head.
   const iconTransform = `translate(${HEAD.cx - 9} ${HEAD.cy - 9}) scale(0.75)`;
@@ -67,7 +71,7 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
     `<path d="${PIN_PATH}" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>` +
     `<path d="${PIN_PATH}" fill="none" stroke="rgba(15,23,42,0.25)" stroke-width="0.6"/>` +
     `<g transform="${iconTransform}">` +
-    `<path d="${icon}" fill="none" stroke="${halo}" stroke-width="3.4" stroke-linejoin="round"/>` +
+    `<path d="${icon}" fill="none" stroke="${halo}" stroke-width="4" stroke-linejoin="round"/>` +
     `<path d="${icon}" fill="#FFFFFF"/>` +
     `</g>` +
     `</g></svg>`

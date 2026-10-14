@@ -11,6 +11,7 @@ import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK } from 
 import { useLayout } from '../hooks/useLayout';
 import { useIsDark, useUiColors } from '../hooks/useUiColors';
 import { filterPlaces, toggleTag, usedTags } from '../places/filter';
+import { fitCamera } from '../places/camera';
 import { MOCK_PLACES } from '../places/mockPlaces';
 import { placeToPin } from '../pins/fromPlace';
 import { TAG_IDS, type TagId } from '../theme/tags';
@@ -19,12 +20,22 @@ export default function MapScreen() {
   const c = useUiColors();
   const dark = useIsDark();
   const insets = useSafeAreaInsets();
-  const { gutter } = useLayout();
+  const { gutter, width, height } = useLayout();
 
   const places = MOCK_PLACES;
   const [hidden, setHidden] = useState<ReadonlySet<TagId>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetCover, setSheetCover] = useState(0);
+  // Initial camera fitting all places, computed once (resizing or folding the
+  // window must not move the map). Vertical padding clears the filter bar.
+  const [camera] = useState(() =>
+    fitCamera(places, {
+      width: Math.max(120, width - gutter * 4),
+      height: Math.max(120, height - (insets.top + 200) * 2),
+      maxZoom: 15,
+      fallback: { center: INITIAL_CENTER, zoom: INITIAL_ZOOM },
+    }),
+  );
 
   const tags = useMemo(() => usedTags(places, TAG_IDS), [places]);
   const visible = useMemo(() => filterPlaces(places, hidden), [places, hidden]);
@@ -41,8 +52,8 @@ export default function MapScreen() {
     <View style={[styles.root, { backgroundColor: c.background }]}>
       <Map
         styleUrl={dark ? MAP_STYLE_URL_DARK : MAP_STYLE_URL}
-        center={INITIAL_CENTER}
-        zoom={INITIAL_ZOOM}
+        center={camera.center}
+        zoom={camera.zoom}
         pins={pins}
         selectedPinId={selected?.id}
         onPinPress={setSelectedId}

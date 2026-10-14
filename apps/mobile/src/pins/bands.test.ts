@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeBands, uniqueColors } from './bands';
-import { pinSvg } from './pinSvg';
+import { ICON_HALO, pinSvg } from './pinSvg';
 
 const opts = { top: 3, bottom: 35, max: 3, fallback: '#999999' };
 
@@ -54,6 +54,24 @@ describe('pinSvg', () => {
     expect(svg.match(/fill="#EF4444"/g)).toHaveLength(1);
     expect(svg.match(/fill="#3B82F6"/g)).toHaveLength(1);
     expect(svg).toContain('<path d="M0 0H24V24Z" fill="#FFFFFF"/>');
+  });
+
+  it('draws a dark halo under the white icon', () => {
+    const svg = pinSvg({ colors: ['#FACC15'], iconPath: 'M1 1Z', faded: false });
+    const halo = svg.indexOf(`stroke="${ICON_HALO}"`);
+    expect(halo).toBeGreaterThan(-1);
+    expect(halo).toBeLessThan(svg.indexOf('<path d="M1 1Z" fill="#FFFFFF"/>'));
+  });
+
+  it('caps the bands at three for a four-tag place', () => {
+    const svg = pinSvg({ colors: ['#100000', '#200000', '#300000', '#400000'], iconPath: 'M0 0Z', faded: false });
+    expect(svg).toContain('#300000');
+    expect(svg).not.toContain('#400000');
+  });
+
+  it('escapes attribute values', () => {
+    const svg = pinSvg({ colors: ['"><script>'], iconPath: 'M0 0Z', faded: false });
+    expect(svg).not.toContain('<script>');
   });
 
   it('faded pins are translucent', () => {

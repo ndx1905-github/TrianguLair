@@ -47,7 +47,7 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest: pin bands, SVG, filtering
+npm test            # vitest: pin bands, SVG, filtering, layout, theme, camera
 ```
 
 ## Configuration
@@ -98,10 +98,20 @@ image per color/icon combination (made at build time or with Skia) and clusterin
 
 ## Responsiveness and accessibility
 
-- **Light/dark:** follows the system setting for both the UI and the map style.
+- **Light/dark:** follows the system setting for both the UI and the map style. The "Theme" button in
+  the filter bar cycles Auto / Light / Dark (in memory only for now; persistence comes with T-118).
 - **Text size:** text follows the system font size. Chips and labels cap it with
   `maxFontSizeMultiplier`, and nothing uses a fixed height.
-- **Layout:** comes from `useWindowDimensions` (`src/hooks/useLayout.ts`). On wide windows (≥700 px
-  and not portrait), the filter bar becomes a floating panel with wrapped chips, and the place sheet
-  becomes a floating card at the bottom left. On phones, the chips scroll sideways and the sheet is
-  docked full width at the bottom.
+- **Layout:** pure size classes in `src/theme/layout.ts` (Material breakpoints: compact < 600 ≤ medium
+  < 840 ≤ expanded), fed by `useWindowDimensions`. On wide windows (tablets, unfolded foldables,
+  landscape phones) the filter bar becomes a floating panel with wrapped chips and the place card opens
+  as a side panel on the right. On compact windows (phones, outer screens, Display Zoom) the chips
+  scroll sideways and the card is a bottom sheet docked full width. Layout changes never reset state.
+- **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once.
+
+## Screenshots
+
+`docs/screenshot-web.png` (phone, place sheet open), `docs/screenshot-web-tablet.png` (tablet, side
+panel) and `docs/screenshot-web-dark.png` (phone, dark) were taken from the web export with Playwright
+(Chromium). The sandbox that produced them had no access to `tiles.openfreemap.org`, so the style
+request was answered with a background-only placeholder: the base map is blank, pins and UI are real.
