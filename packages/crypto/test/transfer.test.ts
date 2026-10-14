@@ -5,6 +5,7 @@ import {
   DecryptionError,
   encodeKeyExport,
   encryptForTransfer,
+  ExpiredError,
   FormatError,
   generateTransferCode,
   normalizeTransferCode,
@@ -12,68 +13,83 @@ import {
   sealPack,
   UnsupportedVersionError,
 } from '../src/index';
-import { person, td, te } from './helpers';
+import { person, publish, td, te } from './helpers';
 
-const FAST = { opslimit: 1, memlimit: 8192 * 1024 };
+const now = new Date('2026-10-13T12:00:00.000Z');
+const at = (ms: number) => new Date(now.getTime() + ms);
 
 describe('transfer code', () => {
-  it('generates 12-char Crockford codes, normalizes user input', () => {
+  it('generates 6 words (66 bits) and normalizes user input', () => {
     const c = generateTransferCode();
-    expect(c).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
-    expect(normalizeTransferCode(c.toLowerCase().replace(/-/g, ' '))).toBe(c.replace(/-/g, ''));
-    expect(normalizeTransferCode('oooo-iiii-llll')).toBe('000011111111');
-    expect(() => normalizeTransferCode('ABC')).toThrow(expect.objectContaining({ code: 'INVALID_CODE' }));
-    expect(() => normalizeTransferCode('UUUU-UUUU-UUUU')).toThrow(expect.objectContaining({ code: 'INVALID_CODE' }));
+    expect(c.split(' ')).toHaveLength(6);
+    expect(normalizeTransferCode(`  ${c.toUpperCase().replace(/ /g, ' - ')} `)).toBe(c);
+    expect(normalizeTransferCode('aban abil able abou abov abse')).toBe('abandon ability able about above absent');
+    expect(normalizeTransferCode('act add age aim air all')).toBe('act add age aim air all'); // 3-letter words
+    for (let i = 0; i < 50; i++) {
+      const g = generateTransferCode();
+      expect(normalizeTransferCode(g)).toBe(g);
+    }
+    for (const bad of ['abandon ability', 'abandon ability able about above xyzzy', 'abandonx ability able about above absent', 'aba ability able about above absent']) {
+      expect(() => normalizeTransferCode(bad)).toThrow(expect.objectContaining({ code: 'INVALID_CODE' }));
+    }
   });
 
-  it('round-trips with default Argon2id (interactive) params and documented layout', () => {
+  it('round-trips with default Argon2id params and the documented layout', () => {
     const code = generateTransferCode();
-    const blob = encryptForTransfer(te.encode('secret seed'), code);
+    const blob = encryptForTransfer(te.encode('secret'), code, { now });
     expect(td.decode(blob.subarray(0, 4))).toBe('TLTX');
-    expect(blob[4]).toBe(1);
-    expect(td.decode(decryptTransfer(blob, code.toLowerCase()))).toBe('secret seed');
+    expect(blob[4]).toBe(2);
+    expect(blob[5]).toBe(1);
+    const dv = new DataView(blob.buffer, blob.byteOffset);
+    expect(dv.getUint32(14)).toBe(Math.floor(now.getTime() / 1000) + 15 * 60);
+    expect(td.decode(decryptTransfer(blob, code.toUpperCase(), { now: at(1000) }))).toBe('secret');
+  });
+
+  it('expires after 15 minutes (T-002 F-09), and the expiry is authenticated', () => {
+    const code = generateTransferCode();
+    const blob = encryptForTransfer(te.encode('k'), code, { now });
+    expect(() => decryptTransfer(blob, code, { now: at(15 * 60 * 1000) })).toThrow(ExpiredError);
+    const t = blob.slice();
+    new DataView(t.buffer).setUint32(14, 0xfffffff0, false);
+    expect(() => decryptTransfer(t, code, { now: at(20 * 60 * 1000) })).toThrow(DecryptionError);
+    expect(() => encryptForTransfer(te.encode('k'), code, { ttlMs: 16 * 60 * 1000 })).toThrow(FormatError);
   });
 
   it('wrong code / tampering fail', () => {
     const code = generateTransferCode();
-    const blob = encryptForTransfer(te.encode('k'), code, FAST);
-    expect(() => decryptTransfer(blob, generateTransferCode())).toThrow(DecryptionError);
+    const blob = encryptForTransfer(te.encode('k'), code, { now });
+    expect(() => decryptTransfer(blob, generateTransferCode(), { now })).toThrow(DecryptionError);
     for (const pos of [20, blob.length - 1]) {
       const t = blob.slice();
       t[pos] = (t[pos] as number) ^ 1;
-      expect(() => decryptTransfer(t, code)).toThrow(DecryptionError);
+      expect(() => decryptTransfer(t, code, { now })).toThrow(DecryptionError);
     }
-    const t = blob.slice();
-    t[4] = 2;
-    expect(() => decryptTransfer(t, code)).toThrow(UnsupportedVersionError);
+    const v = blob.slice();
+    v[4] = 3;
+    expect(() => decryptTransfer(v, code, { now })).toThrow(UnsupportedVersionError);
+    const p = blob.slice();
+    p[5] = 2;
+    expect(() => decryptTransfer(p, code, { now })).toThrow(FormatError);
+  });
+
+  it('Argon2 parameters are floored on encrypt and capped on decrypt (T-002 F-09)', () => {
+    const code = generateTransferCode();
+    expect(() => encryptForTransfer(te.encode('k'), code, { params: { opslimit: 1, memlimit: 8192 } })).toThrow(FormatError);
+    const blob = encryptForTransfer(te.encode('k'), code, { now });
     const huge = blob.slice();
-    new DataView(huge.buffer).setUint32(9, 0xffffffff, false);
-    expect(() => decryptTransfer(huge, code)).toThrow(FormatError);
+    new DataView(huge.buffer).setUint32(10, 512 * 1024 * 1024, false);
+    expect(() => decryptTransfer(huge, code, { now })).toThrow(FormatError);
+    const weak = blob.slice();
+    new DataView(weak.buffer).setUint32(6, 1, false);
+    expect(() => decryptTransfer(weak, code, { now })).toThrow(FormatError);
   });
 
-  it('moves a full identity to a new device', () => {
+  it('moves the current sharing key to a new device, which can then read content', () => {
     const a = person();
     const code = generateTransferCode();
-    const blob = encryptForTransfer(encodeKeyExport({ identity: a.id }), code, FAST);
-    const got = decodeKeyExport(decryptTransfer(blob, code));
-    expect(got.identity!.master.publicKey).toEqual(a.id.master.publicKey);
-    expect(got.identity!.owner).toBe(a.id.owner);
-  });
-
-  it('moves only a sharing key (limited device) which can open content', () => {
-    const a = person();
-    const code = generateTransferCode();
-    const blob = encryptForTransfer(encodeKeyExport({ sharing: { keyPair: a.sharing, cert: a.cert } }), code, FAST);
-    const got = decodeKeyExport(decryptTransfer(blob, code));
-    expect(got.identity).toBeUndefined();
+    const blob = encryptForTransfer(encodeKeyExport({ keyPair: a.sharing, cert: a.cert }), code, { now });
+    const got = decodeKeyExport(decryptTransfer(blob, code, { now }), { expectedOwner: a.id.owner });
     const pack = sealPack(te.encode('hello'), [a.sharing.publicKey]);
-    expect(td.decode(openPack(pack, [got.sharing!.keyPair]).payload)).toBe('hello');
-  });
-
-  it('key export rejects mismatched key/cert and newer versions', () => {
-    const [a, b] = [person(), person()];
-    expect(() => decodeKeyExport(encodeKeyExport({ sharing: { keyPair: b.sharing, cert: a.cert } }))).toThrow(FormatError);
-    expect(() => decodeKeyExport(te.encode('{"type":"key-export","version":3}'))).toThrow(UnsupportedVersionError);
-    expect(() => encodeKeyExport({})).toThrow(FormatError);
+    expect(td.decode(openPack(pack, publish(a, [pack]), [got.keyPair]).payload)).toBe('hello');
   });
 });

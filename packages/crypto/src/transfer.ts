@@ -1,10 +1,15 @@
+import { wordlist } from '@scure/bip39/wordlists/english.js';
+import { verifySharingCert, type TrustOptions } from './certs';
 import {
+  bytesEqual,
   canonicalize,
+  checkByteVersion,
   checkKeys,
   checkVersion,
   concat,
   fromB64Url,
   fromUtf8,
+  nowMs,
   parseJsonObject,
   readU32be,
   toB64Url,
@@ -12,30 +17,36 @@ import {
   utf8,
   type JsonObject,
 } from './encoding';
-import { DecryptionError, FormatError, TLCryptoError, UnsupportedVersionError } from './errors';
-import { identityFromRootSeed, verifySharingCert, type Identity, type KeyPair, type SharingCert } from './identity';
+import { DecryptionError, ExpiredError, FormatError, TLCryptoError } from './errors';
+import type { SharingKey } from './sharing-key';
 import { S } from './sodium';
 
 /*
- * Transfer blob (moving keys to a new device), big-endian:
+ * Transfer blob ("Link + code" way of adding a device), big-endian:
  *   0   4   magic "TLTX"
- *   4   1   version (= 1)
- *   5   4   Argon2id opslimit
- *   9   4   Argon2id memlimit (bytes)
- *   13  16  salt
- *   29  24  nonce
- *   53  ... XChaCha20-Poly1305(payload), AD = bytes[0..53)
+ *   4   1   version (= 2)
+ *   5   1   purpose (1 = key-export)
+ *   6   4   Argon2id opslimit
+ *   10  4   Argon2id memlimit (bytes)
+ *   14  4   expires, unix seconds (default: 15 minutes after creation)
+ *   18  16  salt
+ *   34  24  nonce
+ *   58  ... XChaCha20-Poly1305(payload), AD = bytes[0..58)
  * key = crypto_pwhash(32, normalizedCode, salt, ops, mem, ARGON2ID13)
+ * Parameters are floored at libsodium INTERACTIVE (2 passes, 64 MiB) and capped at 10 passes,
+ * 256 MiB. The receiver rejects expired blobs; single use = deleting the blob from the storage.
  *
- * Transfer code: 12 Crockford-base32 chars (60 bits), shown as XXXX-XXXX-XXXX.
+ * Transfer code: 6 words of the BIP39 English list (2048 words => 66 bits), as the spec says.
  */
 
 const MAGIC = utf8('TLTX');
-export const TRANSFER_VERSION = 1;
-const HEADER_BYTES = 53;
-const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const TRANSFER_VERSION = 2;
+const PURPOSE_KEY_EXPORT = 1;
+const HEADER_BYTES = 58;
 const MAX_OPS = 10;
-const MAX_MEM = 1024 * 1024 * 1024;
+const MAX_MEM = 256 * 1024 * 1024;
+export const TRANSFER_TTL_MS = 15 * 60 * 1000;
+const CODE_WORDS = 6;
 
 export interface TransferParams {
   opslimit: number;
@@ -44,18 +55,40 @@ export interface TransferParams {
 
 export function generateTransferCode(): string {
   const s = S();
-  let out = '';
-  for (let i = 0; i < 12; i++) out += ALPHABET[s.randombytes_uniform(32)];
-  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
+  const words: string[] = [];
+  for (let i = 0; i < CODE_WORDS; i++) words.push(wordlist[s.randombytes_uniform(wordlist.length)] as string);
+  return words.join(' ');
 }
 
-/** Uppercases, strips separators/spaces, maps O->0 and I/L->1. Throws INVALID_CODE. */
+const byPrefix = new Map<string, string>();
+
+/**
+ * Lowercases, accepts spaces or hyphens as separators, and each word in full or by its first 4
+ * letters (unique in the BIP39 list). Returns the 6 full words separated by single spaces.
+ * Throws code INVALID_CODE.
+ */
 export function normalizeTransferCode(code: string): string {
-  const c = code.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
-  if (c.length !== 12 || [...c].some((ch) => !ALPHABET.includes(ch))) {
-    throw new TLCryptoError('INVALID_CODE', 'transfer code must be 12 Crockford base32 characters');
+  if (byPrefix.size === 0) for (const w of wordlist) byPrefix.set(w.slice(0, 4), w); // 3-letter words map to themselves
+  const parts = String(code).normalize('NFKD').toLowerCase().trim().split(/[\s-]+/).filter(Boolean);
+  const words = parts.map((p) => (p.length >= 3 ? byPrefix.get(p.slice(0, 4)) : undefined));
+  if (parts.length !== CODE_WORDS || words.some((w, i) => w === undefined || !w.startsWith(parts[i] as string))) {
+    throw new TLCryptoError('INVALID_CODE', 'transfer code must be 6 words from the list');
   }
-  return c;
+  return words.join(' ');
+}
+
+function checkParams(p: TransferParams, W: string): void {
+  const s = S();
+  if (
+    !Number.isSafeInteger(p.opslimit) ||
+    !Number.isSafeInteger(p.memlimit) ||
+    p.opslimit < s.crypto_pwhash_OPSLIMIT_INTERACTIVE ||
+    p.opslimit > MAX_OPS ||
+    p.memlimit < s.crypto_pwhash_MEMLIMIT_INTERACTIVE ||
+    p.memlimit > MAX_MEM
+  ) {
+    throw new FormatError(`${W}: argon2 params out of range`);
+  }
 }
 
 function deriveKey(code: string, salt: Uint8Array, p: TransferParams): Uint8Array {
@@ -63,13 +96,17 @@ function deriveKey(code: string, salt: Uint8Array, p: TransferParams): Uint8Arra
   return s.crypto_pwhash(32, utf8(normalizeTransferCode(code)), salt, p.opslimit, p.memlimit, s.crypto_pwhash_ALG_ARGON2ID13);
 }
 
-export function encryptForTransfer(payload: Uint8Array, code: string, params?: TransferParams): Uint8Array {
+export function encryptForTransfer(payload: Uint8Array, code: string, opts: { params?: TransferParams; ttlMs?: number; now?: Date } = {}): Uint8Array {
   const s = S();
-  const p = params ?? { opslimit: s.crypto_pwhash_OPSLIMIT_INTERACTIVE, memlimit: s.crypto_pwhash_MEMLIMIT_INTERACTIVE };
-  if (p.opslimit < 1 || p.opslimit > MAX_OPS || p.memlimit < 8192 || p.memlimit > MAX_MEM) throw new FormatError('transfer: argon2 params out of range');
+  const W = 'transfer';
+  const p = opts.params ?? { opslimit: s.crypto_pwhash_OPSLIMIT_INTERACTIVE, memlimit: s.crypto_pwhash_MEMLIMIT_INTERACTIVE };
+  checkParams(p, W);
+  const ttl = opts.ttlMs ?? TRANSFER_TTL_MS;
+  if (!Number.isSafeInteger(ttl) || ttl < 1000 || ttl > TRANSFER_TTL_MS) throw new FormatError(`${W}: ttlMs must be between 1 s and 15 minutes`);
+  const expires = Math.floor((nowMs(opts.now, W) + ttl) / 1000);
   const salt = s.randombytes_buf(s.crypto_pwhash_SALTBYTES);
   const nonce = s.randombytes_buf(24);
-  const header = concat(MAGIC, Uint8Array.of(TRANSFER_VERSION), u32be(p.opslimit), u32be(p.memlimit), salt, nonce);
+  const header = concat(MAGIC, Uint8Array.of(TRANSFER_VERSION, PURPOSE_KEY_EXPORT), u32be(p.opslimit), u32be(p.memlimit), u32be(expires), salt, nonce);
   const key = deriveKey(code, salt, p);
   try {
     return concat(header, s.crypto_aead_xchacha20poly1305_ietf_encrypt(payload, header, null, nonce, key));
@@ -78,20 +115,22 @@ export function encryptForTransfer(payload: Uint8Array, code: string, params?: T
   }
 }
 
-export function decryptTransfer(blob: Uint8Array, code: string): Uint8Array {
+/** Throws ExpiredError after the blob's expiry (checked before the slow key derivation). */
+export function decryptTransfer(blob: Uint8Array, code: string, opts: { now?: Date } = {}): Uint8Array {
   const s = S();
   const W = 'transfer';
-  if (blob.length < HEADER_BYTES + 16) throw new FormatError(`${W}: too short`);
-  for (let i = 0; i < 4; i++) if (blob[i] !== MAGIC[i]) throw new FormatError(`${W}: bad magic`);
-  const ver = blob[4] as number;
-  if (ver > TRANSFER_VERSION) throw new UnsupportedVersionError(W, ver, TRANSFER_VERSION);
-  if (ver < 1) throw new FormatError(`${W}: bad version`);
-  const p = { opslimit: readU32be(blob, 5), memlimit: readU32be(blob, 9) };
+  if (!(blob instanceof Uint8Array) || blob.length < HEADER_BYTES + 16) throw new FormatError(`${W}: too short`);
+  if (!bytesEqual(blob.subarray(0, 4), MAGIC)) throw new FormatError(`${W}: bad magic`);
+  checkByteVersion(blob[4] as number, W, TRANSFER_VERSION);
+  if (blob[5] !== PURPOSE_KEY_EXPORT) throw new FormatError(`${W}: unknown purpose`);
+  const p = { opslimit: readU32be(blob, 6), memlimit: readU32be(blob, 10) };
   // Bound attacker-controlled cost parameters (DoS).
-  if (p.opslimit < 1 || p.opslimit > MAX_OPS || p.memlimit < 8192 || p.memlimit > MAX_MEM) throw new FormatError(`${W}: argon2 params out of range`);
+  checkParams(p, W);
+  const expires = readU32be(blob, 14);
+  if (nowMs(opts.now, W) >= expires * 1000) throw new ExpiredError(`${W}: expired`);
   const header = blob.subarray(0, HEADER_BYTES);
-  const salt = blob.subarray(13, 29);
-  const nonce = blob.subarray(29, 53);
+  const salt = blob.subarray(18, 34);
+  const nonce = blob.subarray(34, 58);
   const key = deriveKey(code, salt, p);
   try {
     return s.crypto_aead_xchacha20poly1305_ietf_decrypt(null, blob.subarray(HEADER_BYTES), header, nonce, key);
@@ -103,43 +142,32 @@ export function decryptTransfer(blob: Uint8Array, code: string): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
-// Key export (device keys). Payload for encryptForTransfer, canonical JSON:
-//   {"type":"key-export","version":1,"root":"<b64url 32B>"?,"sharing":{"secretKey":"<b64url>","cert":{...}}?}
-// A full device gets `root` (whole identity). A limited device only gets a copy of the
-// current sharing key + its certificate: it can read/wrap content but cannot sign.
+// Key export: payload for encryptForTransfer, canonical JSON
+//   {"cert":<sharing cert>,"secret":"<b64url 32B>","type":"key-export","version":2}
+// Only the CURRENT sharing key travels. The master key never does (it stays with the phrase and
+// the optional primary device); the new device generates its own device keys and gets a device
+// certificate from the primary device or the phrase.
 // ---------------------------------------------------------------------------
 
-export const KEY_EXPORT_VERSION = 1;
+export const KEY_EXPORT_VERSION = 2;
 
-export interface KeyExport {
-  identity?: Identity;
-  sharing?: { keyPair: KeyPair; cert: SharingCert };
+export function encodeKeyExport(sharing: SharingKey): Uint8Array {
+  const v = verifySharingCert(sharing.cert);
+  if (!bytesEqual(S().crypto_scalarmult_base(sharing.keyPair.secretKey), v.sharingPublicKey)) {
+    throw new FormatError('key-export: sharing key does not match certificate');
+  }
+  return utf8(canonicalize({ type: 'key-export', version: KEY_EXPORT_VERSION, secret: toB64Url(sharing.keyPair.secretKey), cert: v.cert as unknown as JsonObject }));
 }
 
-export function encodeKeyExport(exp: KeyExport): Uint8Array {
-  const doc: JsonObject = { type: 'key-export', version: KEY_EXPORT_VERSION };
-  if (exp.identity) doc['root'] = toB64Url(exp.identity.rootSeed);
-  if (exp.sharing) doc['sharing'] = { secretKey: toB64Url(exp.sharing.keyPair.secretKey), cert: exp.sharing.cert as unknown as JsonObject };
-  if (!exp.identity && !exp.sharing) throw new FormatError('key-export: nothing to export');
-  return utf8(canonicalize(doc));
-}
-
-export function decodeKeyExport(bytes: Uint8Array): KeyExport {
+export function decodeKeyExport(bytes: Uint8Array, opts: TrustOptions = {}): SharingKey {
   const W = 'key-export';
   const doc = parseJsonObject(fromUtf8(bytes, W), W);
   checkVersion(doc, W, KEY_EXPORT_VERSION);
-  checkKeys(doc, W, ['type', 'version'], ['root', 'sharing']);
+  checkKeys(doc, W, ['type', 'version', 'secret', 'cert']);
   if (doc['type'] !== 'key-export') throw new FormatError(`${W}: wrong type`);
-  const out: KeyExport = {};
-  if ('root' in doc) out.identity = identityFromRootSeed(fromB64Url(doc['root'], `${W}.root`, 32));
-  if ('sharing' in doc) {
-    const sh = parseJsonObject(doc['sharing'] as JsonObject, `${W}.sharing`);
-    checkKeys(sh, `${W}.sharing`, ['secretKey', 'cert']);
-    const secretKey = fromB64Url(sh['secretKey'], `${W}.sharing.secretKey`, 32);
-    const v = verifySharingCert(sh['cert'] as JsonObject);
-    const publicKey = S().crypto_scalarmult_base(secretKey);
-    if (!S().memcmp(publicKey, v.sharingPublicKey)) throw new FormatError(`${W}: sharing key does not match certificate`);
-    out.sharing = { keyPair: { publicKey, secretKey }, cert: v.cert };
-  }
-  return out;
+  const v = verifySharingCert(doc['cert'] as JsonObject, opts);
+  const secretKey = fromB64Url(doc['secret'], `${W}.secret`, 32);
+  const publicKey = S().crypto_scalarmult_base(secretKey);
+  if (!bytesEqual(publicKey, v.sharingPublicKey)) throw new FormatError(`${W}: sharing key does not match certificate`);
+  return { keyPair: { publicKey, secretKey }, cert: v.cert };
 }

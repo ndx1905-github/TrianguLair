@@ -1,15 +1,66 @@
-import { deriveSharingKeyPair, generateRecoveryPhrase, identityFromPhrase, issueSharingCert, type Identity, type KeyPair, type SharingCert } from '../src/index';
+import {
+  canonicalize,
+  generateDeviceKeys,
+  generateRecoveryPhrase,
+  generateX25519KeyPair,
+  identityFromPhrase,
+  issueDeviceCert,
+  issueSharingCert,
+  devicePublicKeys,
+  openPack,
+  packEntry,
+  signIndex,
+  type DeviceCert,
+  type DeviceKeys,
+  type DeviceSigner,
+  type Identity,
+  type IndexContent,
+  type KeyPair,
+  type OpenedPack,
+  type SharingCert,
+  type SignedIndex,
+} from '../src/index';
 
+/** A user with an identity (phrase), one device, and a random sharing key at rotation 0. */
 export interface Person {
+  phrase: string;
   id: Identity;
+  device: DeviceKeys;
+  deviceCert: DeviceCert;
+  signer: DeviceSigner;
   sharing: KeyPair;
   cert: SharingCert;
 }
 
-export function person(rotation = 0): Person {
-  const id = identityFromPhrase(generateRecoveryPhrase());
-  const sharing = deriveSharingKeyPair(id, rotation);
-  return { id, sharing, cert: issueSharingCert(id, sharing.publicKey, { rotation }) };
+export function person(): Person {
+  const phrase = generateRecoveryPhrase();
+  const id = identityFromPhrase(phrase);
+  const device = generateDeviceKeys();
+  const deviceCert = issueDeviceCert(id, devicePublicKeys(device));
+  const sharing = generateX25519KeyPair();
+  return { phrase, id, device, deviceCert, signer: { keys: device, cert: deviceCert }, sharing, cert: issueSharingCert(id, sharing.publicKey, { rotation: 0 }) };
+}
+
+const seqs = new WeakMap<Person, number>();
+
+/** Publishes (signs) a new index for `p` listing `packs`, with the next seq. */
+export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}): SignedIndex {
+  const seq = (seqs.get(p) ?? 0) + 1;
+  seqs.set(p, seq);
+  return signIndex(p.signer, { seq, sharingCert: p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
+}
+
+let notary: Person | undefined;
+
+/** A verified index (by a throwaway publisher) listing the given packs: for tests about pack internals. */
+export function trust(...packs: Uint8Array[]): SignedIndex {
+  notary ??= person();
+  return publish(notary, packs);
+}
+
+/** openPack through a throwaway verified index. */
+export function open(pack: Uint8Array, keys: KeyPair[]): OpenedPack {
+  return openPack(pack, trust(pack), keys);
 }
 
 export const te = new TextEncoder();
@@ -24,12 +75,17 @@ export function containsBytes(hay: Uint8Array, needle: Uint8Array): boolean {
   return false;
 }
 
-/** Rebuild a pack with a mutated header JSON (keeps ciphertext). */
-export function mutateHeader(pack: Uint8Array, f: (h: Record<string, unknown>) => void): Uint8Array {
+export function headerOf(pack: Uint8Array): Record<string, unknown> {
   const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
-  const h = JSON.parse(td.decode(pack.subarray(9, 9 + n)));
+  return JSON.parse(td.decode(pack.subarray(9, 9 + n)));
+}
+
+/** Rebuild a pack with a mutated header (keeps ciphertext). Canonical unless `raw` is given. */
+export function mutateHeader(pack: Uint8Array, f: (h: Record<string, unknown>) => void, raw?: (h: Record<string, unknown>) => string): Uint8Array {
+  const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
+  const h = headerOf(pack);
   f(h);
-  const hb = te.encode(JSON.stringify(h));
+  const hb = te.encode(raw ? raw(h) : canonicalize(h));
   const out = new Uint8Array(9 + hb.length + pack.length - 9 - n);
   out.set(pack.subarray(0, 5));
   new DataView(out.buffer).setUint32(5, hb.length, false);

@@ -1,4 +1,6 @@
 import {
+  assertX25519PublicKey,
+  bytesEqual,
   canonicalize,
   checkKeys,
   checkVersion,
@@ -12,50 +14,60 @@ import {
   u32be,
   utf8,
 } from './encoding';
-import { DecryptionError, FormatError, UnsupportedVersionError } from './errors';
+import { DecryptionError, FormatError, InvalidKeyError, UnsupportedVersionError } from './errors';
 import type { KeyPair } from './identity';
 import { S } from './sodium';
+import { isVerified } from './verified';
 
 /*
  * Pack binary layout (all integers big-endian):
  *
  *   offset  size  field
  *   0       4     magic "TLPK"
- *   4       1     envelope version (= 1)
+ *   4       1     envelope version (= 2)
  *   5       4     N = header length in bytes
- *   9       N     header: canonical JSON, UTF-8
- *   9+N     ...   ciphertext = XChaCha20-Poly1305-IETF(payload) || 16-byte tag
+ *   9       N     header: canonical JSON, UTF-8 (non-canonical headers are rejected)
+ *   9+N     ...   ciphertext = XChaCha20-Poly1305-IETF(plaintext) || 16-byte tag
  *
  * Header JSON:
- *   { "alg":"xchacha20poly1305-ietf", "id":"<b64url 16B>", "nonce":"<b64url 24B>",
- *     "type":"pack", "version":1, "wrapAlg":"x25519-sealedbox",
- *     "wraps":["<b64url 80B>", ...] }
+ *   { "alg":"xchacha20poly1305-ietf", "nonce":"<b64url 24B>", "pad":"padme", "type":"pack",
+ *     "version":2, "wrapAlg":"x25519-sealedbox", "wraps":["<b64url 80B>", ...] }
+ *
+ * Plaintext = logical id (16 B) || u32 payload length || payload || zero padding.
+ * With pad = "padme", the plaintext length is max(256, Padmé(20 + payload length)) (≤ 12 % overhead);
+ * with pad = "none" there is no padding. Readers check the exact length and that padding is zeros.
+ * The logical pack id is inside the encryption: the storage and former recipients cannot link
+ * successive versions of a pack. Files are content-addressed (packEntry) and never modified.
  *
  * AEAD associated data = magic || envelope version || canonicalJSON(header WITHOUT "wraps").
- * Wraps are deliberately outside the AD (like JWE per-recipient encrypted_key) so the
- * owner can re-wrap a pack (add a friend, drop an invitation key) without touching the
- * ciphertext. A tampered wrap can only fail to open; pack authenticity w.r.t. the owner
- * comes from the signed index (etag = hash of the whole pack file).
+ * Wraps are outside the AD (like JWE per-recipient encrypted_key); a tampered wrap can only fail to
+ * open. Authenticity w.r.t. the owner comes from the signed index (hash of the whole file), which
+ * openPack checks BEFORE any decryption.
  *
  * Each wrap = crypto_box_seal(batchKey, recipientX25519Pk): 32B ephemeral pk || 48B box.
  * No recipient identifier is stored; readers try every wrap with every key they hold.
  */
 
 const MAGIC = utf8('TLPK');
-export const PACK_VERSION = 1;
+export const PACK_VERSION = 2;
 const ALG = 'xchacha20poly1305-ietf';
 const WRAP_ALG = 'x25519-sealedbox';
 const WRAP_BYTES = 80; // 32 (ephemeral pk) + 16 (MAC) + 32 (batch key)
-const MAX_WRAPS = 4096;
-const MAX_HEADER = 1 << 20;
+export const MAX_WRAPS = 256;
+const MAX_HEADER = 64 * 1024;
+const ID_BYTES = 16;
+const FRAME = ID_BYTES + 4;
+const MIN_PADDED = 256;
+
+export type PackPadding = 'padme' | 'none';
 
 interface ProtectedHeader {
   type: 'pack';
   version: number;
-  id: string;
   alg: typeof ALG;
   wrapAlg: typeof WRAP_ALG;
   nonce: string;
+  pad: PackPadding;
 }
 
 export interface PackHeader extends ProtectedHeader {
@@ -63,19 +75,32 @@ export interface PackHeader extends ProtectedHeader {
 }
 
 export interface SealOptions {
-  /** Pack id (b64url of 16 bytes). Random by default. */
+  /** Logical pack id (b64url of 16 bytes), stored inside the encryption. Random by default. */
   id?: string;
   /**
-   * Pad the wrap list with indistinguishable dummy wraps up to this count, hiding the
-   * number of recipients. Default: next power of two >= max(recipients, 2).
-   * Pass 0 to disable padding.
+   * Pad the wrap list with indistinguishable dummy wraps up to this count, hiding the number of
+   * recipients. Default: next power of two >= max(recipients, 2). 0 disables. Max 256.
    */
   padTo?: number;
+  /** Payload padding. Default "padme". */
+  pad?: PackPadding;
 }
 
 export interface OpenedPack {
+  /** Logical id, stable across re-encryptions (only visible after decryption). */
   id: string;
   payload: Uint8Array;
+  /** File name of the matching index entry. */
+  file: string;
+}
+
+/** Plaintext length for a framed length `n` (= 20 + payload length) under "padme". */
+export function paddedLength(n: number): number {
+  if (n <= MIN_PADDED) return MIN_PADDED;
+  const e = Math.floor(Math.log2(n));
+  const s = Math.floor(Math.log2(e)) + 1;
+  const step = 2 ** (e - s);
+  return Math.ceil(n / step) * step;
 }
 
 function adFor(ph: ProtectedHeader): Uint8Array {
@@ -100,17 +125,23 @@ function defaultPad(n: number): number {
 function makeWraps(batchKey: Uint8Array, recipients: Uint8Array[], padTo: number | undefined): string[] {
   const s = S();
   if (recipients.length === 0) throw new FormatError('pack: at least one recipient is required');
+  if (padTo !== undefined && (!Number.isSafeInteger(padTo) || padTo < 0)) throw new FormatError('pack: padTo must be a non-negative integer');
+  const target = Math.max(padTo ?? defaultPad(recipients.length), recipients.length);
+  // Bound check BEFORE generating anything (DoS).
+  if (target > MAX_WRAPS) throw new FormatError(`pack: too many wraps (max ${MAX_WRAPS})`);
   const wraps: Uint8Array[] = [];
   for (const pk of recipients) {
-    if (!(pk instanceof Uint8Array) || pk.length !== 32) throw new FormatError('pack: recipient public keys must be 32-byte X25519 keys');
-    wraps.push(s.crypto_box_seal(batchKey, pk));
+    assertX25519PublicKey(pk, 'pack recipient');
+    try {
+      wraps.push(s.crypto_box_seal(batchKey, pk));
+    } catch {
+      throw new InvalidKeyError('pack: invalid recipient key');
+    }
   }
-  const target = padTo ?? defaultPad(recipients.length);
   while (wraps.length < target) {
     // Dummy: a real sealed box of random bytes to a throwaway key -> indistinguishable.
     wraps.push(s.crypto_box_seal(s.randombytes_buf(32), s.crypto_box_keypair().publicKey));
   }
-  if (wraps.length > MAX_WRAPS) throw new FormatError(`pack: too many wraps (max ${MAX_WRAPS})`);
   return shuffle(wraps).map(toB64Url);
 }
 
@@ -131,25 +162,24 @@ function decode(bytes: Uint8Array): Decoded {
   if (!(bytes instanceof Uint8Array) || bytes.length < 9) throw new FormatError(`${W}: too short`);
   for (let i = 0; i < 4; i++) if (bytes[i] !== MAGIC[i]) throw new FormatError(`${W}: bad magic`);
   const ver = bytes[4] as number;
-  if (ver > PACK_VERSION) throw new UnsupportedVersionError(W, ver, PACK_VERSION);
-  if (ver < 1) throw new FormatError(`${W}: bad envelope version`);
+  if (ver === 0) throw new FormatError(`${W}: bad envelope version`);
+  if (ver !== PACK_VERSION) throw new UnsupportedVersionError(W, ver, PACK_VERSION);
   const n = readU32be(bytes, 5);
   if (n > MAX_HEADER || 9 + n > bytes.length) throw new FormatError(`${W}: bad header length`);
   const h = parseJsonObject(fromUtf8(bytes.subarray(9, 9 + n), `${W} header`), `${W} header`);
   checkVersion(h, `${W} header`, PACK_VERSION);
-  if (h['version'] !== ver) throw new FormatError(`${W}: header/envelope version mismatch`);
-  checkKeys(h, `${W} header`, ['type', 'version', 'id', 'alg', 'wrapAlg', 'nonce', 'wraps']);
+  checkKeys(h, `${W} header`, ['type', 'version', 'alg', 'wrapAlg', 'nonce', 'pad', 'wraps']);
   if (h['type'] !== 'pack') throw new FormatError(`${W}: wrong type`);
   if (h['alg'] !== ALG) throw new FormatError(`${W}: unsupported alg`);
   if (h['wrapAlg'] !== WRAP_ALG) throw new FormatError(`${W}: unsupported wrapAlg`);
-  const id = str(h, 'id', W);
-  fromB64Url(id, `${W}.id`, 16);
+  const pad = h['pad'];
+  if (pad !== 'padme' && pad !== 'none') throw new FormatError(`${W}: unsupported pad`);
   const nonce = str(h, 'nonce', W);
   fromB64Url(nonce, `${W}.nonce`, 24);
   const wraps = h['wraps'];
   if (!Array.isArray(wraps) || wraps.length === 0 || wraps.length > MAX_WRAPS) throw new FormatError(`${W}: bad wraps`);
   for (const w of wraps) fromB64Url(w, `${W}.wrap`, WRAP_BYTES);
-  const ph: ProtectedHeader = { type: 'pack', version: ver, id, alg: ALG, wrapAlg: WRAP_ALG, nonce };
+  const ph: ProtectedHeader = { type: 'pack', version: ver, alg: ALG, wrapAlg: WRAP_ALG, nonce, pad };
   return { header: { ...ph, wraps: wraps as string[] }, ph, ciphertext: bytes.subarray(9 + n) };
 }
 
@@ -158,19 +188,44 @@ export function readPackHeader(bytes: Uint8Array): PackHeader {
   return decode(bytes).header;
 }
 
-function newPackId(): string {
-  return toB64Url(S().randombytes_buf(16));
+function frame(id: string, payload: Uint8Array, pad: PackPadding): Uint8Array {
+  const idBytes = fromB64Url(id, 'pack.id', ID_BYTES);
+  if (payload.length > 0xffffffff - FRAME) throw new FormatError('pack: payload too large');
+  const n = FRAME + payload.length;
+  const out = new Uint8Array(pad === 'padme' ? paddedLength(n) : n);
+  out.set(idBytes, 0);
+  out.set(u32be(payload.length), ID_BYTES);
+  out.set(payload, FRAME);
+  return out;
+}
+
+function unframe(pt: Uint8Array, pad: PackPadding): { id: string; payload: Uint8Array } {
+  const W = 'pack';
+  if (pt.length < FRAME) throw new FormatError(`${W}: plaintext too short`);
+  const len = readU32be(pt, ID_BYTES);
+  if (len > pt.length - FRAME) throw new FormatError(`${W}: declared length exceeds plaintext`);
+  const expected = pad === 'padme' ? paddedLength(FRAME + len) : FRAME + len;
+  if (pt.length !== expected) throw new FormatError(`${W}: bad padding length`);
+  let acc = 0;
+  for (let i = FRAME + len; i < pt.length; i++) acc |= pt[i] as number;
+  if (acc !== 0) throw new FormatError(`${W}: non-zero padding`);
+  return { id: toB64Url(pt.subarray(0, ID_BYTES)), payload: pt.slice(FRAME, FRAME + len) };
 }
 
 function encryptWithKey(payload: Uint8Array, batchKey: Uint8Array, recipients: Uint8Array[], opts: SealOptions): Uint8Array {
   const s = S();
-  const id = opts.id ?? newPackId();
-  fromB64Url(id, 'pack.id', 16);
+  const pad = opts.pad ?? 'padme';
+  if (pad !== 'padme' && pad !== 'none') throw new FormatError('pack: unsupported pad');
+  const id = opts.id ?? toB64Url(s.randombytes_buf(ID_BYTES));
   const nonce = s.randombytes_buf(s.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-  const ph: ProtectedHeader = { type: 'pack', version: PACK_VERSION, id, alg: ALG, wrapAlg: WRAP_ALG, nonce: toB64Url(nonce) };
+  const ph: ProtectedHeader = { type: 'pack', version: PACK_VERSION, alg: ALG, wrapAlg: WRAP_ALG, nonce: toB64Url(nonce), pad };
   const wraps = makeWraps(batchKey, recipients, opts.padTo);
-  const ct = s.crypto_aead_xchacha20poly1305_ietf_encrypt(payload, adFor(ph), null, nonce, batchKey);
-  return encode(ph, wraps, ct);
+  const pt = frame(id, payload, pad);
+  try {
+    return encode(ph, wraps, s.crypto_aead_xchacha20poly1305_ietf_encrypt(pt, adFor(ph), null, nonce, batchKey));
+  } finally {
+    s.memzero(pt);
+  }
 }
 
 /** Encrypts `payload` with a fresh random batch key wrapped to every recipient X25519 public key. */
@@ -183,7 +238,11 @@ export function sealPack(payload: Uint8Array, recipients: Uint8Array[], opts: Se
   }
 }
 
-function openInternal(bytes: Uint8Array, keys: KeyPair[]): { d: Decoded; payload: Uint8Array; batchKey: Uint8Array } {
+/**
+ * Unwraps the batch key and decrypts. The caller owns (and must wipe) `batchKey` and `plaintext`.
+ * NO index check: internal only.
+ */
+function openRaw(bytes: Uint8Array, keys: KeyPair[]): { d: Decoded; plaintext: Uint8Array; batchKey: Uint8Array } {
   const s = S();
   const d = decode(bytes);
   const ad = adFor(d.ph);
@@ -200,10 +259,11 @@ function openInternal(bytes: Uint8Array, keys: KeyPair[]): { d: Decoded; payload
       }
       unwrapped = true;
       try {
-        const payload = s.crypto_aead_xchacha20poly1305_ietf_decrypt(null, d.ciphertext, ad, nonce, batchKey);
-        return { d, payload, batchKey };
+        const plaintext = s.crypto_aead_xchacha20poly1305_ietf_decrypt(null, d.ciphertext, ad, nonce, batchKey);
+        return { d, plaintext, batchKey };
       } catch {
-        // A wrap addressed to us but whose key does not decrypt: tampering or forged wrap. Keep trying.
+        // A wrap addressed to us whose key does not decrypt: tampering or forged wrap. Keep trying.
+        s.memzero(batchKey);
       }
     }
   }
@@ -211,20 +271,64 @@ function openInternal(bytes: Uint8Array, keys: KeyPair[]): { d: Decoded; payload
   throw new DecryptionError('pack: none of the provided keys can open this pack', 'NO_MATCHING_KEY');
 }
 
-/** Tries every wrap with every candidate key (sharing key, group keys, invitation key...). */
-export function openPack(bytes: Uint8Array, keys: KeyPair[]): OpenedPack {
-  const { d, payload, batchKey } = openInternal(bytes, keys);
+/** @internal Opens without the index check (pack bytes already matched against a verified index). */
+export function openUnchecked(bytes: Uint8Array, keys: KeyPair[], file = ''): OpenedPack {
+  const { d, plaintext, batchKey } = openRaw(bytes, keys);
   S().memzero(batchKey);
-  return { id: d.ph.id, payload };
+  try {
+    return { ...unframe(plaintext, d.ph.pad), file };
+  } finally {
+    S().memzero(plaintext);
+  }
+}
+
+/** Content hash of a pack (or media) file for the signed index: "b2b256:" + b64url(BLAKE2b-256(bytes)). */
+export function packHash(bytes: Uint8Array): string {
+  return `b2b256:${toB64Url(S().crypto_generichash(32, bytes, null))}`;
+}
+
+/** Index entry for a pack file: content-addressed name `<dir>/b2b256-<b64url hash>.bin` and its hash. */
+export function packEntry(bytes: Uint8Array, dir: 'packs' | 'media' = 'packs'): { file: string; hash: string } {
+  const hash = packHash(bytes);
+  return { file: `${dir}/b2b256-${hash.slice(7)}.bin`, hash };
+}
+
+/** Minimal shape of a verified index needed to open packs (see verifyIndex). */
+export interface PackIndex {
+  owner: string;
+  packs: readonly { file: string; hash: string }[];
+}
+
+/** @internal Returns the entry of `index` matching the bytes, or throws NOT_INDEXED. Hash first, no X25519. */
+export function findIndexed(bytes: Uint8Array, index: PackIndex): { file: string; hash: string } {
+  if (!isVerified(index)) throw new DecryptionError('pack: the index must come from verifyIndex or signIndex', 'NOT_INDEXED');
+  if (!(bytes instanceof Uint8Array)) throw new FormatError('pack: bytes expected');
+  const h = utf8(packHash(bytes));
+  const entry = index.packs.find((p) => bytesEqual(utf8(p.hash), h));
+  if (!entry) throw new DecryptionError('pack: not listed in the signed index (ignored)', 'NOT_INDEXED');
+  return entry;
 }
 
 /**
- * Same batch key and ciphertext, new wrap list. Use to ADD recipients or replace an
- * invitation key by the invitee's real key. NOT a revocation: anyone who could unwrap
- * before still knows the batch key (use reencryptPack for that).
+ * Opens a pack reached through a VERIFIED signed index (the object returned by verifyIndex or
+ * signIndex). The content hash is checked against the index BEFORE any key operation; a pack
+ * that is not listed is rejected with code NOT_INDEXED. Tries every wrap with every candidate key
+ * (sharing key, group keys, invitation key...).
  */
-export function rewrapPack(bytes: Uint8Array, keys: KeyPair[], recipients: Uint8Array[], opts: Omit<SealOptions, 'id'> = {}): Uint8Array {
-  const { d, batchKey } = openInternal(bytes, keys);
+export function openPack(bytes: Uint8Array, index: PackIndex, keys: KeyPair[]): OpenedPack {
+  const entry = findIndexed(bytes, index);
+  return openUnchecked(bytes, keys, entry.file);
+}
+
+/**
+ * Same batch key and ciphertext, new wrap list. Use only to ADD recipients. NOT a revocation:
+ * anyone who could unwrap before still knows the batch key (use reencryptPack for that).
+ * The result is a new file (new content hash).
+ */
+export function rewrapPack(bytes: Uint8Array, index: PackIndex, keys: KeyPair[], recipients: Uint8Array[], opts: Pick<SealOptions, 'padTo'> = {}): Uint8Array {
+  findIndexed(bytes, index);
+  const { d, plaintext, batchKey } = openRaw(bytes, keys);
+  S().memzero(plaintext);
   try {
     return encode(d.ph, makeWraps(batchKey, recipients, opts.padTo), d.ciphertext);
   } finally {
@@ -232,13 +336,22 @@ export function rewrapPack(bytes: Uint8Array, keys: KeyPair[], recipients: Uint8
   }
 }
 
-/** Revocation: decrypts, then re-encrypts under a NEW batch key wrapped only to `recipients`. Keeps the pack id. */
-export function reencryptPack(bytes: Uint8Array, keys: KeyPair[], recipients: Uint8Array[], opts: Omit<SealOptions, 'id'> = {}): Uint8Array {
-  const { id, payload } = openPack(bytes, keys);
-  return sealPack(payload, recipients, { ...opts, id });
+/** @internal reencrypt without the index check. */
+export function reencryptUnchecked(bytes: Uint8Array, keys: KeyPair[], recipients: Uint8Array[], opts: Omit<SealOptions, 'id'>): Uint8Array {
+  const d = decode(bytes);
+  const { id, payload } = openUnchecked(bytes, keys);
+  try {
+    return sealPack(payload, recipients, { pad: d.ph.pad, ...opts, id });
+  } finally {
+    S().memzero(payload);
+  }
 }
 
-/** Content hash of a pack file for the signed index: b64url(BLAKE2b-128(bytes)). */
-export function packEtag(bytes: Uint8Array): string {
-  return toB64Url(S().crypto_generichash(16, bytes, null));
+/**
+ * Revocation: decrypts, then re-encrypts under a NEW batch key and nonce wrapped only to
+ * `recipients`. Keeps the logical id (inside the encryption); the file name changes.
+ */
+export function reencryptPack(bytes: Uint8Array, index: PackIndex, keys: KeyPair[], recipients: Uint8Array[], opts: Omit<SealOptions, 'id'> = {}): Uint8Array {
+  findIndexed(bytes, index);
+  return reencryptUnchecked(bytes, keys, recipients, opts);
 }
