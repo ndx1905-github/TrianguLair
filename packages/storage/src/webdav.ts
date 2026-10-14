@@ -15,6 +15,7 @@ import {
   checkPrefix,
   copyBytes,
   doFetch,
+  emulatePrecondition,
   encodePath,
   httpError,
   normEtag,
@@ -44,7 +45,28 @@ export interface WebDavOptions {
    * returns `null` when unset.
    */
   publicBaseUrl?: string;
+  /**
+   * Whether the server enforces `If-Match` / `If-None-Match` on PUT and
+   * DELETE. Nextcloud (sabre/dav) does; some servers (e.g. the `webdav-server`
+   * npm package, some NAS firmwares) silently ignore them. With `false` the
+   * adapter emulates them with a HEAD first (racy, best effort) and reports
+   * `capabilities.conditionalWrites === false`. Use `probeConditionalWrites()`
+   * at setup time to find out. Default true.
+   */
+  conditionalWrites?: boolean;
+  /**
+   * Guard against coarse ETags. Nextcloud, WsgiDAV and many NAS servers derive
+   * the ETag from (mtime in whole seconds, size): two same-size writes within
+   * one second keep the SAME ETag, so readers and conditional writers cannot
+   * see the change. With the guard on, `put` remembers the previous ETag
+   * (from `ifMatch`, or a HEAD first) and, if the server returns it unchanged
+   * after writing new content, writes again once the clock has ticked, until
+   * the ETag changes. Costs one HEAD per unconditional write. Default true.
+   */
+  guardCoarseEtags?: boolean;
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const PROPFIND_BODY =
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -63,6 +85,8 @@ export class WebDavAdapter implements StorageAdapter {
   private readonly basePath: string;
   private readonly fetch: FetchLike;
   private readonly authHeader: string | undefined;
+  private readonly nativeConditional: boolean;
+  private readonly guard: boolean;
 
   constructor(opts: WebDavOptions) {
     this.base = withSlash(opts.baseUrl);
@@ -75,9 +99,11 @@ export class WebDavAdapter implements StorageAdapter {
         ? `Bearer ${a.bearer}`
         : `Basic ${base64(`${a.username}:${a.password}`)}`;
     const pub = opts.publicBaseUrl ? withSlash(opts.publicBaseUrl) : undefined;
+    this.nativeConditional = opts.conditionalWrites ?? true;
+    this.guard = opts.guardCoarseEtags ?? true;
     this.capabilities = {
       readOnly: false,
-      conditionalWrites: true,
+      conditionalWrites: this.nativeConditional,
       list: true,
       publicUrl: (path) => (pub ? pub + encodePath(checkPath(path)) : null),
     };
@@ -128,14 +154,41 @@ export class WebDavAdapter implements StorageAdapter {
 
   async put(path: string, data: Uint8Array, opts: PutOptions = {}): Promise<{ etag: string }> {
     checkPath(path);
+    let prev = opts.ifMatch;
+    if (this.guard && prev === undefined && opts.ifNoneMatch !== '*') prev = (await this.head(path))?.etag;
+    const first = await this.rawPut(path, data, opts);
+    if (!this.guard || prev === undefined || first.etag !== prev) return first;
+    // Coarse ETag: the content changed but the ETag did not. Rewrite the same
+    // bytes once the server's timestamp has moved on, guarded by the ETag we
+    // just got so we never clobber a concurrent writer.
+    let current = first.etag;
+    for (let i = 0; i < 3; i++) {
+      await sleep(1100);
+      const again = await this.rawPut(path, data, { contentType: opts.contentType, ifMatch: current });
+      if (again.etag !== prev) return again;
+      current = again.etag;
+    }
+    throw new ProtocolError(`PUT ${path}: server ETag does not change on overwrite`, { path });
+  }
+
+  private async rawPut(path: string, data: Uint8Array, opts: PutOptions): Promise<{ etag: string }> {
     const cond: Record<string, string> = { 'Content-Type': opts.contentType ?? 'application/octet-stream' };
-    if (opts.ifMatch !== undefined) cond['If-Match'] = opts.ifMatch;
-    if (opts.ifNoneMatch === '*') cond['If-None-Match'] = '*';
+    // A weak ETag (Apache marks files modified in the last second as W/"…")
+    // never matches If-Match, which uses strong comparison (RFC 9110 13.1.1):
+    // fall back to the emulated check for that request.
+    const weak = opts.ifMatch?.startsWith('W/') ?? false;
+    if (!this.nativeConditional || weak) {
+      await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, opts.ifNoneMatch);
+    } else {
+      if (opts.ifMatch !== undefined) cond['If-Match'] = opts.ifMatch;
+      if (opts.ifNoneMatch === '*') cond['If-None-Match'] = '*';
+    }
     const body = copyBytes(data);
     let res = await this.req(path, 'PUT', { body }, cond);
-    if ((res.status === 409 || res.status === 404) && path.includes('/')) {
-      // Parent collection missing: create it, then retry once.
-      await this.mkcols(path);
+    if (res.status === 409 || res.status === 404) {
+      // Parent collection (or the storage root itself) missing: create, then retry once.
+      await this.ensureRoot();
+      if (path.includes('/')) await this.mkcols(path);
       res = await this.req(path, 'PUT', { body }, cond);
     }
     if (res.status === 412) throw new PreconditionFailed(path, { status: 412 });
@@ -148,6 +201,27 @@ export class WebDavAdapter implements StorageAdapter {
     const h = await this.head(path);
     if (!h) throw new ProtocolError(`PUT ${path} succeeded but object is missing`, { path });
     return { etag: h.etag };
+  }
+
+  private rootReady = false;
+
+  /**
+   * Create the base collection (e.g. `.../files/alice/triangulair/`) and any
+   * missing ancestors. Ancestors above it may legitimately refuse MKCOL
+   * (`/remote.php/` on Nextcloud): only the base itself must end up existing.
+   */
+  private async ensureRoot(): Promise<void> {
+    if (this.rootReady) return;
+    const u = new URL(this.base);
+    const segs = u.pathname.split('/').filter(Boolean);
+    for (let i = 1; i <= segs.length; i++) {
+      const url = `${u.origin}/${segs.slice(0, i).join('/')}/`;
+      const res = await doFetch(this.fetch, url, { method: 'MKCOL', headers: this.headers() }, '');
+      if (i === segs.length && !(res.ok || res.status === 405 || res.status === 301)) {
+        if (!(await this.propfind('', '0'))?.[0]) throw httpError(res, 'MKCOL <root>', '');
+      }
+    }
+    this.rootReady = true;
   }
 
   private async mkcols(path: string): Promise<void> {
@@ -170,7 +244,10 @@ export class WebDavAdapter implements StorageAdapter {
   async delete(path: string, opts: DeleteOptions = {}): Promise<void> {
     checkPath(path);
     const extra: Record<string, string> = {};
-    if (opts.ifMatch !== undefined) extra['If-Match'] = opts.ifMatch;
+    if (opts.ifMatch !== undefined) {
+      if (this.nativeConditional && !opts.ifMatch.startsWith('W/')) extra['If-Match'] = opts.ifMatch;
+      else await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, undefined);
+    }
     const res = await this.req(path, 'DELETE', {}, extra);
     if (res.status === 404) {
       if (opts.ifMatch !== undefined) throw new PreconditionFailed(path, { status: 404, detail: 'missing' });

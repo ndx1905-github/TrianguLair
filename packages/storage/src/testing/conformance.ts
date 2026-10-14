@@ -1,7 +1,8 @@
 /**
  * Shared conformance suite: every adapter must pass it.
  *
- *   runAdapterConformance('WebDAV', async () => ({ adapter, cleanup }))
+ *   runAdapterConformance(async () => ({ adapter, cleanup }))
+ *   runAdapterConformance('WebDAV', async () => ({ adapter, cleanup }))   // named
  *
  * The factory is called before each test and must return an adapter on an
  * EMPTY root. Read-only adapters provide `seed` to write fixture data through
@@ -15,7 +16,7 @@ import {
   ReadOnly,
   Unsupported,
 } from '../errors.ts';
-import { INDEX_PATH, PUBLIC_LISTES_PATH, packPath } from '../layout.ts';
+import { INDEX_PATH, PUBLIC_LISTS_PATH, packPath } from '../layout.ts';
 import { fetchPack, fetchSnapshot, publishSnapshot } from '../snapshot.ts';
 import type { StorageAdapter } from '../types.ts';
 
@@ -25,6 +26,14 @@ export interface ConformanceFixture {
   seed?: (path: string, data: Uint8Array) => Promise<void>;
   /** If true, `capabilities.publicUrl()` must be anonymously fetchable with global fetch. */
   publicUrlFetchable?: boolean;
+  /**
+   * Known server limitation: conditions are enforced for sequential requests
+   * but NOT atomically (check-then-write without a lock), so concurrent
+   * conditional writers may all succeed. The concurrency tests then only
+   * assert the weaker guarantee (at least one winner, losers get
+   * PreconditionFailed, final content is one of the winners').
+   */
+  nonAtomicConditionals?: boolean;
   cleanup?: () => Promise<void>;
 }
 
@@ -33,7 +42,15 @@ export type ConformanceFactory = () => Promise<ConformanceFixture>;
 const enc = (s: string) => new TextEncoder().encode(s);
 const allBytes = () => Uint8Array.from({ length: 256 * 3 }, (_, i) => i % 256);
 
-export function runAdapterConformance(name: string, factory: ConformanceFactory): void {
+export function runAdapterConformance(factory: ConformanceFactory): void;
+export function runAdapterConformance(name: string, factory: ConformanceFactory): void;
+export function runAdapterConformance(
+  nameOrFactory: string | ConformanceFactory,
+  maybeFactory?: ConformanceFactory,
+): void {
+  const name = typeof nameOrFactory === 'string' ? nameOrFactory : 'storage';
+  const factory = typeof nameOrFactory === 'string' ? maybeFactory : nameOrFactory;
+  if (!factory) throw new Error('runAdapterConformance: missing factory');
   describe(`${name} adapter conformance`, () => {
     let fx: ConformanceFixture;
     let a: StorageAdapter;
@@ -97,8 +114,8 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
 
     it('publicUrl serves the object anonymously (when configured)', async () => {
       if (!fx.publicUrlFetchable) return;
-      await write(PUBLIC_LISTES_PATH, enc('{"type":"FeatureCollection","features":[]}'));
-      const url = a.capabilities.publicUrl(PUBLIC_LISTES_PATH);
+      await write(PUBLIC_LISTS_PATH, enc('{"type":"FeatureCollection","features":[]}'));
+      const url = a.capabilities.publicUrl(PUBLIC_LISTS_PATH);
       expect(url).toBeTruthy();
       const res = await fetch(url!);
       expect(res.status).toBe(200);
@@ -181,6 +198,38 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
         await a.delete('packs/x.bin');
       });
 
+      it('concurrent ifMatch writers: exactly one wins (atomic backends only)', async () => {
+        if (a.capabilities.readOnly || !a.capabilities.conditionalWrites) return;
+        const { etag } = await a.put('index.json', enc('base'));
+        const results = await Promise.allSettled(
+          Array.from({ length: 5 }, (_, i) => a.put('index.json', enc(`writer-${i}`), { ifMatch: etag })),
+        );
+        const won = results.filter((r) => r.status === 'fulfilled');
+        const lost = results.filter((r) => r.status === 'rejected');
+        for (const r of lost) expect((r as PromiseRejectedResult).reason).toBeInstanceOf(PreconditionFailed);
+        const final = await a.get('index.json');
+        const winnerEtags = won.map((r) => (r as PromiseFulfilledResult<{ etag: string }>).value.etag);
+        if (fx.nonAtomicConditionals) {
+          expect(won.length).toBeGreaterThanOrEqual(1);
+          expect(winnerEtags).toContain(final!.etag);
+        } else {
+          expect(won).toHaveLength(1);
+          expect(final!.etag).toBe(winnerEtags[0]);
+        }
+      });
+
+      it('concurrent ifNoneMatch creators: exactly one wins (atomic backends only)', async () => {
+        if (a.capabilities.readOnly || !a.capabilities.conditionalWrites) return;
+        const results = await Promise.allSettled(
+          Array.from({ length: 5 }, (_, i) => a.put('index.json', enc(`creator-${i}`), { ifNoneMatch: '*' })),
+        );
+        const won = results.filter((r) => r.status === 'fulfilled').length;
+        if (fx.nonAtomicConditionals) expect(won).toBeGreaterThanOrEqual(1);
+        else expect(won).toBe(1);
+        for (const r of results)
+          if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(PreconditionFailed);
+      });
+
       it('caller mutation after put does not affect stored data', async () => {
         if (a.capabilities.readOnly) return;
         const buf = enc('abc');
@@ -209,7 +258,7 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
           index: enc('{"v":1}'),
           packs: { p1: enc('pack-1'), p2: enc('pack-2') },
           previousIndexEtag: null,
-          publicListes: enc('{"type":"FeatureCollection","features":[]}'),
+          publicLists: enc('{"type":"FeatureCollection","features":[]}'),
         });
         expect(Object.keys(r1.packEtags).sort()).toEqual(['p1', 'p2']);
 
@@ -218,7 +267,7 @@ export function runAdapterConformance(name: string, factory: ConformanceFactory)
         expect(f1.etag).toBe(r1.indexEtag);
         expect(await fetchSnapshot(a, r1.indexEtag)).toEqual({ changed: false, etag: r1.indexEtag });
         expect(new TextDecoder().decode(await fetchPack(a, 'p2'))).toBe('pack-2');
-        expect(await a.head(PUBLIC_LISTES_PATH)).not.toBeNull();
+        expect(await a.head(PUBLIC_LISTS_PATH)).not.toBeNull();
 
         // A second "first publish" must not clobber the existing index.
         await expect(

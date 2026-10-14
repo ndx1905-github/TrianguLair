@@ -120,6 +120,25 @@ export function httpError(res: Response, what: string, path?: string): StorageEr
   return new ProtocolError(`${what}: unexpected HTTP ${status}`, { status, path });
 }
 
+/**
+ * Client-side emulation of If-Match / If-None-Match for servers that ignore
+ * them: HEAD, compare, throw. NOT atomic: another writer can slip in between
+ * the check and the write. Used only when the adapter is configured with
+ * `conditionalWrites: false`.
+ */
+export async function emulatePrecondition(
+  head: (path: string) => Promise<{ etag: string } | null>,
+  path: string,
+  ifMatch: string | undefined,
+  ifNoneMatch: '*' | undefined,
+): Promise<void> {
+  if (ifMatch === undefined && ifNoneMatch === undefined) return;
+  const cur = await head(path);
+  if (ifNoneMatch === '*' && cur) throw new PreconditionFailed(path, { detail: 'exists (emulated)' });
+  if (ifMatch !== undefined && cur?.etag !== ifMatch)
+    throw new PreconditionFailed(path, { detail: cur ? 'etag mismatch (emulated)' : 'missing (emulated)' });
+}
+
 export function decodeXmlEntities(s: string): string {
   return s
     .replace(/&quot;/g, '"')

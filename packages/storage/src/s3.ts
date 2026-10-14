@@ -15,6 +15,7 @@ import {
   checkPrefix,
   copyBytes,
   doFetch,
+  emulatePrecondition,
   httpError,
   normEtag,
   resolveFetch,
@@ -139,11 +140,8 @@ export class S3Adapter implements StorageAdapter {
     return { etag: normEtag(etag), size: Number(res.headers.get('content-length') ?? 0) };
   }
 
-  private async emulateCheck(path: string, ifMatch?: string, ifNoneMatch?: '*'): Promise<void> {
-    if (ifMatch === undefined && ifNoneMatch === undefined) return;
-    const cur = await this.head(path);
-    if (ifNoneMatch === '*' && cur) throw new PreconditionFailed(path, { detail: 'exists (emulated)' });
-    if (ifMatch !== undefined && cur?.etag !== ifMatch) throw new PreconditionFailed(path, { detail: 'emulated' });
+  private emulateCheck(path: string, ifMatch?: string, ifNoneMatch?: '*'): Promise<void> {
+    return emulatePrecondition((p) => this.head(p), path, ifMatch, ifNoneMatch);
   }
 
   async put(path: string, data: Uint8Array, opts: PutOptions = {}): Promise<{ etag: string }> {

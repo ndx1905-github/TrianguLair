@@ -21,6 +21,22 @@ export interface SftpServer {
   close: () => Promise<void>;
 }
 
+let cachedHostKey: string | undefined;
+
+/**
+ * ssh2's `generateKeyPairSync('ed25519')` occasionally emits a key its own
+ * parser rejects ("Malformed OpenSSH private key"), which made the suite
+ * flaky. Retry until the key parses, and reuse it for the whole process.
+ */
+function getHostKey(): string {
+  if (cachedHostKey) return cachedHostKey;
+  for (let i = 0; i < 20; i++) {
+    const key = utils.generateKeyPairSync('ed25519').private;
+    if (!(utils.parseKey(key) instanceof Error)) return (cachedHostKey = key);
+  }
+  throw new Error('could not generate a parseable SSH host key');
+}
+
 function attrsOf(st: fs.Stats): Attributes {
   return {
     mode: st.mode,
@@ -44,12 +60,14 @@ export async function startSftpServer(opts: {
   username: string;
   password: string;
 }): Promise<SftpServer> {
-  const hostKey = utils.generateKeyPairSync('ed25519').private;
+  const hostKey = getHostKey();
   // Client paths are absolute "virtual" paths; map them under opts.root.
   const real = (p: string) => join(opts.root, posix.resolve('/', p));
 
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
     client.on('error', () => {});
+    // Exists at runtime (lib/server.js) but missing from @types/ssh2.
+    (client as unknown as { setNoDelay(v: boolean): void }).setNoDelay(true);
     client.on('authentication', (ctx) => {
       if (ctx.method === 'password' && ctx.username === opts.username && ctx.password === opts.password)
         ctx.accept();

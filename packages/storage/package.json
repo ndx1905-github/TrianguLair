@@ -29,7 +29,8 @@
     "nephele": "^1.0.0-alpha.67",
     "ssh2": "^1.17.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "webdav-server": "^2.6.3"
   },
   "peerDependencies": {
     "ssh2": "^1.17.0",
