@@ -85,10 +85,17 @@ export class SignatureError extends TLCryptoError {
 export class IdentityMovedError extends TLCryptoError {
   readonly from: string;
   readonly to: string;
-  constructor(from: string, to: string) {
-    super('IDENTITY_MOVED', `identity moved from ${from} to ${to}`);
+  /**
+   * True when `from` is an identity the reader already left for ANOTHER successor: two different
+   * moves of the same old identity exist, so its master key is compromised. Warn, keep the current
+   * contact, and require a safety-code comparison before following anything.
+   */
+  readonly conflict: boolean;
+  constructor(from: string, to: string, conflict = false) {
+    super('IDENTITY_MOVED', conflict ? `conflicting identity move from ${from} to ${to}` : `identity moved from ${from} to ${to}`);
     this.from = from;
     this.to = to;
+    this.conflict = conflict;
   }
 }
 

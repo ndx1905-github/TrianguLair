@@ -23,6 +23,15 @@ export interface TrustOptions {
   retiredOwners?: Iterable<string>;
 }
 
+/**
+ * Options for verifiers of a sharing certificate. Pass `lastSeen` (the certificate this device or
+ * reader already holds for the owner) whenever there is one: an older rotation is then refused, so
+ * a thief cannot push the old sharing key back to a remaining device (R-08).
+ */
+export interface SharingCertOptions extends TrustOptions {
+  lastSeen?: SharingCert;
+}
+
 const MAX_REVOKED = 256;
 
 // ---------------------------------------------------------------------------
@@ -150,7 +159,7 @@ function checkOwner(owner: string, opts: TrustOptions, W: string): void {
  */
 export function verifySharingCert(
   input: string | SharingCert | JsonObject,
-  opts: TrustOptions & { lastSeen?: SharingCert } = {},
+  opts: SharingCertOptions = {},
 ): VerifiedSharingCert {
   const W = 'sharing-cert';
   const doc = parseJsonObject(input as string | JsonObject, W);

@@ -2,7 +2,8 @@ import { FormatError, InvalidKeyError, UnsupportedVersionError } from './errors'
 import { S } from './sodium';
 
 const enc = new TextEncoder();
-const dec = new TextDecoder('utf-8', { fatal: true });
+// ignoreBOM: a leading U+FEFF stays in the string, so it fails JSON parsing and the canonical check (R-09).
+const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export function utf8(s: string): Uint8Array {
   return enc.encode(s);
@@ -263,10 +264,12 @@ let probeScalar: Uint8Array | undefined;
 /**
  * Rejects X25519 public keys that are all-zero or of low order: any key whose shared secret with a
  * fixed, clamped, non-zero scalar is the all-zero point. Such keys would make sealed boxes fail
- * (or be trivially decryptable). Throws InvalidKeyError.
+ * (or be trivially decryptable). Also rejects non-canonical encodings with bit 255 set (two strings
+ * for one key). Throws InvalidKeyError.
  */
 export function assertX25519PublicKey(pk: Uint8Array, what = 'x25519 public key'): void {
   if (!(pk instanceof Uint8Array) || pk.length !== 32) throw new InvalidKeyError(`${what}: must be 32 bytes`);
+  if (((pk[31] as number) & 0x80) !== 0) throw new InvalidKeyError(`${what}: non-canonical X25519 key (bit 255 set)`);
   const s = S();
   probeScalar ??= s.crypto_generichash(32, utf8('TrianguLair/x25519-probe'), null);
   let shared: Uint8Array;

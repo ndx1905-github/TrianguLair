@@ -1,5 +1,5 @@
 import { wordlist } from '@scure/bip39/wordlists/english.js';
-import { verifySharingCert, type TrustOptions } from './certs';
+import { verifySharingCert, type SharingCertOptions } from './certs';
 import {
   bytesEqual,
   canonicalize,
@@ -159,7 +159,8 @@ export function encodeKeyExport(sharing: SharingKey): Uint8Array {
   return utf8(canonicalize({ type: 'key-export', version: KEY_EXPORT_VERSION, secret: toB64Url(sharing.keyPair.secretKey), cert: v.cert as unknown as JsonObject }));
 }
 
-export function decodeKeyExport(bytes: Uint8Array, opts: TrustOptions = {}): SharingKey {
+/** Pass `expectedOwner`, and `lastSeen` if the receiving device already holds a sharing key (R-08). */
+export function decodeKeyExport(bytes: Uint8Array, opts: SharingCertOptions = {}): SharingKey {
   const W = 'key-export';
   const doc = parseJsonObject(fromUtf8(bytes, W), W);
   checkVersion(doc, W, KEY_EXPORT_VERSION);

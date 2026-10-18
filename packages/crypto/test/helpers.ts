@@ -9,6 +9,8 @@ import {
   devicePublicKeys,
   openPack,
   packEntry,
+  sealPack,
+  type SealOptions,
   signIndex,
   type DeviceCert,
   type DeviceKeys,
@@ -50,12 +52,22 @@ export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexCont
   return signIndex(p.signer, { seq, sharingCert: p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
 }
 
-let notary: Person | undefined;
+let notaryPerson: Person | undefined;
 
-/** A verified index (by a throwaway publisher) listing the given packs: for tests about pack internals. */
+/** Throwaway publisher used by trust() / open() / seal(). */
+export function notary(): Person {
+  notaryPerson ??= person();
+  return notaryPerson;
+}
+
+/** A verified index (by the throwaway publisher) listing the given packs: for tests about pack internals. */
 export function trust(...packs: Uint8Array[]): SignedIndex {
-  notary ??= person();
-  return publish(notary, packs);
+  return publish(notary(), packs);
+}
+
+/** sealPack bound to the throwaway publisher (open with open() or trust()). */
+export function seal(payload: Uint8Array, recipients: Uint8Array[], opts?: SealOptions): Uint8Array {
+  return sealPack(notary().id.owner, payload, recipients, opts);
 }
 
 /** openPack through a throwaway verified index. */

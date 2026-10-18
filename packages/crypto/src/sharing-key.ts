@@ -1,4 +1,4 @@
-import { verifyDeviceCert, verifySharingCert, type DeviceCert, type SharingCert, type TrustOptions } from './certs';
+import { verifyDeviceCert, verifySharingCert, type DeviceCert, type SharingCert, type SharingCertOptions } from './certs';
 import {
   bytesEqual,
   canonicalize,
@@ -70,6 +70,8 @@ export function sealSharingKey(sharing: SharingKey, to: DeviceCert | Identity): 
   const s = S();
   if (isDeviceCert(to)) {
     const dc = verifyDeviceCert(to, { expectedOwner: sharing.cert.owner });
+    // R-07: never hand a new sharing key to a device that this very certificate revokes.
+    if (sharing.cert.revoked_devices.includes(dc.device)) throw new SignatureError('sharing-key: the device is revoked by this certificate', 'REVOKED');
     const payload = payloadFor(sharing, dc.device);
     try {
       return concat(MAGIC, Uint8Array.of(SHARING_KEY_VERSION, MODE_DEVICE), s.crypto_box_seal(payload, parseKey('x25519', dc.box)));
@@ -91,9 +93,11 @@ export function sealSharingKey(sharing: SharingKey, to: DeviceCert | Identity): 
 
 /**
  * Opens a sealed sharing key with this device's keys, or with the Identity (vault copy).
- * Pass `expectedOwner` on a device (the Identity path always checks its own owner).
+ * Pass `expectedOwner` on a device (the Identity path always checks its own owner), and `lastSeen`
+ * (the sharing cert currently held) whenever there is one: anyone can seal to a device's public box
+ * key, so without it a thief could push back an older, compromised sharing key (R-08).
  */
-export function openSharingKey(bytes: Uint8Array, holder: DeviceKeys | Identity, opts: TrustOptions = {}): SharingKey {
+export function openSharingKey(bytes: Uint8Array, holder: DeviceKeys | Identity, opts: SharingCertOptions = {}): SharingKey {
   const W = 'sharing-key';
   const s = S();
   const r = new Reader(bytes, W);
@@ -126,7 +130,7 @@ export function openSharingKey(bytes: Uint8Array, holder: DeviceKeys | Identity,
     if (doc['type'] !== W) throw new FormatError(`${W}: wrong type`);
     const expectedTo = isDevice ? holder.id : holder.owner;
     if (doc['to'] !== expectedTo) throw new FormatError(`${W}: addressed to another recipient`);
-    const trust: TrustOptions = isDevice ? opts : { ...opts, expectedOwner: holder.owner };
+    const trust: SharingCertOptions = isDevice ? opts : { ...opts, expectedOwner: holder.owner };
     const v = verifySharingCert(doc['cert'] as JsonObject, trust);
     const secretKey = fromB64Url(doc['secret'], `${W}.secret`, 32);
     const publicKey = s.crypto_scalarmult_base(secretKey);

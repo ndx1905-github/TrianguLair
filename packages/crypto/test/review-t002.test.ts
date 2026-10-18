@@ -60,7 +60,7 @@ describe('T-002 F-01 (high): sharing-key rotation survives theft of an ordinary 
 
   it('a stolen ordinary device cannot open packs wrapped to the post-theft sharing key', () => {
     const { marie, stolen, k1, toPhone, toVault } = setup();
-    const pack = sealPack(te.encode('post-theft places'), [k1.publicKey]);
+    const pack = sealPack(marie.id.owner, te.encode('post-theft places'), [k1.publicKey]);
     const index = publish(marie, [pack]);
     // Nothing on the tablet derives the new key: it is random, not derived from a seed.
     expect(() => openPack(pack, index, [stolen.sharing.keyPair, stolen.device.box])).toThrow(TLCryptoError);
@@ -107,7 +107,7 @@ describe('T-002 F-03 (medium): low-order X25519 sharing key', () => {
   });
   it('sealPack reports a low-order recipient key as a TLCryptoError (not a raw libsodium Error)', () => {
     const owner = person();
-    expect(() => sealPack(te.encode('x'), [owner.sharing.publicKey, zero])).toThrow(TLCryptoError);
+    expect(() => sealPack(owner.id.owner, te.encode('x'), [owner.sharing.publicKey, zero])).toThrow(TLCryptoError);
   });
 });
 
@@ -160,8 +160,8 @@ describe('T-002 F-11 (low): signed index rejects arbitrary file references', () 
 describe('T-002 F-13 (low): input validation gaps', () => {
   it('createInvitation never returns a link that parseInvitationLink rejects (sub-ms ttl)', () => {
     const owner = person();
-    expect(() => createInvitation(owner.id, { ttlMs: 0.5 })).toThrow(TLCryptoError);
-    const { fragment } = createInvitation(owner.id, { ttlMs: 60_001 });
+    expect(() => createInvitation(owner.signer, owner.cert, { ttlMs: 0.5 })).toThrow(TLCryptoError);
+    const { fragment } = createInvitation(owner.signer, owner.cert, { ttlMs: 60_001 });
     expect(() => parseInvitationLink(fragment)).not.toThrow();
   });
   it('an invalid Date is reported as a TLCryptoError', () => {

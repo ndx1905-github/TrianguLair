@@ -17,6 +17,7 @@ import { S } from './sodium';
  * A group-key pack is accepted only if it is listed in the VERIFIED index of `owner`
  * (openGroupKey checks both), so a former member cannot forge "generation n+1".
  * Readers key groups by (owner, group id).
+ * Group-key payloads are recognised by isGroupKeyPayload (used by retireInvitationKey).
  */
 
 export const GROUP_KEY_VERSION = 2;
@@ -43,7 +44,10 @@ export function rotateGroup(group: Group): Group {
   return { id: group.id, generation: group.generation + 1, keyPair: generateX25519KeyPair() };
 }
 
-/** `owner` = the owner id of the index that will list this pack. */
+/**
+ * `owner` = the owner id of the index that will list this pack. Never include an invitation key in
+ * `memberPublicKeys`: a link holder would keep the group secret (retireInvitationKey refuses it).
+ */
 export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint8Array[], opts: Omit<SealOptions, 'id'> = {}): Uint8Array {
   const payload = utf8(
     canonicalize({
@@ -56,7 +60,7 @@ export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint
     }),
   );
   try {
-    return sealPack(payload, memberPublicKeys, opts);
+    return sealPack(owner, payload, memberPublicKeys, opts);
   } finally {
     S().memzero(payload);
   }
@@ -66,7 +70,7 @@ export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint
 export function openGroupKey(bytes: Uint8Array, index: PackIndex, keys: KeyPair[]): OpenedGroup {
   const W = 'group-key';
   const entry = findIndexed(bytes, index);
-  const { payload } = openUnchecked(bytes, keys, entry.file);
+  const { payload } = openUnchecked(bytes, keys, index.owner, entry.file);
   try {
     const doc = parseJsonObject(fromUtf8(payload, W), W);
     checkVersion(doc, W, GROUP_KEY_VERSION);
@@ -83,4 +87,16 @@ export function openGroupKey(bytes: Uint8Array, index: PackIndex, keys: KeyPair[
   } finally {
     S().memzero(payload);
   }
+}
+
+/** @internal True if a decrypted pack payload is a group-key payload (type "group-key"). */
+export function isGroupKeyPayload(payload: Uint8Array): boolean {
+  if (payload[0] !== 0x7b) return false; // '{'
+  let doc;
+  try {
+    doc = parseJsonObject(fromUtf8(payload, 'payload'), 'payload');
+  } catch {
+    return false;
+  }
+  return doc['type'] === 'group-key';
 }

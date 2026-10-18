@@ -89,7 +89,7 @@ describe('transfer code', () => {
     const code = generateTransferCode();
     const blob = encryptForTransfer(encodeKeyExport({ keyPair: a.sharing, cert: a.cert }), code, { now });
     const got = decodeKeyExport(decryptTransfer(blob, code, { now }), { expectedOwner: a.id.owner });
-    const pack = sealPack(te.encode('hello'), [a.sharing.publicKey]);
+    const pack = sealPack(a.id.owner, te.encode('hello'), [a.sharing.publicKey]);
     expect(td.decode(openPack(pack, publish(a, [pack]), [got.keyPair]).payload)).toBe('hello');
   });
 });

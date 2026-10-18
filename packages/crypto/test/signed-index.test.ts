@@ -13,6 +13,7 @@ import {
   issueIdentityMove,
   issueSharingCert,
   packEntry,
+  publicEntry,
   RollbackError,
   sealPack,
   serialize,
@@ -31,14 +32,16 @@ const t1 = new Date('2026-10-13T11:00:00.000Z');
 
 describe('signed index', () => {
   const alice = person();
-  const pack = sealPack(te.encode('x'), [alice.sharing.publicKey]);
-  const idx = signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [packEntry(pack)], public: 'public/lists.geojson', now: t0 });
+  const pack = sealPack(alice.id.owner, te.encode('x'), [alice.sharing.publicKey]);
+  const pub = publicEntry(te.encode('{"type":"FeatureCollection","features":[]}'), 'lists');
+  const idx = signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [packEntry(pack)], public: pub, now: t0 });
   const json = serialize(idx);
 
   it('has the spec shape and canonical serialization', () => {
     const o = JSON.parse(json);
     expect(Object.keys(o)).toEqual(['device_cert', 'owner', 'packs', 'public', 'reads', 'revoked_devices', 'seq', 'sharing_cert', 'signature', 'updated', 'version']);
-    expect(o).toMatchObject({ version: 2, seq: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: 'public/lists.geojson', reads: ['2'], revoked_devices: [] });
+    expect(o).toMatchObject({ version: 3, seq: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: pub, reads: ['3'], revoked_devices: [] });
+    expect(pub.file).toBe('public/lists.geojson');
     expect(o.sharing_cert).toEqual({ key: alice.cert.key, rotation: 0, signature: alice.cert.signature });
     expect(o.device_cert).toEqual({ box: alice.deviceCert.box, device: alice.device.id, signature: alice.deviceCert.signature });
     expect(o.packs[0]).toEqual({ file: packEntry(pack).file, hash: packEntry(pack).hash });
@@ -61,18 +64,19 @@ describe('signed index', () => {
   });
 
   it('works without the optional public field and with custom reads', () => {
-    const i = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], reads: ['2', '2.1'] });
+    const i = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], reads: ['3', '3.1'] });
     expect('public' in i).toBe(false);
-    expect(verifyIndex(serialize(i)).reads).toEqual(['2', '2.1']);
+    expect(verifyIndex(serialize(i)).reads).toEqual(['3', '3.1']);
   });
 
   it('rejects tampering of any field', () => {
     const o = JSON.parse(json);
-    const other = packEntry(sealPack(te.encode('y'), [alice.sharing.publicKey]));
+    const other = packEntry(sealPack(alice.id.owner, te.encode('y'), [alice.sharing.publicKey]));
     const cases = [
       { ...o, seq: 2 },
       { ...o, updated: '2026-10-13T10:00:01.000Z' },
-      { ...o, public: 'public/other.geojson' },
+      { ...o, public: { ...pub, file: 'public/other.geojson' } },
+      { ...o, public: publicEntry(te.encode('{}'), 'lists') },
       { ...o, packs: [other] },
       { ...o, packs: [] },
       { ...o, reads: ['1'] },
@@ -119,7 +123,7 @@ describe('signed index', () => {
     expect(ok.revoked_devices).toEqual([p.device.id]);
   });
 
-  it('rollback: seq is the only ordering criterion; forks are reported', () => {
+  it('rollback: within one rotation, seq orders indexes; forks are reported', () => {
     const newer = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], now: t1 });
     expect(verifyIndex(serialize(newer), { lastSeen: idx }).seq).toBe(2);
     expect(() => verifyIndex(json, { lastSeen: newer })).toThrow(RollbackError);
@@ -168,16 +172,19 @@ describe('signed index', () => {
       [e, e],
     ];
     for (const packs of bad) expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs })).toThrow(FormatError);
-    for (const pub of ['https://x.example/a.geojson', 'public/../a.geojson', 'public/a.json']) {
-      expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], public: pub })).toThrow(FormatError);
+    for (const file of ['https://x.example/a.geojson', 'public/../a.geojson', 'public/a.json']) {
+      expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], public: { file, hash: pub.hash } })).toThrow(FormatError);
     }
+    expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], public: { file: pub.file, hash: 'x' } })).toThrow(FormatError);
+    expect(() => publicEntry(te.encode('{}'), '../a')).toThrow(FormatError);
     expect(signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [packEntry(pack, 'media')] }).packs).toHaveLength(1);
   });
 
   it('rejects other versions and malformed documents', () => {
     const o = JSON.parse(json);
-    expect(() => verifyIndex({ ...o, version: 3 })).toThrow(UnsupportedVersionError);
-    expect(() => verifyIndex({ ...o, version: 1 })).toThrow(UnsupportedVersionError);
+    expect(() => verifyIndex({ ...o, version: 4 })).toThrow(UnsupportedVersionError);
+    expect(() => verifyIndex({ ...o, version: 2 })).toThrow(UnsupportedVersionError);
+    expect(() => verifyIndex({ ...o, public: 'public/lists.geojson' })).toThrow(FormatError);
     expect(() => verifyIndex({ ...o, version: 0 })).toThrow(FormatError);
     expect(() => verifyIndex({ ...o, extra: true })).toThrow(FormatError);
     expect(() => verifyIndex({ ...o, updated: 'yesterday' })).toThrow(FormatError);

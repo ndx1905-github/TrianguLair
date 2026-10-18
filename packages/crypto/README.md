@@ -1,6 +1,7 @@
 # @triangulair/crypto
 
-TrianguLair's encrypted data format (phase-0 prototype, revised after the T-002 review). Pure functions,
+TrianguLair's encrypted data format (phase-0 prototype, revised after the T-002 review and the second review of its
+fixes, `docs/reviews/2026-10-13-crypto-fixes-review.md`). Pure functions,
 `Uint8Array` in/out, libsodium (`libsodium-wrappers-sumo`, works in Node, web and React Native). License: MPL-2.0.
 
 ```ts
@@ -14,8 +15,8 @@ await ready(); // required once before anything else
 
 - Binary inside JSON: **base64url, no padding**, strictly decoded (non-canonical encodings rejected).
 - Public keys in JSON: `"ed25519:<b64url>"` (master key = the *owner id*, and device keys) and `"x25519:<b64url>"`
-  (sharing, device box, group and invitation keys). X25519 keys that are all-zero or of low order are rejected with
-  `InvalidKeyError` (`INVALID_KEY`) wherever they are parsed or used as recipients.
+  (sharing, device box, group and invitation keys). X25519 keys that are all-zero, of low order, or non-canonical (bit
+  255 set) are rejected with `InvalidKeyError` (`INVALID_KEY`) wherever they are parsed or used as recipients.
 - Dates: ISO-8601 UTC, `YYYY-MM-DDTHH:MM:SS[.mmm]Z`, which must be a real instant (no Feb 30). Written as
   `Date#toISOString()`. Binary structures use u32 unix seconds.
 - **Canonical JSON** (`canonicalize`): object keys sorted by UTF-16 code units, recursively; no whitespace;
@@ -24,7 +25,8 @@ await ready(); // required once before anything else
   to RFC 8785 (JCS).
 - **Transported JSON MUST be canonical.** Every parser of transported text (signed documents, pack headers, payloads)
   requires `canonicalize(JSON.parse(s)) === s`. This rejects duplicate keys (parser differentials between
-  implementations), whitespace and key-order variants. Already-parsed objects are accepted for in-process use.
+  implementations), whitespace and key-order variants. UTF-8 input is decoded strictly and a leading BOM is kept (so it
+  is rejected). Already-parsed objects are accepted for in-process use.
 - **Signatures** (Ed25519 detached) cover `UTF-8("TrianguLair-signature-v1\n" + domain + "\n") ‖ message`, where
   message is `canonicalJSON(doc without "signature")` for JSON documents, or the signed bytes of a binary structure.
   Domains: `index | sharing-cert | device-cert | identity-move | identity-move-to | invitation | invitation-response`.
@@ -32,21 +34,22 @@ await ready(); // required once before anything else
   exactly the current version of each structure; any other throws `UnsupportedVersionError` (`code: "UNSUPPORTED_VERSION"`,
   `found`, `supported`). Unknown JSON fields are rejected (`FormatError`).
 - Errors all extend `TLCryptoError` with a `code`: `FORMAT`, `UNSUPPORTED_VERSION`, `INVALID_KEY`, `DECRYPT`,
-  `NO_MATCHING_KEY`, `NOT_INDEXED`, `SIGNATURE`, `OWNER_MISMATCH`, `REVOKED`, `IDENTITY_MOVED`, `EXPIRED`, `ROLLBACK`
-  (`fork: true` for "same seq, different content"), `INVALID_PHRASE`, `INVALID_CODE`, `NOT_READY`.
+  `NO_MATCHING_KEY`, `NOT_INDEXED`, `SIGNATURE`, `OWNER_MISMATCH`, `REVOKED`, `IDENTITY_MOVED` (`conflict: true` for
+  a second, different move of an identity already left behind), `EXPIRED`, `ROLLBACK` (`fork: true` for "same
+  rotation and seq, different content"), `INVALID_PHRASE`, `INVALID_CODE`, `NOT_READY`.
   **Codes are for local handling only**; never reflect them to a remote party (e.g. `DECRYPT` vs `NO_MATCHING_KEY`
   tells whether a wrap was addressed to you). Messages never echo rejected numeric values.
 
 | Structure | Version constant | Version |
 |---|---|---|
-| Signed index | `INDEX_VERSION` | 2 |
-| Pack envelope and header | `PACK_VERSION` | 2 |
+| Signed index | `INDEX_VERSION` | 3 |
+| Pack envelope and header | `PACK_VERSION` | 3 |
 | Sharing certificate | `SHARING_CERT_VERSION` | 2 |
 | Device certificate | `DEVICE_CERT_VERSION` | 1 |
 | Identity move | `IDENTITY_MOVE_VERSION` | 1 |
 | Sealed sharing key | `SHARING_KEY_VERSION` | 1 |
 | Group-key payload | `GROUP_KEY_VERSION` | 2 |
-| Invitation link and return link | `INVITATION_VERSION` | 2 |
+| Invitation link and return link | `INVITATION_VERSION` | 3 |
 | Transfer blob | `TRANSFER_VERSION` | 2 |
 | Key export | `KEY_EXPORT_VERSION` | 2 |
 | Primary identity | `PRIMARY_IDENTITY_VERSION` | 1 |
@@ -76,8 +79,10 @@ device     = random Ed25519 (signs indexes) + random X25519 (box), generated on 
   `revoked_devices` is sorted, unique and **permanent** (a later rotation must keep it). With `lastSeen`: lower rotation
   → `RollbackError`; same rotation, other content → `RollbackError` with `fork`; a later rotation that un-revokes a
   device → `RollbackError`.
-- **Sealed sharing key** (`sealSharingKey(sharing, to)` / `openSharingKey(bytes, holder, { expectedOwner? })`), how the
-  current sharing key reaches each device and the recovery vault:
+- **Sealed sharing key** (`sealSharingKey(sharing, to)` / `openSharingKey(bytes, holder, { expectedOwner?, lastSeen? })`),
+  how the current sharing key reaches each device and the recovery vault. `sealSharingKey` refuses a device that the
+  certificate itself revokes (`REVOKED`). Anyone can seal to a device's public box key, so pass `lastSeen` (the sharing
+  cert the device already holds) whenever there is one: an older rotation is then refused (`ROLLBACK`).
   ```
   "TLSK" | version 1 | mode u8
     mode 1 (to a DeviceCert):   crypto_box_seal(payload, device box key)
@@ -87,26 +92,33 @@ device     = random Ed25519 (signs indexes) + random X25519 (box), generated on 
 - **Adding a device**: the new device runs `generateDeviceKeys()` and shows `devicePublicKeys(keys)` (QR). The primary
   device (or the phrase) issues its device cert and `sealSharingKey(current, deviceCert)`. With "link + code", the
   transfer carries `encodeKeyExport(current)` (sharing key + cert only, never the master); the new device then needs a
-  device cert from the primary device or the phrase before it can publish.
+  device cert from the primary device or the phrase before it can publish. `decodeKeyExport(bytes, { expectedOwner?,
+  lastSeen? })` takes the same `lastSeen` rule.
 - **Declare a device lost** (phrase or primary device): new random sharing key, `issueSharingCert(identity, pk,
   { rotation: r + 1, revokedDevices: [...previous, lostDeviceId] })`, `sealSharingKey` to each remaining device cert and
   to the identity (vault), re-encrypt own content, publish an index embedding the new cert. A stolen ordinary device holds
-  neither the phrase, nor the master key, nor the vault key: it can neither obtain the new sharing key nor certify one,
-  and the index rules below stop it from publishing. Remote wipe: a device that finds its own id in the
+  neither the phrase, nor the master key, nor the vault key: it can neither obtain the new sharing key nor certify one.
+  Indexes are ordered by `(rotation, seq)`, so the new rotation supersedes every index the stolen device signed, whatever
+  its `seq`, for every reader that sees it; afterwards the device's indexes are refused (`REVOKED` with the new cert,
+  `ROLLBACK` with the old one). Remote wipe: a device that finds its own id in the
   `revoked_devices` of a verified index of its owner erases its keys.
 - **Identity change** (primary device stolen): `issueIdentityMove(oldIdentity, newIdentity)` →
   `{"from":"ed25519:old","issued":"…","signature":"<old master>","to":"ed25519:new","to_signature":"<new master>","type":"identity-move","version":1}`,
   published as the `move` field of the new identity's index. A reader calling `verifyIndex(…, { expectedOwner: old })`
   gets an `IdentityMovedError { from, to }` (never an automatic accept): show "Marie changed her identity", remove the
   "verified" mark, then follow `to` with `retiredOwners` including `from`. Everything later signed by a retired master is
-  refused (`REVOKED`).
+  refused (`REVOKED`). If an index carries a valid move from a retired identity to *another* successor than the one
+  followed, the error has `conflict: true`: two moves exist, the old master is compromised; warn and require a
+  safety-code comparison. The new identity keeps `move` in every index (friends who were offline need it). Packs are
+  bound to their owner, so after a move the content is re-sealed under the new owner id (`openPack` with the old index,
+  `sealPack(newOwner, …)`).
 
 ## Content pack (binary)
 
 ```
 offset size  field
 0      4     magic "TLPK"
-4      1     envelope version = 2
+4      1     envelope version = 3
 5      4     N = header length (uint32 BE, ≤ 64 KiB)
 9      N     header, canonical JSON UTF-8
 9+N    …     XChaCha20-Poly1305-IETF ciphertext ‖ 16-byte tag
@@ -115,16 +127,21 @@ offset size  field
 Header (no pack id, no recipient information):
 
 ```json
-{"alg":"xchacha20poly1305-ietf","nonce":"<24B>","pad":"padme","type":"pack","version":2,
+{"alg":"xchacha20poly1305-ietf","nonce":"<24B>","pad":"padme","type":"pack","version":3,
  "wrapAlg":"x25519-sealedbox","wraps":["<80B>", "..."]}
 ```
 
 - Plaintext = `logical id (16 B) ‖ u32 payload length ‖ payload ‖ zero padding`. The **logical id is inside the
   encryption**: neither the storage nor a former friend can link successive versions of a pack.
 - `pad: "padme"` (default): plaintext length = `max(256, Padmé(20 + payload length))` (`paddedLength`), at most ~12 %
-  overhead; `pad: "none"`: no padding. Readers check the exact length and that the padding is zeros.
+  overhead; `pad: "none"`: no padding. Readers check the exact length and that the padding is zeros. Padmé, with integer
+  operations only: for `n ≤ 256` the result is 256; otherwise `e = floor(log2 n)`, `s = floor(log2 e) + 1`,
+  `step = 2^(e − s)`, result `= ceil(n / step) × step` (vectors in `test/review-fixes.test.ts`).
 - Batch key: random 32 bytes per encryption. Nonce: random 24 bytes.
-- **AEAD associated data** = `"TLPK" ‖ version ‖ canonicalJSON(header without "wraps")`.
+- **AEAD associated data** = `"TLPK" ‖ version ‖ owner master public key (32 B) ‖ canonicalJSON(header without
+  "wraps")`. The owner is not written in the file; the reader takes it from the verified index the pack is listed in, so
+  a pack re-listed in someone else's index fails to open (`DECRYPT`): no re-attribution, no resurrection under another
+  name.
 - `wraps` are outside the AD; a modified wrap can only fail to open. Each wrap = `crypto_box_seal(batchKey, recipientPk)`
   = 32 B ephemeral pk ‖ 16 B MAC ‖ 32 B key. At most `MAX_WRAPS` = 256 (checked before any work).
 - **Files are content-addressed**: `packEntry(bytes) → { file: "packs/b2b256-<b64url hash>.bin", hash: "b2b256:<b64url
@@ -140,11 +157,13 @@ dummy wraps (real sealed boxes of random bytes to throwaway keys) to the next po
 
 ### Operations
 
-- `sealPack(payload, recipientPks, { id?, padTo?, pad? })`
+- `sealPack(ownerId, payload, recipientPks, { id?, padTo?, pad? })`: `ownerId` is the owner of the index that will list
+  the pack.
 - `openPack(bytes, verifiedIndex, keys) → { id, payload, file }`: **the only way to decrypt**. `verifiedIndex` must be an
   object returned by `verifyIndex` or `signIndex` (checked at run time, and frozen); the content hash is looked up in it
   **before any key operation**, so a pack not listed in its owner's verified index is ignored (`NOT_INDEXED`). This is how
-  "everything is signed with my key" applies to packs.
+  "everything is signed with my key" applies to packs. The registry of verified indexes is per copy of the package (a
+  module-level `WeakSet`): an index verified by one bundled copy is `NOT_INDEXED` for another copy. Bundle one copy.
 - `rewrapPack(bytes, ownIndex, keys, recipientPks)`: same batch key and ciphertext, new wraps. Only to **add** recipients;
   it is **not** a revocation.
 - `reencryptPack(bytes, ownIndex, keys, remainingPks)`: **revocation**: new batch key and nonce, same logical id, new file.
@@ -157,7 +176,8 @@ in an ordinary pack: `sealGroupKey(group, ownerId, memberPks)` / `openGroupKey(b
 `{"generation":n,"group":"<16B>","owner":"ed25519:…","secretKey":"<32B>","type":"group-key","version":2}`.
 `openGroupKey` accepts it only if listed in the verified index **and** `owner` equals that index's owner, so a former
 member cannot forge "generation n + 1". Key groups by `(owner, id)`; `generation ≥ 1`. Removing a member:
-`rotateGroup` → `sealGroupKey` to remaining members → `reencryptPack` the affected packs.
+`rotateGroup` → `sealGroupKey` to remaining members → `reencryptPack` the affected packs. **An invitation key is never a
+group member**: it is a direct recipient of the content it may read (`retireInvitationKey` refuses a group-key pack).
 
 ## Signed index
 
@@ -168,14 +188,14 @@ embedded, so they share the index's rollback protection (one freshness anchor pe
 {"device_cert":{"box":"x25519:…","device":"ed25519:…","signature":"<master>"},
  "owner":"ed25519:…",
  "packs":[{"file":"packs/b2b256-<43>.bin","hash":"b2b256:<43>"}],
- "public":"public/lists.geojson",
- "reads":["2"],
+ "public":{"file":"public/lists.geojson","hash":"b2b256:<43>"},
+ "reads":["3"],
  "revoked_devices":["ed25519:…"],
  "seq":42,
  "sharing_cert":{"key":"x25519:…","rotation":3,"signature":"<master>"},
  "signature":"<device>",
  "updated":"2026-10-13T15:10:00.000Z",
- "version":2}
+ "version":3}
 ```
 
 Optional `move` (identity move, see Keys). The compact `sharing_cert` is verified as the full certificate
@@ -188,59 +208,89 @@ signature. The compact `device_cert` is verified as `{owner, device, box, …}`.
   - the signing device is certified by the owner's master and **not** in `revoked_devices` (`REVOKED`);
   - `updated` is at most **24 h** in the future (`FormatError`, retry later); it is otherwise informational;
   - `packs[].hash` = `b2b256:` + 32 bytes, `packs[].file` = `packs|media/b2b256-<same hash>.bin`, no duplicates;
-    `public` = `public/<name>.geojson` (no absolute URLs, no traversal);
+    `public` = `{file: "public/<name>.geojson", hash}` (no absolute URLs, no traversal), built with
+    `publicEntry(bytes, name)`; readers check the plaintext file with `verifyPublicFile(bytes, verifiedIndex)`
+    (`NOT_INDEXED` if it does not match) before showing it;
   - `reads`: 1 to 32 unique version strings (`"2"`, `"2.1"`);
-  - with `lastSeen`, `checkNoRollback(next, lastSeen)`: **`seq` is the only ordering** (lower → `RollbackError`, same seq
-    with other content → `RollbackError` with `fork: true`: report it and accept the next higher seq); the embedded
-    sharing cert must not go back (lower rotation, un-revoked device).
+  - with `lastSeen`, `checkNoRollback(next, lastSeen)`: indexes are ordered by **`(sharing_cert.rotation, seq)`**.
+    The embedded sharing cert is compared first: lower rotation → `RollbackError`; same rotation, other cert → fork; a
+    higher rotation that un-revokes a device → `RollbackError`; any other **higher rotation is accepted whatever its
+    `seq`** (only the master raises the rotation, so a device cannot outrank its own revocation, and a new rotation may
+    restart `seq`). Within one rotation: lower seq → `RollbackError`; same seq with other content → `RollbackError` with
+    `fork: true` (report it and accept the next higher seq); a seq more than `MAX_SEQ_STEP` (2^20) above the last seen
+    one → `RollbackError` (keep `lastSeen`, report it).
 - `sharingCertOf(index)`: the full, verified sharing certificate (to wrap content to a friend, or as `lastSeen`).
 - `serialize(doc)` = canonical JSON, the only accepted transport form. Persist the last accepted index per owner (also in
   the recovery vault) so that a restore does not fall back to trust on first use.
-- Allocate `seq` with a conditional write (`If-Match`) on the index file. The storage ETag is a cache hint only.
+- Allocate `seq` with a conditional write (`If-Match`) on the index file, as last seq + 1. The storage ETag is a cache
+  hint only. If an index cannot be superseded within its rotation (a jammed `seq`), issue a new rotation.
 
 ## Invitation (spec: "Invitation link and return link")
 
-**Link** (`createInvitation(identity, { now?, ttlMs?, location? }) → { invitation, fragment }`), compact binary, put in
-the URL **fragment** (`https://triangulair.app/i#<fragment>`), never sent to a server:
+Invitations and return links are signed by a **device key** and carry its master-signed device certificate, so an
+ordinary device invites and answers without the master key (the 12 words are needed only to add or remove a device or
+change the sharing key).
+
+**Link** (`createInvitation({ keys, cert }, currentSharingCert, { now?, ttlMs?, location? }) → { invitation, fragment }`),
+compact binary, put in the URL **fragment** (`https://triangulair.app/i#<fragment>`), never sent to a server:
 
 ```
-0 0x49 "I" | 1 version=2 | 2 id 16B | 18 owner master pk 32B | 50 created u32 s | 54 expires u32 s |
-58 invitation X25519 secret 32B | 90 L u16 | 92 location (https URL, ≤ 512 B) | 92+L Ed25519 signature 64B
-signature (owner master, domain "invitation") over bytes[0..58) ‖ invitation PUBLIC key ‖ bytes[90..92+L)
+0 0x49 "I" | 1 version=3 | 2 id 16B | 18 owner master pk 32B | 50 created u32 s | 54 expires u32 s |
+58 min_rotation u32 | 62 device pk 32B | 94 device box pk 32B | 126 device-cert signature 64B (master) |
+190 invitation X25519 secret 32B | 222 L u16 | 224 location (https URL, ≤ 512 B) | 224+L Ed25519 signature 64B
+signature (device key, domain "invitation") over bytes[0..190) ‖ invitation PUBLIC key ‖ bytes[222..224+L)
 ```
 
-156 + L bytes: about 264 base64url characters with a typical share address, under 300 with the URL prefix. `ttlMs` is
-an integer between 60 s and 7 days; the link is round-trip checked. `location` must be `https://`, without credentials
-or fragment. `parseInvitationLink(link, { now? })` checks the signature, validity and expiry (`ExpiredError`).
+288 + L bytes: about 440 base64url characters with a typical share address, about 470 with the URL prefix (a QR code of
+version 15 at level L, 17 at level M). `min_rotation` is the owner's sharing-cert rotation when inviting: a freshness anchor for the new
+friend. `ttlMs` is an integer between 60 s and 7 days; the link is round-trip checked. `parseInvitationLink(link,
+{ now? })` checks the device cert against the owner, the device signature, validity and expiry (`ExpiredError`), and
+returns `{ id, owner, device, minRotation, keyPair, created, expires, location? }`.
 
-**Return link** (`createInvitationResponse(received, inviteeIdentity, inviteeSharingCert, { now?, location? })`):
+**Read address** (`location`, in links and return links): `https://`, canonical WHATWG form (`new URL(l).href === l`, so
+no backslash or other parser-dependent spelling), no credentials, no fragment, at most 512 bytes, and no local-network
+host (`localhost`, `*.local`, `*.internal`, loopback, private, link-local, CGNAT or multicast IP literals): the app fetches
+it, and it may come from an untrusted party.
+
+**After reading the index** at `location` (`verifyIndex` with `expectedOwner`), call `checkInvitationIndex(received,
+index)`: same owner, `sharing_cert.rotation ≥ min_rotation` (`ROLLBACK`), signing device not revoked (`REVOKED`). Then keep
+that index as the first `lastSeen` for this owner.
+
+**Return link** (`createInvitationResponse(received, { keys, cert }, ownSharingCert, { now?, location? })`):
 
 ```
-0x52 "R" | version=2 | crypto_box_seal(inner, invitation public key)
+0x52 "R" | version=3 | crypto_box_seal(inner, invitation public key)
 inner = invitation id 16 | responder master pk 32 | created u32 s | sharing pk 32 | rotation u32 |
-        n u16 | n × 32 revoked device keys | sharing-cert signature 64 | L u16 | location L | signature 64
-signature (responder master, domain "invitation-response") over inner[0..end-64) ‖ inviter master pk ‖ invitation pk
+        n u16 | n × 32 revoked device keys | sharing-cert signature 64 |
+        device pk 32 | device box pk 32 | device-cert signature 64 | L u16 | location L | signature 64
+signature (responder device key, domain "invitation-response") over inner[0..end-64) ‖ inviter master pk ‖ invitation pk
 ```
 
-270 bytes (360 base64url characters) without location. The response is bound to the inviter and the invitation key,
-its `created` must fall inside the invitation's validity, and it carries the responder's own read address if they share.
+398 bytes (531 base64url characters) without location. The response is bound to the inviter and the invitation key,
+its `created` must fall inside the invitation's validity, its device must not be revoked by the carried sharing cert, and
+it carries the responder's own read address if they share. The owner applies `checkInvitationIndex(answer, index)` to
+the responder's index (rotation not older than the carried cert, device not revoked).
 
 **Owner side**:
 
-- `collectInvitationAnswers(invitation, allResponses, { now? }) → { answers, rejected, multiple, accepted }`:
-  **one answer per invitation**. Pass every answer received; one responder → `accepted`; several → `multiple: true`,
-  `accepted: null`, all returned: the user chooses, with a warning. (`openInvitationResponse` opens a single answer.)
+- `collectInvitationAnswers(invitation, allResponses, { now?, acceptedOwner? }) → { answers, rejected, multiple,
+  accepted, late }`: **one answer per invitation**. Pass every answer received; one responder → `accepted`; several →
+  `multiple: true`, `accepted: null`, all returned: the user chooses, with a warning. **Keep the invitation record
+  (with its key pair) until expiry, also after acceptance**, and keep collecting with `acceptedOwner`: any other
+  responder is returned in `late` ("a second person answered this invitation; the first may have been an impostor":
+  offer to revoke and to compare the safety code). (`openInvitationResponse` opens a single answer.)
 - `retireInvitationKey(packs, ownIndex, invitation.keyPair, recipientsFor)`: on acceptance **or expiry**,
   **re-encrypts** (new batch keys, not a rewrap) every pack that the invitation key can open, for
   `recipientsFor(logicalId)` (which must not contain the invitation key). Returns `{ oldFile, bytes }[]`: publish the new
-  files in a new index and delete the old ones. Track open invitations in the recovery vault so another device can sweep
-  them at expiry.
+  files in a new index and delete the old ones. It throws if the invitation key received a group secret (re-encrypting
+  would leave the same secret with the link holder): the invitation key must be a direct recipient, never a group
+  member. Track open invitations in the recovery vault so another device can sweep them at expiry.
 
 **Safety code**: `safetyCode(ownerA, ownerB)` → 12 groups of 5 digits, the same on both sides:
 `BLAKE2b-512("TrianguLair-safety-v1" ‖ min(pkA, pkB) ‖ max(pkA, pkB))` over the two master keys, group *i* =
 `u40(h[5i..5i+5]) mod 100000` (about 199 bits). QR form: `safetyQrPayload(mine, theirs)` = `"tlsafe1:" + b64url(h[0..32])`,
 checked with `matchSafetyQr(scanned, mine, theirs)`. Face to face, exchange `owner + sharing cert + location` by QR in
-both directions instead of an invitation.
+both directions instead of an invitation (the QR contact format is not defined yet, see THREATS.md).
 
 ## Transfer code ("link + code")
 
@@ -257,6 +307,7 @@ key = Argon2id(crypto_pwhash, 32 B, code, salt, ops, mem) ; AEAD XChaCha20-Poly1
 Parameters: at least libsodium INTERACTIVE (2 passes, 64 MiB), at most 10 passes and 256 MiB (checked on both sides).
 Expiry: 15 minutes by default (max), authenticated by the AD and checked before the key derivation. Single use =
 deleting the blob from the storage. Payload: `encodeKeyExport({ keyPair, cert })` =
-`{"cert":<sharing cert>,"secret":"<32B>","type":"key-export","version":2}` / `decodeKeyExport(bytes, { expectedOwner? })`.
+`{"cert":<sharing cert>,"secret":"<32B>","type":"key-export","version":2}` / `decodeKeyExport(bytes, { expectedOwner?,
+lastSeen? })`.
 
 See [THREATS.md](./THREATS.md) for known limitations.
