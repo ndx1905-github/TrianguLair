@@ -6,7 +6,7 @@ import { S } from './sodium';
  * Every Ed25519 signature covers
  *   UTF-8("TrianguLair-signature-v1\n" + domain + "\n") || message
  * where message is canonicalJSON(body without "signature") for JSON documents, or the raw
- * signed bytes for binary structures (invitation link, invitation response).
+ * signed bytes for binary structures (invitation record, invitation response).
  * The domain string separates structure kinds so a signature for one kind can never be
  * replayed as another.
  */
@@ -19,6 +19,7 @@ export type SignatureDomain =
   | 'identity-move'
   | 'identity-move-to'
   | 'invitation'
+  | 'invitation-record'
   | 'invitation-response';
 
 function prefixed(domain: SignatureDomain, message: Uint8Array): Uint8Array {

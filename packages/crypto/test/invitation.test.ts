@@ -134,20 +134,27 @@ describe('invitation link (short, bound by the owner\'s index)', () => {
     const o = person(LOCATION);
     const { invitation: inv, fragment: f, index: idx } = invite(o, { now, ttlMs: 3600e3 });
     expect(idx.invitations).toContain(parseInvitationLink(f, { now }).token);
-    // The next publication after expiry drops it.
-    const after = publish(o, [], { now: at(2 * 3600e3), invitations: [inv] });
-    expect(after.invitations).toBeUndefined();
+    // The next publication after expiry drops it (and reports it).
+    const skipped: string[] = [];
+    const after = publish(o, [], { now: at(2 * 3600e3), invitations: [inv], onSkip: (_i, reason) => skipped.push(reason) });
+    expect(after.invitations).not.toContain(parseInvitationLink(f, { now }).token);
+    expect(after.invitations).toHaveLength(4);
+    expect(skipped).toEqual(['expired']);
     expect(() => read(f, idx, at(2 * 3600e3))).toThrow(ExpiredError);
     const r = parseInvitationLink(f, { now });
     const v = verifyIndex(serialize(idx), { expectedOwner: r.owner, location: r.location, now });
     expect(() => checkInvitationIndex(r, v, { now: at(2 * 3600e3) })).toThrow(ExpiredError);
   });
 
-  it('a link pointing to another address is redirected to the certified one, never trusted there', () => {
+  it('a link pointing to another address is redirected to the certified one, never trusted there, and refused (V4-04)', () => {
     const elsewhere = 'thief.example/marie'.padEnd(LOCATION.length - 8, 'x');
     const r = parseInvitationLink(relink(fragment, (x) => x.set(te.encode(elsewhere), 58)), { now });
     expect(r.location).toBe(`https://${elsewhere}`);
-    expect(r.token).toBe(parseInvitationLink(fragment, { now }).token); // the address is not in the token
+    expect(r.token).not.toBe(parseInvitationLink(fragment, { now }).token); // the address is in the token
+    // Following the redirect reaches the owner's genuine index, which does not list the rewritten link.
+    expect(() => checkInvitationIndex(r, verifyIndex(serialize(index), { expectedOwner: r.owner, location: LOCATION, now }), { now })).toThrow(
+      expect.objectContaining({ code: 'NOT_LISTED' }),
+    );
     // Whatever is served at the link's address, only an index certifying that address is accepted
     // there; the owner's genuine index is a redirect to the certified address.
     expect(() => verifyIndex(serialize(index), { expectedOwner: r.owner, location: r.location, now })).toThrow(
@@ -205,16 +212,18 @@ describe('invitation link (short, bound by the owner\'s index)', () => {
     const i3 = publish(o, [], { now, invitations: invs.slice(0, 3) });
     expect(i4.invitations).toHaveLength(4);
     expect(publish(o, [], { now, invitations: invs }).invitations).toHaveLength(8);
-    // Dummies are stable between publications (same device, same bucket): one entry differs.
+    // Dummies are stable between publications (same time, same bucket): one entry differs.
     expect(i3.invitations!.filter((t) => !i4.invitations!.includes(t))).toHaveLength(1);
-    // The field declares minor 1, and is covered by the device signature.
-    expect(i3.minor).toBe(1);
+    // Always published, even with nothing open (V4-05): an index does not show whether invitations exist.
+    expect(publish(o, [], { now }).invitations).toHaveLength(4);
+    // The field is part of index 4.0 (V4-03), and is covered by the device signature.
+    expect(i3.minor).toBeUndefined();
     const text = serialize(i3).replace(i3.invitations![0]!, i4.invitations!.find((t) => !i3.invitations!.includes(t))!);
     expect(() => verifyIndex(text)).toThrow();
   });
 });
 
-describe('index `invitations` field (minor 1)', () => {
+describe('index `invitations` field (index 4.0)', () => {
   const resign = (index: SignedIndex, key: Uint8Array, edit: (b: Record<string, unknown>) => void): string => {
     const { signature: _s, ...body } = JSON.parse(serialize(index)) as Record<string, unknown>;
     edit(body);
@@ -222,15 +231,15 @@ describe('index `invitations` field (minor 1)', () => {
   };
   const tok = (c: string) => `b2b256:${c.repeat(43)}`;
 
-  it('is validated: minor >= 1, non-empty, b2b256 tokens, sorted and unique, at most 256', () => {
+  it('is validated: no minor needed, non-empty, b2b256 tokens, sorted and unique, at most 256', () => {
     const p = person();
     const idx = publish(p, [], { now });
     const k = p.device.sign.secretKey;
-    const ok = resign(idx, k, (b) => ((b['minor'] = 1), (b['invitations'] = [tok('A'), tok('Q')])));
+    const ok = resign(idx, k, (b) => (b['invitations'] = [tok('A'), tok('Q')]));
     expect(verifyIndex(ok).invitations).toEqual([tok('A'), tok('Q')]);
-    expect(() => verifyIndex(resign(idx, k, (b) => (b['invitations'] = [tok('A')])))).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    expect(verifyIndex(resign(idx, k, (b) => delete b['invitations'])).invitations).toBeUndefined();
     for (const bad of [[], [tok('Q'), tok('A')], [tok('A'), tok('A')], ['b2b256:short'], [42], Array.from({ length: 257 }, () => tok('A'))]) {
-      expect(() => verifyIndex(resign(idx, k, (b) => ((b['minor'] = 1), (b['invitations'] = bad))))).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+      expect(() => verifyIndex(resign(idx, k, (b) => (b['invitations'] = bad)))).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     }
   });
 
@@ -247,7 +256,7 @@ describe('index `invitations` field (minor 1)', () => {
     expect(() => verifyIndex(byPhone, { expectedOwner: p.id.owner, location: LOCATION, now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     // Or under the old certificate (rotation 0): older than the link (ROLLBACK), and older than any anchor.
     const { signature: _s, ...body } = JSON.parse(serialize(publish(p, [], { now }))) as Record<string, unknown>;
-    const old = verifyIndex(serialize(signBody('index', { ...body, minor: 1, invitations: honest.invitations }, p.device.sign.secretKey)), { expectedOwner: p.id.owner, location: LOCATION, now });
+    const old = verifyIndex(serialize(signBody('index', { ...body, invitations: honest.invitations }, p.device.sign.secretKey)), { expectedOwner: p.id.owner, location: LOCATION, now });
     expect(() => checkInvitationIndex(parseInvitationLink(fragment, { now }), old, { now })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
   });
 });

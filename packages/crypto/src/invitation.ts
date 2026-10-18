@@ -24,7 +24,7 @@ import {
 } from './encoding';
 import { DecryptionError, ExpiredError, FormatError, RollbackError, SignatureError } from './errors';
 import type { KeyPair } from './identity';
-import { deriveInvitation, INVITATION_SEED_BYTES, invitationToken } from './invitation-listing';
+import { deriveInvitation, INVITATION_MAX_TTL_MS, INVITATION_SEED_BYTES, invitationToken, signInvitationRecord } from './invitation-listing';
 import { checkLocation, MAX_LOCATION } from './location';
 import { findIndexed, openUnchecked, readPackHeader, sealTyped, type PackIndex, type SealOptions } from './pack';
 import { checkNoRollback, sharingCertOf, type DeviceSigner, type IndexAnchor, type SignedIndex } from './signed-index';
@@ -33,12 +33,14 @@ import { S } from './sodium';
 import { verifiedInfo } from './verified';
 
 export { checkLocation } from './location';
+export { INVITATION_MAX_TTL_MS } from './invitation-listing';
 
 /*
  * Invitation flow (spec: "Invitation link and return link")
  * 1. Owner: createInvitation(device signer, current sharing cert) -> OwnerInvitation (temporary
- *    X25519 key pair derived from a 16-byte seed, valid <= 7 days) and a SHORT link (about 150
- *    characters with the URL prefix). The link is not signed: it carries only what cannot be fetched
+ *    X25519 key pair derived from a 16-byte seed, valid <= 7 days, signed by the creating device
+ *    with its device certificate: V4-01) and a SHORT link (about 150 characters with the URL
+ *    prefix). The link is not signed: it carries only what cannot be fetched
  *    (owner master key, read address, seed, rotation, expiry). The owner then publishes an index
  *    listing the invitation (signIndex({ invitations })) BEFORE sending the link: the listing, in
  *    an index signed by a device that the current master-signed certificate does not revoke and
@@ -57,7 +59,8 @@ export { checkLocation } from './location';
  *    `accepted`; several => none accepted. Keep the invitation record (and its listing) until
  *    expiry; keep the record until expiry + 7 days (INVITATION_ANSWER_GRACE_MS), even after
  *    acceptance, and pass `acceptedOwner`: any other responder is returned in `late` (R-04).
- *    Answers created before expiry are still opened during the grace period (V3-02). Then
+ *    Answers created before expiry are still opened during the grace period (V3-02), flagged
+ *    `openedAfterExpiry` (V4-06: never grant such an answer silently). Then
  *    checkInvitationIndex(answer, responder's index).
  * 5. On acceptance or expiry: retireInvitationKey() RE-ENCRYPTS (new batch keys) every pack that
  *    carried the invitation wrap, so a kept copy of the link opens nothing new. It refuses a
@@ -71,6 +74,7 @@ export { checkLocation } from './location';
  *   50   4   rotation of the owner's sharing certificate when inviting (freshness floor)
  *   54   4   expires, unix seconds (at most 7 days + 5 min after the reader's clock)
  *   58   ..  read address without its "https://" prefix (UTF-8, 1..504 bytes; checkLocation)
+ * The token listed in the index binds every field, the address included (invitation-listing.ts).
  * 58 + (address length - 8) bytes: 146 characters with "https://triangulair.app/i#" and a 40-character
  * address, 200 characters with an 80-character address. No certificate, no revocation list.
  *
@@ -92,7 +96,6 @@ export { checkLocation } from './location';
 export const INVITATION_VERSION = 5;
 /** Version of the return link (unchanged by the short link). */
 export const INVITATION_RESPONSE_VERSION = 4;
-export const INVITATION_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const INVITATION_MIN_TTL_MS = 60 * 1000;
 /** Answers created before expiry are still opened for this long after it (V3-02). */
 export const INVITATION_ANSWER_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -101,8 +104,8 @@ const RESPONSE_MAGIC = 0x52;
 const CLOCK_SKEW_S = 5 * 60;
 const MAX_REVOKED = 256;
 const HTTPS = 'https://';
-/** Size bounds checked before any decoding (N-2). */
-const MAX_LINK_CHARS = 1024;
+/** Size bounds checked before any decoding (N-2): a fragment of 58 + 504 bytes is 750 characters (N-5). */
+const MAX_LINK_CHARS = 750;
 const MAX_RESPONSE_BYTES = 9_600;
 
 /**
@@ -120,8 +123,14 @@ export interface OwnerInvitation {
   rotation: number;
   /** Device that created it ("ed25519:…"): the listing is dropped once that device is revoked. */
   device: string;
+  /** Master-signed certificate of that device (V4-01). */
+  deviceCert: DeviceCert;
+  /** Read address written in the link (the certified one when inviting); bound in the token (V4-04). */
+  location: string;
   created: string;
   expires: string;
+  /** The creating device's signature over the invitation (domain "invitation-record", V4-01). */
+  signature: string;
 }
 
 /** What the invitee obtains from the link: UNVERIFIED until checkInvitationIndex accepts it. */
@@ -203,8 +212,9 @@ function readDeviceCert(r: Reader, owner: string): DeviceCert {
   return verifyDeviceCert({ type: 'device-cert', version: DEVICE_CERT_VERSION, owner, device, box, signature }, { expectedOwner: owner });
 }
 
-/** Link fragment of an invitation, for its owner's read address `location` (the certified one). */
-function linkFragment(inv: OwnerInvitation, ownerPublicKey: Uint8Array, location: string): string {
+/** Link fragment of an invitation (its read address is the certified one when inviting). */
+function linkFragment(inv: OwnerInvitation, ownerPublicKey: Uint8Array): string {
+  const location = inv.location;
   checkLocation(location, 'invitation');
   return toB64Url(
     concat(
@@ -221,10 +231,11 @@ function linkFragment(inv: OwnerInvitation, ownerPublicKey: Uint8Array, location
 /**
  * Creates an invitation (no master key needed). `sharingCert` is the owner's current sharing
  * certificate: it must carry the read address (an owner without storage cannot invite: the link
- * points to the index that vouches for it) and must not revoke `signer`, the device that will
- * list the invitation. Publish an index with signIndex({ invitations: [..., invitation] }) BEFORE
- * sending the link: until then the invitee refuses it. Returns the link fragment (put it after
- * "https://triangulair.app/i#").
+ * points to the index that vouches for it) and must not revoke `signer`, the device that creates
+ * and signs the invitation (the signature and its device certificate go into the vault record, so
+ * that any device can check who created it before listing it: V4-01). Publish an index with
+ * signIndex({ invitations: [..., invitation], vaultDataKey }) BEFORE sending the link: until then
+ * the invitee refuses it. Returns the link fragment (put it after "https://triangulair.app/i#").
  */
 export function createInvitation(
   signer: DeviceSigner,
@@ -250,10 +261,14 @@ export function createInvitation(
     keyPair,
     rotation: v.cert.rotation,
     device: dc.device,
+    deviceCert: dc,
+    location: v.cert.location,
     created: iso(created),
     expires: iso(expires),
+    signature: '',
   };
-  const fragment = linkFragment(invitation, v.ownerPublicKey, v.cert.location);
+  invitation.signature = signInvitationRecord(invitation, signer.keys.sign.secretKey);
+  const fragment = linkFragment(invitation, v.ownerPublicKey);
   // Round-trip: never hand out a link that parseInvitationLink would reject.
   parseInvitationLink(fragment, { now: new Date(created * 1000) });
   return { invitation, fragment };
@@ -307,7 +322,7 @@ export function parseInvitationLink(linkOrFragment: string, opts: { now?: Date }
     rotation,
     keyPair,
     expires: iso(expires),
-    token: invitationToken(ownerPublicKey, keyPair.publicKey, rotation, expires),
+    token: invitationToken(ownerPublicKey, keyPair.publicKey, rotation, expires, location),
   };
   assertInvitationActive(out, new Date(now));
   Object.freeze(out.keyPair);
@@ -328,6 +343,13 @@ export interface InvitationResponse {
   /** Responder's sharing certificate (verified). */
   cert: SharingCert;
   created: string;
+  /**
+   * True if the answer was opened at or after the invitation's expiry (during the grace period,
+   * V4-06). Its signed `created` is claimed by the responder, so anyone who kept the link can
+   * produce such an answer: do not grant it silently, even when it is the only one; ask the user
+   * and suggest comparing the safety code.
+   */
+  openedAfterExpiry: boolean;
   /**
    * Master-certified read address of the responder (= cert.location), if they publish. Without it,
    * checkInvitationIndex cannot check that the signing device is not revoked (see THREATS.md).
@@ -367,7 +389,8 @@ export function createInvitationResponse(
 /**
  * Owner side, for ONE answer. Prefer collectInvitationAnswers, which enforces "one answer per
  * invitation". Answers are opened until expiry + INVITATION_ANSWER_GRACE_MS (then ExpiredError),
- * provided their signed `created` falls inside the invitation's validity (V3-02).
+ * provided their signed `created` falls inside the invitation's validity (V3-02); those opened at
+ * or after expiry are flagged `openedAfterExpiry` (V4-06).
  */
 export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvitation, opts: { now?: Date } = {}): InvitationResponse {
   const W = 'invitation-response';
@@ -377,7 +400,8 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
   checkByteVersion(bytes[1] as number, W, INVITATION_RESPONSE_VERSION);
   const invCreated = recordTime(invitation.created, W);
   const invExpires = recordTime(invitation.expires, W);
-  if (nowMs(opts.now, W) >= invExpires + INVITATION_ANSWER_GRACE_MS) {
+  const now = nowMs(opts.now, W);
+  if (now >= invExpires + INVITATION_ANSWER_GRACE_MS) {
     throw new ExpiredError(`invitation expired at ${invitation.expires} (answers are no longer opened)`);
   }
   let inner: Uint8Array;
@@ -404,7 +428,15 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
     throw new FormatError(`${W}: created outside the invitation validity window`);
   }
   if (cert.revoked_devices.includes(dc.device)) throw new SignatureError(`${W}: signed by a revoked device`, 'REVOKED');
-  const out: InvitationResponse = { owner, ownerPublicKey, device: dc.device, sharingPublicKey: parseKey('x25519', cert.key), cert, created: iso(created) };
+  const out: InvitationResponse = {
+    owner,
+    ownerPublicKey,
+    device: dc.device,
+    sharingPublicKey: parseKey('x25519', cert.key),
+    cert,
+    created: iso(created),
+    openedAfterExpiry: now >= invExpires,
+  };
   if (cert.location !== undefined) out.location = cert.location;
   return out;
 }
@@ -417,7 +449,8 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
  * - same owner (a link naming another master key than the index's signer is refused);
  * - for an invitation link: the index's rotation is at least the link's (freshness floor), the
  *   index LISTS the invitation's token (code NOT_LISTED otherwise: never listed, withdrawn,
- *   expired, made by a device since declared lost, or a forged link), and it has not expired.
+ *   expired, cancelled by a declaration of loss, or a forged link: another key, address, rotation
+ *   or expiry, V4-04), and it has not expired.
  *   On success the invitation is marked as confirmed (createInvitationResponse requires it);
  * - for a return link: the index's sharing certificate is not older than the one carried by the
  *   answer (same rotation => the very same certificate; a later rotation keeps every revocation),
@@ -480,6 +513,8 @@ export interface InvitationAnswers {
  * answers created before expiry are still opened, accepted and reported in `late`). If several
  * distinct people answered, none is accepted: show them all with a warning and let the user choose
  * (and compare the safety code). After acceptance, pass `acceptedOwner` to get the others in `late`.
+ * An answer with `openedAfterExpiry` (V4-06) is returned like the others but must not be granted
+ * without asking the user, even as `accepted`: it may come from anyone who kept the link.
  */
 export function collectInvitationAnswers(
   invitation: OwnerInvitation,
@@ -525,14 +560,19 @@ export function collectInvitationAnswers(
  * it would leave the same secret with the link holder. The invitation key must be a direct
  * recipient, never a group member; if it was, rotate the group (rotateGroup, sealGroupKey to the
  * remaining members, reencryptPack of every pack wrapped to the old group key) first.
+ * Several invitation key pairs may be given at once (a declaration of loss cancels every open
+ * invitation, V4-02: pass cancelAllInvitations().cancelled.map((c) => c.keyPair)); a pack is
+ * re-encrypted once if any of them can open it, and `recipientsFor` must include none of them.
  */
 export function retireInvitationKey(
   packs: Uint8Array[],
   index: PackIndex,
-  invitationKeyPair: KeyPair,
+  invitationKeyPair: KeyPair | readonly KeyPair[],
   recipientsFor: (packId: string) => Uint8Array[],
   opts: Pick<SealOptions, 'padTo'> = {},
 ): { oldFile: string; bytes: Uint8Array }[] {
+  const retired: KeyPair[] = Array.isArray(invitationKeyPair) ? [...(invitationKeyPair as readonly KeyPair[])] : [invitationKeyPair as KeyPair];
+  if (retired.length === 0) return [];
   const out: { oldFile: string; bytes: Uint8Array }[] = [];
   const entries = packs.map((bytes) => findIndexed(bytes, index));
   const given = new Set(entries.map((e) => e.hash));
@@ -542,7 +582,7 @@ export function retireInvitationKey(
     const entry = entries[i] as { file: string; hash: string };
     let opened;
     try {
-      opened = openUnchecked(bytes, [invitationKeyPair], index.owner, entry.file);
+      opened = openUnchecked(bytes, retired, index.owner, entry.file);
     } catch (e) {
       if (e instanceof DecryptionError && e.code === 'NO_MATCHING_KEY') continue;
       throw e;
@@ -552,7 +592,7 @@ export function retireInvitationKey(
         throw new FormatError('retireInvitationKey: the invitation key received a group secret; rotate that group instead');
       }
       const recipients = recipientsFor(opened.id);
-      if (recipients.some((pk) => bytesEqual(pk, invitationKeyPair.publicKey))) {
+      if (recipients.some((pk) => retired.some((k) => bytesEqual(pk, k.publicKey)))) {
         throw new FormatError('retireInvitationKey: recipients still include the invitation key');
       }
       const sealOpts: SealOptions = { id: opened.id, pad: readPackHeader(bytes).pad };

@@ -156,7 +156,11 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     // A device of another identity cannot invite for this one, nor list another owner's invitation.
     const mallory = person();
     expect(() => createInvitation(mallory.signer, owner.cert, { now })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
-    expect(() => publish(mallory, [], { now, invitations: [o.invitation] })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    // (V4-01: skipped and reported, never a reason to refuse publishing the index.)
+    const skipped: string[] = [];
+    const m = publish(mallory, [], { now, invitations: [o.invitation], onSkip: (_i, why) => skipped.push(why) });
+    expect(m.invitations).not.toContain(received.token);
+    expect(skipped).toEqual(['invalid']);
   });
 
   it('checkInvitationIndex: same owner, index not older than the link (R-12), invitation listed by a non-revoked device', () => {
@@ -167,13 +171,13 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     const { invitation, fragment } = createInvitation(tabletSigner, cert1, { now });
     const received = parseInvitationLink(fragment, { now });
     expect(received.rotation).toBe(1);
-    const listing = { invitations: [invitation], now };
+    const listing = { invitations: [invitation], now, vaultDataKey: marie.vaultDataKey };
     const padding = ['b2b256:' + 'A'.repeat(43)];
     // An old index (rotation 0, signed by the now-revoked phone) served to the new friend is refused, even if it lists the link.
-    // (signIndex refuses to list a rotation-1 invitation under a rotation-0 certificate: the thief signs it by hand.)
-    expect(() => signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], ...listing })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    // (signIndex skips a rotation-1 invitation under a rotation-0 certificate: the thief signs it by hand.)
+    expect(signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], ...listing }).invitations).not.toContain(received.token);
     const { signature: _s, ...body } = JSON.parse(serialize(signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], now }))) as Record<string, unknown>;
-    const forged = serialize(signBody('index', { ...body, minor: 1, invitations: [received.token, ...padding].sort() }, marie.device.sign.secretKey));
+    const forged = serialize(signBody('index', { ...body, invitations: [received.token, ...padding].sort() }, marie.device.sign.secretKey));
     const old = verifyIndex(forged, { expectedOwner: marie.id.owner, location: marie.location, now });
     expect(() => checkInvitationIndex(received, old, { now })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [], ...listing }), { now })).not.toThrow();
@@ -183,7 +187,7 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     const phone2Signer = { keys: phone2, cert: issueDeviceCert(marie.id, devicePublicKeys(phone2)) };
     const cert3 = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 3, revokedDevices: [marie.device.id, tabletSigner.keys.id], location: marie.location });
     const i3 = signIndex(phone2Signer, { seq: 1, sharingCert: cert3, packs: [], ...listing });
-    expect(i3.invitations).toBeUndefined();
+    expect(i3.invitations).not.toContain(received.token);
     expect(() => checkInvitationIndex(received, i3, { now })).toThrow(expect.objectContaining({ code: 'NOT_LISTED' }));
     // Another owner's index, or an unverified object.
     const other = person();

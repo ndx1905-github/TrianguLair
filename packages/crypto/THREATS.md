@@ -3,7 +3,8 @@
 Prototype, revised after the independent review T-002 (`docs/reviews/2026-10-13-crypto-T-002.md`), the second
 review of its fixes (`docs/reviews/2026-10-13-crypto-fixes-review.md`, R-01 to R-13) and the third review of format v3
 (`docs/reviews/2026-10-18-crypto-v3-review.md`, V3-01 to V3-16, N-1 to N-6), then given a short invitation link
-(link version 5, index 4.1); not audited.
+(link version 5), and revised after the fourth review (`docs/reviews/2026-10-18-crypto-v4-review.md`, V4-01 to V4-08,
+N-1 to N-7: index 4.0 with `invitations`, token v2, vault v3); not audited.
 Listed so later phases can decide what to fix.
 
 ## Identity & keys
@@ -19,8 +20,18 @@ Listed so later phases can decide what to fix.
     can still download, until it is re-encrypted;
   - between the theft and the declaration, the stolen device can publish validly signed indexes (and change content),
     create invitations and list them in those indexes, and answer invitations in the owner's name; readers who later
-    see the revocation refuse its indexes, and the next index after the declaration no longer lists its invitations
-    (`signIndex` drops invitations whose creating device the certificate revokes);
+    see the revocation refuse its indexes, and the next index after the declaration lists no invitation at all:
+    - each vault invitation record is signed by its creating device (domain `invitation-record`) and carries that
+      device's master-signed certificate (vault v3, V4-01), so the thief, who holds the vault data key, cannot write a
+      record in another device's name nor change its dates (a lifetime over 7 days is refused everywhere). Records it
+      signs with the phone's own key are skipped by `signIndex` once the certificate revokes the phone (`"revoked"`);
+      a malformed or impossible record (rotation 2^32 − 1, created in the future) is skipped (`"invalid"`), never
+      thrown on, so it cannot block the declaration's index;
+    - the stolen device read the seed of **every** open invitation in the vault, including those other devices
+      created, so the declaration cancels them all (`cancelAllInvitations`, V4-02) and re-encrypts what they opened
+      without their keys (`retireInvitationKey` with all the cancelled key pairs). Before the declaration, the thief
+      reads what is wrapped to those keys and can open answers sealed to them (the responders' public certificates and
+      addresses); people invited who had not answered need a new link;
   - **after** the declaration, the device can still mint links (they are unsigned: anyone can write one naming any
     master key) and answers (device certificates never expire). A link is honoured only if the owner's index read at
     the link's address is verified there as its master-certified address (an attacker's address only leads, by a
@@ -37,6 +48,15 @@ Listed so later phases can decide what to fix.
     - an **old read address** that still serves a stale index after a storage move (the owner left it there instead
       of the newest index, or the host rolls it back) is trust on first use for a new contact who holds a link naming
       that address and the older rotation (if that stale index lists it). The spec requires leaving the newest index (the redirect) or nothing at an old address;
+    - **every address an older certificate certified** (V4-08): the revoked device can still sign valid indexes of an
+      older rotation, which certify the older address. Whoever can write at such an address can serve there a stale
+      index listing the thief's earlier links. Step 4 of the declaration therefore revokes the credentials of the
+      current storage **and** of every previous storage still holding a redirect (it must stay writable by the owner).
+      A **custom domain** that expires and is re-registered by the thief gives a permanent impersonation channel toward
+      new contacts holding an old link (and the mirror case: an inviter wrapping to the old sharing key, which the thief
+      holds). Owners should keep old domains registered or use provider addresses; for a first contact the safety code
+      is the only defence. A master-signed "superseded" statement at old addresses, or a not-after date on sharing
+      certificates for first-contact use, would close it (not done);
     - an **answer whose certificate has no address** (the responder publishes nothing) cannot be freshness-checked:
       `checkInvitationIndex` throws `FORMAT` and the app must show the contact as "cannot be checked" until the safety
       code is compared (a thief can only use such a certificate if the victim never published one);
@@ -52,8 +72,8 @@ Listed so later phases can decide what to fix.
   can both sign an identity move; readers keep the first move they see (`IdentityMovedError` then `retiredOwners`) and
   drop the "verified" mark: users must compare the safety code again. A second, different move of the same old identity
   is reported (`IdentityMovedError` with `conflict: true`), but nothing decides automatically which one is genuine.
-  Keeping the master on a primary device is optional for this reason, and inviting no longer needs it (device-signed
-  links, R-03).
+  Keeping the master on a primary device is optional for this reason, and inviting no longer needs it (invitations
+  are created and signed by devices, R-03).
 - **`move` permanence is an app rule (R-11, left):** the library cannot know that an index of the new identity *should*
   carry `move` (it does not know the old identity), so it cannot refuse one that drops it. The app keeps `move` in every
   index of the new identity; a friend who was offline and sees an index without it gets `OWNER_MISMATCH`.
@@ -67,13 +87,16 @@ Listed so later phases can decide what to fix.
   records (contacts with anchors and certificates, open invitations with their answers, retired owners, free-form app
   data). Remaining:
   - every device holds the vault data key, so a stolen device can rewrite the records until the declaration (drop
-    anchors, add answers, mark contacts verified). Records are authenticated by that key only, not signed. After the
-    declaration a new vault data key is used; the app should compare the restored records with its local copy and show
-    changes made since the date of the theft (spec "Loss and theft" step 5);
+    anchors, add answers, mark contacts verified, or make the whole vault unreadable). Records are authenticated by that
+    key only, except invitation records, which are also signed by their creating device (V4-01). After the
+    declaration a new vault data key is used; the app should compare the restored records with its local copy, show
+    changes made since the date of the theft (spec "Loss and theft" step 5), and start from its last good copy if the
+    storage copy does not open;
   - older vault files encrypted with the previous vault data key stay readable by the thief from the storage's version
     history: limit the history and delete old files;
   - `mergeVaults` is a simple union (later anchor wins, "verified" if either says so); un-marking "verified" on one
-    device can be undone by a concurrent merge. Merging the free-form `app` part is the app's job;
+    device can be undone by a concurrent merge. Merging the free-form `app` part is the app's job. Unknown fields of a
+    newer minor, its `minor` and `crit` are kept (V4-07), from the side the merge picks for a record present on both;
   - the vault records are a canonical JSON document, not a CRDT: concurrent writers rely on `If-Match` and merge.
 - Secrets live in JS memory (`Uint8Array`); `memzero` is applied to intermediates (entropy, root, master seed, batch keys,
   plaintexts) but is best-effort: the GC may keep copies, and secrets that pass through JSON strings (key export, sealed
@@ -123,9 +146,16 @@ Listed so later phases can decide what to fix.
   (or made by `signIndex`) to open packs, so content is never attributed by URL. Whether it was also checked against
   the contact's anchor is recorded but not required: only the app knows whether this is a first contact. The app must
   pass `lastSeen` for every known contact.
-- **Extension fields (V3-03):** an older device that rewrites the index writes its own minor and drops fields it does
-  not know; a security-relevant extension that must never be dropped needs a new major version, published under its
-  own file name during the transition. `crit` only protects readers, not round trips through older writers.
+- **Extension fields (V3-03, V4-03):** an older device that rewrites the index writes its own minor and drops fields it
+  does not know (spec "Format versions": the index is derived from the owner's state, never copied; copying an unknown
+  field blindly could keep listing invitations past expiry or across a declaration). `invitations` is part of index
+  4.0, so no 4.x writer drops it. A security-relevant extension that must neither be dropped nor copied needs a new
+  major version, published under its own file name during the transition. `crit` only protects readers, not round
+  trips through older writers.
+- **`readFrom` is a caller declaration (N-3):** `verifyIndex(…, { location })` records the address the caller says it
+  read from; the library cannot know where bytes came from, so "read only at the certified address, and re-fetch after
+  `MOVED`" stays an app rule. Token v2 narrows the damage of getting it wrong: a link with a rewritten address is
+  `NOT_LISTED` in the owner's genuine index (V4-04).
 - **Two master holders can fork a rotation (N-3):** two devices that declare a loss concurrently (both with the 12
   words) issue two different certificates for rotation r + 1; readers report a fork until a certificate for r + 2
   exists. Recovery: issue r + 2.
@@ -148,8 +178,11 @@ Listed so later phases can decide what to fix.
   owner keeps the invitation record until expiry + 7 days (`INVITATION_ANSWER_GRACE_MS`, in the vault) and collects
   with `acceptedOwner`, so a later answer from someone else shows up in `late` and the app warns, also when it is
   opened after expiry. An answer is opened during the grace period only if its signed `created` precedes expiry; that
-  date is claimed by the responder, so any link holder can backdate an answer made after expiry within the grace period
-  (it is still one more answer, which triggers the warning). After the grace period nothing is opened. The grant made
+  date is claimed by the responder, so any link holder can backdate an answer made after expiry within the grace period.
+  When another answer exists it triggers the warning; when it is the **only** one (the real friend never answered) it
+  would be `accepted`, so every answer opened at or after expiry carries `openedAfterExpiry: true` (V4-06) and the app
+  must ask the user (and suggest the safety code) instead of granting. The effective window for a link holder is
+  therefore 14 days, but the second week is never silent. After the grace period nothing is opened. The grant made
   in the meantime stands until the user reacts; granting a reduced scope until the code is compared is a product
   decision left to the app.
 - **Delivery of the late answer is assumed (N-5):** an attacker with access to the owner's messaging can drop the real
@@ -167,19 +200,26 @@ Listed so later phases can decide what to fix.
   any content before). Properties kept from format 4: the read address and revocations are master-certified (the link
   cannot point elsewhere: V3-01), a revoked device cannot vouch for a link (R-03, R-12 via the rotation floor), expiry
   is checked against the reader's clock (V3-04: at most 7 days + 5 minutes ahead), and the link is still a bearer
-  secret (F-02 mitigations unchanged). Changed: tampering with the expiry, rotation or seed is no longer a signature
-  error but a token mismatch (`NOT_LISTED`); a tampered address is refused by the certified-address check.
+  secret (F-02 mitigations unchanged). Changed: tampering with the expiry, rotation, seed or address is no longer a
+  signature error but a token mismatch (`NOT_LISTED`; token v2 binds the address, V4-04).
 - **The link works only once listed.** The owner app must publish the index that lists a new invitation before sending
   it, and keep it listed until expiry (also after acceptance, so a second answer can still arrive: R-04). An owner
   without storage cannot invite (no index to vouch for the link); the app offers the storage wizard first, as the spec
   already required for sharing.
-- **The listing reveals metadata** (index 4.1): tokens are unlinkable hashes (only a link holder can recompute one),
-  padded with stable dummy tokens to a power of two (at least 4), but the index shows whether invitations are open, the
-  bucket (≤ 4, ≤ 8, …), and, by diffing two indexes, when one is added or removed. A device change re-derives the
-  dummies (they depend on the publishing device's key), which shows which entries are real across that change. A
-  separate signed file would not help: it would need the index's rollback protection, so the index would reference it.
-- **Older writers drop the listing** (V3-03 rule): a device on index minor 0 rewriting the index removes `invitations`
-  (it does not know the field), which closes every open link until a newer device publishes again.
+- **The listing reveals metadata** (V4-05): tokens are unlinkable hashes (only a link holder can recompute one),
+  padded to a power of two (at least 4, also when nothing is open). The dummies are derived from the vault data key,
+  so every device writes the same ones (a device change no longer separates real from dummy entries), and each dummy
+  slot changes value at its own period of 1 to 7 days, so a token seen for more than 7 days is not necessarily a dummy
+  and a disappearing token is not necessarily a real one. What remains observable to anyone who polls the index (the
+  host, a former friend, anyone with the address):
+  - **when** the index is republished, and so the time of each invitation (inviting needs a publication; N-2), and that
+    the owner must be online with a working storage to invite;
+  - the **bucket** (4, 8, 16, …) and when it changes;
+  - real tokens take slots first: when an invitation ends inside a dummy's epoch, the dummy that comes back is one
+    already seen, which marks it as padding (and so tells that one invitation ended);
+  - a new set of dummies at a declaration of loss (new vault data key), which the rotation shows anyway.
+  The Ed25519 signing seed is no longer used as a padding key (N-1). A separate signed file would not help: it would
+  need the index's rollback protection, so the index would reference it.
 - The return link is unchanged (about 530 characters plus the responder's address and 43 per revoked device). It is
   not shortened: it travels through messaging, and invitees without storage, the common case, need the full
   device-signed form.
@@ -189,8 +229,8 @@ Listed so later phases can decide what to fix.
 - A link `created` more than 5 minutes after the reader's clock is refused (V3-04). `createInvitation` does not compare
   its `now` option with the real time (the option exists for tests; the app passes nothing). The u32 seconds fields
   overflow in 2106.
-- Size bounds (N-2): link strings of at most 1,024 characters and return links of at most 9,600 bytes are checked
-  before decoding; an index is at most 16 MiB.
+- Size bounds (N-2, N-5): link fragments of at most 750 characters (the longest read address exactly) and return links
+  of at most 9,600 bytes are checked before decoding; an index is at most 16 MiB.
 - `retireInvitationKey` requires the bytes of every file listed in the index (V3-08): with many photos it decrypts
   each media header's wraps once (one X25519 per wrap). The app may fetch files in pages but must pass them all.
 - **Face-to-face QR exchange (R-13, left):** the spec's "exchange of QR codes replaces the two links … marked as
@@ -215,6 +255,7 @@ Listed so later phases can decide what to fix.
 - The verified-index registry is a module-level `WeakSet`: two bundled copies of this package do not recognise each
   other's verified indexes (fails closed with `NOT_INDEXED`).
 - Known-answer vectors exist for phrase → owner, the safety code and Padmé; vectors for exact signed bytes per domain, a
-  fixed pack, transfer blob, sealed sharing key, vault envelope, invitation link and return link are still to be
-  written (they need deterministic randomness hooks, the invitation seed and listing token included; N-6 of T-002, "before an external audit" item 3 of the third
+  fixed pack, transfer blob, sealed sharing key, vault envelope, invitation link, record signature, padded listing and
+  return link are still to be written (they need deterministic randomness hooks, the invitation seed and listing token
+  included; N-6 of T-002, "before an external audit" item 3 of the third
   review). A separate written format specification and fuzzing of every parser are also still to do.

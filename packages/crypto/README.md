@@ -2,7 +2,8 @@
 
 TrianguLair's encrypted data format (phase-0 prototype, revised after the T-002 review, the second review of its
 fixes, `docs/reviews/2026-10-13-crypto-fixes-review.md`, and the third review of format v3,
-`docs/reviews/2026-10-18-crypto-v3-review.md`; short invitation links since index 4.1 / link version 5). Pure functions,
+`docs/reviews/2026-10-18-crypto-v3-review.md`; short invitation links since link version 5; revised after the fourth
+review, `docs/reviews/2026-10-18-crypto-v4-review.md`: index 4.0 with `invitations`, token v2, vault v3). Pure functions,
 `Uint8Array` in/out, libsodium (`libsodium-wrappers-sumo`, works in Node, web and React Native). License: MPL-2.0.
 
 ```ts
@@ -33,22 +34,26 @@ await ready(); // required once before anything else
   structures or inside encryption; their verifiers still accept objects for in-process use.
 - **Signatures** (Ed25519 detached) cover `UTF-8("TrianguLair-signature-v1\n" + domain + "\n") ‖ message`, where
   message is `canonicalJSON(doc without "signature")` for JSON documents, or the signed bytes of a binary structure.
-  Domains: `index | sharing-cert | device-cert | identity-move | identity-move-to | invitation | invitation-response`
-  (`invitation` is no longer used: the short link of version 5 is unsigned, see Invitation).
+  Domains: `index | sharing-cert | device-cert | identity-move | identity-move-to | invitation | invitation-record |
+  invitation-response` (`invitation` is no longer used: the short link of version 5 is unsigned; `invitation-record`
+  is the creating device's signature over a vault invitation record, see Invitation).
 - **Versioning** (spec "Format versions", V3-03). Binary structures carry a single **major** version (the byte after
   the magic). JSON structures (index, certificates, identity move, pack header, sealed-key and key-export payloads,
   group-key payload, vault records) carry:
   - `version`: the **major** version, read only if it is exactly the one this library knows (else
     `UnsupportedVersionError`, `code: "UNSUPPORTED_VERSION"`, `found`, `supported`);
   - `minor` (optional integer ≥ 1, absent = 0): compatible additions. When `minor` is **higher** than the one this
-    library reads (1 for the index, `INDEX_MINOR`, since `invitations`; 0 for every other structure), unknown fields are **accepted and ignored**; they stay covered by the
+    library reads (0 for every structure, `INDEX_MINOR` included: `invitations` is part of index 4.0, V4-03), unknown fields are **accepted and ignored**; they stay covered by the
     signature (computed over the canonical form of the whole document, unknown fields included) or by the AEAD
     associated data (pack header). Otherwise an unknown field is a `FormatError`. Nested objects of the index (compact
     certificates follow their own rule; `packs[]`, `public`) follow the index's rule;
   - `crit` (optional, non-empty, sorted, unique list of field names, like JWS/JWE `crit`): fields that **affect
     security**. Each must be present, and a reader that does not know one of them refuses the whole document with
     `UnsupportedVersionError` (`critical` names the field). A security extension that must never be dropped needs a
-    major version: an older device rewriting the index writes its own minor and drops fields it does not know.
+    major version: an older device rewriting the index writes its own minor and drops fields it does not know
+    (`signIndex` writes the index from the owner's state; it never copies fields). Content documents are the opposite:
+    `mergeVaults` keeps the higher vault `minor`, the union of `crit` and unknown top-level and record fields, so an
+    older device can merge and re-seal records written by a newer one (V4-07).
   A new **major** index version is published under its own file name next to the old one during the transition
   (`index.json` holds the oldest major still written, `index.v<N>.json` each newer one; readers try the highest major
   they read first).
@@ -61,20 +66,20 @@ await ready(); // required once before anything else
   **Codes are for local handling only**; never reflect them to a remote party (e.g. `DECRYPT` vs `NO_MATCHING_KEY`
   tells whether a wrap was addressed to you). Messages never echo rejected numeric values.
 
-| Structure | Version constant | Version | Changed by the third review (and the short link) |
+| Structure | Version constant | Version | Changed by the third and fourth reviews (and the short link) |
 |---|---|---|---|
-| Signed index | `INDEX_VERSION` (`INDEX_MINOR` = 1) | 4.1 | `sharing_cert.location`, `minor`/`crit`; 4.1: `invitations` |
+| Signed index | `INDEX_VERSION` (`INDEX_MINOR` = 0) | 4.0 | `sharing_cert.location`, `minor`/`crit`, `invitations` (token v2, owner-wide padding) |
 | Pack envelope and header | `PACK_VERSION` | 4 | payload type byte, AD over every header field |
 | Sharing certificate | `SHARING_CERT_VERSION` | 3 | `location`, `rotation` is a u32 |
 | Device certificate | `DEVICE_CERT_VERSION` | 1 | (`minor`/`crit` rule only) |
 | Identity move | `IDENTITY_MOVE_VERSION` | 1 | (`minor`/`crit` rule only) |
 | Sealed sharing key | `SHARING_KEY_VERSION` | 2 | `vault_key` in the payload |
 | Group-key payload | `GROUP_KEY_VERSION` | 2 | (`minor`/`crit` rule only) |
-| Invitation link | `INVITATION_VERSION` | 5 | short and unsigned: bound by the owner's index listing |
+| Invitation link | `INVITATION_VERSION` | 5 | short and unsigned: bound by the owner's index listing (token v2 binds the address) |
 | Return link | `INVITATION_RESPONSE_VERSION` | 4 | carries the compact sharing certificate (read address) |
 | Transfer blob | `TRANSFER_VERSION` | 2 | |
 | Key export | `KEY_EXPORT_VERSION` | 3 | `vault_key` |
-| Vault records and envelope | `VAULT_VERSION` | 2 | new; 2: invitation `seed`, `rotation`, `device` |
+| Vault records and envelope | `VAULT_VERSION` | 3 | new; 2: invitation `seed`, `rotation`; 3: `device_cert`, `location`, `signature` |
 | Primary identity | `PRIMARY_IDENTITY_VERSION` | 1 | |
 
 ## Keys (spec: "Loss and theft", "Adding a device")
@@ -129,12 +134,23 @@ device     = random Ed25519 (signs indexes) + random X25519 (box), generated on 
   lastSeen? })` takes the same `lastSeen` rule.
 - **Declare a device lost** (phrase or primary device): new random sharing key and **new vault data key**
   (`generateVaultDataKey()`), `issueSharingCert(identity, pk, { rotation: r + 1, location, revokedDevices: [...previous,
-  lostDeviceId] })`, `sealSharingKey` to each remaining device cert and to the identity (vault), `sealVault` the records
-  with the new vault data key, re-encrypt own content, publish an index embedding the new cert. A stolen ordinary device
-  holds neither the phrase, nor the master key, nor the phrase-derived vault key, nor the new vault data key: it can
-  neither obtain the new keys nor certify one, and it can no longer pass as the owner to a **new** contact either:
-  `signIndex` stops listing the invitations it created, and `checkInvitationIndex` requires the listing in the index
-  read at the certified address (for a return link, it reads the revocation there).
+  lostDeviceId] })`, `sealSharingKey` to each remaining device cert and to the identity (vault), then:
+  1. `cancelAllInvitations(records)` (V4-02): the stolen device read every invitation seed in the vault, so **every**
+     open invitation is cancelled, whoever created it; `sealVault` the remaining records with the new vault data key
+     (start from the last copy this device opened if the storage copy does not open);
+  2. re-encrypt own content without the cancelled keys: `retireInvitationKey(packs, ownIndex,
+     cancelled.map((c) => c.keyPair), recipientsFor)` re-encrypts every pack any of them opens (other packs are
+     re-encrypted for the new sharing key as usual);
+  3. publish an index embedding the new cert (`signIndex({ …, invitations: [], vaultDataKey: newVaultDataKey })`);
+  4. tell the user that people invited who had not answered (no `accepted`) need a new link, and revoke the storage
+     credentials of the current storage **and of every previous storage still holding a redirect** (V4-08).
+
+  A stolen ordinary device holds neither the phrase, nor the master key, nor the phrase-derived vault key, nor the new
+  vault data key: it can neither obtain the new keys nor certify one, and it can no longer pass as the owner to a
+  **new** contact either: no invitation open at the declaration stays listed, the records it creates are signed by its
+  own (now revoked) device key, which `signIndex` skips, it cannot sign a record in another device's name (V4-01), and
+  `checkInvitationIndex` requires the listing in the index read at the certified address (for a return link, it reads
+  the revocation there).
   Indexes are ordered by `(rotation, seq)`, so the new rotation supersedes every index the stolen device signed, whatever
   its `seq`, for every reader that sees it; afterwards the device's indexes are refused (`REVOKED` with the new cert,
   `ROLLBACK` with the old one). Remote wipe: a device that finds its own id in the
@@ -236,7 +252,6 @@ embedded, so they share the index's rollback protection (one freshness anchor pe
  "packs":[{"file":"packs/b2b256-<43>.bin","hash":"b2b256:<43>"}],
  "public":{"file":"public/lists.geojson","hash":"b2b256:<43>"},
  "invitations":["b2b256:<43>","b2b256:<43>","b2b256:<43>","b2b256:<43>"],
- "minor":1,
  "reads":["4"],
  "revoked_devices":["ed25519:…"],
  "seq":42,
@@ -246,18 +261,26 @@ embedded, so they share the index's rollback protection (one freshness anchor pe
  "version":4}
 ```
 
-Optional `move` (identity move, see Keys), `minor` and `crit` (Versioning), and `invitations` (4.1, requires
-`minor` ≥ 1): the tokens of the owner's open invitations, sorted, padded with dummy tokens to a power of two (at least
-4, at most 256), that vouch for short invitation links (see Invitation). The compact `sharing_cert` is the full
+Optional `move` (identity move, see Keys), `minor` and `crit` (Versioning), and `invitations` (index 4.0, V4-03; written
+in every index whose signer passes `vaultDataKey`, optional for readers): the tokens of the owner's open invitations,
+sorted, padded with dummy tokens to a power of two (at least 4, at most 256), that vouch for short invitation links (see
+Invitation). The compact `sharing_cert` is the full
 certificate minus `type`, `version`, `owner` and `revoked_devices`, and is verified as the full certificate: the
 top-level `owner` and `revoked_devices` are covered by the master signature, and so is `location` (required in an
 index). The compact `device_cert` is verified as `{owner, device, box, …}`. At most 16 MiB (`MAX_INDEX_BYTES`), checked
 before parsing.
 
-- `signIndex({ keys, cert }, { seq, sharingCert, packs, reads?, public?, move?, invitations?, previous?, now? })`
-  (round-trip verified). `invitations` takes the owner's open invitations (`OwnerInvitation[]`, e.g. every vault
-  record); it lists those not expired at `now`, created by a device the certificate does not revoke, and refuses an
-  invitation of another owner or of a newer rotation than the certificate. With `previous` (the index currently on the storage, or its anchor) it refuses to publish an index that
+- `signIndex({ keys, cert }, { seq, sharingCert, packs, reads?, public?, move?, invitations?, onSkip?, vaultDataKey?,
+  previous?, now? })` (round-trip verified). `invitations` takes the owner's open invitations (`OwnerInvitation[]`, e.g.
+  `invitationFromRecord` of every vault record). It lists those of this owner whose creating device's certificate
+  (master-signed) and `invitation-record` signature verify, that last at most 7 days, were created at most 5 minutes
+  after `now` at a rotation ≤ the certificate's, have not expired and whose device the certificate does not revoke
+  (V4-01). Every other one is **skipped, never thrown on**, and reported to `onSkip(invitation, reason)` with `reason`
+  = `"expired"` (normal end), `"revoked"` (created by a device declared lost) or `"invalid"` (another owner, malformed,
+  unsigned, forged, too long, impossible rotation, created in the future: drop it from the vault and warn, unless this
+  device's clock is wrong): a vault record can never block publishing an index. `vaultDataKey` (the owner's,
+  `SharingKey.vaultDataKey`) keys the padding; with it the field is always written, and listing any invitation requires
+  it (`FORMAT`). With `previous` (the index currently on the storage, or its anchor) it refuses to publish an index that
   readers would refuse: no rollback, and `seq = previous.seq + 1` within the same rotation (V3-13). The publish flow:
   read the storage index, verify it, sign with `previous`, write with `If-Match`. If the storage index jumped (a stale
   or buggy device), prompt for a new rotation.
@@ -305,20 +328,30 @@ base64url in the URL **fragment** (`https://triangulair.app/i#<fragment>`), neve
 0 0x49 "I" | 1 version=5 | 2 owner master pk 32B | 34 seed 16B | 50 rotation u32 | 54 expires u32 s |
 58 read address without "https://" (UTF-8, 1..504 bytes)
 invitation X25519 secret = BLAKE2b-256("TrianguLair-invitation-key-v1\n" ‖ seed), id = BLAKE2b-128("TrianguLair-invitation-id-v1\n" ‖ seed)
-token = "b2b256:" + BLAKE2b-256("TrianguLair-invitation-listing-v1\n" ‖ owner master pk ‖ invitation X25519 pk ‖ rotation u32 ‖ expires u32)
+token = "b2b256:" + BLAKE2b-256("TrianguLair-invitation-listing-v2\n" ‖ owner master pk ‖ invitation X25519 pk ‖ rotation u32 ‖ expires u32 ‖
+        u16 L ‖ read address L (UTF-8, the full "https://…" address of the link))
+record signature (creating device key, domain "invitation-record") over
+        owner master pk ‖ id 16 ‖ invitation X25519 pk ‖ rotation u32 ‖ created u32 s ‖ expires u32 s ‖ u16 L ‖ read address L
 ```
+
+Token v2 binds **every** field of the link, the read address included (V4-04): a link whose address was rewritten is
+`NOT_LISTED` in the owner's genuine index, not merely redirected. The owner recomputes the token from the address kept
+in the record (`OwnerInvitation.location`), so links made before a storage move keep working through the redirect.
 
 50 + address length bytes; revoked devices and rotations no longer make it longer. `createInvitation` refuses a
 certificate without `location` (an owner without storage cannot invite: there is no index to vouch for the link; the
 app offers the storage wizard first) and a signer that the certificate revokes; `ttlMs` is an integer between 60 s and
 7 days; the link is round-trip checked. The returned `OwnerInvitation` (`{ id, owner, seed, keyPair, rotation, device,
-created, expires }`) goes into the recovery vault and into **every index published until expiry**:
-`signIndex(signer, { …, invitations })`. **Publish the index that lists it before sending the link**: until then the
-invitee refuses it (`NOT_LISTED`). Listing stops automatically at expiry, and when the device that created the
-invitation is declared lost; the owner may also withdraw an invitation by no longer passing it (keep it listed after
-acceptance, until expiry, so that a second answer can still arrive and trigger the `late` warning).
+deviceCert, location, created, expires, signature }`, signed by the creating device: V4-01) goes into the recovery
+vault (`invitationRecord`) and into **every index published until expiry**: `signIndex(signer, { …, invitations,
+vaultDataKey })`. **Publish the index that lists it before sending the link**: until then the invitee refuses it
+(`NOT_LISTED`). Listing stops automatically at expiry and when the device that created the invitation is declared lost;
+a declaration of loss also cancels every other open invitation (`cancelAllInvitations`, V4-02). The owner may withdraw
+an invitation by no longer passing it (keep it listed after acceptance, until expiry, so that a second answer can still
+arrive and trigger the `late` warning).
 
-`parseInvitationLink(link, { now? })` checks the length (at most 1,024 characters) before decoding, the read address
+`parseInvitationLink(link, { now? })` checks the length (at most 750 characters for the fragment, the size of the
+longest address: N-5) before decoding, the read address
 (`checkLocation`), an expiry at most 7 days + 5 minutes after the reader's clock (V3-04) and not past (`ExpiredError`).
 It returns `{ id, owner, ownerPublicKey, location, rotation, keyPair, expires, token }`, **unauthenticated**: anyone can
 write a link naming any master key, so nothing is shown as the owner's before the check below.
@@ -335,7 +368,9 @@ V3-09): the app fetches it. `checkLocation(l)`.
 now? })`:
 
 - the index was verified with the address it was read from, which is its own **master-certified** address: a link
-  that names another address only reaches the owner's index through a master-signed redirect;
+  that names another address only reaches the owner's index through a master-signed redirect, and then is
+  `NOT_LISTED` unless the owner listed it with that address (V4-04). `readFrom` is what the caller declares (the
+  library cannot know where bytes came from): pass the address actually fetched;
 - same owner: the index is signed under the master key named by the link (`OWNER_MISMATCH` for a forged key);
 - the index's rotation is at least the link's (`ROLLBACK`): the freshness floor that the carried certificate used to
   give;
@@ -349,11 +384,23 @@ now? })`:
 On success the invitation is confirmed: `createInvitationResponse` refuses an unconfirmed one (`FORMAT`). Then keep
 that index (or `indexAnchor(index)`) as the first `lastSeen` for this owner.
 
-**Privacy of the listing.** The index is public. Tokens are hashes that only a link holder can recompute; padding with
-dummy tokens (derived from the publishing device's key, so they stay the same between publications) hides the number
-of open invitations up to its power-of-two bucket (absent, 4, 8, …). What remains visible: whether invitations are
-open at all, the bucket, and, by diffing two indexes, when one is added or removed (THREATS.md). A separate signed file
-would hide nothing more (it would need the same rollback protection, so it would be referenced from the index anyway).
+**Privacy of the listing** (V4-05). The index is public. Tokens are hashes that only a link holder can recompute. The
+list is padded to a power of two (at least 4, also with nothing open) with dummy tokens that every device of the owner
+derives identically from the vault data key, and each dummy slot changes value at its own pseudo-random period (1 to
+7 days) and phase, so dummies come and go like real tokens, which live at most 7 days:
+
+```
+padKey = BLAKE2b-256(key = vault data key, "TrianguLair-invitation-padding-key-v1")
+p      = BLAKE2b-64(key = padKey, "TrianguLair-invitation-padding-period-v1\n" ‖ u32 slot)
+period = 86400 + (u32(p[0..4]) mod 518401) s ; phase = u32(p[4..8]) mod period ; epoch = floor((now s + phase) / period)
+dummy  = "b2b256:" + BLAKE2b-256(key = padKey, "TrianguLair-invitation-padding-v2\n" ‖ u32 slot ‖ u32 epoch)
+```
+
+Real tokens fill the list first, dummies take slots 0, 1, … What remains visible to someone who polls the index
+(THREATS.md): when it is republished (each invitation needs a publication), the bucket, and, when an invitation ends
+within a dummy's epoch, that the dummy coming back was one. The padding key changes with the vault data key at a
+declaration of loss (which the rotation shows anyway). A separate signed file would hide nothing more (it would need
+the same rollback protection, so it would be referenced from the index anyway).
 
 **Return link** (`createInvitationResponse(confirmedInvitation, { keys, cert }, ownSharingCert, { now? })`), unchanged
 from version 4 (`INVITATION_RESPONSE_VERSION`). It is signed by the responder's **device key** and carries its
@@ -393,9 +440,12 @@ that index (`REVOKED`), and `lastSeen` for an existing contact. An answer whose 
   collecting with `acceptedOwner`: any other responder is returned in `late` ("a second person answered this
   invitation; the first may have been an impostor": offer to revoke and to compare the safety code). Answers whose
   signed `created` falls before expiry are opened, accepted and reported in `late` during the grace period (V3-02);
-  after it, `ExpiredError`. (`openInvitationResponse` opens a single answer.) A record with a malformed date fails
+  after it, `ExpiredError`. Every answer carries `openedAfterExpiry` (V4-06): `true` when opened at or after expiry.
+  Its `created` is claimed by the responder, so anyone who kept the link can produce one: **never grant such an answer
+  silently**, even as the only (`accepted`) one; ask the user and suggest comparing the safety code. (`openInvitationResponse` opens a single answer.) A record with a malformed date fails
   closed: `isInvitationExpired` is `true` and opening answers throws `FORMAT` (V3-07).
-- `retireInvitationKey(packs, ownIndex, invitation.keyPair, recipientsFor)`: on acceptance **or expiry**,
+- `retireInvitationKey(packs, ownIndex, invitation.keyPair | keyPairs[], recipientsFor)`: on acceptance **or expiry**
+  (or for every cancelled invitation at a declaration of loss, all at once),
   **re-encrypts** (new batch keys, not a rewrap) every pack that the invitation key can open, for
   `recipientsFor(logicalId)` (which must not contain the invitation key). `packs` must hold the bytes of **every** file
   listed in `ownIndex.packs` (packs and media): a missing one is a `FormatError` (V3-08). Returns `{ oldFile, bytes }[]`:
@@ -409,18 +459,20 @@ The records that the security rules depend on, encrypted with the random **vault
 which travels to each device in `TLSK` and is kept, with the sharing key, in the phrase-protected `TLSK` copy:
 
 ```
-"TLVD" | version 2 | nonce 24B | XChaCha20-Poly1305(plaintext, AD = bytes[0..5) ‖ owner master pk 32B ‖ nonce, key = vault data key)
+"TLVD" | version 3 | nonce 24B | XChaCha20-Poly1305(plaintext, AD = bytes[0..5) ‖ owner master pk 32B ‖ nonce, key = vault data key)
 plaintext = u32 length ‖ canonical JSON records ‖ zero padding (Padmé, at least 256 bytes)
 ```
 
 ```json
 {"app":{"…":"free-form app data: storage credentials, groups, settings"},
  "contacts":[{"anchor":<index-anchor>,"owner":"ed25519:…","sharing_cert":<their sharing cert>,"verified":true}],
- "invitations":[{"accepted":"ed25519:…","answers":["<b64url return link>"],"created":"…","device":"ed25519:…",
-                 "expires":"…","id":"<16B>","rotation":3,"seed":"<16B link seed>"}],
+ "invitations":[{"accepted":"ed25519:…","answers":["<b64url return link>"],"created":"…",
+                 "device_cert":{"box":"x25519:…","device":"ed25519:…","signature":"<master>"},
+                 "expires":"…","id":"<16B>","location":"https://…","rotation":3,"seed":"<16B link seed>",
+                 "signature":"<creating device, invitation-record>"}],
  "owner":"ed25519:…",
  "retired_owners":["ed25519:…"],
- "type":"vault-records","version":2}
+ "type":"vault-records","version":3}
 ```
 
 - `contacts` (sorted by `owner`): friends' keys (their sharing certificate, so also their certified read address), the
@@ -428,14 +480,20 @@ plaintext = u32 length ‖ canonical JSON records ‖ zero padding (Padmé, at l
 - `invitations` (sorted by `id`): open invitations until expiry + 7 days, with every answer received (at most 16) and
   the accepted responder, so any device can keep collecting (`late`), keep listing them in the indexes it publishes
   (`signIndex({ invitations })`) and run the expiry sweep. The `seed` gives the invitation key pair and id (the id must
-  match); `rotation` and `device` are those of the creation.
+  match); `rotation`, `location` (the link's read address, bound in the token) and `device_cert` are those of the
+  creation, and `signature` is the creating device's `invitation-record` signature (V4-01). `sealVault`, `openVault`,
+  `invitationRecord` and `invitationFromRecord` refuse a record whose certificate or signature does not verify or whose
+  lifetime exceeds 7 days; they do not check revocation (signIndex does). Every device holds the vault data key, so
+  this is what stops a stolen device from writing a record in another device's name or extending one.
 - `retired_owners`: identities that moved away (`IdentityMovedError.from`), passed as `retiredOwners` everywhere.
 - Helpers: `emptyVault(owner)`, `contactRecord(verifiedIndex, verified?)`, `invitationRecord(invitation, { answers?,
   accepted? })`, `invitationFromRecord(record, owner) → { invitation, answers, accepted? }`, `sealVault(records,
   vaultDataKey)` (sorts, de-duplicates and validates first), `openVault(bytes, owner, vaultDataKey)` (validates,
   verifies every certificate and anchor, returns frozen records), `mergeVaults(a, b)` for two devices that wrote
   concurrently (later anchor and certificate by rotation then seq, union of answers and retired owners, "verified" if
-  either says so, `app` from `a`).
+  either says so, `app` from `a`; the higher `minor`, the union of `crit` and unknown fields are kept, V4-07),
+  `cancelAllInvitations(records) → { records, cancelled: { id, keyPair, accepted?, expires }[] }` for a declaration of
+  loss (V4-02).
 
 **Safety code**: `safetyCode(ownerA, ownerB)` → 12 groups of 5 digits, the same on both sides:
 `BLAKE2b-512("TrianguLair-safety-v1" ‖ min(pkA, pkB) ‖ max(pkA, pkB))` over the two master keys, group *i* =
@@ -457,8 +515,8 @@ key = Argon2id(crypto_pwhash, 32 B, code, salt, ops, mem) ; AEAD XChaCha20-Poly1
 
 Parameters: at least libsodium INTERACTIVE (2 passes, 64 MiB), at most 10 passes and 256 MiB (checked on both sides).
 Expiry: 15 minutes by default (max), authenticated by the AD and checked before the key derivation. Single use =
-deleting the blob from the storage. Payload: `encodeKeyExport({ keyPair, cert })` =
-`{"cert":<sharing cert>,"secret":"<32B>","type":"key-export","version":2}` / `decodeKeyExport(bytes, { expectedOwner?,
-lastSeen? })`.
+deleting the blob from the storage. Payload: `encodeKeyExport({ keyPair, cert, vaultDataKey })` =
+`{"cert":<sharing cert>,"secret":"<32B>","type":"key-export","vault_key":"<32B>","version":3}` /
+`decodeKeyExport(bytes, { expectedOwner?, lastSeen? })`.
 
 See [THREATS.md](./THREATS.md) for known limitations.

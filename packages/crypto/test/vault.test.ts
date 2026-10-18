@@ -46,7 +46,7 @@ describe('recovery vault records (V3-10)', () => {
     const { marie, lea, leaIndex, invitation, index, answer, records } = setup();
     const bytes = sealVault(records, marie.vaultDataKey);
     expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('TLVD');
-    expect(bytes[4]).toBe(2);
+    expect(bytes[4]).toBe(3);
     const back = openVault(bytes, marie.id.owner, marie.vaultDataKey);
     expect(back.contacts[0]!.owner).toBe(lea.id.owner);
     expect(back.contacts[0]!.verified).toBe(true);
@@ -64,7 +64,7 @@ describe('recovery vault records (V3-10)', () => {
     expect(rec.invitation.rotation).toBe(invitation.rotation);
     expect(rec.invitation.device).toBe(marie.device.id);
     // ... and keeps it listed in the indexes it publishes until expiry (the link keeps working).
-    const relisted = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [rec.invitation], now });
+    const relisted = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [rec.invitation], vaultDataKey: marie.vaultDataKey, now });
     expect(relisted.invitations).toEqual(index.invitations);
     expect(rec.answers[0]).toEqual(answer);
     expect(collectInvitationAnswers(rec.invitation, rec.answers, { now, acceptedOwner: rec.accepted! }).accepted?.owner).toBe(lea.id.owner);
@@ -93,11 +93,16 @@ describe('recovery vault records (V3-10)', () => {
     expect(() => sealVault({ ...records, retired_owners: ['nope'] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     const bad = { ...records.invitations[0]!, seed: 'AAAA' };
     expect(() => sealVault({ ...records, invitations: [bad] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
-    // The id must match the seed; rotation is a u32; device a key.
+    // The id must match the seed; rotation is a u32; the device certificate and signature verify.
     const otherSeed = invitationRecord(createInvitation(marie.signer, marie.cert, { now }).invitation);
     expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, seed: otherSeed.seed }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, rotation: -1 }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
-    expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, device: 'x' }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    const rec = records.invitations[0]!;
+    expect(() => sealVault({ ...records, invitations: [{ ...rec, device_cert: { ...rec.device_cert, device: 'x' } }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    expect(() => sealVault({ ...records, invitations: [{ ...rec, created: new Date(Date.parse(rec.created) + 1000).toISOString() }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'SIGNATURE' }));
+    expect(() => sealVault({ ...records, invitations: [{ ...rec, location: 'https://elsewhere.example/x' }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'SIGNATURE' }));
+    const { signature: _sig, ...unsigned } = rec;
+    expect(() => sealVault({ ...records, invitations: [unsigned as typeof rec] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     expect(() => sealVault({ ...records, extra: 1 } as VaultRecords, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     // A newer minor may add fields (kept, ignored).
     expect(() => sealVault({ ...records, minor: 1, extra: 1 } as VaultRecords, marie.vaultDataKey)).not.toThrow();

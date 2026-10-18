@@ -73,11 +73,11 @@ export function person(location: string = newLocation()): Person {
 
 const seqs = new WeakMap<Person, number>();
 
-/** Publishes (signs) a new index for `p` listing `packs`, with the next seq. */
+/** Publishes (signs) a new index for `p` listing `packs`, with the next seq (padding keyed by p's vault data key). */
 export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}, signer?: DeviceSigner, cert?: SharingCert): SignedIndex {
   const seq = (seqs.get(p) ?? 0) + 1;
   seqs.set(p, seq);
-  return signIndex(signer ?? p.signer, { seq, sharingCert: cert ?? p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
+  return signIndex(signer ?? p.signer, { seq, sharingCert: cert ?? p.cert, packs: packs.map((b) => packEntry(b)), vaultDataKey: p.vaultDataKey, ...extra });
 }
 
 /**

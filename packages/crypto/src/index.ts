@@ -82,6 +82,7 @@ export {
   type IndexPublicEntry,
   type IndexContent,
   type DeviceSigner,
+  type InvitationSkipReason,
   type VerifyIndexOptions,
 } from './signed-index';
 export {
@@ -114,10 +115,13 @@ export {
   sealVault,
   openVault,
   mergeVaults,
+  cancelAllInvitations,
   VAULT_VERSION,
   type VaultRecords,
   type VaultContact,
   type VaultInvitation,
+  type CompactDeviceCert,
+  type CancelledInvitation,
 } from './vault';
 export { safetyCode, safetyQrPayload, matchSafetyQr } from './safety';
 export {

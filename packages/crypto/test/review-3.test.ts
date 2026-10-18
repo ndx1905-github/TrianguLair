@@ -73,7 +73,7 @@ describe('V3-01 (high): a revoked device keeps the identity toward NEW contacts 
     expect(received.location).toBe(REAL);
     // The thief serves an index he signs himself with the phone key, at rotation 0, listing the link.
     const fakePack = sealPack(marie.id.owner, te.encode('fake places in Marie\'s name'), [received.keyPair.publicKey]);
-    const fake = signIndex(marie.signer, { seq: 7, sharingCert: marie.cert, packs: [packEntry(fakePack)], invitations: [invitation], now: later });
+    const fake = signIndex(marie.signer, { seq: 7, sharingCert: marie.cert, packs: [packEntry(fakePack)], invitations: [invitation], vaultDataKey: marie.vaultDataKey, now: later });
     // Read where the link says (the certified address): the real index (signed by the tablet) does not list it.
     const real = verifyIndex(serialize(realIndex), { expectedOwner: received.owner, location: received.location, now: later });
     expect(() => checkInvitationIndex(received, real, { now: later })).toThrow(expect.objectContaining({ code: 'NOT_LISTED' }));
@@ -94,7 +94,7 @@ describe('V3-01 (high): a revoked device keeps the identity toward NEW contacts 
       checkInvitationIndex(received, idx, { now: later });
     }).toThrow();
     // And the phone, revoked by the current certificate, cannot publish an index that lists it.
-    expect(() => signIndex(marie.signer, { seq: 2, sharingCert: sharingCertOf(realIndex), packs: [], invitations: [invitation], now: later })).toThrow(
+    expect(() => signIndex(marie.signer, { seq: 2, sharingCert: sharingCertOf(realIndex), packs: [], invitations: [invitation], vaultDataKey: marie.vaultDataKey, now: later })).toThrow(
       expect.objectContaining({ code: 'REVOKED' }),
     );
   });
@@ -150,7 +150,7 @@ describe('V3-03 (medium): versioning contradicts the spec ("ignore the unknown",
   it('an index from a newer minor version with an extra signed field is still readable', () => {
     const p = person();
     const idx = signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [] });
-    // INDEX_MINOR is 1 since the short invitation links (`invitations`): a newer minor is 2.
+    // INDEX_MINOR is 0 (`invitations` is part of 4.0, V4-03): minor 1 and 2 are newer.
     const newer = resign(idx, p.device.sign.secretKey, (b) => {
       b['minor'] = 2;
       b['zones_hint'] = 'added in 4.2';
@@ -159,7 +159,7 @@ describe('V3-03 (medium): versioning contradicts the spec ("ignore the unknown",
     // The extra field is covered by the signature, and kept in the verified index.
     expect((verifyIndex(newer) as unknown as Record<string, unknown>)['zones_hint']).toBe('added in 4.2');
     expect(() => verifyIndex(newer.replace('added in 4.2', 'changed!!!!!!'))).toThrow(expect.objectContaining({ code: 'SIGNATURE' }));
-    // Without a higher minor, an unknown field is still refused (minor 1 is this library's own).
+    // Without a higher minor, an unknown field is still refused.
     const noMinor = resign(idx, p.device.sign.secretKey, (b) => {
       b['zones_hint'] = 'x';
     });
@@ -168,7 +168,7 @@ describe('V3-03 (medium): versioning contradicts the spec ("ignore the unknown",
       b['minor'] = 1;
       b['zones_hint'] = 'x';
     });
-    expect(() => verifyIndex(minor1)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    expect(() => verifyIndex(minor1)).not.toThrow();
     // A security-relevant extension listed in `crit` must be understood.
     const critical = resign(idx, p.device.sign.secretKey, (b) => {
       b['minor'] = 2;
@@ -277,7 +277,7 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
     const tabletSigner = { keys: tablet, cert: issueDeviceCert(marie.id, devicePublicKeys(tablet)) };
     const cert2 = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 2, location: NEW, revokedDevices: [marie.device.id] });
     // The tablet's index keeps listing the open invitations, except those made by the revoked phone.
-    const latest = serialize(signIndex(tabletSigner, { seq: 1, sharingCert: cert2, packs: [], invitations: [invitation], now }));
+    const latest = serialize(signIndex(tabletSigner, { seq: 1, sharingCert: cert2, packs: [], invitations: [invitation], vaultDataKey: marie.vaultDataKey, now }));
     let next = '';
     try {
       verifyIndex(latest, { expectedOwner: received.owner, location: received.location }); // read at REAL: redirect
@@ -290,7 +290,7 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
     // An invitation made by the tablet before the move is still listed, and followed to the new address.
     const byTablet = createInvitation(tabletSigner, marie.cert, { now });
     const tabletLink = parseInvitationLink(byTablet.fragment, { now });
-    const latest2 = serialize(signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], invitations: [invitation, byTablet.invitation], now }));
+    const latest2 = serialize(signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], invitations: [invitation, byTablet.invitation], vaultDataKey: marie.vaultDataKey, now }));
     expect(() => verifyIndex(latest2, { expectedOwner: tabletLink.owner, location: tabletLink.location, now })).toThrow(expect.objectContaining({ code: 'MOVED' }));
     expect(() => checkInvitationIndex(tabletLink, verifyIndex(latest2, { expectedOwner: tabletLink.owner, location: NEW, now }), { now })).not.toThrow();
   });
@@ -302,7 +302,7 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
     const lastSeen = signIndex(marie.signer, { seq: 3, sharingCert: cert1, packs: [], now });
     const { invitation, fragment } = createInvitation(marie.signer, marie.cert, { now });
     const received = parseInvitationLink(fragment, { now });
-    const old = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [invitation], now });
+    const old = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [invitation], vaultDataKey: marie.vaultDataKey, now });
     expect(() => checkInvitationIndex(received, old, { now })).not.toThrow(); // fine for a brand-new contact
     expect(() => checkInvitationIndex(received, old, { lastSeen, now })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
   });
@@ -347,7 +347,7 @@ describe('V3-03: extension rules on certificates', () => {
     const { minor: _m, ...noMinor } = body;
     expect(() => verifySharingCert(signBody('sharing-cert', noMinor, p.id.master.secretKey))).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     const inv = createInvitation(p.signer, cert, { now });
-    const listed = signIndex(p.signer, { seq: 2, sharingCert: cert, packs: [], invitations: [inv.invitation], now });
+    const listed = signIndex(p.signer, { seq: 2, sharingCert: cert, packs: [], invitations: [inv.invitation], vaultDataKey: p.vaultDataKey, now });
     const friend = person();
     const received = accept(inv.fragment, listed, now);
     expect(() => createInvitationResponse(received, p.signer, cert, { now })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
