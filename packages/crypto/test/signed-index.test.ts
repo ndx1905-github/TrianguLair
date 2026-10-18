@@ -25,7 +25,7 @@ import {
   verifySharingCert,
 } from '../src/index';
 import { signBody } from '../src/sign';
-import { person, te } from './helpers';
+import { person, te, PAD_KEY } from './helpers';
 
 const t0 = new Date('2026-10-13T10:00:00.000Z');
 const t1 = new Date('2026-10-13T11:00:00.000Z');
@@ -34,12 +34,13 @@ describe('signed index', () => {
   const alice = person();
   const pack = sealPack(alice.id.owner, te.encode('x'), [alice.sharing.publicKey]);
   const pub = publicEntry(te.encode('{"type":"FeatureCollection","features":[]}'), 'lists');
-  const idx = signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [packEntry(pack)], public: pub, now: t0 });
+  const idx = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs: [packEntry(pack)], public: pub, now: t0 });
   const json = serialize(idx);
 
   it('has the spec shape and canonical serialization', () => {
     const o = JSON.parse(json);
-    expect(Object.keys(o)).toEqual(['device_cert', 'owner', 'packs', 'public', 'reads', 'revoked_devices', 'seq', 'sharing_cert', 'signature', 'updated', 'version']);
+    expect(Object.keys(o)).toEqual(['device_cert', 'invitations', 'owner', 'packs', 'public', 'reads', 'revoked_devices', 'seq', 'sharing_cert', 'signature', 'updated', 'version']);
+    expect(o.invitations).toHaveLength(4); // written in every index, padding only here (N-3)
     expect(o).toMatchObject({ version: 4, seq: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: pub, reads: ['4'], revoked_devices: [] });
     expect(pub.file).toBe('public/lists.geojson');
     expect(o.sharing_cert).toEqual({ key: alice.cert.key, location: alice.location, rotation: 0, signature: alice.cert.signature });
@@ -68,7 +69,7 @@ describe('signed index', () => {
   });
 
   it('works without the optional public field and with custom reads', () => {
-    const i = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], reads: ['4', '4.1'] });
+    const i = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: alice.cert, packs: [], reads: ['4', '4.1'] });
     expect('public' in i).toBe(false);
     expect(verifyIndex(serialize(i)).reads).toEqual(['4', '4.1']);
   });
@@ -101,7 +102,7 @@ describe('signed index', () => {
     const mallory = person();
     const o = JSON.parse(json);
     expect(() => verifyIndex(canonicalize({ ...o, owner: mallory.id.owner }))).toThrow(SignatureError);
-    const mi = signIndex(mallory.signer, { seq: 5, sharingCert: mallory.cert, packs: o.packs });
+    const mi = signIndex(mallory.signer, { vaultDataKey: PAD_KEY, seq: 5, sharingCert: mallory.cert, packs: o.packs });
     expect(() => verifyIndex(serialize(mi), { expectedOwner: alice.id.master.publicKey })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
     expect(() => verifyIndex(serialize(mi), { expectedOwner: alice.id.owner })).toThrow(SignatureError);
   });
@@ -111,9 +112,9 @@ describe('signed index', () => {
     // A device cert signed by another master, embedded in alice's index.
     const mallory = person();
     const foreignCert = issueDeviceCert(mallory.id, devicePublicKeys(rogue));
-    expect(() => signIndex({ keys: rogue, cert: foreignCert }, { seq: 9, sharingCert: alice.cert, packs: [] })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    expect(() => signIndex({ keys: rogue, cert: foreignCert }, { vaultDataKey: PAD_KEY, seq: 9, sharingCert: alice.cert, packs: [] })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
     // Device keys that do not match the certificate.
-    expect(() => signIndex({ keys: rogue, cert: alice.deviceCert }, { seq: 9, sharingCert: alice.cert, packs: [] })).toThrow(FormatError);
+    expect(() => signIndex({ keys: rogue, cert: alice.deviceCert }, { vaultDataKey: PAD_KEY, seq: 9, sharingCert: alice.cert, packs: [] })).toThrow(FormatError);
     // Hand-made: rogue device signs an index claiming alice's device cert.
     const o = JSON.parse(json);
     const forged = signBody('index', { ...o, seq: 9, signature: undefined }, rogue.sign.secretKey);
@@ -124,47 +125,47 @@ describe('signed index', () => {
     const p = person();
     const k1 = generateX25519KeyPair();
     const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1, revokedDevices: [p.device.id], location: p.location });
-    expect(() => signIndex(p.signer, { seq: 2, sharingCert: cert1, packs: [] })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
+    expect(() => signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: cert1, packs: [] })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const other = generateDeviceKeys();
-    const ok = signIndex({ keys: other, cert: issueDeviceCert(p.id, devicePublicKeys(other)) }, { seq: 2, sharingCert: cert1, packs: [] });
+    const ok = signIndex({ keys: other, cert: issueDeviceCert(p.id, devicePublicKeys(other)) }, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: cert1, packs: [] });
     expect(ok.revoked_devices).toEqual([p.device.id]);
   });
 
   it('rollback: within one rotation, seq orders indexes; forks are reported', () => {
-    const newer = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], now: t1 });
+    const newer = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: alice.cert, packs: [], now: t1 });
     expect(verifyIndex(serialize(newer), { lastSeen: idx }).seq).toBe(2);
     expect(() => verifyIndex(json, { lastSeen: newer })).toThrow(RollbackError);
-    const lowerSeq = signIndex(alice.signer, { seq: 0, sharingCert: alice.cert, packs: [], now: t1 });
+    const lowerSeq = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 0, sharingCert: alice.cert, packs: [], now: t1 });
     expect(() => checkNoRollback(lowerSeq, newer)).toThrow(RollbackError);
     // higher seq but older date: accepted (updated is informational, T-002 F-04)
-    const olderDate = signIndex(alice.signer, { seq: 3, sharingCert: alice.cert, packs: [], now: t0 });
+    const olderDate = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 3, sharingCert: alice.cert, packs: [], now: t0 });
     expect(() => checkNoRollback(olderDate, newer)).not.toThrow();
     // same seq, different content = fork
-    const fork = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [packEntry(pack)], now: t1 });
+    const fork = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: alice.cert, packs: [packEntry(pack)], now: t1 });
     expect(() => checkNoRollback(fork, newer)).toThrow(expect.objectContaining({ code: 'ROLLBACK', fork: true }));
     expect(() => checkNoRollback(verifyIndex(serialize(newer)), newer)).not.toThrow();
     const bob = person();
-    expect(() => checkNoRollback(newer, signIndex(bob.signer, { seq: 1, sharingCert: bob.cert, packs: [] }))).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    expect(() => checkNoRollback(newer, signIndex(bob.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: bob.cert, packs: [] }))).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
   });
 
   it('an old sharing certificate is covered by rollback protection (T-002 F-07)', () => {
     const p = person();
     const k1 = generateX25519KeyPair();
     const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1, location: p.location });
-    const i1 = signIndex(p.signer, { seq: 10, sharingCert: cert1, packs: [] });
+    const i1 = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 10, sharingCert: cert1, packs: [] });
     // A higher seq carrying the stale rotation-0 cert (e.g. a stolen, not yet revoked device) is refused.
-    const stale = signIndex(p.signer, { seq: 11, sharingCert: p.cert, packs: [] });
+    const stale = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 11, sharingCert: p.cert, packs: [] });
     expect(() => checkNoRollback(stale, i1)).toThrow(RollbackError);
     // Same rotation, different certified key: fork.
     const cert1b = issueSharingCert(p.id, generateX25519KeyPair().publicKey, { rotation: 1, location: p.location });
-    expect(() => checkNoRollback(signIndex(p.signer, { seq: 12, sharingCert: cert1b, packs: [] }), i1)).toThrow(expect.objectContaining({ fork: true }));
+    expect(() => checkNoRollback(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 12, sharingCert: cert1b, packs: [] }), i1)).toThrow(expect.objectContaining({ fork: true }));
   });
 
   it('refuses `updated` more than 24 h in the future (T-002 F-04)', () => {
     const now = new Date('2026-10-13T12:00:00.000Z');
-    const in23h = signIndex(alice.signer, { seq: 7, sharingCert: alice.cert, packs: [], now: new Date(now.getTime() + 23 * 3600e3) });
+    const in23h = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 7, sharingCert: alice.cert, packs: [], now: new Date(now.getTime() + 23 * 3600e3) });
     expect(() => verifyIndex(serialize(in23h), { now })).not.toThrow();
-    const in25h = signIndex(alice.signer, { seq: 7, sharingCert: alice.cert, packs: [], now: new Date(now.getTime() + 25 * 3600e3) });
+    const in25h = signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 7, sharingCert: alice.cert, packs: [], now: new Date(now.getTime() + 25 * 3600e3) });
     expect(() => verifyIndex(serialize(in25h), { now })).toThrow(FormatError);
   });
 
@@ -178,13 +179,13 @@ describe('signed index', () => {
       [{ file: e.file, hash: e.hash.replace('b2b256', 'sha256') }],
       [e, e],
     ];
-    for (const packs of bad) expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs })).toThrow(FormatError);
+    for (const packs of bad) expect(() => signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs })).toThrow(FormatError);
     for (const file of ['https://x.example/a.geojson', 'public/../a.geojson', 'public/a.json']) {
-      expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], public: { file, hash: pub.hash } })).toThrow(FormatError);
+      expect(() => signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs: [], public: { file, hash: pub.hash } })).toThrow(FormatError);
     }
-    expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], public: { file: pub.file, hash: 'x' } })).toThrow(FormatError);
+    expect(() => signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs: [], public: { file: pub.file, hash: 'x' } })).toThrow(FormatError);
     expect(() => publicEntry(te.encode('{}'), '../a')).toThrow(FormatError);
-    expect(signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [packEntry(pack, 'media')] }).packs).toHaveLength(1);
+    expect(signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs: [packEntry(pack, 'media')] }).packs).toHaveLength(1);
   });
 
   it('rejects other versions and malformed documents', () => {
@@ -204,14 +205,14 @@ describe('signed index', () => {
     expect(() => v({ ...o, sharing_cert: noLocation })).toThrow();
     expect(() => verifyIndex('[]')).toThrow(FormatError);
     expect(() => verifyIndex(' '.repeat(16 * 1024 * 1024 + 1))).toThrow(FormatError); // size bound (N-2)
-    expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], now: new Date('x') })).toThrow(FormatError);
+    expect(() => signIndex(alice.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: alice.cert, packs: [], now: new Date('x') })).toThrow(FormatError);
   });
 });
 
 describe('identity change (primary device stolen)', () => {
   it('the new identity publishes a move signed by the old master; readers are told, then refuse the old master', () => {
     const marie = person();
-    const before = signIndex(marie.signer, { seq: 5, sharingCert: marie.cert, packs: [] });
+    const before = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 5, sharingCert: marie.cert, packs: [] });
 
     // "Declare the primary device lost": new phrase, new master, move signed by the old master.
     const newId = identityFromPhrase(generateRecoveryPhrase());
@@ -219,7 +220,7 @@ describe('identity change (primary device stolen)', () => {
     const device = generateDeviceKeys();
     const signer = { keys: device, cert: issueDeviceCert(newId, devicePublicKeys(device)) };
     const sharing = generateX25519KeyPair();
-    const after = signIndex(signer, { seq: 1, sharingCert: issueSharingCert(newId, sharing.publicKey, { rotation: 0, location: marie.location }), packs: [], move });
+    const after = signIndex(signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: issueSharingCert(newId, sharing.publicKey, { rotation: 0, location: marie.location }), packs: [], move });
 
     // A friend expecting the old identity gets an explicit IdentityMovedError.
     let err: unknown;
@@ -237,16 +238,16 @@ describe('identity change (primary device stolen)', () => {
     // Anything later signed by the old master is refused (e.g. a thief holding the old primary device).
     const thiefCert = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 99, location: marie.location });
     expect(() => verifySharingCert(thiefCert, { retiredOwners: retired })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
-    const thiefIndex = signIndex(marie.signer, { seq: 6, sharingCert: thiefCert, packs: [] });
+    const thiefIndex = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 6, sharingCert: thiefCert, packs: [] });
     expect(() => verifyIndex(serialize(thiefIndex), { retiredOwners: retired })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
   });
 
   it('a move that does not lead to the index owner, or from another identity, is refused', () => {
     const [a, b, c] = [person(), person(), person()];
     const moveAB = issueIdentityMove(a.id, b.id);
-    expect(() => signIndex(c.signer, { seq: 1, sharingCert: c.cert, packs: [], move: moveAB })).toThrow(FormatError);
+    expect(() => signIndex(c.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: c.cert, packs: [], move: moveAB })).toThrow(FormatError);
     const moveCB = issueIdentityMove(c.id, b.id);
-    const idx = signIndex(b.signer, { seq: 1, sharingCert: b.cert, packs: [], move: moveCB });
+    const idx = signIndex(b.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: b.cert, packs: [], move: moveCB });
     expect(() => verifyIndex(serialize(idx), { expectedOwner: a.id.owner })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
   });
 });

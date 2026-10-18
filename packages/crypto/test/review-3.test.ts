@@ -36,7 +36,7 @@ import {
 } from '../src/index';
 import { checkLocation } from '../src/invitation';
 import { signBody } from '../src/sign';
-import { accept, invite, person, publish, te } from './helpers';
+import { accept, invite, person, publish, te, PAD_KEY } from './helpers';
 
 const now = new Date('2026-10-18T12:00:00.000Z');
 const later = new Date('2026-12-01T12:00:00.000Z'); // weeks after the theft was declared
@@ -51,7 +51,7 @@ function theft() {
   const k1 = generateX25519KeyPair();
   const cert1 = issueSharingCert(marie.id, k1.publicKey, { rotation: 1, revokedDevices: [marie.device.id], location: REAL });
   // What the real storage serves after the declaration.
-  const realIndex = signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [], now: later });
+  const realIndex = signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [], now: later });
   return { marie, tabletSigner, k1, cert1, realIndex };
 }
 
@@ -107,7 +107,7 @@ describe('V3-01 (high): a revoked device keeps the identity toward NEW contacts 
     // The thief answers with Bob's revoked phone and Bob's rotation-0 cert; its address is Bob's real one.
     const resp = createInvitationResponse(received, bob.signer, bob.cert, { now: later });
     const answer = collectInvitationAnswers(invitation, [resp], { now: later }).accepted!;
-    const served = signIndex(bob.signer, { seq: 3, sharingCert: bob.cert, packs: [], now: later });
+    const served = signIndex(bob.signer, { vaultDataKey: PAD_KEY, seq: 3, sharingCert: bob.cert, packs: [], now: later });
     expect(answer.sharingPublicKey).toEqual(bob.sharing.publicKey); // the thief holds this secret
     expect(answer.location).toBe(REAL);
     expect(() => {
@@ -149,7 +149,7 @@ describe('V3-02 (medium): answers after expiry are thrown away, including the la
 describe('V3-03 (medium): versioning contradicts the spec ("ignore the unknown", minor versions)', () => {
   it('an index from a newer minor version with an extra signed field is still readable', () => {
     const p = person();
-    const idx = signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [] });
+    const idx = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: p.cert, packs: [] });
     // INDEX_MINOR is 0 (`invitations` is part of 4.0, V4-03): minor 1 and 2 are newer.
     const newer = resign(idx, p.device.sign.secretKey, (b) => {
       b['minor'] = 2;
@@ -197,7 +197,7 @@ describe('V3-05 (low): index pack entries given as JSON strings are accepted', (
   it('packs: ["{\\"file\\":…}"] (a string, not an object) is a FormatError', () => {
     const p = person();
     const pack = sealPack(p.id.owner, te.encode('x'), [p.sharing.publicKey]);
-    const idx = signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [packEntry(pack)] });
+    const idx = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: p.cert, packs: [packEntry(pack)] });
     const stringy = resign(idx, p.device.sign.secretKey, (b) => {
       b['packs'] = [canonicalize(packEntry(pack))];
     });
@@ -247,15 +247,15 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
 
   it('a move is a new rotation; the newest index left at the old address is a redirect', () => {
     const marie = person(REAL);
-    const r0 = signIndex(marie.signer, { seq: 4, sharingCert: marie.cert, packs: [] });
+    const r0 = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 4, sharingCert: marie.cert, packs: [] });
     // Same rotation, other address: two certificates for one rotation (fork).
     const sameRot = issueSharingCert(marie.id, marie.sharing.publicKey, { rotation: 0, location: NEW });
-    expect(() => verifyIndex(serialize(signIndex(marie.signer, { seq: 5, sharingCert: sameRot, packs: [] })), { lastSeen: r0 })).toThrow(
+    expect(() => verifyIndex(serialize(signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 5, sharingCert: sameRot, packs: [] })), { lastSeen: r0 })).toThrow(
       expect.objectContaining({ code: 'ROLLBACK', fork: true }),
     );
     // The master issues rotation 1 (same sharing key allowed) with the new address.
     const moved = issueSharingCert(marie.id, marie.sharing.publicKey, { rotation: 1, location: NEW });
-    const r1 = signIndex(marie.signer, { seq: 1, sharingCert: moved, packs: [] });
+    const r1 = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: moved, packs: [] });
     // A friend reading the old address finds r1 left there: verified, then told where to go.
     expect(() => verifyIndex(serialize(r1), { expectedOwner: marie.id.owner, lastSeen: r0, location: REAL })).toThrow(
       expect.objectContaining({ code: 'MOVED', location: NEW }),
@@ -287,19 +287,27 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
     expect(next).toBe(NEW);
     const idx = verifyIndex(latest, { expectedOwner: received.owner, location: next });
     expect(() => checkInvitationIndex(received, idx, { now })).toThrow(expect.objectContaining({ code: 'NOT_LISTED' }));
-    // An invitation made by the tablet before the move is still listed, and followed to the new address.
+    // An invitation made by the tablet before the move is cancelled by the later rotation (R5-01):
+    // the link is followed to the new address, then refused there.
     const byTablet = createInvitation(tabletSigner, marie.cert, { now });
     const tabletLink = parseInvitationLink(byTablet.fragment, { now });
-    const latest2 = serialize(signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], invitations: [invitation, byTablet.invitation], vaultDataKey: marie.vaultDataKey, now }));
+    const fresh = createInvitation(tabletSigner, cert2, { now });
+    const latest2 = serialize(signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], invitations: [invitation, byTablet.invitation, fresh.invitation], vaultDataKey: marie.vaultDataKey, now }));
     expect(() => verifyIndex(latest2, { expectedOwner: tabletLink.owner, location: tabletLink.location, now })).toThrow(expect.objectContaining({ code: 'MOVED' }));
-    expect(() => checkInvitationIndex(tabletLink, verifyIndex(latest2, { expectedOwner: tabletLink.owner, location: NEW, now }), { now })).not.toThrow();
+    expect(() => checkInvitationIndex(tabletLink, verifyIndex(latest2, { expectedOwner: tabletLink.owner, location: NEW, now }), { now })).toThrow(
+      expect.objectContaining({ code: 'NOT_LISTED' }),
+    );
+    // A link made under the current certificate names the new address and is listed.
+    const freshLink = parseInvitationLink(fresh.fragment, { now });
+    expect(freshLink.location).toBe(NEW);
+    expect(() => checkInvitationIndex(freshLink, verifyIndex(latest2, { expectedOwner: freshLink.owner, location: NEW, now }), { now })).not.toThrow();
   });
 
   it('checkInvitationIndex refuses to reset an existing contact to trust on first use (lastSeen)', () => {
     const marie = person(REAL);
     const k1 = generateX25519KeyPair();
     const cert1 = issueSharingCert(marie.id, k1.publicKey, { rotation: 1, location: REAL });
-    const lastSeen = signIndex(marie.signer, { seq: 3, sharingCert: cert1, packs: [], now });
+    const lastSeen = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 3, sharingCert: cert1, packs: [], now });
     const { invitation, fragment } = createInvitation(marie.signer, marie.cert, { now });
     const received = parseInvitationLink(fragment, { now });
     const old = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [invitation], vaultDataKey: marie.vaultDataKey, now });
@@ -314,7 +322,7 @@ describe('V3-01: the read address is master-certified; moving storage needs the 
     const noStorage = issueSharingCert(friend.id, friend.sharing.publicKey, { rotation: 0 });
     const answer = collectInvitationAnswers(invitation, [createInvitationResponse(accept(fragment, index, now), friend.signer, noStorage, { now })], { now }).accepted!;
     expect(answer.location).toBeUndefined();
-    expect(() => checkInvitationIndex(answer, signIndex(friend.signer, { seq: 1, sharingCert: friend.cert, packs: [] }))).toThrow(
+    expect(() => checkInvitationIndex(answer, signIndex(friend.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: friend.cert, packs: [] }))).toThrow(
       expect.objectContaining({ code: 'FORMAT' }),
     );
   });
@@ -340,7 +348,7 @@ describe('V3-03: extension rules on certificates', () => {
     const ext = signBody('sharing-cert', body, p.id.master.secretKey);
     const cert = verifySharingCert(ext).cert;
     expect((cert as unknown as Record<string, unknown>)['note']).toBe('added later');
-    const idx = signIndex(p.signer, { seq: 1, sharingCert: cert, packs: [] });
+    const idx = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert, packs: [] });
     expect((verifyIndex(serialize(idx)).sharing_cert as unknown as Record<string, unknown>)['note']).toBe('added later');
     // Not without a higher minor. The short invitation link carries no certificate, so such an owner
     // can invite; a return link (binary compact certificate) still cannot carry it.
@@ -358,28 +366,28 @@ describe('V3-03: extension rules on certificates', () => {
 describe('V3-13: signIndex refuses to publish an index readers would refuse', () => {
   it('with `previous`: no rollback, and seq = previous + 1 within the rotation', () => {
     const p = person();
-    const i1 = signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [] });
-    expect(signIndex(p.signer, { seq: 2, sharingCert: p.cert, packs: [], previous: i1 }).seq).toBe(2);
-    expect(() => signIndex(p.signer, { seq: 1 + 2 ** 21, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
-    expect(() => signIndex(p.signer, { seq: 5, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
-    expect(() => signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    const i1 = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: p.cert, packs: [] });
+    expect(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: p.cert, packs: [], previous: i1 }).seq).toBe(2);
+    expect(() => signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1 + 2 ** 21, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 5, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: p.cert, packs: [], previous: i1 })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     // A new rotation may restart seq.
     const cert1 = issueSharingCert(p.id, generateX25519KeyPair().publicKey, { rotation: 1, location: p.location });
-    expect(signIndex(p.signer, { seq: 1, sharingCert: cert1, packs: [], previous: indexAnchor(i1) }).seq).toBe(1);
+    expect(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [], previous: indexAnchor(i1) }).seq).toBe(1);
   });
 });
 
 describe('Index anchors (vault form of lastSeen)', () => {
   it('checkNoRollback and verifyIndex accept an anchor, including fork detection', () => {
     const p = person();
-    const i2 = signIndex(p.signer, { seq: 2, sharingCert: p.cert, packs: [] });
+    const i2 = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: p.cert, packs: [] });
     const a = indexAnchor(i2);
     expect(a).toMatchObject({ type: 'index-anchor', owner: p.id.owner, seq: 2, version: INDEX_VERSION });
     expect(() => verifyIndex(serialize(i2), { lastSeen: a })).not.toThrow();
-    expect(() => verifyIndex(serialize(signIndex(p.signer, { seq: 1, sharingCert: p.cert, packs: [] })), { lastSeen: a })).toThrow(
+    expect(() => verifyIndex(serialize(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: p.cert, packs: [] })), { lastSeen: a })).toThrow(
       expect.objectContaining({ code: 'ROLLBACK' }),
     );
-    const fork = signIndex(p.signer, { seq: 2, sharingCert: p.cert, packs: [], reads: ['4', '4.1'] });
+    const fork = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: p.cert, packs: [], reads: ['4', '4.1'] });
     expect(() => verifyIndex(serialize(fork), { lastSeen: a })).toThrow(expect.objectContaining({ code: 'ROLLBACK', fork: true }));
   });
 });

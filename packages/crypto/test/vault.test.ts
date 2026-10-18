@@ -20,7 +20,7 @@ import {
   verifyIndex,
   type VaultRecords,
 } from '../src/index';
-import { accept, invite, person } from './helpers';
+import { accept, invite, person, PAD_KEY } from './helpers';
 
 const now = new Date('2026-10-18T12:00:00.000Z');
 
@@ -28,7 +28,7 @@ const now = new Date('2026-10-18T12:00:00.000Z');
 function setup() {
   const marie = person();
   const lea = person();
-  const leaIndex = signIndex(lea.signer, { seq: 7, sharingCert: lea.cert, packs: [] });
+  const leaIndex = signIndex(lea.signer, { vaultDataKey: PAD_KEY, seq: 7, sharingCert: lea.cert, packs: [] });
   const { invitation, fragment, index } = invite(marie, { now });
   const answer = createInvitationResponse(accept(fragment, index, now), lea.signer, lea.cert, { now });
   const records: VaultRecords = {
@@ -55,7 +55,7 @@ describe('recovery vault records (V3-10)', () => {
     // The anchor is a lastSeen: an older index of Léa is refused, the same one accepted.
     const anchor = back.contacts[0]!.anchor!;
     expect(() => verifyIndex(serialize(leaIndex), { expectedOwner: lea.id.owner, lastSeen: anchor })).not.toThrow();
-    const older = signIndex(lea.signer, { seq: 6, sharingCert: lea.cert, packs: [] });
+    const older = signIndex(lea.signer, { vaultDataKey: PAD_KEY, seq: 6, sharingCert: lea.cert, packs: [] });
     expect(() => verifyIndex(serialize(older), { expectedOwner: lea.id.owner, lastSeen: anchor })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     // Another device restores the open invitation and its answers, and keeps collecting (R-04, V3-02).
     const rec = invitationFromRecord(back.invitations[0]!, marie.id.owner);
@@ -110,11 +110,11 @@ describe('recovery vault records (V3-10)', () => {
 
   it('merges two concurrent versions: later anchors win, answers and retired owners are united', () => {
     const { marie, lea, records } = setup();
-    const lea8 = signIndex(lea.signer, { seq: 8, sharingCert: lea.cert, packs: [] });
+    const lea8 = signIndex(lea.signer, { vaultDataKey: PAD_KEY, seq: 8, sharingCert: lea.cert, packs: [] });
     const paul = person();
     const other: VaultRecords = {
       ...records,
-      contacts: [contactRecord(lea8, false), contactRecord(signIndex(paul.signer, { seq: 1, sharingCert: paul.cert, packs: [] }))],
+      contacts: [contactRecord(lea8, false), contactRecord(signIndex(paul.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: paul.cert, packs: [] }))],
       invitations: [{ ...records.invitations[0]!, answers: ['AAAA'] }],
       retired_owners: [person().id.owner],
     };

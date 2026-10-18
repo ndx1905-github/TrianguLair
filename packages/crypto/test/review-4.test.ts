@@ -44,7 +44,7 @@ import {
   type VaultRecords,
 } from '../src/index';
 import { signInvitationRecord } from '../src/invitation-listing';
-import { accept, invite, person, te } from './helpers';
+import { accept, invite, person, te, PAD_KEY } from './helpers';
 
 const H = 60 * 60 * 1000;
 const D = 24 * H;
@@ -152,7 +152,9 @@ describe('V4-01 (high): the vault invitation records are not authenticated, so a
     const skipped: InvitationSkipReason[] = [];
     const index = declare(h, sealed, { cancel: false, skipped });
     expect(index.sharing_cert.rotation).toBe(1);
-    expect(skipped).toEqual(['invalid', 'invalid']);
+    // The phone's record is revoked (may be deleted); the honest device's record is genuine but not
+    // listable under this certificate (R5-02: kept, and it ends as "expired" within 7 days).
+    expect([...skipped].sort()).toEqual(['not-yet', 'revoked']);
     expect(declare(h, sealed).sharing_cert.rotation).toBe(1);
   });
 });
@@ -167,7 +169,7 @@ describe('V4-02 (medium): open invitations whose seeds the stolen device read st
     // "Friends" content was wrapped to the open invitation (spec: the invitee sees it immediately).
     const lea = person();
     const friends = sealPack(owner, te.encode('friends places'), [lea.sharing.publicKey, invitation.keyPair.publicKey]);
-    const own = signIndex(h.tabletSigner, { seq: 1, sharingCert: h.cert1, packs: [packEntry(friends)], now: decl });
+    const own = signIndex(h.tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: h.cert1, packs: [packEntry(friends)], now: decl });
     // The declaration cancels every open invitation (V4-02) and re-encrypts without their keys.
     const { records, cancelled } = cancelAllInvitations(openVault(sealed, owner, h.marie.vaultDataKey));
     expect(records.invitations).toEqual([]);
@@ -175,7 +177,7 @@ describe('V4-02 (medium): open invitations whose seeds the stolen device read st
     expect(cancelled[0]!.accepted).toBeUndefined(); // the friend had not answered: they need a new link
     const fresh = retireInvitationKey([friends], own, cancelled.map((c) => c.keyPair), () => [lea.sharing.publicKey]);
     expect(fresh).toHaveLength(1);
-    const after = signIndex(h.tabletSigner, { seq: 2, sharingCert: h.cert1, packs: [packEntry(fresh[0]!.bytes)], now: decl });
+    const after = signIndex(h.tabletSigner, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: h.cert1, packs: [packEntry(fresh[0]!.bytes)], now: decl });
     expect(() => openPack(fresh[0]!.bytes, after, [invitation.keyPair])).toThrow(expect.objectContaining({ code: 'NO_MATCHING_KEY' }));
     expect(openPack(fresh[0]!.bytes, after, [lea.sharing]).payload).toEqual(te.encode('friends places'));
     // The thief, who holds the seed, can no longer get the link confirmed.
@@ -298,15 +300,16 @@ describe('notes and new behaviour', () => {
       now: decl,
       onSkip: (i, why) => seen.push([i.id, why]),
     });
-    expect(seen.map(([, why]) => why)).toEqual(['expired', 'revoked', 'invalid', 'invalid', 'invalid']);
+    expect(seen.map(([, why]) => why)).toEqual(['expired', 'revoked', 'not-yet', 'invalid', 'invalid']);
     expect(index.invitations).toHaveLength(4);
     const token = invitationToken(parseKey('ed25519', h.marie.id.owner), ok.keyPair.publicKey, ok.rotation, Date.parse(ok.expires) / 1000, ok.location);
     expect(index.invitations).toContain(token);
-    // Listing invitations needs the owner-wide padding key.
+    // Every index needs the owner-wide padding key (N-3 of the fifth review: the field is always written).
+    // @ts-expect-error vaultDataKey is required
     expect(() => signIndex(h.tabletSigner, { seq: 2, sharingCert: h.cert1, packs: [], invitations: [ok], now: decl })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
   });
 
-  it('the token binds the read address: the owner recomputes it from the record after a storage move', () => {
+  it('the token binds the read address; a storage move (new rotation) cancels the invitations open before it (R5-01)', () => {
     const h = household();
     const { invitation, fragment } = createInvitation(h.tabletSigner, h.marie.cert, { now: t0 });
     expect(invitation.location).toBe(REAL);
@@ -314,9 +317,13 @@ describe('notes and new behaviour', () => {
     expect(rec.location).toBe(REAL);
     const NEW = 'https://new.example.net/marie/';
     const moved = issueSharingCert(h.marie.id, generateX25519KeyPair().publicKey, { rotation: 1, location: NEW });
-    const index = signIndex(h.tabletSigner, { seq: 1, sharingCert: moved, packs: [], invitations: [rec], vaultDataKey: h.marie.vaultDataKey, now: t0 });
+    const skipped: InvitationSkipReason[] = [];
+    const index = signIndex(h.tabletSigner, { seq: 1, sharingCert: moved, packs: [], invitations: [rec], vaultDataKey: h.marie.vaultDataKey, now: t0, onSkip: (_i, why) => skipped.push(why) });
+    expect(skipped).toEqual(['superseded']);
     const received = parseInvitationLink(fragment, { now: t0 });
     expect(() => verifyIndex(serialize(index), { expectedOwner: received.owner, location: received.location, now: t0 })).toThrow(expect.objectContaining({ code: 'MOVED' }));
-    expect(() => checkInvitationIndex(received, verifyIndex(serialize(index), { expectedOwner: received.owner, location: NEW, now: t0 }), { now: t0 })).not.toThrow();
+    expect(() => checkInvitationIndex(received, verifyIndex(serialize(index), { expectedOwner: received.owner, location: NEW, now: t0 }), { now: t0 })).toThrow(
+      expect.objectContaining({ code: 'NOT_LISTED' }),
+    );
   });
 });

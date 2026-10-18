@@ -44,7 +44,7 @@ import {
 } from '../src/index';
 import { checkLocation } from '../src/invitation';
 import { signBody } from '../src/sign';
-import { accept, invite, mutateHeader, person, publish, seal, te, trust } from './helpers';
+import { accept, invite, mutateHeader, person, publish, seal, te, trust, PAD_KEY } from './helpers';
 
 const now = new Date('2026-10-13T12:00:00.000Z');
 const LOCATION = 'https://cloud.example.org/s/AbCdEfGh12345';
@@ -62,52 +62,52 @@ function theft() {
 describe('R-01 (high): a stolen, not-yet-revoked device can no longer block its own revocation', () => {
   it('a master-signed higher rotation (revoking the thief) is accepted after a jammed seq', () => {
     const { marie, tabletSigner, cert1 } = theft();
-    const before = signIndex(marie.signer, { seq: 1, sharingCert: marie.cert, packs: [] });
+    const before = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: marie.cert, packs: [] });
     // The thief, before the owner notices, publishes the largest possible seq.
-    const jam = signIndex(marie.signer, { seq: Number.MAX_SAFE_INTEGER, sharingCert: marie.cert, packs: [] });
+    const jam = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: Number.MAX_SAFE_INTEGER, sharingCert: marie.cert, packs: [] });
     // A reader that already follows Marie refuses the jump outright (bounded seq growth)...
     expect(() => verifyIndex(serialize(jam), { lastSeen: before })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     // ...and a brand-new reader (no lastSeen) that accepted it is not locked out either.
     const friendSeen = verifyIndex(serialize(jam));
-    const revocation = signIndex(tabletSigner, { seq: 2, sharingCert: cert1, packs: [] });
+    const revocation = signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 2, sharingCert: cert1, packs: [] });
     expect(() => verifyIndex(serialize(revocation), { lastSeen: friendSeen })).not.toThrow();
     expect(() => verifyIndex(serialize(revocation), { lastSeen: before })).not.toThrow();
     // From then on, nothing the phone signs is accepted, whatever its seq.
     const after = verifyIndex(serialize(revocation), { lastSeen: friendSeen });
-    const stale = signIndex(marie.signer, { seq: 3, sharingCert: marie.cert, packs: [] });
+    const stale = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 3, sharingCert: marie.cert, packs: [] });
     expect(() => verifyIndex(serialize(stale), { lastSeen: after })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     expect(() => verifyIndex(serialize(jam), { lastSeen: after })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
-    expect(() => signIndex(marie.signer, { seq: 4, sharingCert: cert1, packs: [] })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
+    expect(() => signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 4, sharingCert: cert1, packs: [] })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
   });
 
   it('variant: a reader served the revoked device\'s old-certificate index still accepts the revocation', () => {
     const { marie, tabletSigner, cert1 } = theft();
-    const before = signIndex(marie.signer, { seq: 10, sharingCert: marie.cert, packs: [] });
-    const served = verifyIndex(serialize(signIndex(marie.signer, { seq: 10 + MAX_SEQ_STEP, sharingCert: marie.cert, packs: [] })), { lastSeen: before });
-    const revocation = signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [] }); // seq restarts on a new rotation
+    const before = signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 10, sharingCert: marie.cert, packs: [] });
+    const served = verifyIndex(serialize(signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 10 + MAX_SEQ_STEP, sharingCert: marie.cert, packs: [] })), { lastSeen: before });
+    const revocation = signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [] }); // seq restarts on a new rotation
     expect(verifyIndex(serialize(revocation), { lastSeen: served }).sharing_cert.rotation).toBe(1);
   });
 
   it('within one rotation: seq may grow by at most MAX_SEQ_STEP; lower seq and forks are refused', () => {
     const p = person();
     expect(MAX_SEQ_STEP).toBe(2 ** 20);
-    const base = signIndex(p.signer, { seq: 5, sharingCert: p.cert, packs: [] });
-    expect(() => checkNoRollback(signIndex(p.signer, { seq: 5 + MAX_SEQ_STEP, sharingCert: p.cert, packs: [] }), base)).not.toThrow();
-    expect(() => checkNoRollback(signIndex(p.signer, { seq: 6 + MAX_SEQ_STEP, sharingCert: p.cert, packs: [] }), base)).toThrow(
+    const base = signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 5, sharingCert: p.cert, packs: [] });
+    expect(() => checkNoRollback(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 5 + MAX_SEQ_STEP, sharingCert: p.cert, packs: [] }), base)).not.toThrow();
+    expect(() => checkNoRollback(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 6 + MAX_SEQ_STEP, sharingCert: p.cert, packs: [] }), base)).toThrow(
       expect.objectContaining({ code: 'ROLLBACK', fork: false }),
     );
-    expect(() => checkNoRollback(signIndex(p.signer, { seq: 4, sharingCert: p.cert, packs: [] }), base)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => checkNoRollback(signIndex(p.signer, { vaultDataKey: PAD_KEY, seq: 4, sharingCert: p.cert, packs: [] }), base)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
   });
 
   it('a higher rotation must still not un-revoke a device, and a new rotation then orders by seq again', () => {
     const { marie, tabletSigner, cert1 } = theft();
-    const r1 = signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [] });
+    const r1 = signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [] });
     const unrevoke = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 2, location: marie.location });
-    expect(() => checkNoRollback(signIndex(tabletSigner, { seq: 1, sharingCert: unrevoke, packs: [] }), r1)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => checkNoRollback(signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: unrevoke, packs: [] }), r1)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     const cert2 = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 2, revokedDevices: [marie.device.id], location: marie.location });
-    const r2 = signIndex(tabletSigner, { seq: 1, sharingCert: cert2, packs: [] });
+    const r2 = signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert2, packs: [] });
     expect(() => checkNoRollback(r2, r1)).not.toThrow();
-    expect(() => checkNoRollback(signIndex(tabletSigner, { seq: 0, sharingCert: cert2, packs: [] }), r2)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => checkNoRollback(signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 0, sharingCert: cert2, packs: [] }), r2)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
   });
 });
 
@@ -148,7 +148,7 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     const { marie, cert1 } = theft();
     expect(() => createInvitation(marie.signer, cert1, { now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const { invitation } = createInvitation(marie.signer, marie.cert, { now });
-    expect(() => signIndex(marie.signer, { seq: 1, sharingCert: cert1, packs: [], invitations: [invitation], now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
+    expect(() => signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [], invitations: [invitation], now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const owner = person();
     const o = invite(owner, { now });
     const received = accept(o.fragment, o.index, now);
@@ -176,12 +176,15 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     // An old index (rotation 0, signed by the now-revoked phone) served to the new friend is refused, even if it lists the link.
     // (signIndex skips a rotation-1 invitation under a rotation-0 certificate: the thief signs it by hand.)
     expect(signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], ...listing }).invitations).not.toContain(received.token);
-    const { signature: _s, ...body } = JSON.parse(serialize(signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], now }))) as Record<string, unknown>;
+    const { signature: _s, ...body } = JSON.parse(serialize(signIndex(marie.signer, { vaultDataKey: PAD_KEY, seq: 99, sharingCert: marie.cert, packs: [], now }))) as Record<string, unknown>;
     const forged = serialize(signBody('index', { ...body, invitations: [received.token, ...padding].sort() }, marie.device.sign.secretKey));
     const old = verifyIndex(forged, { expectedOwner: marie.id.owner, location: marie.location, now });
     expect(() => checkInvitationIndex(received, old, { now })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [], ...listing }), { now })).not.toThrow();
-    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], ...listing }), { now })).not.toThrow();
+    // A later rotation cancels the invitation (R5-01), even if a writer listed it anyway.
+    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], ...listing }), { now })).toThrow(
+      expect.objectContaining({ code: 'NOT_LISTED' }),
+    );
     // The tablet is later revoked too: the next index no longer lists its invitations, so its old link leads nowhere.
     const phone2 = generateDeviceKeys();
     const phone2Signer = { keys: phone2, cert: issueDeviceCert(marie.id, devicePublicKeys(phone2)) };
@@ -191,7 +194,7 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     expect(() => checkInvitationIndex(received, i3, { now })).toThrow(expect.objectContaining({ code: 'NOT_LISTED' }));
     // Another owner's index, or an unverified object.
     const other = person();
-    const otherIndex = signIndex(other.signer, { seq: 1, sharingCert: other.cert, packs: [] });
+    const otherIndex = signIndex(other.signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: other.cert, packs: [] });
     expect(() => checkInvitationIndex(received, otherIndex, { now })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
     expect(() => checkInvitationIndex(received, { ...signIndex(tabletSigner, { seq: 3, sharingCert: cert1, packs: [], ...listing }) } as SignedIndex, { now })).toThrow();
   });
@@ -202,8 +205,8 @@ describe('R-03 (medium): inviting and answering need no master key', () => {
     const { marie: friend, tabletSigner, cert1 } = theft();
     const resp = createInvitationResponse(accept(fragment, index, now), tabletSigner, cert1, { now });
     const answer = collectInvitationAnswers(invitation, [resp], { now }).accepted!;
-    expect(() => checkInvitationIndex(answer, signIndex(friend.signer, { seq: 50, sharingCert: friend.cert, packs: [] }))).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
-    expect(() => checkInvitationIndex(answer, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [] }))).not.toThrow();
+    expect(() => checkInvitationIndex(answer, signIndex(friend.signer, { vaultDataKey: PAD_KEY, seq: 50, sharingCert: friend.cert, packs: [] }))).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => checkInvitationIndex(answer, signIndex(tabletSigner, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert1, packs: [] }))).not.toThrow();
   });
 });
 
@@ -338,7 +341,7 @@ describe('R-11 (low): conflicting identity moves are reported', () => {
       const d = generateDeviceKeys();
       const signer = { keys: d, cert: issueDeviceCert(id, devicePublicKeys(d)) };
       const cert = issueSharingCert(id, generateX25519KeyPair().publicKey, { rotation: 0, location: LOCATION });
-      return signIndex(signer, { seq: 1, sharingCert: cert, packs: [], move: issueIdentityMove(marie.id, id) });
+      return signIndex(signer, { vaultDataKey: PAD_KEY, seq: 1, sharingCert: cert, packs: [], move: issueIdentityMove(marie.id, id) });
     };
     // The reader followed the thief's move first.
     const toReal = indexOf(real);

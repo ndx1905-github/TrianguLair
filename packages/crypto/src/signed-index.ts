@@ -69,7 +69,9 @@ import { isVerified, markVerified, verifiedInfo } from './verified';
  *
  * Invitations (part of 4.0, V4-03): `invitations` lists one token per open invitation
  * (invitation-listing.ts), sorted, padded with dummy tokens to a power of two (at least 4, at most
- * 256). It is what binds a short invitation link to the owner: the link is unsigned, and a reader
+ * 256), and is written in every index (padding only when none is open). Only invitations created
+ * under the index's own sharing-cert rotation are listed (R5-01): a rotation cancels the others.
+ * It is what binds a short invitation link to the owner: the link is unsigned, and a reader
  * accepts it only if the index read at the owner's certified address lists its token
  * (checkInvitationIndex).
  *
@@ -146,16 +148,32 @@ export interface DeviceSigner {
   cert: DeviceCert;
 }
 
-/** Why signIndex did not list an invitation (V4-01): reported through IndexContent.onSkip. */
+/**
+ * Why signIndex did not list an invitation (V4-01, R5-02): reported through IndexContent.onSkip.
+ * Only `"invalid"`, `"revoked"` and `"expired"` (after the answer grace period) allow deleting the
+ * vault record; `"superseded"` and `"not-yet"` records are genuine and must be kept (they end as
+ * `"expired"` within 7 days).
+ */
 export type InvitationSkipReason =
   /** Expired at `now` (the normal end; the record is kept for the grace period, then swept). */
   | 'expired'
   /** Created by a device that the sharing certificate revokes (declared lost). */
   | 'revoked'
   /**
-   * Cannot be listed: another owner, a newer rotation than the certificate, created in the
-   * future, lifetime over 7 days, malformed, or a device certificate or signature that does not
-   * verify (a planted or corrupted record: drop it from the vault and warn).
+   * Created under an older sharing-certificate rotation (R5-01): any rotation (a declaration of
+   * loss, a storage move, a new sharing key) cancels the invitations open at that time. Keep the
+   * record (late answers, expiry sweep), never list it again, and wrap nothing more to its key.
+   */
+  | 'superseded'
+  /**
+   * Genuine but not listable yet (R5-02): created more than 5 minutes after `now` (a creating
+   * device whose clock is ahead) or under a newer rotation than this certificate (the publishing
+   * device has not received the newer certificate yet). Keep the record; it is listed later.
+   */
+  | 'not-yet'
+  /**
+   * Cannot be listed: another owner, lifetime over 7 days, malformed, or a device certificate or
+   * signature that does not verify (a planted or corrupted record: drop it from the vault and warn).
    */
   | 'invalid';
 
@@ -173,21 +191,25 @@ export interface IndexContent {
   /**
    * Open invitations of this owner (e.g. every invitation record of the recovery vault). Listed
    * are those whose creating device's certificate and signature verify (V4-01), that last at most
-   * 7 days, were created at most 5 minutes after `now` and at a rotation <= the certificate's, are
-   * not expired at `now`, and whose creating device `sharingCert` does not revoke (a link made by
-   * a device declared lost stops working). Every other one is skipped and reported to `onSkip`:
-   * a record never prevents publishing an index. Publish the index listing a new invitation
-   * BEFORE sending its link: the link works only once it is listed.
+   * 7 days, are not expired at `now`, whose creating device `sharingCert` does not revoke (a link
+   * made by a device declared lost stops working), that were created under the rotation of
+   * `sharingCert` itself (R5-01: any rotation cancels the invitations open before it, so a vault
+   * copy merged back after a declaration cannot relist them) and at most 5 minutes after `now`.
+   * Every other one is skipped and reported to `onSkip`: a record never prevents publishing an
+   * index. Publish the index listing a new invitation BEFORE sending its link: the link works
+   * only once it is listed. invitationStatus() gives the same verdict for one invitation.
    */
   invitations?: readonly OwnerInvitation[];
   /** Called for each invitation that is not listed, with the reason. */
   onSkip?: (invitation: OwnerInvitation, reason: InvitationSkipReason) => void;
   /**
    * The owner's vault data key (SharingKey.vaultDataKey), from which the padding of the listing is
-   * derived, the same on every device (V4-05). When given, the `invitations` field is always
-   * written (at least 4 entries, even with no open invitation). Required to list invitations.
+   * derived, the same on every device (V4-05). Required: the `invitations` field is written in
+   * every index (at least 4 entries, padding only when no invitation is open), so that the index
+   * never tells whether an invitation is open. Every device that can publish holds this key
+   * (it travels with the sharing key in TLSK v2 and in the key export).
    */
-  vaultDataKey?: Uint8Array;
+  vaultDataKey: Uint8Array;
   /**
    * The index currently on the storage (or its anchor). When given, the new index must not be older
    * (checkNoRollback) and, within the same rotation, must use seq = previous.seq + 1 (V3-13).
@@ -217,11 +239,7 @@ export function signIndex(signer: DeviceSigner, content: IndexContent): SignedIn
   if (content.public !== undefined) body['public'] = { file: content.public.file, hash: content.public.hash };
   if (content.move !== undefined) body['move'] = { ...content.move };
   const listed = listableTokens(content.invitations ?? [], cert, now, content.onSkip);
-  if (content.vaultDataKey !== undefined) {
-    body['invitations'] = padListing(listed, listingPadKey(content.vaultDataKey), now);
-  } else if (listed.length > 0) {
-    throw new FormatError('index: pass vaultDataKey to list invitations (padding key)');
-  }
+  body['invitations'] = padListing(listed, listingPadKey(content.vaultDataKey), now);
   const signed = signBody('index', body, signer.keys.sign.secretKey);
   // Round-trip through the verifier so we never publish something we would reject.
   const idx = verifyIndex(canonicalize(signed), { expectedOwner: cert.owner, location: cert.location, now: new Date(now) });
@@ -237,19 +255,35 @@ export function signIndex(signer: DeviceSigner, content: IndexContent): SignedIn
 
 const CREATED_SKEW_MS = 5 * 60 * 1000;
 
-/** Token of an invitation listable under `cert` at `now`, or the reason it is not (never throws). */
+/**
+ * Token of an invitation listable under `cert` at `now`, or the reason it is not (never throws).
+ * Order: invalid, revoked, expired, superseded, not-yet (a genuine record always ends as
+ * "expired", which lets the app sweep it after the grace period).
+ */
 function listable(inv: OwnerInvitation, cert: SharingCert, now: number): string | InvitationSkipReason {
   try {
     if (inv.owner !== cert.owner) return 'invalid';
     checkOwnerInvitation(inv, 'index.invitation'); // device certificate, signature, lifetime <= 7 days
-    if (inv.rotation > cert.rotation || Date.parse(inv.created) > now + CREATED_SKEW_MS) return 'invalid';
     if (cert.revoked_devices.includes(inv.device)) return 'revoked';
     const expires = Date.parse(inv.expires);
     if (expires <= now) return 'expired';
+    if (inv.rotation < cert.rotation) return 'superseded';
+    if (inv.rotation > cert.rotation || Date.parse(inv.created) > now + CREATED_SKEW_MS) return 'not-yet';
     return invitationToken(parseKey('ed25519', cert.owner), inv.keyPair.publicKey, inv.rotation, expires / 1000, inv.location);
   } catch {
     return 'invalid';
   }
+}
+
+/**
+ * What signIndex would do with `invitation` under the owner's current `sharingCert` at `now`:
+ * `"listed"`, or the InvitationSkipReason. Use it to decide which invitation keys may still
+ * receive wraps of "friends" content: only `"listed"` ones (never a superseded, cancelled one).
+ */
+export function invitationStatus(invitation: OwnerInvitation, sharingCert: SharingCert, now?: Date): 'listed' | InvitationSkipReason {
+  const cert = verifySharingCert(sharingCert).cert;
+  const r = listable(invitation, cert, nowMs(now, 'invitation'));
+  return r.startsWith('b2b256:') ? 'listed' : (r as InvitationSkipReason);
 }
 
 function listableTokens(

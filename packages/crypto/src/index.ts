@@ -72,6 +72,7 @@ export {
   serialize,
   publicEntry,
   verifyPublicFile,
+  invitationStatus,
   INDEX_VERSION,
   INDEX_MINOR,
   MAX_SEQ_STEP,

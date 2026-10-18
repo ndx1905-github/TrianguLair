@@ -49,7 +49,8 @@ export { INVITATION_MAX_TTL_MS } from './invitation-listing';
  * 2. Invitee: parseInvitationLink() -> the seed gives the key pair; nothing is trusted yet. Read
  *    the owner's index at received.location ONLY (verifyIndex with expectedOwner and location;
  *    follow StorageMovedError), then checkInvitationIndex(): same owner, read at its certified
- *    address, rotation >= the link's, the invitation is LISTED, not expired. Only then show the
+ *    address, rotation = the link's (an older index is ROLLBACK; a later rotation cancelled the
+ *    invitation, R5-01), the invitation is LISTED, not expired. Only then show the
  *    invitation as the owner's, and only then createInvitationResponse() accepts it.
  * 3. Invitee: createInvitationResponse(confirmed invitation, own device signer, own sharing cert)
  *    -> compact binary return link signed by the invitee's DEVICE key (with its device cert),
@@ -447,10 +448,11 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
  * - the index was read at its own master-certified address (the link's location, or a newer one
  *   reached by following StorageMovedError), never at an address chosen by the link alone;
  * - same owner (a link naming another master key than the index's signer is refused);
- * - for an invitation link: the index's rotation is at least the link's (freshness floor), the
- *   index LISTS the invitation's token (code NOT_LISTED otherwise: never listed, withdrawn,
- *   expired, cancelled by a declaration of loss, or a forged link: another key, address, rotation
- *   or expiry, V4-04), and it has not expired.
+ * - for an invitation link: the index's rotation is at least the link's (freshness floor, ROLLBACK)
+ *   and equal to it (a later rotation cancelled the invitation, R5-01: NOT_LISTED), the index
+ *   LISTS the invitation's token (code NOT_LISTED otherwise: never listed, withdrawn, expired,
+ *   cancelled by a key rotation such as a declaration of loss or a storage move, or a forged
+ *   link: another key, address, rotation or expiry, V4-04), and it has not expired.
  *   On success the invitation is marked as confirmed (createInvitationResponse requires it);
  * - for a return link: the index's sharing certificate is not older than the one carried by the
  *   answer (same rotation => the very same certificate; a later rotation keeps every revocation),
@@ -475,6 +477,11 @@ export function checkInvitationIndex(
   if ('token' in source) {
     if (index.sharing_cert.rotation < source.rotation) {
       throw new RollbackError(`${W}: the index is older than the invitation (rotation ${index.sharing_cert.rotation} < ${source.rotation})`);
+    }
+    // R5-01: a rotation cancels every invitation open before it; an index of a later rotation
+    // never lists an older invitation (also checked here, against a writer that would).
+    if (index.sharing_cert.rotation !== source.rotation) {
+      throw new SignatureError(`${W}: the invitation was cancelled by a later key change of its owner`, 'NOT_LISTED');
     }
     if (!(index.invitations ?? []).includes(source.token)) {
       throw new SignatureError(`${W}: the owner's current index does not list this invitation`, 'NOT_LISTED');

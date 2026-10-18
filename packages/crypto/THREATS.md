@@ -4,7 +4,8 @@ Prototype, revised after the independent review T-002 (`docs/reviews/2026-10-13-
 review of its fixes (`docs/reviews/2026-10-13-crypto-fixes-review.md`, R-01 to R-13) and the third review of format v3
 (`docs/reviews/2026-10-18-crypto-v3-review.md`, V3-01 to V3-16, N-1 to N-6), then given a short invitation link
 (link version 5), and revised after the fourth review (`docs/reviews/2026-10-18-crypto-v4-review.md`, V4-01 to V4-08,
-N-1 to N-7: index 4.0 with `invitations`, token v2, vault v3); not audited.
+N-1 to N-7: index 4.0 with `invitations`, token v2, vault v3) and the fifth review before the v4 freeze
+(`docs/reviews/2026-10-18-crypto-v4-final-review.md`, R5-01 to R5-03, N-1 to N-5: no format change); not audited.
 Listed so later phases can decide what to fix.
 
 ## Identity & keys
@@ -25,13 +26,22 @@ Listed so later phases can decide what to fix.
       device's master-signed certificate (vault v3, V4-01), so the thief, who holds the vault data key, cannot write a
       record in another device's name nor change its dates (a lifetime over 7 days is refused everywhere). Records it
       signs with the phone's own key are skipped by `signIndex` once the certificate revokes the phone (`"revoked"`);
-      a malformed or impossible record (rotation 2^32 − 1, created in the future) is skipped (`"invalid"`), never
-      thrown on, so it cannot block the declaration's index;
+      a malformed or forged record is skipped (`"invalid"`), never thrown on, so it cannot block the declaration's
+      index. A genuine record that is not listable yet (a newer rotation, created up to 7 days "in the future") is
+      `"not-yet"` (R5-02): kept, not deleted, and it ends as `"expired"` within 7 days, so a planted one costs a vault
+      slot for at most a week;
     - the stolen device read the seed of **every** open invitation in the vault, including those other devices
       created, so the declaration cancels them all (`cancelAllInvitations`, V4-02) and re-encrypts what they opened
       without their keys (`retireInvitationKey` with all the cancelled key pairs). Before the declaration, the thief
       reads what is wrapped to those keys and can open answers sealed to them (the responders' public certificates and
       addresses); people invited who had not answered need a new link;
+    - the cancellation is a **listing rule**, not only a deletion (R5-01): an invitation is listed only under the
+      rotation it was created with, and a reader refuses a link whose rotation is older than the index's. A vault copy
+      from before the declaration (a device that had not seen it yet, or a vault the thief seals with the old vault data
+      key for a device that has not received the new one) can bring the records back through `mergeVaults`, but no index
+      lists them again. The app must also wrap content only to invitations `invitationStatus` reports as `"listed"`.
+      Cost: every rotation, a storage move included, cancels the open invitations, and the app asks the user to resend
+      them;
   - **after** the declaration, the device can still mint links (they are unsigned: anyone can write one naming any
     master key) and answers (device certificates never expire). A link is honoured only if the owner's index read at
     the link's address is verified there as its master-certified address (an attacker's address only leads, by a
@@ -97,6 +107,18 @@ Listed so later phases can decide what to fix.
   - `mergeVaults` is a simple union (later anchor wins, "verified" if either says so); un-marking "verified" on one
     device can be undone by a concurrent merge. Merging the free-form `app` part is the app's job. Unknown fields of a
     newer minor, its `minor` and `crit` are kept (V4-07), from the side the merge picks for a record present on both;
+  - answers to an invitation are capped at 16. Above the cap, `mergeVaults` keeps the answers that open and verify for
+    the invitation first, one per responder, the accepted one first (R5-03), so junk cannot evict a real second
+    responder. A thief holding the seed can still sign valid answers from identities of its own; those take slots,
+    but they are themselves other responders, so `multiple` / `late` still fire. `collectInvitationAnswers` counts
+    answers that do not verify in `rejected`;
+  - **fields written by a stolen device survive the declaration** (N-2 of the fifth review): merges keep the highest
+    `minor` (the thief can set 2^53 − 1, which turns off "unknown field without a higher minor is an error" for this
+    vault) and unknown fields, and `cancelAllInvitations` keeps everything but `invitations`. Harmless today, since no
+    such field has a meaning; the spec requires that a security-relevant vault field added later be device-signed (as
+    invitation records are) or come with a new major. `CancelledInvitation.accepted` and the `accepted`, `verified` and
+    `retired_owners` values are likewise chosen by whoever last held the vault data key: at a declaration the app should
+    start from its last copy from before the theft and show the differences (spec step 5);
   - the vault records are a canonical JSON document, not a CRDT: concurrent writers rely on `If-Match` and merge.
 - Secrets live in JS memory (`Uint8Array`); `memzero` is applied to intermediates (entropy, root, master seed, batch keys,
   plaintexts) but is best-effort: the GC may keep copies, and secrets that pass through JSON strings (key export, sealed
@@ -149,7 +171,8 @@ Listed so later phases can decide what to fix.
 - **Extension fields (V3-03, V4-03):** an older device that rewrites the index writes its own minor and drops fields it
   does not know (spec "Format versions": the index is derived from the owner's state, never copied; copying an unknown
   field blindly could keep listing invitations past expiry or across a declaration). `invitations` is part of index
-  4.0, so no 4.x writer drops it. A security-relevant extension that must neither be dropped nor copied needs a new
+  4.0, so no 4.x writer drops it, and `signIndex` writes it in every index (`vaultDataKey` is required), so an index
+  never tells whether an invitation is open. A security-relevant extension that must neither be dropped nor copied needs a new
   major version, published under its own file name during the transition. `crit` only protects readers, not round
   trips through older writers.
 - **`readFrom` is a caller declaration (N-3):** `verifyIndex(…, { location })` records the address the caller says it
@@ -203,7 +226,13 @@ Listed so later phases can decide what to fix.
   secret (F-02 mitigations unchanged). Changed: tampering with the expiry, rotation, seed or address is no longer a
   signature error but a token mismatch (`NOT_LISTED`; token v2 binds the address, V4-04).
 - **The link works only once listed.** The owner app must publish the index that lists a new invitation before sending
-  it, and keep it listed until expiry (also after acceptance, so a second answer can still arrive: R-04). An owner
+  it, and keep it listed until expiry (also after acceptance, so a second answer can still arrive: R-04). Any new
+  rotation of the sharing certificate (declaration of loss, storage move, new sharing key) ends the listing of every
+  invitation created before it (R5-01); the app tells the user which links to resend.
+- **The record signature has no version byte** (N-4 of the fifth review): the `invitation-record` signed bytes are
+  unambiguous today (fixed-length fields, then the length-prefixed address), but any future change must use a new
+  signature domain. `created` and `expires` are signed as seconds, so two ISO spellings of the same instant verify
+  alike (harmless). An owner
   without storage cannot invite (no index to vouch for the link); the app offers the storage wizard first, as the spec
   already required for sharing.
 - **The listing reveals metadata** (V4-05): tokens are unlinkable hashes (only a link holder can recompute one),

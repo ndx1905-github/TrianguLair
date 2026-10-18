@@ -36,7 +36,9 @@ await ready(); // required once before anything else
   message is `canonicalJSON(doc without "signature")` for JSON documents, or the signed bytes of a binary structure.
   Domains: `index | sharing-cert | device-cert | identity-move | identity-move-to | invitation | invitation-record |
   invitation-response` (`invitation` is no longer used: the short link of version 5 is unsigned; `invitation-record`
-  is the creating device's signature over a vault invitation record, see Invitation).
+  is the creating device's signature over a vault invitation record, see Invitation). The `invitation-record` signed
+  bytes carry no version byte: **any future change to the record's signed fields or their encoding must use a new
+  signature domain** (for example `invitation-record-v2`), never reuse this one.
 - **Versioning** (spec "Format versions", V3-03). Binary structures carry a single **major** version (the byte after
   the magic). JSON structures (index, certificates, identity move, pack header, sealed-key and key-export payloads,
   group-key payload, vault records) carry:
@@ -141,7 +143,10 @@ device     = random Ed25519 (signs indexes) + random X25519 (box), generated on 
   2. re-encrypt own content without the cancelled keys: `retireInvitationKey(packs, ownIndex,
      cancelled.map((c) => c.keyPair), recipientsFor)` re-encrypts every pack any of them opens (other packs are
      re-encrypted for the new sharing key as usual);
-  3. publish an index embedding the new cert (`signIndex({ …, invitations: [], vaultDataKey: newVaultDataKey })`);
+  3. publish an index embedding the new cert (`signIndex({ …, invitations, vaultDataKey: newVaultDataKey })`). The
+     cancellation does not rest on step 1 alone: `signIndex` lists only invitations created under the certificate's own
+     rotation (R5-01), so a record that a merge brings back from a copy made before the declaration (another device's
+     local copy, or a vault the thief sealed with the old key) is skipped as `"superseded"` and never listed again;
   4. tell the user that people invited who had not answered (no `accepted`) need a new link, and revoke the storage
      credentials of the current storage **and of every previous storage still holding a redirect** (V4-08).
 
@@ -159,7 +164,11 @@ device     = random Ed25519 (signs indexes) + random X25519 (box), generated on 
   revokedDevices })`, publish the new index at the new address **and** leave the same newest index at the old address
   for a few months (the signed redirect of the spec). A reader that verifies it with `location: oldAddress` gets
   `StorageMovedError { location: newAddress }` after full verification and reads only there from then on. Never leave
-  a stale index at an old address: replace it with the newest one, or delete it.
+  a stale index at an old address: replace it with the newest one, or delete it. **Like any new rotation, a move
+  cancels the open invitations** (R5-01): they become `"superseded"`. Keep their records until expiry + grace (answers
+  already sent can still be collected), stop wrapping content to their keys and retire them
+  (`retireInvitationKey(packs, index, superseded.map((i) => i.keyPair), recipientsFor)`), and tell the user which
+  links to resend (those without `accepted`).
 - **Identity change** (primary device stolen): `issueIdentityMove(oldIdentity, newIdentity)` →
   `{"from":"ed25519:old","issued":"…","signature":"<old master>","to":"ed25519:new","to_signature":"<new master>","type":"identity-move","version":1}`,
   published as the `move` field of the new identity's index. A reader calling `verifyIndex(…, { expectedOwner: old })`
@@ -262,7 +271,7 @@ embedded, so they share the index's rollback protection (one freshness anchor pe
 ```
 
 Optional `move` (identity move, see Keys), `minor` and `crit` (Versioning), and `invitations` (index 4.0, V4-03; written
-in every index whose signer passes `vaultDataKey`, optional for readers): the tokens of the owner's open invitations,
+in every index, padding only when nothing is open; optional for readers): the tokens of the owner's open invitations,
 sorted, padded with dummy tokens to a power of two (at least 4, at most 256), that vouch for short invitation links (see
 Invitation). The compact `sharing_cert` is the full
 certificate minus `type`, `version`, `owner` and `revoked_devices`, and is verified as the full certificate: the
@@ -270,17 +279,30 @@ top-level `owner` and `revoked_devices` are covered by the master signature, and
 index). The compact `device_cert` is verified as `{owner, device, box, …}`. At most 16 MiB (`MAX_INDEX_BYTES`), checked
 before parsing.
 
-- `signIndex({ keys, cert }, { seq, sharingCert, packs, reads?, public?, move?, invitations?, onSkip?, vaultDataKey?,
+- `signIndex({ keys, cert }, { seq, sharingCert, packs, vaultDataKey, reads?, public?, move?, invitations?, onSkip?,
   previous?, now? })` (round-trip verified). `invitations` takes the owner's open invitations (`OwnerInvitation[]`, e.g.
   `invitationFromRecord` of every vault record). It lists those of this owner whose creating device's certificate
-  (master-signed) and `invitation-record` signature verify, that last at most 7 days, were created at most 5 minutes
-  after `now` at a rotation ≤ the certificate's, have not expired and whose device the certificate does not revoke
-  (V4-01). Every other one is **skipped, never thrown on**, and reported to `onSkip(invitation, reason)` with `reason`
-  = `"expired"` (normal end), `"revoked"` (created by a device declared lost) or `"invalid"` (another owner, malformed,
-  unsigned, forged, too long, impossible rotation, created in the future: drop it from the vault and warn, unless this
-  device's clock is wrong): a vault record can never block publishing an index. `vaultDataKey` (the owner's,
-  `SharingKey.vaultDataKey`) keys the padding; with it the field is always written, and listing any invitation requires
-  it (`FORMAT`). With `previous` (the index currently on the storage, or its anchor) it refuses to publish an index that
+  (master-signed) and `invitation-record` signature verify, that last at most 7 days, have not expired, whose device
+  the certificate does not revoke (V4-01), that were created **under the certificate's own rotation** (R5-01) and at
+  most 5 minutes after `now`. Every other one is **skipped, never thrown on**, and reported to `onSkip(invitation,
+  reason)`:
+
+  | `reason` | Meaning | The vault record |
+  |---|---|---|
+  | `"invalid"` | another owner, malformed, unsigned, forged, lifetime over 7 days | delete it and warn (planted or corrupted) |
+  | `"revoked"` | created by a device the certificate revokes (declared lost) | may be deleted |
+  | `"expired"` | the normal end | keep until expiry + 7 days (late answers), then delete |
+  | `"superseded"` | created under an older rotation: cancelled by a declaration, a storage move or a key change | **keep** (until it is `"expired"`); never list, never wrap to it |
+  | `"not-yet"` | created under a newer rotation than this device's certificate, or more than 5 minutes after `now` (a clock ahead) | **keep**: it is listed once this device catches up (R5-02) |
+
+  Only `"invalid"`, `"revoked"` and `"expired"` allow deleting a record. The checks run in the table's order from
+  `"invalid"` down, except that `"expired"` comes before `"superseded"` and `"not-yet"`, so every genuine record ends as
+  `"expired"` within 7 days. `invitationStatus(invitation, sharingCert, now?)` gives the same verdict for one invitation
+  (`"listed"` or the reason): wrap "friends" content only to `"listed"` invitations. A vault record can never block
+  publishing an index. `vaultDataKey` (the owner's, `SharingKey.vaultDataKey`, which every publishing device holds) is
+  **required**: it keys the padding, and the field is written in every index so that it never tells whether an
+  invitation is open (a JavaScript caller that omits it gets `FORMAT`).
+  With `previous` (the index currently on the storage, or its anchor) it refuses to publish an index that
   readers would refuse: no rollback, and `seq = previous.seq + 1` within the same rotation (V3-13). The publish flow:
   read the storage index, verify it, sign with `previous`, write with `If-Match`. If the storage index jumped (a stale
   or buggy device), prompt for a new rotation.
@@ -336,7 +358,9 @@ record signature (creating device key, domain "invitation-record") over
 
 Token v2 binds **every** field of the link, the read address included (V4-04): a link whose address was rewritten is
 `NOT_LISTED` in the owner's genuine index, not merely redirected. The owner recomputes the token from the address kept
-in the record (`OwnerInvitation.location`), so links made before a storage move keep working through the redirect.
+in the record (`OwnerInvitation.location`). An invitation is listed only under the rotation it was created with
+(R5-01), so a storage move (a new rotation) cancels the links made before it: their readers follow the redirect, then
+get `NOT_LISTED`.
 
 50 + address length bytes; revoked devices and rotations no longer make it longer. `createInvitation` refuses a
 certificate without `location` (an owner without storage cannot invite: there is no index to vouch for the link; the
@@ -345,8 +369,9 @@ app offers the storage wizard first) and a signer that the certificate revokes; 
 deviceCert, location, created, expires, signature }`, signed by the creating device: V4-01) goes into the recovery
 vault (`invitationRecord`) and into **every index published until expiry**: `signIndex(signer, { …, invitations,
 vaultDataKey })`. **Publish the index that lists it before sending the link**: until then the invitee refuses it
-(`NOT_LISTED`). Listing stops automatically at expiry and when the device that created the invitation is declared lost;
-a declaration of loss also cancels every other open invitation (`cancelAllInvitations`, V4-02). The owner may withdraw
+(`NOT_LISTED`). Listing stops automatically at expiry, when the device that created the invitation is declared lost,
+and at **any** new rotation of the sharing certificate (R5-01: a declaration of loss, a storage move, a new sharing
+key); a declaration also removes every open invitation from the vault (`cancelAllInvitations`, V4-02). The owner may withdraw
 an invitation by no longer passing it (keep it listed after acceptance, until expiry, so that a second answer can still
 arrive and trigger the `late` warning).
 
@@ -373,7 +398,8 @@ now? })`:
   library cannot know where bytes came from): pass the address actually fetched;
 - same owner: the index is signed under the master key named by the link (`OWNER_MISMATCH` for a forged key);
 - the index's rotation is at least the link's (`ROLLBACK`): the freshness floor that the carried certificate used to
-  give;
+  give; and not later than the link's (`NOT_LISTED`: a later rotation cancelled the invitation, R5-01, even if a faulty
+  writer still lists its token);
 - the index **lists the invitation's token** (`NOT_LISTED`): only a device that the current master-signed certificate
   does not revoke can publish an index readers accept, so this replaces the device signature of version 4 (R-03,
   V3-01). A device declared lost can neither list a new invitation nor keep its old ones listed;
@@ -486,12 +512,22 @@ plaintext = u32 length ‖ canonical JSON records ‖ zero padding (Padmé, at l
   lifetime exceeds 7 days; they do not check revocation (signIndex does). Every device holds the vault data key, so
   this is what stops a stolen device from writing a record in another device's name or extending one.
 - `retired_owners`: identities that moved away (`IdentityMovedError.from`), passed as `retiredOwners` everywhere.
+- **Future fields** (spec "Recovery kit", N-2 of the fifth review): every device holds the vault data key, and merges keep
+  unknown fields and the highest `minor`, so whatever a stolen device wrote before the declaration survives the re-seal.
+  A security-relevant vault field added by a future minor must therefore be signed by the device that wrote it, with its
+  device certificate (as invitation records are), or come with a new major version; never trust such a field on the
+  vault data key alone.
 - Helpers: `emptyVault(owner)`, `contactRecord(verifiedIndex, verified?)`, `invitationRecord(invitation, { answers?,
   accepted? })`, `invitationFromRecord(record, owner) → { invitation, answers, accepted? }`, `sealVault(records,
   vaultDataKey)` (sorts, de-duplicates and validates first), `openVault(bytes, owner, vaultDataKey)` (validates,
   verifies every certificate and anchor, returns frozen records), `mergeVaults(a, b)` for two devices that wrote
   concurrently (later anchor and certificate by rotation then seq, union of answers and retired owners, "verified" if
-  either says so, `app` from `a`; the higher `minor`, the union of `crit` and unknown fields are kept, V4-07),
+  either says so, `app` from `a`; the higher `minor`, the union of `crit` and unknown fields are kept, V4-07). When
+  the union of an invitation's answers exceeds 16 (R5-03), the answers that open and verify for the invitation (the
+  merging device holds its seed) are kept first, one per responder (highest certificate rotation), the accepted
+  responder's first, then `a`'s, then `b`'s; answers that do not verify here (junk, or a newer response version) fill
+  the remaining slots, `a`'s first. Junk written with the vault data key alone therefore never evicts a genuine answer.
+  The union can bring back records that a declaration removed; `signIndex` skips them (`"superseded"`, R5-01).
   `cancelAllInvitations(records) → { records, cancelled: { id, keyPair, accepted?, expires }[] }` for a declaration of
   loss (V4-02).
 

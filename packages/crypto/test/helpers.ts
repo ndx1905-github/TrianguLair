@@ -71,6 +71,9 @@ export function person(location: string = newLocation()): Person {
   };
 }
 
+/** A fixed vault data key for tests that only need the index padding (signIndex requires one). */
+export const PAD_KEY = new Uint8Array(32).fill(7);
+
 const seqs = new WeakMap<Person, number>();
 
 /** Publishes (signs) a new index for `p` listing `packs`, with the next seq (padding keyed by p's vault data key). */

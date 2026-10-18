@@ -25,7 +25,7 @@ import {
 } from './encoding';
 import { DecryptionError, FormatError, SignatureError } from './errors';
 import type { KeyPair } from './identity';
-import type { OwnerInvitation } from './invitation';
+import { openInvitationResponse, type OwnerInvitation } from './invitation';
 import { checkOwnerInvitation, deriveInvitation, INVITATION_SEED_BYTES } from './invitation-listing';
 import { paddedLength } from './pack';
 import { indexAnchor, verifyIndexAnchor, type IndexAnchor, type SignedIndex } from './signed-index';
@@ -67,7 +67,10 @@ import { S } from './sodium';
  * Lists are sorted (contacts by owner, invitations by id) and unique. An invitation record is kept
  * until expiry + INVITATION_ANSWER_GRACE_MS, so any device can collect late answers and run the
  * expiry sweep (retireInvitationKey); pass the records to signIndex({ invitations }) so the open
- * ones stay listed until expiry. Version 3 (V4-01, V4-04): each invitation record is signed by the
+ * ones stay listed until expiry (only under the sharing-cert rotation they were created with: any
+ * rotation cancels them, R5-01). A security-relevant field added by a future minor must be signed
+ * by its writing device (as invitation records are) or need a new major: every device, a stolen one
+ * included, holds the vault data key, and merges keep unknown fields (fifth review, N-2). Version 3 (V4-01, V4-04): each invitation record is signed by the
  * device that created it and carries that device's master-signed certificate (so a stolen device
  * cannot write a record in another device's name or extend its lifetime), and keeps the link's
  * read address. "Declare a device lost" cancels every invitation: cancelAllInvitations (V4-02).
@@ -315,6 +318,56 @@ export function openVault(bytes: Uint8Array, owner: string, vaultDataKey: Uint8A
   }
 }
 
+/** Responder and certificate rotation of an answer that opens and verifies for `rec` (any time), or null. */
+function verifiedAnswer(answer: string, rec: VaultInvitation, owner: string): { responder: string; rotation: number } | null {
+  try {
+    const { id, keyPair } = deriveInvitation(fromB64Url(rec.seed, 'vault.invitation.seed', INVITATION_SEED_BYTES));
+    if (id !== rec.id) return null;
+    const inv = { id, owner, keyPair, created: rec.created, expires: rec.expires } as OwnerInvitation;
+    // Opened "at creation time": the time window of the answer is checked, the grace period is not.
+    const r = openInvitationResponse(fromB64Url(answer, 'vault.invitation.answers[]'), inv, { now: new Date(Date.parse(rec.created)) });
+    return { responder: r.owner, rotation: r.cert.rotation };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Answers of one invitation merged from two versions (R5-03). The union is kept when it fits
+ * (MAX_ANSWERS). Otherwise answers are ranked, deterministically, and the first MAX_ANSWERS kept:
+ * 1. answers that open and verify for this invitation (sealed to its key, device-signed by the
+ *    responder, created within its validity), one per responder (highest certificate rotation,
+ *    then the smallest string): the accepted responder's first, then those `x` holds, then `y`'s;
+ * 2. then answers that do not verify here (junk, or a newer response version this device cannot
+ *    read), `x`'s first.
+ * So junk written with the vault data key alone can never evict a verifiable answer, and one
+ * responder cannot fill every slot: a second responder stays visible to collectInvitationAnswers.
+ */
+function mergeAnswers(x: VaultInvitation, y: VaultInvitation, owner: string): string[] {
+  const union = [...new Set([...x.answers, ...y.answers])].sort();
+  if (union.length <= MAX_ANSWERS) return union;
+  const inX = new Set(x.answers);
+  const accepted = x.accepted ?? y.accepted;
+  const best = new Map<string, { answer: string; rotation: number }>();
+  const unverified: string[] = [];
+  for (const answer of union) {
+    const v = verifiedAnswer(answer, x, owner);
+    if (v === null) {
+      unverified.push(answer);
+      continue;
+    }
+    const prev = best.get(v.responder);
+    if (!prev || v.rotation > prev.rotation) best.set(v.responder, { answer, rotation: v.rotation });
+  }
+  const rank = (responder: string, answer: string) => (responder === accepted ? 0 : inX.has(answer) ? 1 : 2);
+  const verified = [...best.entries()]
+    .map(([responder, { answer }]) => ({ answer, r: rank(responder, answer) }))
+    .sort((p, q) => p.r - q.r || (p.answer < q.answer ? -1 : 1))
+    .map((e) => e.answer);
+  const rest = [...unverified.filter((u) => inX.has(u)), ...unverified.filter((u) => !inX.has(u))];
+  return [...verified, ...rest].slice(0, MAX_ANSWERS).sort();
+}
+
 function later(a: IndexAnchor | undefined, b: IndexAnchor | undefined): IndexAnchor | undefined {
   if (!a || !b) return a ?? b;
   const ra = a.sharing_cert.rotation;
@@ -325,8 +378,12 @@ function later(a: IndexAnchor | undefined, b: IndexAnchor | undefined): IndexAnc
 /**
  * Merges two versions of the records of the same owner (two devices wrote concurrently): union of
  * contacts (the later certificate and anchor by rotation then seq; on a tie, `a` wins; "verified"
- * if either says so), of invitations (answers united, `a`'s accepted responder first) and of retired
- * owners; `app` is taken from `a` (merging app data is the app's job). Re-seal the result.
+ * if either says so), of invitations (answers united, `a`'s accepted responder first; above 16
+ * answers, verifiable answers are kept first, one per responder: R5-03) and of retired owners;
+ * `app` is taken from `a` (merging app data is the app's job). Re-seal the result.
+ * The union may bring back invitation records that a declaration of loss removed (from a copy
+ * made before it): signIndex never lists them again, since they were created under an older
+ * sharing-cert rotation (R5-01, skip reason "superseded").
  */
 export function mergeVaults(a: VaultRecords, b: VaultRecords): VaultRecords {
   if (a.owner !== b.owner) throw new SignatureError('vault: records of two different owners', 'OWNER_MISMATCH');
@@ -356,7 +413,7 @@ export function mergeVaults(a: VaultRecords, b: VaultRecords): VaultRecords {
       invitations.set(i.id, i);
       continue;
     }
-    const merged: VaultInvitation = { ...x, answers: [...new Set([...x.answers, ...i.answers])].sort().slice(0, MAX_ANSWERS) };
+    const merged: VaultInvitation = { ...x, answers: mergeAnswers(x, i, a.owner) };
     const accepted = x.accepted ?? i.accepted;
     if (accepted !== undefined) merged.accepted = accepted;
     invitations.set(i.id, merged);
@@ -400,7 +457,8 @@ export interface CancelledInvitation {
  * "Declare a device lost" (V4-02, spec "Loss and theft" step 1): the stolen device read the seed
  * of every open invitation in the vault, so ALL of them are cancelled, whoever created them. Returns
  * the records without any invitation (seal them with the new vault data key: the next index lists
- * none, so every pending link stops working) and the cancelled invitations. Then re-encrypt without
+ * none, so every pending link stops working) and the cancelled invitations. A record that a merge
+ * brings back from an older copy stays unlisted: it was created under an older rotation (R5-01). Then re-encrypt without
  * their keys: retireInvitationKey(packs, index, cancelled.map((c) => c.keyPair), recipientsFor),
  * and tell the user that people invited who had not answered (no `accepted`) need a new link.
  */
