@@ -3,8 +3,7 @@ import { wordlist } from '@scure/bip39/wordlists/english.js';
 import {
   bytesEqual,
   checkByteVersion,
-  checkKeys,
-  checkVersion,
+  checkStructure,
   concat,
   deepFreeze,
   formatKey,
@@ -37,7 +36,10 @@ export interface Identity {
   owner: string;
   /** Ed25519 master key pair (secretKey is 64 bytes, libsodium format). */
   master: KeyPair;
-  /** 32-byte symmetric key for the recovery-vault copy of the sharing key. Derived from the phrase only. */
+  /**
+   * 32-byte symmetric key for the phrase-protected copy of the sharing key and vault data key (TLSK
+   * mode 2). Derived from the phrase only. Not the vault DATA key, which is random (vault.ts).
+   */
   vaultKey: Uint8Array;
 }
 
@@ -174,8 +176,7 @@ export function issueIdentityMove(from: Identity, to: Identity, opts: { now?: Da
 export function verifyIdentityMove(input: string | IdentityMove | JsonObject, opts: { expectedFrom?: Uint8Array | string } = {}): IdentityMove {
   const W = 'identity-move';
   const doc = parseJsonObject(input as string | JsonObject, W);
-  checkVersion(doc, W, IDENTITY_MOVE_VERSION);
-  checkKeys(doc, W, ['type', 'version', 'from', 'to', 'issued', 'to_signature', 'signature']);
+  checkStructure(doc, W, IDENTITY_MOVE_VERSION, ['type', 'version', 'from', 'to', 'issued', 'to_signature', 'signature']);
   if (doc['type'] !== W) throw new FormatError(`${W}: wrong type`);
   const fromPk = parseKey('ed25519', doc['from'], `${W}.from`);
   const toPk = parseKey('ed25519', doc['to'], `${W}.to`);

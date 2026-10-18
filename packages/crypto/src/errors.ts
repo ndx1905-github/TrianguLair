@@ -13,7 +13,9 @@ export type ErrorCode =
   | 'SIGNATURE'
   | 'OWNER_MISMATCH'
   | 'REVOKED'
+  | 'NOT_LISTED'
   | 'IDENTITY_MOVED'
+  | 'MOVED'
   | 'EXPIRED'
   | 'ROLLBACK'
   | 'INVALID_PHRASE'
@@ -36,16 +38,26 @@ export class FormatError extends TLCryptoError {
   }
 }
 
-/** A structure declares a format version this library does not read. */
+/**
+ * A structure declares a major format version this library does not read, or lists in `crit` a
+ * security-relevant field this library does not understand (`critical` names it).
+ */
 export class UnsupportedVersionError extends TLCryptoError {
   readonly structure: string;
   readonly found: number;
   readonly supported: number;
-  constructor(structure: string, found: number, supported: number) {
-    super('UNSUPPORTED_VERSION', `${structure}: format version ${found} is not supported (this library reads version ${supported})`);
+  readonly critical: string | undefined;
+  constructor(structure: string, found: number, supported: number, critical?: string) {
+    super(
+      'UNSUPPORTED_VERSION',
+      critical !== undefined
+        ? `${structure}: critical field "${critical}" is not understood by this library (update the app)`
+        : `${structure}: format version ${found} is not supported (this library reads version ${supported})`,
+    );
     this.structure = structure;
     this.found = found;
     this.supported = supported;
+    this.critical = critical;
   }
 }
 
@@ -67,11 +79,12 @@ export class DecryptionError extends TLCryptoError {
 }
 
 /**
- * Bad signature (SIGNATURE), signed by someone else than expected (OWNER_MISMATCH), or signed by a
- * key that is revoked: a revoked device, or a master key whose identity moved away (REVOKED).
+ * Bad signature (SIGNATURE), signed by someone else than expected (OWNER_MISMATCH), signed by a
+ * key that is revoked: a revoked device, or a master key whose identity moved away (REVOKED), or
+ * an invitation link that the owner's signed index does not vouch for (NOT_LISTED).
  */
 export class SignatureError extends TLCryptoError {
-  constructor(message: string, code: 'SIGNATURE' | 'OWNER_MISMATCH' | 'REVOKED' = 'SIGNATURE') {
+  constructor(message: string, code: 'SIGNATURE' | 'OWNER_MISMATCH' | 'REVOKED' | 'NOT_LISTED' = 'SIGNATURE') {
     super(code, message);
   }
 }
@@ -85,10 +98,30 @@ export class SignatureError extends TLCryptoError {
 export class IdentityMovedError extends TLCryptoError {
   readonly from: string;
   readonly to: string;
-  constructor(from: string, to: string) {
-    super('IDENTITY_MOVED', `identity moved from ${from} to ${to}`);
+  /**
+   * True when `from` is an identity the reader already left for ANOTHER successor: two different
+   * moves of the same old identity exist, so its master key is compromised. Warn, keep the current
+   * contact, and require a safety-code comparison before following anything.
+   */
+  readonly conflict: boolean;
+  constructor(from: string, to: string, conflict = false) {
+    super('IDENTITY_MOVED', conflict ? `conflicting identity move from ${from} to ${to}` : `identity moved from ${from} to ${to}`);
     this.from = from;
     this.to = to;
+    this.conflict = conflict;
+  }
+}
+
+/**
+ * The index is valid, but its master-signed sharing certificate puts the owner's read address
+ * elsewhere than where it was read (`location`): the owner moved storage, and the old address keeps
+ * the newer index as a redirect. Fetch the index again at `location` (and only there).
+ */
+export class StorageMovedError extends TLCryptoError {
+  readonly location: string;
+  constructor(location: string) {
+    super('MOVED', `the owner's content moved to ${location}`);
+    this.location = location;
   }
 }
 

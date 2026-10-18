@@ -1,0 +1,473 @@
+import { compactDeviceCert, expandDeviceCert, verifyDeviceCert, verifySharingCert, type DeviceCert, type SharingCert } from './certs';
+import {
+  arr,
+  asObject,
+  bytesEqual,
+  canonicalize,
+  checkByteVersion,
+  checkFields,
+  checkStructure,
+  concat,
+  deepFreeze,
+  fromB64Url,
+  fromUtf8,
+  isoDate,
+  parseJsonObject,
+  parseKey,
+  readU32be,
+  sortedUnique,
+  str,
+  toB64Url,
+  u32,
+  u32be,
+  utf8,
+  type JsonObject,
+} from './encoding';
+import { DecryptionError, FormatError, SignatureError } from './errors';
+import type { KeyPair } from './identity';
+import { openInvitationResponse, type OwnerInvitation } from './invitation';
+import { checkOwnerInvitation, deriveInvitation, INVITATION_SEED_BYTES } from './invitation-listing';
+import { paddedLength } from './pack';
+import { indexAnchor, verifyIndexAnchor, type IndexAnchor, type SignedIndex } from './signed-index';
+import { S } from './sodium';
+
+/*
+ * Recovery vault records (spec "Recovery kit", V3-10): the owner's private state that the security
+ * rules depend on, encrypted with the random VAULT DATA KEY (SharingKey.vaultDataKey), which every
+ * device of the owner holds (TLSK) and the phrase-protected TLSK copy keeps. Renew it when a device
+ * is declared lost: generateVaultDataKey(), sealVault() again, sealSharingKey() to each remaining
+ * device and to the identity.
+ *
+ * Envelope, big-endian:
+ *   0  4   magic "TLVD"
+ *   4  1   version (= 3)
+ *   5  24  nonce
+ *   29 ..  XChaCha20-Poly1305(plaintext, AD = bytes[0..5) || owner master public key 32 || nonce,
+ *          key = vault data key)
+ *   plaintext = u32 length || canonical JSON records || zero padding (Padmé, at least 256 bytes)
+ *
+ * Records (canonical JSON, versioned like every JSON structure: "minor" / "crit"):
+ * {"app":{…},                               // optional, free-form app data (storage credentials, groups, settings)
+ *  "contacts":[{"anchor":<index-anchor>,     // last index accepted for this contact (rollback protection), if they publish
+ *               "owner":"ed25519:…",
+ *               "sharing_cert":<sharing cert>, // their current key, and their certified read address
+ *               "verified":true}],          // the user's "verified" mark (local declaration)
+ *  "invitations":[{"accepted":"ed25519:…",   // optional: the responder accepted so far
+ *                  "answers":["<b64url return link>"], // every answer received (max 16)
+ *                  "created":"…",           // whole seconds; expires - created <= 7 days
+ *                  "device_cert":{"box":"x25519:…","device":"ed25519:…","signature":"<master>"}, // creating device
+ *                  "expires":"…","id":"<16B>",
+ *                  "location":"https://…",  // read address written in the link (in the token)
+ *                  "rotation":3,            // sharing-cert rotation when inviting (in the link and token)
+ *                  "seed":"<16B link seed>",// the invitation key pair and id derive from it
+ *                  "signature":"<64B>"}],   // creating device, domain "invitation-record" (invitation-listing.ts)
+ *  "owner":"ed25519:…",
+ *  "retired_owners":["ed25519:…"],          // identities that moved away (never trusted again)
+ *  "type":"vault-records","version":3}
+ * Lists are sorted (contacts by owner, invitations by id) and unique. An invitation record is kept
+ * until expiry + INVITATION_ANSWER_GRACE_MS, so any device can collect late answers and run the
+ * expiry sweep (retireInvitationKey); pass the records to signIndex({ invitations }) so the open
+ * ones stay listed until expiry (only under the sharing-cert rotation they were created with: any
+ * rotation cancels them, R5-01). A security-relevant field added by a future minor must be signed
+ * by its writing device (as invitation records are) or need a new major: every device, a stolen one
+ * included, holds the vault data key, and merges keep unknown fields (fifth review, N-2). Version 3 (V4-01, V4-04): each invitation record is signed by the
+ * device that created it and carries that device's master-signed certificate (so a stolen device
+ * cannot write a record in another device's name or extend its lifetime), and keeps the link's
+ * read address. "Declare a device lost" cancels every invitation: cancelAllInvitations (V4-02).
+ */
+
+export const VAULT_VERSION = 3;
+const MAGIC = utf8('TLVD');
+const MAX_CONTACTS = 10_000;
+const MAX_INVITATIONS = 256;
+const MAX_ANSWERS = 16;
+const MAX_RETIRED = 256;
+const MAX_ANSWER_CHARS = 13_000;
+const W = 'vault-records';
+
+export interface VaultContact {
+  owner: string;
+  sharing_cert: SharingCert;
+  anchor?: IndexAnchor;
+  verified: boolean;
+}
+
+/** Compact device certificate (the owner is the vault's). */
+export interface CompactDeviceCert {
+  box: string;
+  device: string;
+  signature: string;
+}
+
+export interface VaultInvitation {
+  id: string;
+  /** Link seed (b64url of 16 bytes): the invitation key pair and id derive from it. */
+  seed: string;
+  /** Sharing-cert rotation when inviting. */
+  rotation: number;
+  /** Read address written in the link. */
+  location: string;
+  /** Master-signed certificate of the device that created the invitation. */
+  device_cert: CompactDeviceCert;
+  created: string;
+  expires: string;
+  /** The creating device's signature (domain "invitation-record"). */
+  signature: string;
+  accepted?: string;
+  /** Every return link received for it (b64url of the bytes). */
+  answers: string[];
+}
+
+export interface VaultRecords {
+  type: 'vault-records';
+  version: number;
+  /** Set by a newer app that added fields; kept by mergeVaults (V4-07). */
+  minor?: number;
+  crit?: string[];
+  owner: string;
+  contacts: VaultContact[];
+  invitations: VaultInvitation[];
+  retired_owners: string[];
+  app?: JsonObject;
+}
+
+/** Empty records for `owner`. */
+export function emptyVault(owner: string): VaultRecords {
+  parseKey('ed25519', owner, 'vault.owner');
+  return { type: W, version: VAULT_VERSION, owner, contacts: [], invitations: [], retired_owners: [] };
+}
+
+/** Vault contact from the last index accepted for a friend (verified) and the "verified" mark. */
+export function contactRecord(index: SignedIndex, verified = false): VaultContact {
+  const anchor = indexAnchor(index);
+  return { owner: anchor.owner, sharing_cert: anchor.sharing_cert, anchor, verified };
+}
+
+/**
+ * Vault record of an open invitation (as returned by createInvitation: its device signature is
+ * checked first), with every answer received so far and the accepted responder.
+ */
+export function invitationRecord(inv: OwnerInvitation, opts: { answers?: Uint8Array[]; accepted?: string } = {}): VaultInvitation {
+  checkOwnerInvitation(inv);
+  const rec: VaultInvitation = {
+    id: inv.id,
+    seed: toB64Url(inv.seed),
+    rotation: inv.rotation,
+    location: inv.location,
+    device_cert: compactDeviceCert(inv.deviceCert) as unknown as CompactDeviceCert,
+    created: inv.created,
+    expires: inv.expires,
+    signature: inv.signature,
+    answers: [...new Set((opts.answers ?? []).map(toB64Url))],
+  };
+  if (opts.accepted !== undefined) rec.accepted = opts.accepted;
+  return rec;
+}
+
+/** OwnerInvitation of a record, its device certificate and signature verified (V4-01). */
+function recordInvitation(rec: JsonObject, owner: string, X: string): OwnerInvitation {
+  const seed = fromB64Url(rec['seed'], `${X}.seed`, INVITATION_SEED_BYTES);
+  const { id, keyPair } = deriveInvitation(seed);
+  if (id !== rec['id']) throw new FormatError(`${X}: id does not match the seed`);
+  const deviceCert: DeviceCert = verifyDeviceCert(expandDeviceCert(owner, asObject(rec['device_cert'], `${X}.device_cert`)), { expectedOwner: owner });
+  const invitation: OwnerInvitation = {
+    id,
+    owner,
+    seed,
+    keyPair,
+    rotation: u32(rec, 'rotation', X),
+    device: deviceCert.device,
+    deviceCert,
+    location: str(rec, 'location', X),
+    created: str(rec, 'created', X),
+    expires: str(rec, 'expires', X),
+    signature: str(rec, 'signature', X),
+  };
+  checkOwnerInvitation(invitation, X);
+  return invitation;
+}
+
+/**
+ * The OwnerInvitation (for signIndex, collectInvitationAnswers, retireInvitationKey) and the
+ * answers kept in a record. Checks the creating device's certificate and signature (V4-01).
+ */
+export function invitationFromRecord(rec: VaultInvitation, owner: string): { invitation: OwnerInvitation; answers: Uint8Array[]; accepted?: string } {
+  const invitation = recordInvitation(rec as unknown as JsonObject, owner, 'vault.invitation');
+  const out: { invitation: OwnerInvitation; answers: Uint8Array[]; accepted?: string } = { invitation, answers: rec.answers.map((a) => fromB64Url(a, 'vault.invitation.answers[]')) };
+  if (rec.accepted !== undefined) out.accepted = rec.accepted;
+  return out;
+}
+
+function sorted<T>(list: readonly T[], key: (t: T) => string): T[] {
+  return [...list].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+
+function checkSortedBy(list: unknown[], key: (o: JsonObject) => string, what: string): void {
+  for (let i = 1; i < list.length; i++) {
+    if (!(key(list[i - 1] as JsonObject) < key(list[i] as JsonObject))) throw new FormatError(`${W}: ${what} must be sorted and unique`);
+  }
+}
+
+/** Validates parsed records (structure, versioning, master signatures of the certificates inside). */
+function validate(doc: JsonObject, owner: string): VaultRecords {
+  const { extensible } = checkStructure(doc, W, VAULT_VERSION, ['type', 'version', 'owner', 'contacts', 'invitations', 'retired_owners'], ['app']);
+  if (doc['type'] !== W) throw new FormatError(`${W}: wrong type`);
+  if (str(doc, 'owner', W) !== owner) throw new SignatureError(`${W}: belongs to another owner`, 'OWNER_MISMATCH');
+  if ('app' in doc) asObject(doc['app'], `${W}.app`);
+
+  const contacts = arr(doc, 'contacts', W, MAX_CONTACTS);
+  for (const c of contacts) {
+    const o = asObject(c, `${W}.contacts[]`);
+    checkFields(o, `${W}.contacts[]`, ['owner', 'sharing_cert', 'verified'], ['anchor'], extensible);
+    const who = str(o, 'owner', `${W}.contacts[]`);
+    parseKey('ed25519', who, `${W}.contacts[].owner`);
+    if (typeof o['verified'] !== 'boolean') throw new FormatError(`${W}.contacts[]: verified must be a boolean`);
+    verifySharingCert(asObject(o['sharing_cert'], `${W}.contacts[].sharing_cert`), { expectedOwner: who });
+    if ('anchor' in o) verifyIndexAnchor(asObject(o['anchor'], `${W}.contacts[].anchor`), { expectedOwner: who });
+  }
+  checkSortedBy(contacts, (o) => o['owner'] as string, 'contacts');
+
+  const invitations = arr(doc, 'invitations', W, MAX_INVITATIONS);
+  for (const i of invitations) {
+    const o = asObject(i, `${W}.invitations[]`);
+    const X = `${W}.invitations[]`;
+    checkFields(o, X, ['id', 'seed', 'rotation', 'location', 'device_cert', 'created', 'expires', 'signature', 'answers'], ['accepted'], extensible);
+    fromB64Url(o['id'], `${X}.id`, 16);
+    isoDate(o, 'created', X);
+    isoDate(o, 'expires', X);
+    recordInvitation(o, owner, X); // lifetime <= 7 days, device certificate and signature (V4-01)
+    if ('accepted' in o) parseKey('ed25519', o['accepted'], `${X}.accepted`);
+    const answers = arr(o, 'answers', X, MAX_ANSWERS);
+    for (const a of answers) {
+      if (typeof a !== 'string' || a.length > MAX_ANSWER_CHARS) throw new FormatError(`${X}: bad answer`);
+      fromB64Url(a, `${X}.answers[]`);
+    }
+    sortedUnique(answers, X, 'answers');
+  }
+  checkSortedBy(invitations, (o) => o['id'] as string, 'invitations');
+
+  const retired = arr(doc, 'retired_owners', W, MAX_RETIRED);
+  for (const r of sortedUnique(retired, W, 'retired_owners')) parseKey('ed25519', r, `${W}.retired_owners[]`);
+
+  // Return the verified (frozen) certificates and anchors in place of the raw objects.
+  const out = JSON.parse(canonicalize(doc)) as JsonObject;
+  out['contacts'] = (out['contacts'] as JsonObject[]).map((c) => {
+    const who = c['owner'] as string;
+    const v: JsonObject = { ...c, sharing_cert: verifySharingCert(c['sharing_cert'] as JsonObject, { expectedOwner: who }).cert };
+    if ('anchor' in c) v['anchor'] = verifyIndexAnchor(c['anchor'] as JsonObject, { expectedOwner: who });
+    return v;
+  });
+  return deepFreeze(out as unknown as VaultRecords);
+}
+
+function normalize(records: VaultRecords): JsonObject {
+  const doc = JSON.parse(canonicalize(records)) as JsonObject;
+  doc['contacts'] = sorted(doc['contacts'] as JsonObject[], (c) => String(c['owner']));
+  doc['invitations'] = sorted(
+    (doc['invitations'] as JsonObject[]).map((i): JsonObject => ({ ...i, answers: [...new Set(i['answers'] as string[])].sort() })),
+    (i) => String(i['id']),
+  );
+  doc['retired_owners'] = [...new Set(doc['retired_owners'] as string[])].sort();
+  return doc;
+}
+
+/** Encrypts the records with the vault data key (lists are sorted and de-duplicated first). */
+export function sealVault(records: VaultRecords, vaultDataKey: Uint8Array): Uint8Array {
+  const s = S();
+  if (!(vaultDataKey instanceof Uint8Array) || vaultDataKey.length !== 32) throw new FormatError('vault: vault data key must be 32 bytes');
+  const doc = normalize(records);
+  validate(doc, records.owner);
+  const json = utf8(canonicalize(doc));
+  if (json.length > 0xffffffff - 4) throw new FormatError('vault: too large');
+  const pt = new Uint8Array(paddedLength(4 + json.length));
+  pt.set(u32be(json.length), 0);
+  pt.set(json, 4);
+  const head = concat(MAGIC, Uint8Array.of(VAULT_VERSION));
+  const nonce = s.randombytes_buf(24);
+  try {
+    const ad = concat(head, parseKey('ed25519', records.owner, 'vault.owner'), nonce);
+    return concat(head, nonce, s.crypto_aead_xchacha20poly1305_ietf_encrypt(pt, ad, null, nonce, vaultDataKey));
+  } finally {
+    s.memzero(pt);
+    s.memzero(json);
+  }
+}
+
+/** Decrypts and validates the records of `owner` (frozen; certificates and anchors verified). */
+export function openVault(bytes: Uint8Array, owner: string, vaultDataKey: Uint8Array): VaultRecords {
+  const s = S();
+  if (!(bytes instanceof Uint8Array) || bytes.length < 5 + 24 + 16) throw new FormatError('vault: too short');
+  if (!bytesEqual(bytes.subarray(0, 4), MAGIC)) throw new FormatError('vault: bad magic');
+  checkByteVersion(bytes[4] as number, 'vault', VAULT_VERSION);
+  const nonce = bytes.subarray(5, 29);
+  const ad = concat(bytes.subarray(0, 5), parseKey('ed25519', owner, 'vault.owner'), nonce);
+  let pt: Uint8Array;
+  try {
+    pt = s.crypto_aead_xchacha20poly1305_ietf_decrypt(null, bytes.subarray(29), ad, nonce, vaultDataKey);
+  } catch {
+    throw new DecryptionError('vault: cannot open (another key or owner, or tampered)');
+  }
+  try {
+    if (pt.length < 4) throw new FormatError('vault: plaintext too short');
+    const len = readU32be(pt, 0);
+    if (len > pt.length - 4 || pt.length !== paddedLength(4 + len)) throw new FormatError('vault: bad padding length');
+    for (let i = 4 + len; i < pt.length; i++) if (pt[i] !== 0) throw new FormatError('vault: non-zero padding');
+    return validate(parseJsonObject(fromUtf8(pt.subarray(4, 4 + len), W), W), owner);
+  } finally {
+    s.memzero(pt);
+  }
+}
+
+/** Responder and certificate rotation of an answer that opens and verifies for `rec` (any time), or null. */
+function verifiedAnswer(answer: string, rec: VaultInvitation, owner: string): { responder: string; rotation: number } | null {
+  try {
+    const { id, keyPair } = deriveInvitation(fromB64Url(rec.seed, 'vault.invitation.seed', INVITATION_SEED_BYTES));
+    if (id !== rec.id) return null;
+    const inv = { id, owner, keyPair, created: rec.created, expires: rec.expires } as OwnerInvitation;
+    // Opened "at creation time": the time window of the answer is checked, the grace period is not.
+    const r = openInvitationResponse(fromB64Url(answer, 'vault.invitation.answers[]'), inv, { now: new Date(Date.parse(rec.created)) });
+    return { responder: r.owner, rotation: r.cert.rotation };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Answers of one invitation merged from two versions (R5-03). The union is kept when it fits
+ * (MAX_ANSWERS). Otherwise answers are ranked, deterministically, and the first MAX_ANSWERS kept:
+ * 1. answers that open and verify for this invitation (sealed to its key, device-signed by the
+ *    responder, created within its validity), one per responder (highest certificate rotation,
+ *    then the smallest string): the accepted responder's first, then those `x` holds, then `y`'s;
+ * 2. then answers that do not verify here (junk, or a newer response version this device cannot
+ *    read), `x`'s first.
+ * So junk written with the vault data key alone can never evict a verifiable answer, and one
+ * responder cannot fill every slot: a second responder stays visible to collectInvitationAnswers.
+ */
+function mergeAnswers(x: VaultInvitation, y: VaultInvitation, owner: string): string[] {
+  const union = [...new Set([...x.answers, ...y.answers])].sort();
+  if (union.length <= MAX_ANSWERS) return union;
+  const inX = new Set(x.answers);
+  const accepted = x.accepted ?? y.accepted;
+  const best = new Map<string, { answer: string; rotation: number }>();
+  const unverified: string[] = [];
+  for (const answer of union) {
+    const v = verifiedAnswer(answer, x, owner);
+    if (v === null) {
+      unverified.push(answer);
+      continue;
+    }
+    const prev = best.get(v.responder);
+    if (!prev || v.rotation > prev.rotation) best.set(v.responder, { answer, rotation: v.rotation });
+  }
+  const rank = (responder: string, answer: string) => (responder === accepted ? 0 : inX.has(answer) ? 1 : 2);
+  const verified = [...best.entries()]
+    .map(([responder, { answer }]) => ({ answer, r: rank(responder, answer) }))
+    .sort((p, q) => p.r - q.r || (p.answer < q.answer ? -1 : 1))
+    .map((e) => e.answer);
+  const rest = [...unverified.filter((u) => inX.has(u)), ...unverified.filter((u) => !inX.has(u))];
+  return [...verified, ...rest].slice(0, MAX_ANSWERS).sort();
+}
+
+function later(a: IndexAnchor | undefined, b: IndexAnchor | undefined): IndexAnchor | undefined {
+  if (!a || !b) return a ?? b;
+  const ra = a.sharing_cert.rotation;
+  const rb = b.sharing_cert.rotation;
+  return rb > ra || (rb === ra && b.seq > a.seq) ? b : a;
+}
+
+/**
+ * Merges two versions of the records of the same owner (two devices wrote concurrently): union of
+ * contacts (the later certificate and anchor by rotation then seq; on a tie, `a` wins; "verified"
+ * if either says so), of invitations (answers united, `a`'s accepted responder first; above 16
+ * answers, verifiable answers are kept first, one per responder: R5-03) and of retired owners;
+ * `app` is taken from `a` (merging app data is the app's job). Re-seal the result.
+ * The union may bring back invitation records that a declaration of loss removed (from a copy
+ * made before it): signIndex never lists them again, since they were created under an older
+ * sharing-cert rotation (R5-01, skip reason "superseded").
+ */
+export function mergeVaults(a: VaultRecords, b: VaultRecords): VaultRecords {
+  if (a.owner !== b.owner) throw new SignatureError('vault: records of two different owners', 'OWNER_MISMATCH');
+  const contacts = new Map<string, VaultContact>();
+  for (const c of a.contacts) contacts.set(c.owner, c);
+  for (const c of b.contacts) {
+    const x = contacts.get(c.owner);
+    if (!x) {
+      contacts.set(c.owner, c);
+      continue;
+    }
+    const merged: VaultContact = {
+      ...x, // unknown fields of a newer minor are kept from the side picked (V4-07)
+      owner: c.owner,
+      sharing_cert: c.sharing_cert.rotation > x.sharing_cert.rotation ? c.sharing_cert : x.sharing_cert,
+      verified: x.verified || c.verified,
+    };
+    const anchor = later(x.anchor, c.anchor);
+    if (anchor) merged.anchor = anchor;
+    contacts.set(c.owner, merged);
+  }
+  const invitations = new Map<string, VaultInvitation>();
+  for (const i of a.invitations) invitations.set(i.id, i);
+  for (const i of b.invitations) {
+    const x = invitations.get(i.id);
+    if (!x) {
+      invitations.set(i.id, i);
+      continue;
+    }
+    const merged: VaultInvitation = { ...x, answers: mergeAnswers(x, i, a.owner) };
+    const accepted = x.accepted ?? i.accepted;
+    if (accepted !== undefined) merged.accepted = accepted;
+    invitations.set(i.id, merged);
+  }
+  // V4-07: unknown top-level fields of a newer minor are kept (`a` wins), with the higher minor and
+  // the union of `crit`, so an older device can still merge and re-seal a newer device's records.
+  const out: VaultRecords = {
+    ...b,
+    ...a,
+    type: W,
+    version: VAULT_VERSION,
+    owner: a.owner,
+    contacts: sorted([...contacts.values()], (c) => c.owner),
+    invitations: sorted([...invitations.values()], (i) => i.id),
+    retired_owners: [...new Set([...a.retired_owners, ...b.retired_owners])].sort(),
+  };
+  delete out.minor;
+  delete out.crit;
+  delete out.app;
+  const minor = Math.max(a.minor ?? 0, b.minor ?? 0);
+  if (minor > 0) out.minor = minor;
+  const crit = [...new Set([...(a.crit ?? []), ...(b.crit ?? [])])].sort();
+  if (crit.length > 0) out.crit = crit;
+  const app = a.app ?? b.app;
+  if (app !== undefined) out.app = app;
+  return out;
+}
+
+/** An invitation cancelled by cancelAllInvitations. */
+export interface CancelledInvitation {
+  id: string;
+  /** Its key pair: re-encrypt without it (retireInvitationKey). */
+  keyPair: KeyPair;
+  /** The responder accepted before the declaration, if any (no new link needed for them). */
+  accepted?: string;
+  /** When it would have expired (to tell the user which invitations were pending). */
+  expires: string;
+}
+
+/**
+ * "Declare a device lost" (V4-02, spec "Loss and theft" step 1): the stolen device read the seed
+ * of every open invitation in the vault, so ALL of them are cancelled, whoever created them. Returns
+ * the records without any invitation (seal them with the new vault data key: the next index lists
+ * none, so every pending link stops working) and the cancelled invitations. A record that a merge
+ * brings back from an older copy stays unlisted: it was created under an older rotation (R5-01). Then re-encrypt without
+ * their keys: retireInvitationKey(packs, index, cancelled.map((c) => c.keyPair), recipientsFor),
+ * and tell the user that people invited who had not answered (no `accepted`) need a new link.
+ */
+export function cancelAllInvitations(records: VaultRecords): { records: VaultRecords; cancelled: CancelledInvitation[] } {
+  const cancelled = records.invitations.map((i): CancelledInvitation => {
+    const { id, keyPair } = deriveInvitation(fromB64Url(i.seed, 'vault.invitation.seed', INVITATION_SEED_BYTES));
+    const c: CancelledInvitation = { id, keyPair, expires: i.expires };
+    if (i.accepted !== undefined) c.accepted = i.accepted;
+    return c;
+  });
+  return { records: { ...records, invitations: [] }, cancelled };
+}

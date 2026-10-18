@@ -1,7 +1,16 @@
 import {
   canonicalize,
+  checkInvitationIndex,
+  createInvitation,
+  parseInvitationLink,
+  serialize,
+  verifyIndex,
+  type OwnerInvitation,
+  type ReceivedInvitation,
   generateDeviceKeys,
   generateRecoveryPhrase,
+  generateVaultDataKey,
+  toB64Url,
   generateX25519KeyPair,
   identityFromPhrase,
   issueDeviceCert,
@@ -9,6 +18,8 @@ import {
   devicePublicKeys,
   openPack,
   packEntry,
+  sealPack,
+  type SealOptions,
   signIndex,
   type DeviceCert,
   type DeviceKeys,
@@ -30,32 +41,86 @@ export interface Person {
   signer: DeviceSigner;
   sharing: KeyPair;
   cert: SharingCert;
+  /** Master-certified read address (in `cert`). */
+  location: string;
+  vaultDataKey: Uint8Array;
 }
 
-export function person(): Person {
+/** A distinct public https read address. */
+export function newLocation(): string {
+  return `https://storage.example.org/s/${toB64Url(generateVaultDataKey().subarray(0, 9))}/`;
+}
+
+/** `location`: the read address certified in the sharing cert (default: a fresh one). */
+export function person(location: string = newLocation()): Person {
   const phrase = generateRecoveryPhrase();
   const id = identityFromPhrase(phrase);
   const device = generateDeviceKeys();
   const deviceCert = issueDeviceCert(id, devicePublicKeys(device));
   const sharing = generateX25519KeyPair();
-  return { phrase, id, device, deviceCert, signer: { keys: device, cert: deviceCert }, sharing, cert: issueSharingCert(id, sharing.publicKey, { rotation: 0 }) };
+  return {
+    phrase,
+    id,
+    device,
+    deviceCert,
+    signer: { keys: device, cert: deviceCert },
+    sharing,
+    cert: issueSharingCert(id, sharing.publicKey, { rotation: 0, location }),
+    location,
+    vaultDataKey: generateVaultDataKey(),
+  };
 }
+
+/** A fixed vault data key for tests that only need the index padding (signIndex requires one). */
+export const PAD_KEY = new Uint8Array(32).fill(7);
 
 const seqs = new WeakMap<Person, number>();
 
-/** Publishes (signs) a new index for `p` listing `packs`, with the next seq. */
-export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}): SignedIndex {
+/** Publishes (signs) a new index for `p` listing `packs`, with the next seq (padding keyed by p's vault data key). */
+export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}, signer?: DeviceSigner, cert?: SharingCert): SignedIndex {
   const seq = (seqs.get(p) ?? 0) + 1;
   seqs.set(p, seq);
-  return signIndex(p.signer, { seq, sharingCert: p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
+  return signIndex(signer ?? p.signer, { seq, sharingCert: cert ?? p.cert, packs: packs.map((b) => packEntry(b)), vaultDataKey: p.vaultDataKey, ...extra });
 }
 
-let notary: Person | undefined;
+/**
+ * Owner side of an invitation: creates it with `signer` (default: p's device) and publishes the
+ * index that lists it (with every invitation in `alsoListed`).
+ */
+export function invite(
+  p: Person,
+  opts: { now?: Date; ttlMs?: number; signer?: DeviceSigner; cert?: SharingCert; packs?: Uint8Array[] } = {},
+): { invitation: OwnerInvitation; fragment: string; index: SignedIndex } {
+  const now = opts.now ?? new Date();
+  const created = createInvitation(opts.signer ?? p.signer, opts.cert ?? p.cert, opts.ttlMs !== undefined ? { now, ttlMs: opts.ttlMs } : { now });
+  const index = publish(p, opts.packs ?? [], { invitations: [created.invitation], now }, opts.signer, opts.cert);
+  return { ...created, index };
+}
 
-/** A verified index (by a throwaway publisher) listing the given packs: for tests about pack internals. */
+/** Invitee side: parses the link, reads `index` at the link's address and confirms the invitation. */
+export function accept(fragment: string, index: SignedIndex, now: Date = new Date()): ReceivedInvitation {
+  const received = parseInvitationLink(fragment, { now });
+  const idx = verifyIndex(serialize(index), { expectedOwner: received.owner, location: received.location, now });
+  checkInvitationIndex(received, idx, { now });
+  return received;
+}
+
+let notaryPerson: Person | undefined;
+
+/** Throwaway publisher used by trust() / open() / seal(). */
+export function notary(): Person {
+  notaryPerson ??= person();
+  return notaryPerson;
+}
+
+/** A verified index (by the throwaway publisher) listing the given packs: for tests about pack internals. */
 export function trust(...packs: Uint8Array[]): SignedIndex {
-  notary ??= person();
-  return publish(notary, packs);
+  return publish(notary(), packs);
+}
+
+/** sealPack bound to the throwaway publisher (open with open() or trust()). */
+export function seal(payload: Uint8Array, recipients: Uint8Array[], opts?: SealOptions): Uint8Array {
+  return sealPack(notary().id.owner, payload, recipients, opts);
 }
 
 /** openPack through a throwaway verified index. */

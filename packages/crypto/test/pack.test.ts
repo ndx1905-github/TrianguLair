@@ -15,14 +15,14 @@ import {
   UnsupportedVersionError,
   verifyIndex,
 } from '../src/index';
-import { containsBytes, headerOf, mutateHeader, open, person, publish, td, te, trust } from './helpers';
+import { containsBytes, headerOf, mutateHeader, open, person, publish, seal, td, te, trust } from './helpers';
 
 const payload = te.encode(JSON.stringify({ places: [{ name: 'Chez Paul', lat: 4885, lon: 235 }] }));
 
 describe('content packs', () => {
   it('round-trips for every recipient', () => {
     const [a, b, c] = [person(), person(), person()];
-    const pack = sealPack(payload, [a.sharing.publicKey, b.sharing.publicKey, c.sharing.publicKey]);
+    const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey, b.sharing.publicKey, c.sharing.publicKey]);
     const index = publish(a, [pack]);
     for (const p of [a, b, c]) {
       const out = openPack(pack, index, [p.sharing]);
@@ -33,35 +33,35 @@ describe('content packs', () => {
   });
   it('handles empty and large payloads', () => {
     const a = person();
-    expect(open(sealPack(new Uint8Array(0), [a.sharing.publicKey]), [a.sharing]).payload).toHaveLength(0);
+    expect(open(seal(new Uint8Array(0), [a.sharing.publicKey]), [a.sharing]).payload).toHaveLength(0);
     const big = new Uint8Array(1 << 20).fill(7);
-    expect(open(sealPack(big, [a.sharing.publicKey]), [a.sharing]).payload).toEqual(big);
+    expect(open(seal(big, [a.sharing.publicKey]), [a.sharing]).payload).toEqual(big);
   });
   it('has the documented layout; the logical id is not in the readable header', () => {
     const a = person();
-    const pack = sealPack(payload, [a.sharing.publicKey], { padTo: 0, id: 'AAAAAAAAAAAAAAAAAAAAAA' });
+    const pack = seal(payload, [a.sharing.publicKey], { padTo: 0, id: 'AAAAAAAAAAAAAAAAAAAAAA' });
     expect(td.decode(pack.subarray(0, 4))).toBe('TLPK');
-    expect(pack[4]).toBe(2);
+    expect(pack[4]).toBe(4);
     const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
     const h = headerOf(pack);
     expect(Object.keys(h)).toEqual(['alg', 'nonce', 'pad', 'type', 'version', 'wrapAlg', 'wraps']); // canonical order, no id
-    expect(h).toMatchObject({ type: 'pack', version: 2, alg: 'xchacha20poly1305-ietf', wrapAlg: 'x25519-sealedbox', pad: 'padme' });
+    expect(h).toMatchObject({ type: 'pack', version: 4, alg: 'xchacha20poly1305-ietf', wrapAlg: 'x25519-sealedbox', pad: 'padme' });
     expect(h['wraps']).toHaveLength(1);
-    expect(pack.length - 9 - n).toBe(paddedLength(20 + payload.length) + 16);
+    expect(pack.length - 9 - n).toBe(paddedLength(21 + payload.length) + 16);
     expect(td.decode(pack)).not.toContain('AAAAAAAAAAAAAAAAAAAAAA');
     expect(open(pack, [a.sharing]).id).toBe('AAAAAAAAAAAAAAAAAAAAAA');
   });
   it('uses fresh batch key/nonce every time', () => {
     const a = person();
-    const p1 = sealPack(payload, [a.sharing.publicKey]);
-    const p2 = sealPack(payload, [a.sharing.publicKey]);
+    const p1 = seal(payload, [a.sharing.publicKey]);
+    const p2 = seal(payload, [a.sharing.publicKey]);
     expect(readPackHeader(p1).nonce).not.toBe(readPackHeader(p2).nonce);
     expect(packHash(p1)).not.toBe(packHash(p2));
   });
 
   it('rejects a wrong key with NO_MATCHING_KEY', () => {
     const [a, eve] = [person(), person()];
-    const pack = sealPack(payload, [a.sharing.publicKey]);
+    const pack = seal(payload, [a.sharing.publicKey]);
     expect(() => open(pack, [eve.sharing])).toThrow(expect.objectContaining({ code: 'NO_MATCHING_KEY' }));
     expect(() => open(pack, [])).toThrow(DecryptionError);
   });
@@ -79,20 +79,20 @@ describe('content packs', () => {
     });
     it('payloads of nearby sizes give packs of the same size', () => {
       const a = person();
-      const sizes = new Set([100, 120, 150, 200, 230].map((n) => sealPack(new Uint8Array(n), [a.sharing.publicKey]).length));
+      const sizes = new Set([100, 120, 150, 200, 230].map((n) => seal(new Uint8Array(n), [a.sharing.publicKey]).length));
       expect(sizes.size).toBe(1);
     });
     it('pad: "none" is visible in the header and exact', () => {
       const a = person();
-      const pack = sealPack(payload, [a.sharing.publicKey], { pad: 'none', padTo: 0 });
+      const pack = seal(payload, [a.sharing.publicKey], { pad: 'none', padTo: 0 });
       const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
       expect(readPackHeader(pack).pad).toBe('none');
-      expect(pack.length - 9 - n).toBe(20 + payload.length + 16);
+      expect(pack.length - 9 - n).toBe(21 + payload.length + 16);
       expect(open(pack, [a.sharing]).payload).toEqual(payload);
     });
     it('the padding mode is authenticated (AD)', () => {
       const a = person();
-      const pack = sealPack(payload, [a.sharing.publicKey]);
+      const pack = seal(payload, [a.sharing.publicKey]);
       expect(() => open(mutateHeader(pack, (h) => (h['pad'] = 'none')), [a.sharing])).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
     });
   });
@@ -100,8 +100,8 @@ describe('content packs', () => {
   describe('index check before decryption (T-002 F-06)', () => {
     it('a pack not listed in the verified index is rejected with NOT_INDEXED', () => {
       const a = person();
-      const listed = sealPack(payload, [a.sharing.publicKey]);
-      const other = sealPack(payload, [a.sharing.publicKey]);
+      const listed = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
+      const other = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
       const index = publish(a, [listed]);
       expect(() => openPack(other, index, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
       const flipped = listed.slice();
@@ -110,17 +110,32 @@ describe('content packs', () => {
     });
     it('only an index returned by verifyIndex / signIndex is accepted (not a look-alike object)', () => {
       const a = person();
-      const pack = sealPack(payload, [a.sharing.publicKey]);
+      const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
       const index = publish(a, [pack]);
       expect(() => openPack(pack, { owner: a.id.owner, packs: [packEntry(pack)] }, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
       expect(() => openPack(pack, { ...index }, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
-      expect(openPack(pack, verifyIndex(JSON.stringify(index)), [a.sharing]).payload).toEqual(payload);
+      expect(openPack(pack, verifyIndex(JSON.stringify(index), { expectedOwner: a.id.owner }), [a.sharing]).payload).toEqual(payload);
       expect(Object.isFrozen(index.packs)).toBe(true);
+    });
+    it('the index must be verified FOR its owner (expectedOwner), not merely verified (V3-11)', () => {
+      const a = person();
+      const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
+      const unbound = verifyIndex(JSON.stringify(publish(a, [pack])));
+      expect(() => openPack(pack, unbound, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
+    });
+    it('the payload type is authenticated inside the encryption (V3-16)', () => {
+      const a = person();
+      const media = sealPack(a.id.owner, payload, [a.sharing.publicKey], { type: 'media' });
+      const content = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
+      const index = publish(a, [media, content]);
+      expect(openPack(media, index, [a.sharing]).type).toBe('media');
+      expect(openPack(content, index, [a.sharing]).type).toBe('content');
+      expect(() => sealPack(a.id.owner, payload, [a.sharing.publicKey], { type: 'group-key' as 'media' })).toThrow(FormatError);
     });
     it('the hash check happens before any key operation (no trial decryption of unlisted data)', () => {
       const a = person();
       const index = publish(a, []);
-      const garbage = sealPack(payload, Array.from({ length: 200 }, () => generateX25519KeyPair().publicKey), { padTo: MAX_WRAPS });
+      const garbage = seal(payload, Array.from({ length: 200 }, () => generateX25519KeyPair().publicKey), { padTo: MAX_WRAPS });
       const t0 = performance.now();
       expect(() => openPack(garbage, index, Array.from({ length: 50 }, () => generateX25519KeyPair()))).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
       expect(performance.now() - t0).toBeLessThan(200);
@@ -129,7 +144,7 @@ describe('content packs', () => {
 
   describe('tampering', () => {
     const a = person();
-    const pack = sealPack(payload, [a.sharing.publicKey]);
+    const pack = seal(payload, [a.sharing.publicKey]);
     it('ciphertext byte flip -> DECRYPT', () => {
       for (const pos of [pack.length - 1, pack.length - 20]) {
         const t = pack.slice();
@@ -141,7 +156,7 @@ describe('content packs', () => {
       expect(() => open(pack.subarray(0, pack.length - 1), [a.sharing])).toThrow(DecryptionError);
     });
     it('header nonce changed -> DECRYPT (header is AEAD associated data)', () => {
-      const otherNonce = readPackHeader(sealPack(payload, [a.sharing.publicKey])).nonce;
+      const otherNonce = readPackHeader(seal(payload, [a.sharing.publicKey])).nonce;
       expect(() => open(mutateHeader(pack, (h) => (h['nonce'] = otherNonce)), [a.sharing])).toThrow(DecryptionError);
     });
     it('header alg changed, extra field, or non-canonical header -> FormatError', () => {
@@ -159,7 +174,7 @@ describe('content packs', () => {
       expect(() => open(t, [a.sharing])).toThrow(DecryptionError);
     });
     it('forged wrap with a random batch key to the recipient -> DECRYPT, not wrong plaintext', () => {
-      const attackerPack = sealPack(te.encode('evil'), [a.sharing.publicKey], { padTo: 0 });
+      const attackerPack = seal(te.encode('evil'), [a.sharing.publicKey], { padTo: 0 });
       const forgedWrap = readPackHeader(attackerPack).wraps[0] as string;
       const t = mutateHeader(pack, (h) => (h['wraps'] = [forgedWrap]));
       expect(() => open(t, [a.sharing])).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
@@ -177,21 +192,28 @@ describe('content packs', () => {
 
   describe('versioning', () => {
     const a = person();
-    const pack = sealPack(payload, [a.sharing.publicKey]);
+    const pack = seal(payload, [a.sharing.publicKey]);
     it('other envelope versions -> UnsupportedVersionError', () => {
-      for (const v of [1, 3]) {
+      for (const v of [3, 5]) {
         const t = pack.slice();
         t[4] = v;
         expect(() => open(t, [a.sharing])).toThrow(UnsupportedVersionError);
         try {
           readPackHeader(t);
         } catch (e) {
-          expect(e).toMatchObject({ code: 'UNSUPPORTED_VERSION', found: v, supported: 2 });
+          expect(e).toMatchObject({ code: 'UNSUPPORTED_VERSION', found: v, supported: 4 });
         }
       }
     });
-    it('header version 3 -> UnsupportedVersionError', () => {
-      expect(() => open(mutateHeader(pack, (h) => (h['version'] = 3)), [a.sharing])).toThrow(UnsupportedVersionError);
+    it('header version 5 -> UnsupportedVersionError', () => {
+      expect(() => open(mutateHeader(pack, (h) => (h['version'] = 5)), [a.sharing])).toThrow(UnsupportedVersionError);
+    });
+    it('a newer minor header field is accepted and covered by the AD; unknown crit fields are refused (V3-03)', () => {
+      // Same AD rule for every reader: an extension field changes the AD, so it cannot be added later.
+      expect(() => open(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'))), [a.sharing])).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
+      expect(() => readPackHeader(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'))))).not.toThrow();
+      expect(() => readPackHeader(mutateHeader(pack, (h) => (h['hint'] = 'x')))).toThrow(FormatError);
+      expect(() => readPackHeader(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'), (h['crit'] = ['hint']))))).toThrow(UnsupportedVersionError);
     });
     it('envelope version 0 -> FormatError', () => {
       const t = pack.slice();
@@ -203,7 +225,7 @@ describe('content packs', () => {
   describe('wrap anonymity', () => {
     it('the pack contains no recipient public key bytes (raw or base64url) and no master key', () => {
       const [a, b] = [person(), person()];
-      const pack = sealPack(payload, [a.sharing.publicKey, b.sharing.publicKey]);
+      const pack = seal(payload, [a.sharing.publicKey, b.sharing.publicKey]);
       const headerText = td.decode(pack);
       for (const p of [a, b]) {
         expect(containsBytes(pack, p.sharing.publicKey)).toBe(false);
@@ -216,19 +238,19 @@ describe('content packs', () => {
     });
     it('wraps to the same recipient differ across packs (no linkable hint)', () => {
       const a = person();
-      const w1 = readPackHeader(sealPack(payload, [a.sharing.publicKey], { padTo: 0 })).wraps;
-      const w2 = readPackHeader(sealPack(payload, [a.sharing.publicKey], { padTo: 0 })).wraps;
+      const w1 = readPackHeader(seal(payload, [a.sharing.publicKey], { padTo: 0 })).wraps;
+      const w2 = readPackHeader(seal(payload, [a.sharing.publicKey], { padTo: 0 })).wraps;
       expect(w1[0]).not.toBe(w2[0]);
       expect(w1[0]!.slice(0, 43)).not.toBe(w2[0]!.slice(0, 43)); // ephemeral keys differ
     });
     it('pads wrap count to a power of two by default; all wraps have the same size', () => {
       const ps = [person(), person(), person()];
-      const h = readPackHeader(sealPack(payload, ps.map((p) => p.sharing.publicKey)));
+      const h = readPackHeader(seal(payload, ps.map((p) => p.sharing.publicKey)));
       expect(h.wraps).toHaveLength(4);
       expect(new Set(h.wraps.map((w) => w.length)).size).toBe(1);
-      expect(readPackHeader(sealPack(payload, [ps[0]!.sharing.publicKey])).wraps).toHaveLength(2);
-      expect(readPackHeader(sealPack(payload, [ps[0]!.sharing.publicKey], { padTo: 10 })).wraps).toHaveLength(10);
-      const pack = sealPack(payload, ps.map((q) => q.sharing.publicKey), { padTo: 16 });
+      expect(readPackHeader(seal(payload, [ps[0]!.sharing.publicKey])).wraps).toHaveLength(2);
+      expect(readPackHeader(seal(payload, [ps[0]!.sharing.publicKey], { padTo: 10 })).wraps).toHaveLength(10);
+      const pack = seal(payload, ps.map((q) => q.sharing.publicKey), { padTo: 16 });
       const index = trust(pack);
       for (const p of ps) expect(openPack(pack, index, [p.sharing]).payload).toEqual(payload);
     });
@@ -236,7 +258,7 @@ describe('content packs', () => {
       const ps = Array.from({ length: 8 }, () => generateX25519KeyPair());
       const firstOpener = new Set<number>();
       for (let i = 0; i < 12; i++) {
-        const pack = sealPack(payload, ps.map((p) => p.publicKey), { padTo: 0 });
+        const pack = seal(payload, ps.map((p) => p.publicKey), { padTo: 0 });
         const wraps = readPackHeader(pack).wraps;
         const idx = wraps.findIndex((w) => {
           try {
@@ -255,42 +277,42 @@ describe('content packs', () => {
   describe('rewrap', () => {
     it('adds a recipient without changing the ciphertext; the file name changes', () => {
       const [a, b] = [person(), person()];
-      const pack = sealPack(payload, [a.sharing.publicKey]);
+      const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
       const re = rewrapPack(pack, publish(a, [pack]), [a.sharing], [a.sharing.publicKey, b.sharing.publicKey]);
       const index = publish(a, [re]);
       expect(openPack(re, index, [b.sharing]).payload).toEqual(payload);
-      expect(openPack(re, index, [b.sharing]).id).toBe(open(pack, [a.sharing]).id);
+      expect(openPack(re, index, [b.sharing]).id).toBe(openPack(pack, publish(a, [pack]), [a.sharing]).id);
       expect(readPackHeader(re).nonce).toBe(readPackHeader(pack).nonce);
       expect(re.subarray(re.length - 100)).toEqual(pack.subarray(pack.length - 100));
       expect(packEntry(re).file).not.toBe(packEntry(pack).file);
     });
     it('requires a key that can open the pack, and a verified index listing it', () => {
       const [a, eve] = [person(), person()];
-      const pack = sealPack(payload, [a.sharing.publicKey]);
+      const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
       expect(() => rewrapPack(pack, publish(a, [pack]), [eve.sharing], [eve.sharing.publicKey])).toThrow(DecryptionError);
       expect(() => rewrapPack(pack, publish(a, []), [a.sharing], [eve.sharing.publicKey])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
     });
   });
 
   it('rejects invalid recipients', () => {
-    expect(() => sealPack(payload, [])).toThrow(FormatError);
-    expect(() => sealPack(payload, [new Uint8Array(31)])).toThrow(InvalidKeyError);
-    expect(() => sealPack(payload, [new Uint8Array(32)])).toThrow(InvalidKeyError);
-    expect(() => sealPack(payload, [generateX25519KeyPair().publicKey], { id: 'short' })).toThrow(FormatError);
+    expect(() => seal(payload, [])).toThrow(FormatError);
+    expect(() => seal(payload, [new Uint8Array(31)])).toThrow(InvalidKeyError);
+    expect(() => seal(payload, [new Uint8Array(32)])).toThrow(InvalidKeyError);
+    expect(() => seal(payload, [generateX25519KeyPair().publicKey], { id: 'short' })).toThrow(FormatError);
   });
 
   it('bounds the wrap count before doing any work (T-002 F-10)', () => {
     const a = person();
     expect(MAX_WRAPS).toBe(256);
     const t0 = performance.now();
-    expect(() => sealPack(payload, [a.sharing.publicKey], { padTo: 5000 })).toThrow(FormatError);
+    expect(() => seal(payload, [a.sharing.publicKey], { padTo: 5000 })).toThrow(FormatError);
     expect(performance.now() - t0).toBeLessThan(100);
-    expect(readPackHeader(sealPack(payload, [a.sharing.publicKey], { padTo: 256 })).wraps).toHaveLength(256);
+    expect(readPackHeader(seal(payload, [a.sharing.publicKey], { padTo: 256 })).wraps).toHaveLength(256);
   });
 
   it('content hash and content-addressed file name', () => {
     const a = person();
-    const pack = sealPack(payload, [a.sharing.publicKey]);
+    const pack = seal(payload, [a.sharing.publicKey]);
     expect(packHash(pack)).toBe(packHash(pack.slice()));
     expect(packHash(pack)).toMatch(/^b2b256:[A-Za-z0-9_-]{43}$/);
     expect(packEntry(pack)).toEqual({ file: `packs/b2b256-${packHash(pack).slice(7)}.bin`, hash: packHash(pack) });

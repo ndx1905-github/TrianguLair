@@ -13,7 +13,8 @@ import {
   sealPack,
   UnsupportedVersionError,
 } from '../src/index';
-import { containsBytes, headerOf, open, person, publish, te, trust } from './helpers';
+import { sealTyped } from '../src/pack';
+import { containsBytes, headerOf, notary, open, person, publish, seal, te, trust } from './helpers';
 
 const payload = te.encode('{"list":"Restos du dimanche"}');
 
@@ -22,7 +23,7 @@ describe('recipient groups', () => {
     const [owner, m1, m2, outsider] = [person(), person(), person(), person()];
     const group = createGroup();
     const gk = sealGroupKey(group, owner.id.owner, [owner.sharing.publicKey, m1.sharing.publicKey, m2.sharing.publicKey]);
-    const pack = sealPack(payload, [owner.sharing.publicKey, group.keyPair.publicKey]);
+    const pack = sealPack(owner.id.owner, payload, [owner.sharing.publicKey, group.keyPair.publicKey]);
     const index = publish(owner, [gk, pack]);
 
     for (const m of [m1, m2]) {
@@ -44,27 +45,36 @@ describe('recipient groups', () => {
     const gk = sealGroupKey(group, m1.id.owner, [m1.sharing.publicKey]);
     expect(containsBytes(gk, group.keyPair.publicKey)).toBe(false);
     expect(containsBytes(gk, m1.sharing.publicKey)).toBe(false);
-    const pack = sealPack(payload, [group.keyPair.publicKey]);
+    const pack = sealPack(m1.id.owner, payload, [group.keyPair.publicKey]);
     expect(containsBytes(pack, group.keyPair.publicKey)).toBe(false);
   });
 
   it('rejects group-key payloads with another version, generation 0, or another owner (T-002 F-06, F-13)', () => {
     const m = person();
-    const v9 = sealPack(te.encode(JSON.stringify({ type: 'group-key', version: 9 })), [m.sharing.publicKey]);
+    const v9 = sealTyped(notary().id.owner, te.encode(JSON.stringify({ type: 'group-key', version: 9 })), [m.sharing.publicKey], {}, 'group-key');
     expect(() => openGroupKey(v9, trust(v9), [m.sharing])).toThrow(UnsupportedVersionError);
     const g0 = sealGroupKey({ ...createGroup(), generation: 0 }, m.id.owner, [m.sharing.publicKey]);
     expect(() => openGroupKey(g0, publish(m, [g0]), [m.sharing])).toThrow(FormatError);
-    // A group-key pack naming another owner, listed in m's index.
+    // A group-key pack of another owner, listed in m's index: the pack itself is bound to its owner
+    // (R-05), so it fails authentication before the payload's `owner` field is even compared.
     const other = person();
     const foreign = sealGroupKey(createGroup(), other.id.owner, [m.sharing.publicKey]);
-    expect(() => openGroupKey(foreign, publish(m, [foreign]), [m.sharing])).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    expect(() => openGroupKey(foreign, publish(m, [foreign]), [m.sharing])).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
+    // The payload check still holds on its own: a pack sealed for m's index but naming another owner.
+    const lyingPayload = te.encode(JSON.stringify({ generation: 1, group: 'AAAAAAAAAAAAAAAAAAAAAA', owner: other.id.owner, secretKey: 'A'.repeat(43), type: 'group-key', version: 2 }));
+    const lying = sealTyped(m.id.owner, lyingPayload, [m.sharing.publicKey], {}, 'group-key');
+    expect(() => openGroupKey(lying, publish(m, [lying]), [m.sharing])).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    // V3-16: the payload type is inside the encryption; a content pack is never read as a group secret.
+    const g = createGroup();
+    const asContent = sealPack(m.id.owner, new TextEncoder().encode(JSON.stringify({ generation: 1, group: g.id, owner: m.id.owner, secretKey: Buffer.from(g.keyPair.secretKey).toString('base64url'), type: 'group-key', version: 2 })), [m.sharing.publicKey]);
+    expect(() => openGroupKey(asContent, publish(m, [asContent]), [m.sharing])).toThrow(/not a group-key pack/);
   });
 });
 
 describe('revocation', () => {
   it('revoked friend cannot open re-encrypted packs; remaining recipients can', () => {
     const [owner, alice, bob] = [person(), person(), person()];
-    const packs = [sealPack(payload, [owner.sharing.publicKey, alice.sharing.publicKey, bob.sharing.publicKey]), sealPack(te.encode('second'), [owner.sharing.publicKey, bob.sharing.publicKey])];
+    const packs = [sealPack(owner.id.owner, payload, [owner.sharing.publicKey, alice.sharing.publicKey, bob.sharing.publicKey]), sealPack(owner.id.owner, te.encode('second'), [owner.sharing.publicKey, bob.sharing.publicKey])];
     const index = publish(owner, packs);
     expect(openPack(packs[0]!, index, [bob.sharing]).payload).toEqual(payload);
 
@@ -85,7 +95,7 @@ describe('revocation', () => {
 
   it('old batch key does not decrypt the re-encrypted pack (wrap transplant fails)', () => {
     const [owner, bob] = [person(), person()];
-    const old = sealPack(payload, [owner.sharing.publicKey, bob.sharing.publicKey], { padTo: 0 });
+    const old = seal(payload, [owner.sharing.publicKey, bob.sharing.publicKey], { padTo: 0 });
     const fresh = reencryptPack(old, trust(old), [owner.sharing], [owner.sharing.publicKey], { padTo: 0 });
     const h = headerOf(fresh);
     h['wraps'] = readPackHeader(old).wraps;
@@ -100,7 +110,7 @@ describe('revocation', () => {
     const [owner, m1, m2] = [person(), person(), person()];
     const g1 = createGroup();
     const gk1 = sealGroupKey(g1, owner.id.owner, [m1.sharing.publicKey, m2.sharing.publicKey]);
-    const pack = sealPack(payload, [owner.sharing.publicKey, g1.keyPair.publicKey]);
+    const pack = sealPack(owner.id.owner, payload, [owner.sharing.publicKey, g1.keyPair.publicKey]);
     const i1 = publish(owner, [gk1, pack]);
     const m2g1 = openGroupKey(gk1, i1, [m2.sharing]);
     expect(openPack(pack, i1, [m2g1.keyPair]).payload).toEqual(payload);

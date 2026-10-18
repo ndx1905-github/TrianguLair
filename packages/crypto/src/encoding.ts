@@ -2,7 +2,8 @@ import { FormatError, InvalidKeyError, UnsupportedVersionError } from './errors'
 import { S } from './sodium';
 
 const enc = new TextEncoder();
-const dec = new TextDecoder('utf-8', { fatal: true });
+// ignoreBOM: a leading U+FEFF stays in the string, so it fails JSON parsing and the canonical check (R-09).
+const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export function utf8(s: string): Uint8Array {
   return enc.encode(s);
@@ -174,7 +175,21 @@ export function parseJsonObject(input: string | JsonObject, what: string): JsonO
   return v as JsonObject;
 }
 
-/** Checks the `version` field is exactly the version this library reads (else UnsupportedVersionError). */
+/**
+ * Transported text or bytes (an index read from a storage, ...): never an already-parsed object,
+ * whose duplicate keys the JS parser has already resolved (V3-12). Checks the size bound first.
+ */
+export function parseTransported(input: unknown, what: string, maxBytes: number): JsonObject {
+  if (input instanceof Uint8Array) {
+    if (input.length > maxBytes) throw new FormatError(`${what}: too large`);
+    return parseJsonObject(fromUtf8(input, what), what);
+  }
+  if (typeof input !== 'string') throw new FormatError(`${what}: pass the transported text (string or bytes), not a parsed object`);
+  if (input.length > maxBytes) throw new FormatError(`${what}: too large`);
+  return parseJsonObject(input, what);
+}
+
+/** Checks the `version` field (the MAJOR version) is exactly the one this library reads (else UnsupportedVersionError). */
 export function checkVersion(obj: JsonObject, structure: string, supported: number): number {
   const v = obj['version'];
   if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 1) throw new FormatError(`${structure}: missing or invalid version`);
@@ -188,11 +203,77 @@ export function checkByteVersion(v: number, structure: string, supported: number
   if (v !== supported) throw new UnsupportedVersionError(structure, v, supported);
 }
 
-/** Rejects unknown keys and missing required keys. Call AFTER checkVersion so other versions get the right error. */
+/** Rejects unknown keys and missing required keys (for objects without their own version, e.g. binary-embedded ones). */
 export function checkKeys(obj: JsonObject, structure: string, required: string[], optional: string[] = []): void {
+  checkFields(obj, structure, required, optional, false);
+}
+
+/** Missing required keys are refused; unknown keys are refused unless `allowUnknown`. */
+export function checkFields(obj: JsonObject, structure: string, required: string[], optional: string[], allowUnknown: boolean): void {
   for (const k of required) if (!(k in obj)) throw new FormatError(`${structure}: missing field "${k}"`);
+  if (allowUnknown) return;
   const allowed = new Set([...required, ...optional]);
   for (const k of Object.keys(obj)) if (!allowed.has(k)) throw new FormatError(`${structure}: unknown field "${k}"`);
+}
+
+/** Result of checkStructure. */
+export interface StructureInfo {
+  /** Minor version of the document (0 when absent). */
+  minor: number;
+  /** True when the document is from a newer minor version: unknown fields are allowed (and ignored) in it. */
+  extensible: boolean;
+}
+
+const RESERVED = new Set(['version', 'minor', 'crit', 'signature', 'type']);
+
+/**
+ * Versioning rule of every JSON structure (spec "Format versions", V3-03):
+ * - `version` is the MAJOR version and must be exactly `major` (UnsupportedVersionError otherwise);
+ * - `minor` (optional integer >= 1; absent means 0) marks compatible additions. When it is HIGHER
+ *   than the minor this library reads (`supportedMinor`), unknown fields are allowed and ignored;
+ *   they stay covered by the signature or AEAD, which are computed over the canonical form of the
+ *   whole document. Otherwise unknown fields are a FormatError;
+ * - `crit` (optional, non-empty, sorted, unique) lists fields that affect security: each must be
+ *   present in the document, and a reader that does not know one of them refuses the document
+ *   with UnsupportedVersionError (like JWS/JWE "crit").
+ */
+export function checkStructure(
+  doc: JsonObject,
+  structure: string,
+  major: number,
+  required: string[],
+  optional: string[] = [],
+  supportedMinor = 0,
+): StructureInfo {
+  checkVersion(doc, structure, major);
+  let minor = 0;
+  if ('minor' in doc) {
+    const m = doc['minor'];
+    if (typeof m !== 'number' || !Number.isSafeInteger(m) || m < 1) throw new FormatError(`${structure}: minor must be an integer >= 1 (omit it for 0)`);
+    minor = m;
+  }
+  const known = new Set([...required, ...optional, 'version', 'minor', 'crit']);
+  if ('crit' in doc) {
+    const c = doc['crit'];
+    if (!Array.isArray(c) || c.length === 0 || c.length > 32 || c.some((x) => typeof x !== 'string')) {
+      throw new FormatError(`${structure}: crit must be a non-empty list of field names`);
+    }
+    const sorted = [...new Set(c as string[])].sort();
+    if (sorted.length !== c.length || sorted.some((x, i) => x !== c[i])) throw new FormatError(`${structure}: crit must be sorted and unique`);
+    for (const f of c as string[]) {
+      if (RESERVED.has(f) || !(f in doc)) throw new FormatError(`${structure}: crit names a reserved or absent field`);
+      if (!known.has(f)) throw new UnsupportedVersionError(structure, major, major, f);
+    }
+  }
+  const extensible = minor > supportedMinor;
+  checkFields(doc, structure, required, [...optional, 'minor', 'crit'], extensible);
+  return { minor, extensible };
+}
+
+/** A plain JSON object nested inside an already-parsed document (never re-parsed from a string). */
+export function asObject(v: unknown, what: string): JsonObject {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new FormatError(`${what}: expected a JSON object`);
+  return v as JsonObject;
 }
 
 export function str(obj: JsonObject, key: string, structure: string): string {
@@ -208,9 +289,27 @@ export function int(obj: JsonObject, key: string, structure: string): number {
 }
 
 export function obj(o: JsonObject, key: string, structure: string): JsonObject {
-  const v = o[key];
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new FormatError(`${structure}: field "${key}" must be an object`);
-  return v as JsonObject;
+  return asObject(o[key], `${structure}: field "${key}"`);
+}
+
+/** Non-negative integer that fits in 32 bits (rotations, which binary links carry as u32). */
+export function u32(o: JsonObject, key: string, structure: string): number {
+  const v = int(o, key, structure);
+  if (v > 0xffffffff) throw new FormatError(`${structure}: field "${key}" must fit in 32 bits`);
+  return v;
+}
+
+/** Sorted, unique list of strings (canonical sets inside signed documents). */
+export function sortedUnique(list: unknown[], structure: string, key: string): string[] {
+  if (list.some((x) => typeof x !== 'string')) throw new FormatError(`${structure}: ${key} must contain strings`);
+  const sorted = [...new Set(list as string[])].sort();
+  if (sorted.length !== list.length || sorted.some((x, i) => x !== list[i])) throw new FormatError(`${structure}: ${key} must be sorted and unique`);
+  return sorted;
+}
+
+/** BLAKE2b-256 of bytes, as "b2b256:<b64url>". */
+export function b2b256(bytes: Uint8Array): string {
+  return `b2b256:${toB64Url(S().crypto_generichash(32, bytes, null))}`;
 }
 
 export function arr(o: JsonObject, key: string, structure: string, max: number): unknown[] {
@@ -263,10 +362,12 @@ let probeScalar: Uint8Array | undefined;
 /**
  * Rejects X25519 public keys that are all-zero or of low order: any key whose shared secret with a
  * fixed, clamped, non-zero scalar is the all-zero point. Such keys would make sealed boxes fail
- * (or be trivially decryptable). Throws InvalidKeyError.
+ * (or be trivially decryptable). Also rejects non-canonical encodings with bit 255 set (two strings
+ * for one key). Throws InvalidKeyError.
  */
 export function assertX25519PublicKey(pk: Uint8Array, what = 'x25519 public key'): void {
   if (!(pk instanceof Uint8Array) || pk.length !== 32) throw new InvalidKeyError(`${what}: must be 32 bytes`);
+  if (((pk[31] as number) & 0x80) !== 0) throw new InvalidKeyError(`${what}: non-canonical X25519 key (bit 255 set)`);
   const s = S();
   probeScalar ??= s.crypto_generichash(32, utf8('TrianguLair/x25519-probe'), null);
   let shared: Uint8Array;

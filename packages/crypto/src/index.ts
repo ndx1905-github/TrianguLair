@@ -7,6 +7,7 @@ export {
   DecryptionError,
   SignatureError,
   IdentityMovedError,
+  StorageMovedError,
   ExpiredError,
   RollbackError,
   type ErrorCode,
@@ -37,11 +38,12 @@ export {
   DEVICE_CERT_VERSION,
   SHARING_CERT_VERSION,
   type TrustOptions,
+  type SharingCertOptions,
   type DeviceCert,
   type SharingCert,
   type VerifiedSharingCert,
 } from './certs';
-export { sealSharingKey, openSharingKey, SHARING_KEY_VERSION, type SharingKey } from './sharing-key';
+export { sealSharingKey, openSharingKey, generateVaultDataKey, SHARING_KEY_VERSION, type SharingKey } from './sharing-key';
 export {
   sealPack,
   openPack,
@@ -58,6 +60,7 @@ export {
   type PackHeader,
   type PackPadding,
   type PackIndex,
+  type PackType,
 } from './pack';
 export { createGroup, rotateGroup, sealGroupKey, openGroupKey, GROUP_KEY_VERSION, type Group, type OpenedGroup } from './group';
 export {
@@ -65,12 +68,22 @@ export {
   verifyIndex,
   checkNoRollback,
   sharingCertOf,
+  indexAnchor,
   serialize,
+  publicEntry,
+  verifyPublicFile,
+  invitationStatus,
   INDEX_VERSION,
+  INDEX_MINOR,
+  MAX_SEQ_STEP,
+  MAX_INDEX_BYTES,
   type SignedIndex,
+  type IndexAnchor,
   type IndexPackEntry,
+  type IndexPublicEntry,
   type IndexContent,
   type DeviceSigner,
+  type InvitationSkipReason,
   type VerifyIndexOptions,
 } from './signed-index';
 export {
@@ -81,15 +94,36 @@ export {
   createInvitationResponse,
   openInvitationResponse,
   collectInvitationAnswers,
+  checkInvitationIndex,
   retireInvitationKey,
   INVITATION_VERSION,
+  INVITATION_RESPONSE_VERSION,
   INVITATION_MAX_TTL_MS,
   INVITATION_MIN_TTL_MS,
+  INVITATION_ANSWER_GRACE_MS,
   type OwnerInvitation,
   type ReceivedInvitation,
   type InvitationResponse,
   type InvitationAnswers,
 } from './invitation';
+export { invitationToken, INVITATION_SEED_BYTES, MAX_LISTED_INVITATIONS } from './invitation-listing';
+export { checkLocation } from './location';
+export {
+  emptyVault,
+  contactRecord,
+  invitationRecord,
+  invitationFromRecord,
+  sealVault,
+  openVault,
+  mergeVaults,
+  cancelAllInvitations,
+  VAULT_VERSION,
+  type VaultRecords,
+  type VaultContact,
+  type VaultInvitation,
+  type CompactDeviceCert,
+  type CancelledInvitation,
+} from './vault';
 export { safetyCode, safetyQrPayload, matchSafetyQr } from './safety';
 export {
   generateTransferCode,

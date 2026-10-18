@@ -51,7 +51,7 @@ The app keeps all its data on the phone, copies it encrypted to a storage chosen
 
 ### Storage protocols
 
-The owner writes with the protocol of their choice; their friends always read through a simple HTTPS address, included in the invitation link. Since everything is encrypted, this read address can safely be public.
+The owner writes with the protocol of their choice; their friends always read through a simple HTTPS address, included in the invitation link. Since everything is encrypted, this read address can safely be public. The read address is certified by the master key (it is part of the sharing certificate, see Loss and theft): friends read only at that certified address, never at an address that a link or a device chooses on its own. Connecting a storage for the first time and changing it therefore need the master key: the primary device, or the 12 words (the app asks for them during the storage wizard, which comes with the recovery kit step).
 
 | Protocol | Write by the owner | Read by friends | Examples |
 | --- | --- | --- | --- |
@@ -66,17 +66,22 @@ HTTPS-only mode suits someone who publishes rarely (a travel list, a guide); the
 
 ### Invitation link and return link
 
-1. I send a friend an invitation link, through any messaging app. It contains the read address of my content, my public key, and a temporary invitation key (valid for 7 days) that lets the invitee immediately see what I share with my friends, while waiting for me to accept their return link; it is removed upon acceptance or expiry.
-2. Their app opens the link, saves my key, then generates a return link containing their public key (and the address of their own content if they also share).
+1. I send a friend an invitation link, through any messaging app or as a QR code. It is short (about 150 characters) and contains only what cannot be fetched: my public key, the read address of my content, a temporary invitation secret (valid for 7 days) that lets the invitee immediately see what I share with my friends, while waiting for me to accept their return link (its access is removed upon acceptance or expiry), and the expiry. Everything else (my sharing certificate, signed by the master key, which certifies the read address, and the list of devices declared lost) is read from my signed index at that address. Before the link is shared, my device publishes an index that lists the invitation (a hash of it, see Data model): this listing, signed by a device that the master key has not revoked, is what proves the link comes from me. The device that creates an invitation also signs its record in the recovery vault, with its own device certificate, so that my other devices list only invitations really created by one of my devices that is not declared lost; an invitation lasts at most 7 days. Inviting a friend or answering an invitation never requires the 12 words. Inviting requires a storage: without one, there is no index to vouch for the link, so the app offers the storage wizard first.
+2. Their app opens the link, reads my index only at the address certified by my master key, checks that it is mine and that it lists the invitation, then saves my key and shows my content; it then generates a return link containing their public key and sharing certificate (with the certified address of their own content if they also share).
 3. They send me this link; I open it and choose what they can see (by default: everything I share with "friends").
 4. My app adds the wraps for their key; they see my content at their next sync. If we both share, the exchange works in both directions.
 
 Protecting the invitation (decided after the crypto review, T-002):
 
-- **One answer per invitation**: an invitation accepts a single return link. If several answers arrive (the link was forwarded or intercepted), none is accepted automatically: the app shows them all with a warning and I choose.
+- **One answer per invitation**: an invitation accepts a single return link. If several answers arrive (the link was forwarded or intercepted), none is accepted automatically: the app shows them all with a warning and I choose. The app keeps the invitation (in the recovery vault, so every device sees it) until 7 days after its expiry, even after accepting an answer: if another person answers later, it warns that the first answer may have come from an impostor and offers to revoke it.
+- **Late answers**: an answer created before the invitation expired is still accepted for 7 days after expiry (the friend opened the link on day 6, I open the app on day 8). During that grace period a second answer still triggers the "first answer may be an impostor" warning. After it, answers are no longer opened. The creation date of an answer is claimed by whoever made it, so anyone who kept the link could date an answer before expiry: an answer opened after expiry is flagged and never accepted automatically, even when it is the only one; the app asks me ("Léa answered after the invitation expired") and suggests comparing the safety code.
 - **Re-encryption on acceptance or expiry**: when the invitation is accepted or expires, the content it opened is re-encrypted with new pack keys (not merely re-wrapped), so someone who kept a copy of the link can no longer read anything new.
 - **Optional verification**: each contact shows a safety code computed from both identities (12 groups of 5 digits, or a QR code to scan). Comparing it is not mandatory: each person can mark a contact as "verified" once they have really compared the code, by phone or face to face; until then the contact shows an "unverified" badge, on the request, in the contact card and wherever the friend appears. Marking is a personal declaration, never sent to anyone. If a verified contact's identity changes, the mark is removed and the badge comes back.
-- **Compact link**: the invitation is encoded in a compact binary form (about 300 characters) so that it fits in a readable QR code.
+- **Short link**: the invitation is encoded in a compact binary form of 50 bytes plus the read address: about 150 characters with the `https://triangulair.app/i#` prefix and a typical address, at most 200 characters for an address of up to 80 characters, so that its QR code stays small (version 10 or lower). The number of devices declared lost does not change its size. The return link, which goes through messaging, keeps the full form (about 530 characters plus the address of the responder's content, and 43 per device they declared lost), because most invitees answer before having a storage.
+- **How the link is bound to me**: the link itself is not signed. My signed index lists a hash of each open invitation, covering every field of the link (my key, the invitation key, the rotation, the expiry and the read address); the invitee's app accepts the link only if the index found at the address certified by my master key is signed for the key named in the link and lists the invitation. A forged link (another key, another address, a changed expiry) is therefore refused, not redirected. The list is padded with dummy entries that all my devices derive in the same way from a secret they share (the vault data key), and that come and go at their own pace (each within 1 to 7 days) like real invitations, so that the public index shows only a rough bucket (4, 8, 16… entries), present even when no invitation is open. What remains visible to someone who polls my index: when it is republished (inviting requires a publication), when the bucket changes, and occasionally that an entry which comes back was a dummy. The listing is kept until expiry, also after acceptance (so that a late second answer can still arrive), and dropped at expiry. A device lists only invitations whose vault record is signed by one of my devices not declared lost, lasts at most 7 days and was created under my current sharing certificate; a record that breaks these rules (for example one planted by a stolen phone) is skipped and reported, and never prevents publishing the index. A genuine record that cannot be listed yet (the device that created it has a clock a few minutes ahead, or already holds a newer certificate than the publishing device) is kept and listed later; only a record that is invalid, made by a device declared lost, or expired (after the grace period) is ever removed from the vault.
+- **Any key change cancels open invitations**: an invitation is listed only under the sharing certificate it was created with. Every change of that certificate (a declaration of loss, a storage move, a new sharing key) therefore cancels the invitations open at that time, whatever copy of the vault a device merges later: an invitation that comes back from an older copy is never listed again. The app tells me which links were cancelled and who had not answered yet, so I can send them new ones ("Your pending invitations were cancelled; send new ones"). Inviting again takes a few seconds; a storage move or a key change is rare.
+- **Freshness**: the link carries the rotation of my sharing certificate at the time of the invitation. The invitee's app reads my index only at the certified address (or at a newer certified address, if the old storage holds a signed redirect), refuses an index older than that rotation, refuses the link if the index has a later rotation (the invitation was cancelled by a key change) and refuses it if the index does not list it. A device declared lost can therefore no longer pass as me to a new contact: it cannot publish an index that friends accept, the address cannot be redirected elsewhere since it is certified by the master key, and the index published at the declaration no longer lists any invitation that was open at the time. For a return link, on my side, my app reads the responder's index at their certified address, refuses an index older than the certificate in the answer, and refuses the answer if its device is revoked there. If the person is already a contact, a link never resets what the app already knows about them.
+- **Direct recipient**: content opened to an invitation is wrapped directly for the invitation key, never through a recipient group, so that re-encryption really cuts off the link. Every key reachable from that content (a photo key, a link-only list key) is renewed too.
 
 When meeting face to face, an exchange of QR codes replaces the two links: the keys are exchanged directly, without an invitation key, and the contact is marked as verified automatically.
 
@@ -104,7 +109,8 @@ Each direction of the relationship is independent:
 
 - A small signed index, encrypted packs (by batch of places or by geographic zone) and photos as separate files, also encrypted.
 - Only modified packs are rewritten; friends ask "has it changed?" (ETag header) and download only what is needed. The storage's ETag is only a cache hint: integrity always comes from the content hash recorded in the signed index.
-- Pack files are named after the hash of their content and never modified: a new version of a pack is a new file. The pack's logical identifier is stored inside the encrypted content, so neither the storage nor a former friend can link successive versions of a pack.
+- Pack files are named after the hash of their content and never modified: a new version of a pack is a new file. The pack's logical identifier is stored inside the encrypted content, so the files themselves do not reveal which pack they are a version of; comparing two successive indexes still shows which file replaced which when a single pack changed, which the app blurs by grouping replacements.
+- The index is the file `index.json` at the read address (during a major format transition, newer majors are published next to it as `index.v<N>.json`, see Format versions). It is public: it reveals the number of devices declared lost, the number of publications (and so when I invite, since an invitation needs a publication), the number of packs and a rough bucket of the number of open invitations (padded), never their content, recipients or invitees.
 - Friends' content is kept in cache in the app (decrypted in the local database, itself protected by the phone's encryption) for instant display. It is refreshed on opening, regularly as long as the app stays open, and on demand (pull to refresh) , and ends just after the app is closed; no periodic task. By comparing the old and new versions, the app knows exactly what has changed: this is what feeds the What's new view.
 - Several devices of the same user write to the same storage; an automatic merge technique (CRDT, Automerge library) avoids conflicts.
 - The storage still sees file sizes and update dates; the app adds padding to limit what can be inferred from them.
@@ -133,10 +139,15 @@ On the phone side, the friends' cache has an adjustable maximum size: their data
 
 Goal: friends who do not have the same app version continue to read each other, with no server to coordinate.
 
-- **Two version levels** in the index: minor for compatible additions (new fields), major for incompatible changes.
-- **Ignore the unknown**: an app silently ignores the fields and item types it does not know, and keeps them as is when it rewrites its own content (the case of two devices of the same user with different versions).
+- **Two version levels** in the index and every signed or encrypted JSON structure: `version` is the major version (incompatible changes: a reader refuses a major it does not know), `minor` (absent means 0) marks compatible additions. Binary structures (invitation link, return link, sealed keys, transfer) carry only a major version.
+- **Ignore the unknown**: an app silently ignores the fields and item types it does not know when the document declares a higher minor version than its own. The signature (or the encryption) covers the whole document, unknown fields included. Without a higher minor, an unknown field is an error. When it rewrites a document (the case of two devices of the same user with different versions):
+  - **content documents** (places and lists in Automerge, the recovery vault: its records, their unknown fields and its free-form app part) keep the unknown fields and records as is, with the higher minor version;
+  - **documents derived from the owner's current state** (the signed index above all) are written again from that state: an older device drops the fields it does not know and writes its own minor version. It never copies them, because it cannot tell whether they are still true (an open-invitation list copied blindly would outlive expiry, or a declaration of loss). The next newer device to publish puts them back.
+
+  A future field that an older device must neither drop nor copy needs a new major version.
+- **Except what affects security**: a field whose meaning matters for security is listed in the document's `crit` list; an app that does not understand a listed field refuses the whole document ("Update the app to see Léa's places"), like JWS/JWE. Such a field must not be dropped by an older device; if it cannot be, the change is a new major version.
 - **Everyone announces what they can read**: the index publishes the list of versions that its owner's app understands. When writing, the app chooses for each pack the most recent version that all its recipients can read. No server needed: the information is already in the indexes everyone reads.
-- **Gentle transition**: during a major version, the app writes in both the old and new format as long as a friend has not updated, within a limit of one year.
+- **Gentle transition**: during a major version, the app writes in both the old and new format as long as a friend has not updated, within a limit of one year. The index of the new major is published under its own name next to the old one (`index.v<N>.json` beside `index.json`); an app reads the highest major it understands.
 - **Clear message** when content remains unreadable: "Update the app to see Léa's places".
 - **Identified algorithms** in each pack (encryption, wrap, signature): they can be changed later, for example to quantum-resistant encryption, without breaking old content.
 - **Guaranteed reading** of old formats for at least two years after their replacement.
@@ -506,7 +517,7 @@ Principle: reach the map in under a minute. The key is created without asking an
   - WebDAV, S3, SFTP: form adapted to each protocol (address, username, password or key), plus the HTTPS read address if it differs.
   - HTTPS only: explanation of manual publishing.
   - Full test before validation: write, read, delete a test file, and check that the read address does respond from the outside.
-- **First friend**: "Invite a friend" button that generates the invitation link and opens the phone's share menu.
+- **First friend**: "Invite a friend" button that generates the invitation link, publishes the index that lists it, then opens the phone's share menu (or shows the QR code).
 
 ### Recovery kit
 
@@ -515,7 +526,19 @@ To recover everything after a loss, two items are enough, easy to store in a pas
 - **The recovery phrase** (12 words): it recreates the key.
 - **The storage read address** (HTTPS): it leads to the encrypted content.
 
-Everything else is stored, encrypted with the key, in a "recovery vault" on the storage: storage write credentials, list of friends and their keys, groups, settings. On restore, the app recreates the key, reads the vault and rebuilds everything. If the storage credentials have changed since, the app asks for them again.
+Everything else is stored, encrypted, in a "recovery vault" on the storage: storage write credentials, list of friends and their keys, groups, settings. The vault data is encrypted with a random vault data key, sent to each device like the sharing key, in the same sealed package (so every device can update the friend list) and renewed when a device is declared lost; the vault itself also keeps the current sharing key and vault data key, encrypted with a key derived from the recovery phrase, which no device keeps. On restore, the app recreates the key, reads the vault and rebuilds everything. If the storage credentials have changed since, the app asks for them again.
+
+The vault records that the security rules depend on have a fixed format (crypto package, `vault.ts`), padded to hide their size:
+
+- **Friends' keys**: for each contact, their sharing certificate (key and certified read address) and the "verified" mark.
+- **Last index seen per contact**: a compact anchor (rotation, sequence number, hash), so that a restore does not fall back to trusting whatever index is served first.
+- **Open invitations**: the invitation secret, its dates (at most 7 days apart), the read address written in the link, the certificate of the device that created it and that device's signature over all of these, every answer received and the accepted one, kept until 7 days after expiry, so that any device can keep listing it in the index until expiry, warn about a late answer and re-encrypt at expiry. The signature lets every device check who created an invitation before listing it: a stolen device can write to the vault until the declaration, but it cannot write an invitation in another device's name or make one last longer.
+- **Retired identities**: identities that announced a move, never trusted again.
+- **App data**: storage credentials, groups, settings, free-form.
+
+Two devices that write the vault at the same time merge their versions (newest anchor per contact, union of answers and retired identities). A merge may bring back invitation records that a declaration of loss removed (from a copy made before it); they are never listed again, since they belong to an older sharing certificate (see Invitation link and return link). When more than 16 answers to one invitation are gathered, the answers that open and verify for it are kept first, one per responder (the accepted one, then the others), so that junk written by a stolen device cannot push out the answer of a real second person. A device with an older app version keeps the fields and records added by a newer version (and the higher minor version) when it merges and saves the vault.
+
+Every device holds the vault data key, so a stolen device can write anything into the vault until the declaration, and what it wrote is carried over when the vault is saved with the new key. A vault field that a future version gives a security meaning must therefore not be trusted on the vault data key alone: it must be signed by the device that wrote it, with its device certificate (as invitation records are), or it needs a new major version of the vault.
 
 Kit export formats, to choose from:
 
@@ -527,7 +550,7 @@ In local-only mode, the phrase is not enough, since no copy of the places exists
 
 ### Adding a device
 
-Each device has its own device key, generated on the device and never copied. What passes from one device to the other: the current sharing key (encrypted for the new device key), storage access and friends' keys. The master key is not transferred: it stays with the recovery phrase and, if the user chooses, on a single **primary device**. Adding a device is therefore done from the primary device, or by typing the 12 words on the new device. Three ways, from the safest to the last resort:
+Each device has its own device key, generated on the device and never copied. What passes from one device to the other: the current sharing key and vault data key (encrypted for the new device key), storage access and friends' keys. The master key is not transferred: it stays with the recovery phrase and, if the user chooses, on a single **primary device**. Adding a device is therefore done from the primary device, or by typing the 12 words on the new device. Three ways, from the safest to the last resort:
 
 1. **QR code (default)**: both devices side by side; the new one scans the old one's screen. The two devices create a shared temporary key, and the transfer is encrypted with it; nothing travels in the clear.
 2. **Link + code (remote)**: the old device encrypts the transfer pack and temporarily drops it on the storage, then produces a link to send to oneself by mail or messaging, and displays a 6-word code to type on the new device. The link alone allows nothing; the code must never be sent through the same channel. The link expires after 15 minutes and works only once; the pack is then deleted from the storage. The encryption key is derived from the code by a deliberately slow function (Argon2), to discourage attempts to guess the code.
@@ -535,24 +558,26 @@ Each device has its own device key, generated on the device and never copied. Wh
 
 Each device appears in the settings (name, date added), and can be removed: the app then creates a new sharing key, which friends adopt at their next sync (see Loss and theft).
 
+Changing storage also needs the master key (primary device or 12 words): the new read address is certified in a new sharing certificate, and the old storage keeps the newest index as a signed redirect (see Error cases). Like every change of the sharing certificate, it cancels the invitations still open (see Invitation link and return link): the app lists the people invited who had not answered, to send them new links.
+
 ### Loss and theft
 
 Keys are organized in two levels so that a theft does not cost you your friends:
 
 - **Master key**: recreated from the recovery phrase, it is used only for signing. This is the one friends know as "your identity". It is kept only on the primary device (optional) and is otherwise recreated from the 12 words when needed: adding or removing a device, changing the sharing key.
-- **Sharing key**: the one for which friends wrap their content. It is generated at random (it is not derived from the phrase, so a new one cannot be guessed from an old device), certified by the master key, and sent to each device encrypted for that device's own key. The recovery vault on the storage keeps a copy, encrypted with a key derived from the phrase.
+- **Sharing key**: the one for which friends wrap their content. It is generated at random (it is not derived from the phrase, so a new one cannot be guessed from an old device), certified by the master key, and sent to each device encrypted for that device's own key. The recovery vault on the storage keeps a copy, encrypted with a key derived from the phrase. Its certificate also carries the read address of my storage and the list of devices declared lost, so all three change together, under the master key.
 - **Device key**: one per device, never copied.
 
-Why: a stolen ordinary device holds neither the phrase nor the master key, so after the key change it can neither compute the new sharing key nor certify a key of its own.
+Why: a stolen ordinary device holds neither the phrase nor the master key, so after the key change it can neither compute the new sharing key nor certify a key of its own. Its device certificate does not expire, but everything it signs is checked against the current master-signed state at my certified read address: my friends refuse what it publishes, a new contact who receives an invitation it made reads my index at that address, which does not list it, and an inviter who receives an answer it made reads the revocation there and refuses it. It cannot redirect them elsewhere, since the address is certified by the master key.
 
 **Loss (phone broken or misplaced without particular risk)**: on the new device, the recovery kit is enough; everything is restored, nothing else to do.
 
 **Theft**: from the primary device, or from any device after typing the 12 words, the "Declare a device lost" action:
 
-1. Removes the stolen device from the list and creates a new sharing key, signed by the master key.
-2. Re-encrypts its own content with new batch keys: the thief no longer sees any update.
+1. Removes the stolen device from the list and creates a new sharing key and a new vault data key; the new sharing certificate, signed by the master key, lists the device as revoked. **Every open invitation is cancelled**, whoever created it: the stolen device could read their secrets in the vault. They are removed from the vault, which is saved with the new vault data key, and the index published with the new certificate lists none, so their links stop working. The cancellation follows from the new certificate itself, not only from the removal: my devices list only invitations created under the current certificate, so a copy of the vault from before the declaration (merged by a device that had not seen it yet, or written by the thief with the old vault data key) cannot bring them back. People I had invited who had not answered yet need a new link; the app says so ("Your pending invitations were cancelled; send new ones") and lists them. If the vault on the storage cannot be opened (the thief may have damaged it), the declaration starts from the last copy a remaining device opened.
+2. Re-encrypts its own content with new batch keys, for the remaining recipients only (never the keys of the cancelled invitations): the thief no longer sees any update.
 3. Publishes the key change on the storage: friends' apps verify it thanks to the master key's signature, accept it automatically and from then on wrap their content for the new key. No need to re-invite anyone; friends see "Marie changed her key" in their What's new.
-4. Guides the change of storage access (revoking the Nextcloud app password, new S3 or SSH key), so that the stolen phone can no longer write.
+4. Guides the change of storage access (revoking the Nextcloud app password, new S3 or SSH key), so that the stolen phone can no longer write: on the current storage **and on every previous storage that still holds a redirect**. An older certificate certifies the older address, and the stolen device can still sign indexes of that older rotation: anyone who can write there could leave a stale index listing invitations made before the declaration, which a new contact holding such a link would accept. For the same reason, a custom domain used as a read address should stay registered (or the provider's own address should be used): whoever re-registers an expired domain can serve an old, validly signed index of mine to a new contact who has never seen a newer one, and only the safety code protects that first contact.
 5. Shows the changes made on the storage since the date of the theft, with the option to revert to the previous state (local copy from other devices, or the storage's version history).
 
 **Remote wipe**: the declaration writes a device revocation on the storage, signed by the master key. At its next sync, the stolen phone's app reads it, verifies the signature and erases its keys and all its local content. The app checks revocations before displaying anything each time it is opened, as soon as it has network access.
@@ -586,10 +611,14 @@ Principles: never lose local data, keep working in degraded mode, and explain ea
 | Interrupted write | Packs are written first, the index last: an index always points to complete packs | Nothing |
 | Two of my devices write at the same time | Conditional write (ETag); on conflict, re-read, automatic merge, retry | Nothing |
 | A friend's storage unreachable | Their content stays displayed from the cache | On their profile, "Updated 12 days ago"; after 3 months, offer to keep or remove their content |
-| A friend changes storage | The old storage keeps a signed redirect to the new one for a few months; otherwise, a new link from them is recognized thanks to the same master key and picks up where we left off | "Léa moved her content", no action |
+| A friend changes storage | The new address is certified by their master key (a new sharing certificate, so the move needed their 12 words or primary device). Their old storage keeps their newest index for a few months: it is the signed redirect, and the app follows it only to the address certified in it. Otherwise, a new link from them is accepted only through its certificate, which must not be older than the one we hold, and picks up where we left off; an address that a link or a device chooses on its own is never followed | "Léa moved her content", no action |
 | Tampered content (invalid signature) | Rejected, last valid version kept | "Léa's content could not be verified", with no technical detail |
 | Unsupported format version | Content ignored | "Update the app to see Léa's places" |
-| Invalid invitation or list link | — | "This link no longer works" or "This list no longer exists", with a suggestion to ask for a new link |
+| Invalid invitation or list link (expired, cancelled by a key change such as a declaration of loss or a storage move, forged) | — | "This link no longer works" or "This list no longer exists", with a suggestion to ask for a new link |
+| Answer opened after the invitation expired (grace period) | Never accepted automatically, even when it is the only answer | "Léa answered after the invitation expired. Accept?", with a suggestion to compare the safety code |
+| I change storage, or my sharing key changes (new sharing certificate) | Every invitation still open is cancelled: it was created under the previous certificate and is no longer listed; the records stay in the vault until expiry so that answers already sent can still be read, and nothing more is shared with their keys | "Your pending invitations were cancelled; send new ones", with the list of people who had not answered |
+| An invitation record in the vault is invalid (unsigned, signed by a device declared lost, lasting more than 7 days) | Not listed in the index, which is still published; the record is dropped from the vault | Nothing, or "An invitation could not be verified and was removed" |
+| An invitation record cannot be listed yet (created a few minutes "in the future" by a device whose clock is ahead, or under a newer certificate than this device holds) | Not listed for now, the index is still published; the record is kept and listed once the clock or the certificate catches up. Only invalid, revoked or expired records are ever removed | Nothing |
 | Map tiles unavailable | Cache of viewed areas, then fallback address | Map possibly less detailed, no message as long as the cache is sufficient |
 | OSM search or data unavailable | Fallback service; adding a place by long press still possible; place card enrichment retried later | "Search unavailable, place the place on the map" |
 | App not opened for a long time | Sync at each opening | Nothing |
@@ -684,7 +713,7 @@ On the phone, a local SQLite database; on the storage, only encrypted packs. The
 
 | Local table | Main fields | Role |
 | --- | --- | --- |
-| people | id, display\_name, avatar, public\_key, read\_url (HTTPS read address), is\_me, i\_follow, follows\_me, request\_state (received / sent / accepted request), last\_etag, last\_sync | Me and my friends; one key per person |
+| people | id, display\_name, avatar, public\_key, read\_url (HTTPS read address, the one certified in their sharing certificate), is\_me, i\_follow, follows\_me, request\_state (received / sent / accepted request), last\_etag, last\_sync | Me and my friends; one key per person |
 | groups, group\_members | id, name ; group\_id, person\_id | Local shortcuts ("friends", "family"), never shared |
 | places | id, osm\_type, osm\_id, name, category, geom (point, line or polygon), kind (place / zone), edge (sharp / blurred), address, opening\_hours, website, phone, osm\_tags (JSON: cuisine, diet:\*, outdoor\_seating, happy\_hours, reservation, fee, charge, museum, shop…), photos (Commons, Panoramax links), osm\_synced\_at, status (open / maybe closed / closed), closed\_signals | Shared place card, cache of OSM data |
 | saves | id, owner\_id, place\_id, comment, comment\_visibility (private / friends / public), status, price\_level (1 to 4), sharing (private / friends, friends by default), main\_tag\_id, created\_at, updated\_at | "I saved this place"; also contains friends' decrypted saves |
@@ -697,29 +726,37 @@ On the storage, a signed index describes the packs:
 
 ```json
 {
-  "version": 2,
+  "version": 4,
   "seq": 42,
   "owner": "ed25519:9fK2…",
   "updated": "2026-10-13T15:10:00Z",
   "device_cert": { "device": "ed25519:…", "box": "x25519:…", "signature": "…" },
-  "sharing_cert": { "key": "x25519:…", "rotation": 3, "signature": "…" },
+  "sharing_cert": { "key": "x25519:…", "location": "https://cloud.example.org/s/…", "rotation": 3, "signature": "…" },
   "revoked_devices": ["ed25519:…"],
-  "reads": ["2"],
+  "reads": ["4"],
   "packs": [
     { "file": "packs/b2b256-7c1e….bin", "hash": "b2b256:7c1e…" },
     { "file": "packs/b2b256-b902….bin", "hash": "b2b256:b902…" }
   ],
-  "public": "public/lists.geojson",
+  "public": { "file": "public/lists.geojson", "hash": "b2b256:3a90…" },
+  "invitations": ["b2b256:0c4f…", "b2b256:5d2a…", "b2b256:9e71…", "b2b256:e803…"],
   "signature": "…"
 }
 ```
 
-- `seq`: publication counter, incremented at each publication and claimed with a conditional write; it alone orders indexes. A reader refuses an index with a lower `seq` than the last one seen (rollback), and an index with the same `seq` but different content (fork), which it reports.
+- Order: indexes are ordered first by the rotation of `sharing_cert`, then by `seq`. A reader refuses an index with a lower rotation than the last one seen. An index with a higher rotation (signed by the master key, so only the owner can produce it) supersedes every earlier index whatever their `seq`, provided it revokes at least the same devices: a stolen device that is not yet revoked cannot block its own revocation by publishing a huge `seq`.
+- `seq`: publication counter, incremented at each publication and claimed with a conditional write; it orders indexes within one rotation and may restart with a new rotation. Within a rotation, a reader refuses an index with a lower `seq` than the last one seen (rollback), an index with the same `seq` but different content (fork), which it reports, and a jump of more than 2^20 over the last one seen.
 - `updated`: informational only; an index dated more than 24 hours in the future is refused.
-- The index is signed by the publishing **device's** key (ordinary devices do not hold the master key); `device_cert` is that device's certificate, signed by the master key. A device listed in `revoked_devices` can no longer publish.
+- The index is signed by the publishing **device's** key (ordinary devices do not hold the master key); `device_cert` is that device's certificate, signed by the master key. A device listed in `revoked_devices` can no longer publish for any reader that has seen that revocation; new friends find the index at the address given by the invitation link, accept it only if its master-signed certificate certifies that address (or redirects to the certified one), and read the owner's sharing certificate from it.
 - `sharing_cert` (signed by the master key), `revoked_devices` (covered by that same master signature, so a stolen device that is not yet revoked cannot revoke the real ones; the list is permanent) and `reads` (format versions the owner can read): inside the index so they share its rollback protection.
+- `sharing_cert.location`: the read address, certified by the master key. A reader that finds, at the address it read, an index certifying another address (newer rotation) treats it as a redirect and reads only there. The rotation is a 32-bit unsigned integer and increases whenever the sharing key, the read address or the list of revoked devices changes; each increase cancels the invitations open at that time (see `invitations`). `seq` is an integer up to 2^53.
+- `minor` and `crit` (optional): see Format versions.
 - `move` (optional): the signed identity change published after the primary device is stolen.
 - `hash`: content hash of each pack (256-bit BLAKE2b, algorithm prefixed); the storage's own ETag is never trusted for integrity.
+- `public` (optional): the plaintext file of public lists, with its content hash, so that it is verified like the packs.
+- `invitations` (format 4.0, written in every index): one hash per open invitation (of my master key, the invitation key, the rotation, the expiry and the read address written in the link), sorted and padded with dummy hashes to 4, 8, 16… entries (at most 256), also when no invitation is open. The dummies are derived from the vault data key, so every device of mine writes the same ones, and each one changes value at its own period of 1 to 7 days. An invitation link is accepted only if my current index lists it, which is what binds the short, unsigned link to me; only a device that is not declared lost can publish an index that friends accept, and it lists only invitations whose vault record is signed by a device of mine not declared lost, last at most 7 days, have not expired and were created under the rotation of this index's `sharing_cert` (a reader also refuses a link whose rotation is older than the index's). Every device holds the vault data key, so every index carries the field. A reader accepts an index without it.
+- Rewriting: the index is always written from the owner's current state, never copied; a device drops the fields it does not know (see Format versions).
+- Each pack is bound to its owner (the owner key is part of the authenticated data): a pack copied into someone else's index does not open, so nobody can re-publish my content under their name.
 
 Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
 
@@ -764,7 +801,7 @@ Possible configurations:
 - **Nextcloud with a hosting provider**: the simplest route for non-technical users; the provider only sees encrypted data.
 - **Fully self-hosted**: in addition, tiles and search on one's own machines, so as not to depend on any public service.
 
-On first launch, the user chooses local-only mode or a storage (WebDAV, S3 or SFTP: address and credentials, plus the HTTPS read address if it differs). They can change later; the app copies everything over.
+On first launch, the user chooses local-only mode or a storage (WebDAV, S3 or SFTP: address and credentials, plus the HTTPS read address if it differs). They can change later; the app copies everything over (the new read address is certified by the master key, so the change needs the primary device or the 12 words).
 
 ### Base map
 
@@ -811,7 +848,7 @@ Security:
 - Private key kept in the phone's secure vault (Keychain on iOS, Keystore on Android), backed up only in a form encrypted by the recovery phrase.
 - Storage credentials (WebDAV password, S3 keys, SSH key) kept the same way; dedicated accesses limited to the app's folder are recommended (Nextcloud app password, S3 key restricted to one bucket).
 - All content read from a friend is verified (signature) before display; modified content is rejected.
-- Key verification: a QR code exchange, or comparing a short code displayed on both sides, confirms that the key is the right one.
+- Key verification: a QR code exchange, or comparing the safety code (12 groups of 5 digits) displayed on both sides, confirms that the key is the right one.
 - Standard encryption libraries (libsodium), no homemade algorithm; external security audit before the first public release.
 
 Moderation:
@@ -826,13 +863,13 @@ What we protect: places and comments (which can reveal a home, habits, acquainta
 
 | Who | What they may attempt | Protection | What remains possible |
 | --- | --- | --- | --- |
-| Storage host, or anyone with access to it | Read, modify or delete files | Encryption, signatures, anonymous wraps, padding; restoration from local copies | Seeing the data volume, update dates and readers' IP addresses |
+| Storage host, or anyone with access to it | Read, modify or delete files | Encryption, signatures, anonymous wraps, padding; restoration from local copies | Seeing the data volume, update dates (so when I invite: an invitation needs an index publication), a rough bucket of open invitations, and readers' IP addresses |
 | Network observer (public Wi-Fi, internet provider) | Eavesdrop on exchanges | HTTPS everywhere | Knowing that the app is in use and which storages are read, and so guessing who follows whom |
 | OSM, tile and search services | Observe requests | No account, local cache, self-hosting possible | Knowing the areas viewed and the searches, tied to an IP address |
 | Followed person or follower | Copy what has been opened to them, modify their app | Access removal that erases their cache at the next synchronization | Keeping deliberately made copies |
 | Holder of a list link | Forward the link | New link to cut off access | The link stays forwardable until it is renewed |
-| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | One answer per invitation, warning when several arrive, optional safety code (12 groups of 5 digits or QR) and "unverified" badge until the user marks the contact as verified | Succeeding if the user accepts without verifying |
-| Phone thief | Read local content, write to the storage | App lock, system vault, remote wipe, random sharing key that the device cannot regenerate, master key absent from ordinary devices, key change and storage access change | Reading what was visible between the theft and the revocation, if the app was not locked; if the primary device is stolen, an identity change is needed |
+| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | One answer per invitation, warning when several arrive, including after acceptance (the invitation is kept until 7 days after it expires, and answers created before expiry are still opened then), an answer opened after expiry is never accepted automatically, optional safety code (12 groups of 5 digits or QR) and "unverified" badge until the user marks the contact as verified | Succeeding if the user accepts without verifying, until the real friend's answer arrives and triggers the warning (if an attacker who reads my messages drops that answer, only the safety code helps) |
+| Phone thief | Read local content, write to the storage, pass as me to new contacts | App lock, system vault, remote wipe, random sharing key that the device cannot regenerate, master key absent from ordinary devices, key change and storage access change; read address certified by the master key, invitations valid only while listed in my current index (a revoked device can no longer list any; each invitation record is signed by the device that created it, so it cannot plant one in another device's name; every open invitation is cancelled at the declaration), answers checked against the revocation at the certified address | Reading what was visible between the theft and the revocation, if the app was not locked; inviting in my name before the declaration; serving a stale index to a new contact at an old address whose storage access was not changed, or at a domain I let expire and that it re-registers (only the safety code helps then); if the primary device is stolen, an identity change is needed |
 | Access to my messaging or my emails | Intercept an invitation or transfer link | An invitation only contains a temporary key, valid for 7 days; a single answer is accepted; content is re-encrypted on acceptance or expiry; a device transfer requires a separate code and expires in 15 minutes | Seeing whom I send invitations to, and reading what was shared with friends until the invitation is accepted or expires |
 | Compromised app code or dependencies | Exfiltrate keys | Open code, reproducible builds, limited and audited dependencies, external audit | Residual risk inherent to any software |
 | Malicious author of a public list (a third party's private address) | Expose someone | Warning at publication, author's responsibility, possible removal by the host | No central moderation to prevent it |

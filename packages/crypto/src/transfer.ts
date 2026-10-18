@@ -1,11 +1,10 @@
 import { wordlist } from '@scure/bip39/wordlists/english.js';
-import { verifySharingCert, type TrustOptions } from './certs';
+import { verifySharingCert, type SharingCertOptions } from './certs';
 import {
   bytesEqual,
   canonicalize,
   checkByteVersion,
-  checkKeys,
-  checkVersion,
+  checkStructure,
   concat,
   fromB64Url,
   fromUtf8,
@@ -143,31 +142,40 @@ export function decryptTransfer(blob: Uint8Array, code: string, opts: { now?: Da
 
 // ---------------------------------------------------------------------------
 // Key export: payload for encryptForTransfer, canonical JSON
-//   {"cert":<sharing cert>,"secret":"<b64url 32B>","type":"key-export","version":2}
-// Only the CURRENT sharing key travels. The master key never does (it stays with the phrase and
+//   {"cert":<sharing cert>,"secret":"<b64url 32B>","type":"key-export","vault_key":"<b64url 32B>","version":3}
+// Only the CURRENT sharing key and vault data key travel. The master key never does (it stays with the phrase and
 // the optional primary device); the new device generates its own device keys and gets a device
 // certificate from the primary device or the phrase.
 // ---------------------------------------------------------------------------
 
-export const KEY_EXPORT_VERSION = 2;
+export const KEY_EXPORT_VERSION = 3;
 
 export function encodeKeyExport(sharing: SharingKey): Uint8Array {
   const v = verifySharingCert(sharing.cert);
   if (!bytesEqual(S().crypto_scalarmult_base(sharing.keyPair.secretKey), v.sharingPublicKey)) {
     throw new FormatError('key-export: sharing key does not match certificate');
   }
-  return utf8(canonicalize({ type: 'key-export', version: KEY_EXPORT_VERSION, secret: toB64Url(sharing.keyPair.secretKey), cert: v.cert as unknown as JsonObject }));
+  if (!(sharing.vaultDataKey instanceof Uint8Array) || sharing.vaultDataKey.length !== 32) throw new FormatError('key-export: vault data key must be 32 bytes');
+  return utf8(
+    canonicalize({
+      type: 'key-export',
+      version: KEY_EXPORT_VERSION,
+      secret: toB64Url(sharing.keyPair.secretKey),
+      vault_key: toB64Url(sharing.vaultDataKey),
+      cert: v.cert as unknown as JsonObject,
+    }),
+  );
 }
 
-export function decodeKeyExport(bytes: Uint8Array, opts: TrustOptions = {}): SharingKey {
+/** Pass `expectedOwner`, and `lastSeen` if the receiving device already holds a sharing key (R-08). */
+export function decodeKeyExport(bytes: Uint8Array, opts: SharingCertOptions = {}): SharingKey {
   const W = 'key-export';
   const doc = parseJsonObject(fromUtf8(bytes, W), W);
-  checkVersion(doc, W, KEY_EXPORT_VERSION);
-  checkKeys(doc, W, ['type', 'version', 'secret', 'cert']);
+  checkStructure(doc, W, KEY_EXPORT_VERSION, ['type', 'version', 'secret', 'vault_key', 'cert']);
   if (doc['type'] !== 'key-export') throw new FormatError(`${W}: wrong type`);
   const v = verifySharingCert(doc['cert'] as JsonObject, opts);
   const secretKey = fromB64Url(doc['secret'], `${W}.secret`, 32);
   const publicKey = S().crypto_scalarmult_base(secretKey);
   if (!bytesEqual(publicKey, v.sharingPublicKey)) throw new FormatError(`${W}: sharing key does not match certificate`);
-  return { keyPair: { publicKey, secretKey }, cert: v.cert };
+  return { keyPair: { publicKey, secretKey }, cert: v.cert, vaultDataKey: fromB64Url(doc['vault_key'], `${W}.vault_key`, 32) };
 }

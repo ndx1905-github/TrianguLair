@@ -156,8 +156,9 @@ describe('sharing certificate', () => {
     expect(() => verifySharingCert(unsorted)).toThrow(FormatError);
   });
   it('rejects other versions with UnsupportedVersionError, and unknown fields', () => {
-    expect(() => verifySharingCert({ ...cert, version: 3 })).toThrow(UnsupportedVersionError);
-    expect(() => verifySharingCert({ ...cert, version: 1 })).toThrow(UnsupportedVersionError);
+    expect(() => verifySharingCert({ ...cert, version: 4 })).toThrow(UnsupportedVersionError);
+    expect(() => verifySharingCert({ ...cert, version: 2 })).toThrow(UnsupportedVersionError);
+    expect(() => issueSharingCert(id, generateX25519KeyPair().publicKey, { rotation: 2 ** 32 })).toThrow(FormatError); // u32 (V3-06)
     expect(() => verifySharingCert({ ...cert, extra: 1 })).toThrow(FormatError);
     expect(() => verifySharingCert('{not json')).toThrow(FormatError);
   });
