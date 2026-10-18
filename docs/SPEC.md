@@ -66,17 +66,19 @@ HTTPS-only mode suits someone who publishes rarely (a travel list, a guide); the
 
 ### Invitation link and return link
 
-1. I send a friend an invitation link, through any messaging app. It contains the read address of my content, my public key, and a temporary invitation key (valid for 7 days) that lets the invitee immediately see what I share with my friends, while waiting for me to accept their return link; it is removed upon acceptance or expiry.
+1. I send a friend an invitation link, through any messaging app. It contains the read address of my content, my public key, and a temporary invitation key (valid for 7 days) that lets the invitee immediately see what I share with my friends, while waiting for me to accept their return link; its access is removed upon acceptance or expiry. The link is signed by the device that creates it, with that device's certificate (signed by the master key): inviting a friend or answering an invitation never requires the 12 words.
 2. Their app opens the link, saves my key, then generates a return link containing their public key (and the address of their own content if they also share).
 3. They send me this link; I open it and choose what they can see (by default: everything I share with "friends").
 4. My app adds the wraps for their key; they see my content at their next sync. If we both share, the exchange works in both directions.
 
 Protecting the invitation (decided after the crypto review, T-002):
 
-- **One answer per invitation**: an invitation accepts a single return link. If several answers arrive (the link was forwarded or intercepted), none is accepted automatically: the app shows them all with a warning and I choose.
+- **One answer per invitation**: an invitation accepts a single return link. If several answers arrive (the link was forwarded or intercepted), none is accepted automatically: the app shows them all with a warning and I choose. The app keeps the invitation until its expiry, even after accepting an answer: if another person answers later, it warns that the first answer may have come from an impostor and offers to revoke it.
 - **Re-encryption on acceptance or expiry**: when the invitation is accepted or expires, the content it opened is re-encrypted with new pack keys (not merely re-wrapped), so someone who kept a copy of the link can no longer read anything new.
 - **Optional verification**: each contact shows a safety code computed from both identities (12 groups of 5 digits, or a QR code to scan). Comparing it is not mandatory: each person can mark a contact as "verified" once they have really compared the code, by phone or face to face; until then the contact shows an "unverified" badge, on the request, in the contact card and wherever the friend appears. Marking is a personal declaration, never sent to anyone. If a verified contact's identity changes, the mark is removed and the badge comes back.
-- **Compact link**: the invitation is encoded in a compact binary form (about 300 characters) so that it fits in a readable QR code.
+- **Compact link**: the invitation is encoded in a compact binary form (about 450 characters, including the device certificate) so that it fits in a readable QR code.
+- **Freshness**: the link carries the rotation number of my current sharing key; the invitee's app refuses an older index at my address, and an index in which the device that signed the link is revoked.
+- **Direct recipient**: content opened to an invitation is wrapped directly for the invitation key, never through a recipient group, so that re-encryption really cuts off the link.
 
 When meeting face to face, an exchange of QR codes replaces the two links: the keys are exchanged directly, without an invitation key, and the contact is marked as verified automatically.
 
@@ -515,7 +517,7 @@ To recover everything after a loss, two items are enough, easy to store in a pas
 - **The recovery phrase** (12 words): it recreates the key.
 - **The storage read address** (HTTPS): it leads to the encrypted content.
 
-Everything else is stored, encrypted with the key, in a "recovery vault" on the storage: storage write credentials, list of friends and their keys, groups, settings. On restore, the app recreates the key, reads the vault and rebuilds everything. If the storage credentials have changed since, the app asks for them again.
+Everything else is stored, encrypted, in a "recovery vault" on the storage: storage write credentials, list of friends and their keys, groups, settings. The vault data is encrypted with a random vault data key, sent to each device like the sharing key (so every device can update the friend list) and renewed when a device is declared lost; the vault itself also keeps the current sharing key and vault data key, encrypted with a key derived from the recovery phrase, which no device keeps. On restore, the app recreates the key, reads the vault and rebuilds everything. If the storage credentials have changed since, the app asks for them again.
 
 Kit export formats, to choose from:
 
@@ -697,29 +699,32 @@ On the storage, a signed index describes the packs:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "seq": 42,
   "owner": "ed25519:9fK2…",
   "updated": "2026-10-13T15:10:00Z",
   "device_cert": { "device": "ed25519:…", "box": "x25519:…", "signature": "…" },
   "sharing_cert": { "key": "x25519:…", "rotation": 3, "signature": "…" },
   "revoked_devices": ["ed25519:…"],
-  "reads": ["2"],
+  "reads": ["3"],
   "packs": [
     { "file": "packs/b2b256-7c1e….bin", "hash": "b2b256:7c1e…" },
     { "file": "packs/b2b256-b902….bin", "hash": "b2b256:b902…" }
   ],
-  "public": "public/lists.geojson",
+  "public": { "file": "public/lists.geojson", "hash": "b2b256:3a90…" },
   "signature": "…"
 }
 ```
 
-- `seq`: publication counter, incremented at each publication and claimed with a conditional write; it alone orders indexes. A reader refuses an index with a lower `seq` than the last one seen (rollback), and an index with the same `seq` but different content (fork), which it reports.
+- Order: indexes are ordered first by the rotation of `sharing_cert`, then by `seq`. A reader refuses an index with a lower rotation than the last one seen. An index with a higher rotation (signed by the master key, so only the owner can produce it) supersedes every earlier index whatever their `seq`, provided it revokes at least the same devices: a stolen device that is not yet revoked cannot block its own revocation by publishing a huge `seq`.
+- `seq`: publication counter, incremented at each publication and claimed with a conditional write; it orders indexes within one rotation and may restart with a new rotation. Within a rotation, a reader refuses an index with a lower `seq` than the last one seen (rollback), an index with the same `seq` but different content (fork), which it reports, and a jump of more than 2^20 over the last one seen.
 - `updated`: informational only; an index dated more than 24 hours in the future is refused.
-- The index is signed by the publishing **device's** key (ordinary devices do not hold the master key); `device_cert` is that device's certificate, signed by the master key. A device listed in `revoked_devices` can no longer publish.
+- The index is signed by the publishing **device's** key (ordinary devices do not hold the master key); `device_cert` is that device's certificate, signed by the master key. A device listed in `revoked_devices` can no longer publish for any reader that has seen that revocation; new friends get a minimum rotation from the invitation link.
 - `sharing_cert` (signed by the master key), `revoked_devices` (covered by that same master signature, so a stolen device that is not yet revoked cannot revoke the real ones; the list is permanent) and `reads` (format versions the owner can read): inside the index so they share its rollback protection.
 - `move` (optional): the signed identity change published after the primary device is stolen.
 - `hash`: content hash of each pack (256-bit BLAKE2b, algorithm prefixed); the storage's own ETag is never trusted for integrity.
+- `public` (optional): the plaintext file of public lists, with its content hash, so that it is verified like the packs.
+- Each pack is bound to its owner (the owner key is part of the authenticated data): a pack copied into someone else's index does not open, so nobody can re-publish my content under their name.
 
 Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
 
@@ -811,7 +816,7 @@ Security:
 - Private key kept in the phone's secure vault (Keychain on iOS, Keystore on Android), backed up only in a form encrypted by the recovery phrase.
 - Storage credentials (WebDAV password, S3 keys, SSH key) kept the same way; dedicated accesses limited to the app's folder are recommended (Nextcloud app password, S3 key restricted to one bucket).
 - All content read from a friend is verified (signature) before display; modified content is rejected.
-- Key verification: a QR code exchange, or comparing a short code displayed on both sides, confirms that the key is the right one.
+- Key verification: a QR code exchange, or comparing the safety code (12 groups of 5 digits) displayed on both sides, confirms that the key is the right one.
 - Standard encryption libraries (libsodium), no homemade algorithm; external security audit before the first public release.
 
 Moderation:
@@ -831,7 +836,7 @@ What we protect: places and comments (which can reveal a home, habits, acquainta
 | OSM, tile and search services | Observe requests | No account, local cache, self-hosting possible | Knowing the areas viewed and the searches, tied to an IP address |
 | Followed person or follower | Copy what has been opened to them, modify their app | Access removal that erases their cache at the next synchronization | Keeping deliberately made copies |
 | Holder of a list link | Forward the link | New link to cut off access | The link stays forwardable until it is renewed |
-| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | One answer per invitation, warning when several arrive, optional safety code (12 groups of 5 digits or QR) and "unverified" badge until the user marks the contact as verified | Succeeding if the user accepts without verifying |
+| Impersonator (fake invitation or fake return link in a friend's name) | Gain access to my places | One answer per invitation, warning when several arrive, including after acceptance (the invitation is kept until it expires), optional safety code (12 groups of 5 digits or QR) and "unverified" badge until the user marks the contact as verified | Succeeding if the user accepts without verifying, until the real friend's answer arrives and triggers the warning |
 | Phone thief | Read local content, write to the storage | App lock, system vault, remote wipe, random sharing key that the device cannot regenerate, master key absent from ordinary devices, key change and storage access change | Reading what was visible between the theft and the revocation, if the app was not locked; if the primary device is stolen, an identity change is needed |
 | Access to my messaging or my emails | Intercept an invitation or transfer link | An invitation only contains a temporary key, valid for 7 days; a single answer is accepted; content is re-encrypted on acceptance or expiry; a device transfer requires a separate code and expires in 15 minutes | Seeing whom I send invitations to, and reading what was shared with friends until the invitation is accepted or expires |
 | Compromised app code or dependencies | Exfiltrate keys | Open code, reproducible builds, limited and audited dependencies, external audit | Residual risk inherent to any software |
