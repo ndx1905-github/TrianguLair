@@ -1,7 +1,7 @@
-import { canonicalize, checkKeys, checkVersion, fromB64Url, fromUtf8, int, parseJsonObject, str, toB64Url, utf8 } from './encoding';
+import { canonicalize, checkStructure, fromB64Url, fromUtf8, int, parseJsonObject, str, toB64Url, utf8 } from './encoding';
 import { FormatError, SignatureError } from './errors';
 import { generateX25519KeyPair, type KeyPair } from './identity';
-import { findIndexed, openUnchecked, sealPack, type PackIndex, type SealOptions } from './pack';
+import { findIndexed, openUnchecked, sealTyped, type PackIndex, type SealOptions } from './pack';
 import { S } from './sodium';
 
 /*
@@ -17,7 +17,8 @@ import { S } from './sodium';
  * A group-key pack is accepted only if it is listed in the VERIFIED index of `owner`
  * (openGroupKey checks both), so a former member cannot forge "generation n+1".
  * Readers key groups by (owner, group id).
- * Group-key payloads are recognised by isGroupKeyPayload (used by retireInvitationKey).
+ * The pack's payload type (inside the encryption) is "group-key" (V3-16): openGroupKey refuses any
+ * other type, and retireInvitationKey recognises group secrets by it.
  */
 
 export const GROUP_KEY_VERSION = 2;
@@ -48,7 +49,7 @@ export function rotateGroup(group: Group): Group {
  * `owner` = the owner id of the index that will list this pack. Never include an invitation key in
  * `memberPublicKeys`: a link holder would keep the group secret (retireInvitationKey refuses it).
  */
-export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint8Array[], opts: Omit<SealOptions, 'id'> = {}): Uint8Array {
+export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint8Array[], opts: Omit<SealOptions, 'id' | 'type'> = {}): Uint8Array {
   const payload = utf8(
     canonicalize({
       type: 'group-key',
@@ -60,7 +61,7 @@ export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint
     }),
   );
   try {
-    return sealPack(owner, payload, memberPublicKeys, opts);
+    return sealTyped(owner, payload, memberPublicKeys, opts, 'group-key');
   } finally {
     S().memzero(payload);
   }
@@ -70,11 +71,11 @@ export function sealGroupKey(group: Group, owner: string, memberPublicKeys: Uint
 export function openGroupKey(bytes: Uint8Array, index: PackIndex, keys: KeyPair[]): OpenedGroup {
   const W = 'group-key';
   const entry = findIndexed(bytes, index);
-  const { payload } = openUnchecked(bytes, keys, index.owner, entry.file);
+  const { type, payload } = openUnchecked(bytes, keys, index.owner, entry.file);
   try {
+    if (type !== 'group-key') throw new FormatError(`${W}: not a group-key pack`);
     const doc = parseJsonObject(fromUtf8(payload, W), W);
-    checkVersion(doc, W, GROUP_KEY_VERSION);
-    checkKeys(doc, W, ['type', 'version', 'owner', 'group', 'generation', 'secretKey']);
+    checkStructure(doc, W, GROUP_KEY_VERSION, ['type', 'version', 'owner', 'group', 'generation', 'secretKey']);
     if (doc['type'] !== 'group-key') throw new FormatError(`${W}: wrong type`);
     const owner = str(doc, 'owner', W);
     if (owner !== index.owner) throw new SignatureError(`${W}: belongs to another owner than the index`, 'OWNER_MISMATCH');
@@ -87,16 +88,4 @@ export function openGroupKey(bytes: Uint8Array, index: PackIndex, keys: KeyPair[
   } finally {
     S().memzero(payload);
   }
-}
-
-/** @internal True if a decrypted pack payload is a group-key payload (type "group-key"). */
-export function isGroupKeyPayload(payload: Uint8Array): boolean {
-  if (payload[0] !== 0x7b) return false; // '{'
-  let doc;
-  try {
-    doc = parseJsonObject(fromUtf8(payload, 'payload'), 'payload');
-  } catch {
-    return false;
-  }
-  return doc['type'] === 'group-key';
 }

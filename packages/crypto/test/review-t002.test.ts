@@ -27,6 +27,7 @@ import {
   sealGroupKey,
   sealPack,
   sealSharingKey,
+  generateVaultDataKey,
   serialize,
   sharingCertOf,
   signIndex,
@@ -43,7 +44,7 @@ describe('T-002 F-01 (high): sharing-key rotation survives theft of an ordinary 
     const marie = person(); // marie.device = the phone
     const tablet = generateDeviceKeys();
     const tabletCert = issueDeviceCert(marie.id, devicePublicKeys(tablet));
-    const sk0 = { keyPair: marie.sharing, cert: marie.cert };
+    const sk0 = { keyPair: marie.sharing, cert: marie.cert, vaultDataKey: marie.vaultDataKey };
     // What the thief extracts from the stolen tablet: its device keys, and the current sharing key.
     const stolen = { device: tablet, deviceCert: tabletCert, sharing: openSharingKey(sealSharingKey(sk0, tabletCert), tablet) };
 
@@ -51,9 +52,9 @@ describe('T-002 F-01 (high): sharing-key rotation survives theft of an ordinary 
     // certified by the master with the tablet revoked, sent to the phone and to the vault.
     const id = identityFromPhrase(marie.phrase);
     const k1 = generateX25519KeyPair();
-    const cert1 = issueSharingCert(id, k1.publicKey, { rotation: 1, revokedDevices: [tablet.id] });
-    const toPhone = sealSharingKey({ keyPair: k1, cert: cert1 }, marie.deviceCert);
-    const toVault = sealSharingKey({ keyPair: k1, cert: cert1 }, id);
+    const cert1 = issueSharingCert(id, k1.publicKey, { rotation: 1, revokedDevices: [tablet.id], location: marie.location });
+    const toPhone = sealSharingKey({ keyPair: k1, cert: cert1, vaultDataKey: generateVaultDataKey() }, marie.deviceCert);
+    const toVault = sealSharingKey({ keyPair: k1, cert: cert1, vaultDataKey: generateVaultDataKey() }, id);
     const after = signIndex(marie.signer, { seq: 2, sharingCert: cert1, packs: [] });
     return { marie, stolen, k1, cert1, toPhone, toVault, after };
   }
@@ -78,7 +79,7 @@ describe('T-002 F-01 (high): sharing-key rotation survives theft of an ordinary 
     // The tablet holds no master key: the best it can do is sign with its device key.
     const hijack = signBody(
       'sharing-cert',
-      { type: 'sharing-cert', version: 2, owner: marie.id.owner, key: `x25519:${Buffer.from(thiefSharing.publicKey).toString('base64url')}`, rotation: 99, revoked_devices: [] },
+      { type: 'sharing-cert', version: 3, owner: marie.id.owner, key: `x25519:${Buffer.from(thiefSharing.publicKey).toString('base64url')}`, rotation: 99, revoked_devices: [] },
       stolen.device.sign.secretKey,
     );
     expect(() => verifySharingCert(hijack, { expectedOwner: marie.id.owner, lastSeen: sharingCertOf(after) })).toThrow(TLCryptoError);
@@ -99,7 +100,7 @@ describe('T-002 F-03 (medium): low-order X25519 sharing key', () => {
     expect(() => issueSharingCert(mallory.id, zero, { rotation: 0 })).toThrow(TLCryptoError);
     const cert = signBody(
       'sharing-cert',
-      { type: 'sharing-cert', version: 2, owner: mallory.id.owner, key: `x25519:${Buffer.from(zero).toString('base64url')}`, rotation: 0, revoked_devices: [] },
+      { type: 'sharing-cert', version: 3, owner: mallory.id.owner, key: `x25519:${Buffer.from(zero).toString('base64url')}`, rotation: 0, revoked_devices: [] },
       mallory.id.master.secretKey,
     );
     expect(() => verifySharingCert(cert)).toThrow(TLCryptoError);
@@ -176,10 +177,10 @@ describe('T-002 F-13 (low): input validation gaps', () => {
   });
   it('decodeKeyExport rejects a sharing key and a certificate belonging to different owners', () => {
     const [a, b] = [person(), person()];
-    const doc = JSON.parse(new TextDecoder().decode(encodeKeyExport({ keyPair: a.sharing, cert: a.cert })));
+    const doc = JSON.parse(new TextDecoder().decode(encodeKeyExport({ keyPair: a.sharing, cert: a.cert, vaultDataKey: a.vaultDataKey })));
     doc.cert = b.cert;
     const mixed = te.encode(serialize(doc));
     expect(() => decodeKeyExport(mixed)).toThrow(TLCryptoError);
-    expect(() => decodeKeyExport(encodeKeyExport({ keyPair: a.sharing, cert: a.cert }), { expectedOwner: b.id.owner })).toThrow(TLCryptoError);
+    expect(() => decodeKeyExport(encodeKeyExport({ keyPair: a.sharing, cert: a.cert, vaultDataKey: a.vaultDataKey }), { expectedOwner: b.id.owner })).toThrow(TLCryptoError);
   });
 });

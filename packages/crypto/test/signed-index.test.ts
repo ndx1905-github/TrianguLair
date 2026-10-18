@@ -40,18 +40,22 @@ describe('signed index', () => {
   it('has the spec shape and canonical serialization', () => {
     const o = JSON.parse(json);
     expect(Object.keys(o)).toEqual(['device_cert', 'owner', 'packs', 'public', 'reads', 'revoked_devices', 'seq', 'sharing_cert', 'signature', 'updated', 'version']);
-    expect(o).toMatchObject({ version: 3, seq: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: pub, reads: ['3'], revoked_devices: [] });
+    expect(o).toMatchObject({ version: 4, seq: 1, owner: alice.id.owner, updated: '2026-10-13T10:00:00.000Z', public: pub, reads: ['4'], revoked_devices: [] });
     expect(pub.file).toBe('public/lists.geojson');
-    expect(o.sharing_cert).toEqual({ key: alice.cert.key, rotation: 0, signature: alice.cert.signature });
+    expect(o.sharing_cert).toEqual({ key: alice.cert.key, location: alice.location, rotation: 0, signature: alice.cert.signature });
     expect(o.device_cert).toEqual({ box: alice.deviceCert.box, device: alice.device.id, signature: alice.deviceCert.signature });
     expect(o.packs[0]).toEqual({ file: packEntry(pack).file, hash: packEntry(pack).hash });
     expect(o.packs[0].hash).toMatch(/^b2b256:[A-Za-z0-9_-]{43}$/);
     expect(json).toBe(canonicalize(JSON.parse(json)));
   });
 
-  it('verifies from canonical JSON and from an object; re-ordered or pretty JSON is refused (T-002 F-05)', () => {
+  it('verifies from canonical JSON text or bytes; re-ordered or pretty JSON, and parsed objects, are refused (T-002 F-05, V3-12)', () => {
     expect(verifyIndex(json).seq).toBe(1);
-    expect(verifyIndex(JSON.parse(json), { expectedOwner: alice.id.master.publicKey }).owner).toBe(alice.id.owner);
+    expect(verifyIndex(te.encode(json), { expectedOwner: alice.id.master.publicKey }).owner).toBe(alice.id.owner);
+    expect(verifyIndex(idx).seq).toBe(1); // an already verified object
+    expect(() => verifyIndex(JSON.parse(json))).toThrow(FormatError);
+    // Duplicate keys resolved by JSON.parse are exactly what the text rule catches.
+    expect(() => verifyIndex(json.replace('{"device_cert"', '{"seq":1,"device_cert"'))).toThrow(FormatError);
     const reordered = JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(json)).reverse()));
     expect(() => verifyIndex(reordered)).toThrow(FormatError);
     expect(() => verifyIndex(JSON.stringify(JSON.parse(json), null, 2))).toThrow(FormatError);
@@ -64,9 +68,9 @@ describe('signed index', () => {
   });
 
   it('works without the optional public field and with custom reads', () => {
-    const i = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], reads: ['3', '3.1'] });
+    const i = signIndex(alice.signer, { seq: 2, sharingCert: alice.cert, packs: [], reads: ['4', '4.1'] });
     expect('public' in i).toBe(false);
-    expect(verifyIndex(serialize(i)).reads).toEqual(['3', '3.1']);
+    expect(verifyIndex(serialize(i)).reads).toEqual(['4', '4.1']);
   });
 
   it('rejects tampering of any field', () => {
@@ -86,14 +90,17 @@ describe('signed index', () => {
     expect(() => verifyIndex(canonicalize({ ...o, revoked_devices: [generateDeviceKeys().id] }))).toThrow(SignatureError);
     const sig = o.signature as string;
     const flipped = sig[5] === 'A' ? 'B' : 'A';
-    expect(() => verifyIndex({ ...o, signature: sig.slice(0, 5) + flipped + sig.slice(6) })).toThrow(SignatureError);
-    expect(() => verifyIndex({ ...o, signature: undefined })).toThrow(FormatError);
+    expect(() => verifyIndex(canonicalize({ ...o, signature: sig.slice(0, 5) + flipped + sig.slice(6) }))).toThrow(SignatureError);
+    const { signature: _s, ...unsigned } = o;
+    expect(() => verifyIndex(canonicalize(unsigned))).toThrow(FormatError);
+    // The certified read address is covered by the master signature.
+    expect(() => verifyIndex(canonicalize({ ...o, sharing_cert: { ...o.sharing_cert, location: 'https://evil.example/' } }))).toThrow(SignatureError);
   });
 
   it('rejects wrong owner', () => {
     const mallory = person();
     const o = JSON.parse(json);
-    expect(() => verifyIndex({ ...o, owner: mallory.id.owner })).toThrow(SignatureError);
+    expect(() => verifyIndex(canonicalize({ ...o, owner: mallory.id.owner }))).toThrow(SignatureError);
     const mi = signIndex(mallory.signer, { seq: 5, sharingCert: mallory.cert, packs: o.packs });
     expect(() => verifyIndex(serialize(mi), { expectedOwner: alice.id.master.publicKey })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
     expect(() => verifyIndex(serialize(mi), { expectedOwner: alice.id.owner })).toThrow(SignatureError);
@@ -110,13 +117,13 @@ describe('signed index', () => {
     // Hand-made: rogue device signs an index claiming alice's device cert.
     const o = JSON.parse(json);
     const forged = signBody('index', { ...o, seq: 9, signature: undefined }, rogue.sign.secretKey);
-    expect(() => verifyIndex(forged)).toThrow(SignatureError);
+    expect(() => verifyIndex(serialize(forged))).toThrow(SignatureError);
   });
 
   it('a revoked device can no longer sign (T-002 F-01)', () => {
     const p = person();
     const k1 = generateX25519KeyPair();
-    const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1, revokedDevices: [p.device.id] });
+    const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1, revokedDevices: [p.device.id], location: p.location });
     expect(() => signIndex(p.signer, { seq: 2, sharingCert: cert1, packs: [] })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const other = generateDeviceKeys();
     const ok = signIndex({ keys: other, cert: issueDeviceCert(p.id, devicePublicKeys(other)) }, { seq: 2, sharingCert: cert1, packs: [] });
@@ -143,13 +150,13 @@ describe('signed index', () => {
   it('an old sharing certificate is covered by rollback protection (T-002 F-07)', () => {
     const p = person();
     const k1 = generateX25519KeyPair();
-    const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1 });
+    const cert1 = issueSharingCert(p.id, k1.publicKey, { rotation: 1, location: p.location });
     const i1 = signIndex(p.signer, { seq: 10, sharingCert: cert1, packs: [] });
     // A higher seq carrying the stale rotation-0 cert (e.g. a stolen, not yet revoked device) is refused.
     const stale = signIndex(p.signer, { seq: 11, sharingCert: p.cert, packs: [] });
     expect(() => checkNoRollback(stale, i1)).toThrow(RollbackError);
     // Same rotation, different certified key: fork.
-    const cert1b = issueSharingCert(p.id, generateX25519KeyPair().publicKey, { rotation: 1 });
+    const cert1b = issueSharingCert(p.id, generateX25519KeyPair().publicKey, { rotation: 1, location: p.location });
     expect(() => checkNoRollback(signIndex(p.signer, { seq: 12, sharingCert: cert1b, packs: [] }), i1)).toThrow(expect.objectContaining({ fork: true }));
   });
 
@@ -182,16 +189,21 @@ describe('signed index', () => {
 
   it('rejects other versions and malformed documents', () => {
     const o = JSON.parse(json);
-    expect(() => verifyIndex({ ...o, version: 4 })).toThrow(UnsupportedVersionError);
-    expect(() => verifyIndex({ ...o, version: 2 })).toThrow(UnsupportedVersionError);
-    expect(() => verifyIndex({ ...o, public: 'public/lists.geojson' })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, version: 0 })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, extra: true })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, updated: 'yesterday' })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, packs: [{ file: 'a' }] })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, reads: [] })).toThrow(FormatError);
-    expect(() => verifyIndex({ ...o, owner: 'rsa:abc' })).toThrow(FormatError);
+    const v = (x: object) => verifyIndex(canonicalize(x));
+    expect(() => v({ ...o, version: 5 })).toThrow(UnsupportedVersionError);
+    expect(() => v({ ...o, version: 3 })).toThrow(UnsupportedVersionError);
+    expect(() => v({ ...o, public: 'public/lists.geojson' })).toThrow(FormatError);
+    expect(() => v({ ...o, version: 0 })).toThrow(FormatError);
+    expect(() => v({ ...o, extra: true })).toThrow(FormatError);
+    expect(() => v({ ...o, minor: 0 })).toThrow(FormatError);
+    expect(() => v({ ...o, updated: 'yesterday' })).toThrow(FormatError);
+    expect(() => v({ ...o, packs: [{ file: 'a' }] })).toThrow(FormatError);
+    expect(() => v({ ...o, reads: [] })).toThrow(FormatError);
+    expect(() => v({ ...o, owner: 'rsa:abc' })).toThrow(FormatError);
+    const { location: _l, ...noLocation } = o.sharing_cert;
+    expect(() => v({ ...o, sharing_cert: noLocation })).toThrow();
     expect(() => verifyIndex('[]')).toThrow(FormatError);
+    expect(() => verifyIndex(' '.repeat(16 * 1024 * 1024 + 1))).toThrow(FormatError); // size bound (N-2)
     expect(() => signIndex(alice.signer, { seq: 1, sharingCert: alice.cert, packs: [], now: new Date('x') })).toThrow(FormatError);
   });
 });
@@ -207,7 +219,7 @@ describe('identity change (primary device stolen)', () => {
     const device = generateDeviceKeys();
     const signer = { keys: device, cert: issueDeviceCert(newId, devicePublicKeys(device)) };
     const sharing = generateX25519KeyPair();
-    const after = signIndex(signer, { seq: 1, sharingCert: issueSharingCert(newId, sharing.publicKey, { rotation: 0 }), packs: [], move });
+    const after = signIndex(signer, { seq: 1, sharingCert: issueSharingCert(newId, sharing.publicKey, { rotation: 0, location: marie.location }), packs: [], move });
 
     // A friend expecting the old identity gets an explicit IdentityMovedError.
     let err: unknown;
@@ -223,7 +235,7 @@ describe('identity change (primary device stolen)', () => {
     const retired = [marie.id.owner];
     expect(verifyIndex(serialize(after), { expectedOwner: newId.owner, retiredOwners: retired }).owner).toBe(newId.owner);
     // Anything later signed by the old master is refused (e.g. a thief holding the old primary device).
-    const thiefCert = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 99 });
+    const thiefCert = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 99, location: marie.location });
     expect(() => verifySharingCert(thiefCert, { retiredOwners: retired })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const thiefIndex = signIndex(marie.signer, { seq: 6, sharingCert: thiefCert, packs: [] });
     expect(() => verifyIndex(serialize(thiefIndex), { retiredOwners: retired })).toThrow(expect.objectContaining({ code: 'REVOKED' }));

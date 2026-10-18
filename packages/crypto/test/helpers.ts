@@ -2,6 +2,8 @@ import {
   canonicalize,
   generateDeviceKeys,
   generateRecoveryPhrase,
+  generateVaultDataKey,
+  toB64Url,
   generateX25519KeyPair,
   identityFromPhrase,
   issueDeviceCert,
@@ -32,15 +34,34 @@ export interface Person {
   signer: DeviceSigner;
   sharing: KeyPair;
   cert: SharingCert;
+  /** Master-certified read address (in `cert`). */
+  location: string;
+  vaultDataKey: Uint8Array;
 }
 
-export function person(): Person {
+/** A distinct public https read address. */
+export function newLocation(): string {
+  return `https://storage.example.org/s/${toB64Url(generateVaultDataKey().subarray(0, 9))}/`;
+}
+
+/** `location`: the read address certified in the sharing cert (default: a fresh one). */
+export function person(location: string = newLocation()): Person {
   const phrase = generateRecoveryPhrase();
   const id = identityFromPhrase(phrase);
   const device = generateDeviceKeys();
   const deviceCert = issueDeviceCert(id, devicePublicKeys(device));
   const sharing = generateX25519KeyPair();
-  return { phrase, id, device, deviceCert, signer: { keys: device, cert: deviceCert }, sharing, cert: issueSharingCert(id, sharing.publicKey, { rotation: 0 }) };
+  return {
+    phrase,
+    id,
+    device,
+    deviceCert,
+    signer: { keys: device, cert: deviceCert },
+    sharing,
+    cert: issueSharingCert(id, sharing.publicKey, { rotation: 0, location }),
+    location,
+    vaultDataKey: generateVaultDataKey(),
+  };
 }
 
 const seqs = new WeakMap<Person, number>();

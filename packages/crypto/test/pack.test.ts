@@ -41,13 +41,13 @@ describe('content packs', () => {
     const a = person();
     const pack = seal(payload, [a.sharing.publicKey], { padTo: 0, id: 'AAAAAAAAAAAAAAAAAAAAAA' });
     expect(td.decode(pack.subarray(0, 4))).toBe('TLPK');
-    expect(pack[4]).toBe(3);
+    expect(pack[4]).toBe(4);
     const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
     const h = headerOf(pack);
     expect(Object.keys(h)).toEqual(['alg', 'nonce', 'pad', 'type', 'version', 'wrapAlg', 'wraps']); // canonical order, no id
-    expect(h).toMatchObject({ type: 'pack', version: 3, alg: 'xchacha20poly1305-ietf', wrapAlg: 'x25519-sealedbox', pad: 'padme' });
+    expect(h).toMatchObject({ type: 'pack', version: 4, alg: 'xchacha20poly1305-ietf', wrapAlg: 'x25519-sealedbox', pad: 'padme' });
     expect(h['wraps']).toHaveLength(1);
-    expect(pack.length - 9 - n).toBe(paddedLength(20 + payload.length) + 16);
+    expect(pack.length - 9 - n).toBe(paddedLength(21 + payload.length) + 16);
     expect(td.decode(pack)).not.toContain('AAAAAAAAAAAAAAAAAAAAAA');
     expect(open(pack, [a.sharing]).id).toBe('AAAAAAAAAAAAAAAAAAAAAA');
   });
@@ -87,7 +87,7 @@ describe('content packs', () => {
       const pack = seal(payload, [a.sharing.publicKey], { pad: 'none', padTo: 0 });
       const n = new DataView(pack.buffer, pack.byteOffset).getUint32(5, false);
       expect(readPackHeader(pack).pad).toBe('none');
-      expect(pack.length - 9 - n).toBe(20 + payload.length + 16);
+      expect(pack.length - 9 - n).toBe(21 + payload.length + 16);
       expect(open(pack, [a.sharing]).payload).toEqual(payload);
     });
     it('the padding mode is authenticated (AD)', () => {
@@ -114,8 +114,23 @@ describe('content packs', () => {
       const index = publish(a, [pack]);
       expect(() => openPack(pack, { owner: a.id.owner, packs: [packEntry(pack)] }, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
       expect(() => openPack(pack, { ...index }, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
-      expect(openPack(pack, verifyIndex(JSON.stringify(index)), [a.sharing]).payload).toEqual(payload);
+      expect(openPack(pack, verifyIndex(JSON.stringify(index), { expectedOwner: a.id.owner }), [a.sharing]).payload).toEqual(payload);
       expect(Object.isFrozen(index.packs)).toBe(true);
+    });
+    it('the index must be verified FOR its owner (expectedOwner), not merely verified (V3-11)', () => {
+      const a = person();
+      const pack = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
+      const unbound = verifyIndex(JSON.stringify(publish(a, [pack])));
+      expect(() => openPack(pack, unbound, [a.sharing])).toThrow(expect.objectContaining({ code: 'NOT_INDEXED' }));
+    });
+    it('the payload type is authenticated inside the encryption (V3-16)', () => {
+      const a = person();
+      const media = sealPack(a.id.owner, payload, [a.sharing.publicKey], { type: 'media' });
+      const content = sealPack(a.id.owner, payload, [a.sharing.publicKey]);
+      const index = publish(a, [media, content]);
+      expect(openPack(media, index, [a.sharing]).type).toBe('media');
+      expect(openPack(content, index, [a.sharing]).type).toBe('content');
+      expect(() => sealPack(a.id.owner, payload, [a.sharing.publicKey], { type: 'group-key' as 'media' })).toThrow(FormatError);
     });
     it('the hash check happens before any key operation (no trial decryption of unlisted data)', () => {
       const a = person();
@@ -179,19 +194,26 @@ describe('content packs', () => {
     const a = person();
     const pack = seal(payload, [a.sharing.publicKey]);
     it('other envelope versions -> UnsupportedVersionError', () => {
-      for (const v of [2, 4]) {
+      for (const v of [3, 5]) {
         const t = pack.slice();
         t[4] = v;
         expect(() => open(t, [a.sharing])).toThrow(UnsupportedVersionError);
         try {
           readPackHeader(t);
         } catch (e) {
-          expect(e).toMatchObject({ code: 'UNSUPPORTED_VERSION', found: v, supported: 3 });
+          expect(e).toMatchObject({ code: 'UNSUPPORTED_VERSION', found: v, supported: 4 });
         }
       }
     });
-    it('header version 4 -> UnsupportedVersionError', () => {
-      expect(() => open(mutateHeader(pack, (h) => (h['version'] = 4)), [a.sharing])).toThrow(UnsupportedVersionError);
+    it('header version 5 -> UnsupportedVersionError', () => {
+      expect(() => open(mutateHeader(pack, (h) => (h['version'] = 5)), [a.sharing])).toThrow(UnsupportedVersionError);
+    });
+    it('a newer minor header field is accepted and covered by the AD; unknown crit fields are refused (V3-03)', () => {
+      // Same AD rule for every reader: an extension field changes the AD, so it cannot be added later.
+      expect(() => open(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'))), [a.sharing])).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
+      expect(() => readPackHeader(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'))))).not.toThrow();
+      expect(() => readPackHeader(mutateHeader(pack, (h) => (h['hint'] = 'x')))).toThrow(FormatError);
+      expect(() => readPackHeader(mutateHeader(pack, (h) => ((h['minor'] = 1), (h['hint'] = 'x'), (h['crit'] = ['hint']))))).toThrow(UnsupportedVersionError);
     });
     it('envelope version 0 -> FormatError', () => {
       const t = pack.slice();

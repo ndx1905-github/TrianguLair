@@ -7,6 +7,7 @@ export {
   DecryptionError,
   SignatureError,
   IdentityMovedError,
+  StorageMovedError,
   ExpiredError,
   RollbackError,
   type ErrorCode,
@@ -42,7 +43,7 @@ export {
   type SharingCert,
   type VerifiedSharingCert,
 } from './certs';
-export { sealSharingKey, openSharingKey, SHARING_KEY_VERSION, type SharingKey } from './sharing-key';
+export { sealSharingKey, openSharingKey, generateVaultDataKey, SHARING_KEY_VERSION, type SharingKey } from './sharing-key';
 export {
   sealPack,
   openPack,
@@ -59,6 +60,7 @@ export {
   type PackHeader,
   type PackPadding,
   type PackIndex,
+  type PackType,
 } from './pack';
 export { createGroup, rotateGroup, sealGroupKey, openGroupKey, GROUP_KEY_VERSION, type Group, type OpenedGroup } from './group';
 export {
@@ -66,12 +68,16 @@ export {
   verifyIndex,
   checkNoRollback,
   sharingCertOf,
+  indexAnchor,
   serialize,
   publicEntry,
   verifyPublicFile,
   INDEX_VERSION,
+  INDEX_MINOR,
   MAX_SEQ_STEP,
+  MAX_INDEX_BYTES,
   type SignedIndex,
+  type IndexAnchor,
   type IndexPackEntry,
   type IndexPublicEntry,
   type IndexContent,
@@ -91,11 +97,26 @@ export {
   INVITATION_VERSION,
   INVITATION_MAX_TTL_MS,
   INVITATION_MIN_TTL_MS,
+  INVITATION_ANSWER_GRACE_MS,
   type OwnerInvitation,
   type ReceivedInvitation,
   type InvitationResponse,
   type InvitationAnswers,
 } from './invitation';
+export { checkLocation } from './location';
+export {
+  emptyVault,
+  contactRecord,
+  invitationRecord,
+  invitationFromRecord,
+  sealVault,
+  openVault,
+  mergeVaults,
+  VAULT_VERSION,
+  type VaultRecords,
+  type VaultContact,
+  type VaultInvitation,
+} from './vault';
 export { safetyCode, safetyQrPayload, matchSafetyQr } from './safety';
 export {
   generateTransferCode,

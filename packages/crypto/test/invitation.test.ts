@@ -4,9 +4,12 @@ import {
   createInvitation,
   createInvitationResponse,
   DecryptionError,
+  devicePublicKeys,
   ExpiredError,
   FormatError,
+  generateDeviceKeys,
   generateX25519KeyPair,
+  issueDeviceCert,
   INVITATION_MAX_TTL_MS,
   isInvitationExpired,
   issueSharingCert,
@@ -40,9 +43,9 @@ function relink(fragment: string, f: (b: Uint8Array) => void): string {
 }
 
 describe('invitation link (compact binary)', () => {
-  const owner = person();
+  const owner = person(LOCATION);
   const friend = person();
-  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now, location: LOCATION });
+  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
 
   it('is base64url, valid 7 days, and parses back', () => {
     expect(fragment).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -53,18 +56,22 @@ describe('invitation link (compact binary)', () => {
     expect(r.ownerPublicKey).toEqual(owner.id.master.publicKey);
     expect(r.keyPair.publicKey).toEqual(invitation.keyPair.publicKey);
     expect(r.location).toBe(LOCATION);
+    expect(r.cert).toEqual(owner.cert);
     expect(r.created).toBe(now.toISOString());
   });
 
-  it('is about 450 characters with the link prefix (device-signed, R-03)', () => {
+  it('carries the master-signed sharing cert: about 600 characters with the link prefix (V3-01)', () => {
     const bytes = bytesOf(fragment);
-    expect(bytes.length).toBe(288 + LOCATION.length);
-    expect(fragment.length).toBeLessThanOrEqual(440);
-    expect(`${PREFIX}${fragment}`.length).toBeLessThanOrEqual(470);
-    const bare = createInvitation(owner.signer, owner.cert, { now }).fragment;
-    expect(bare.length).toBe(384); // 288 bytes, no location
-    const long = createInvitation(owner.signer, owner.cert, { now, location: `https://nextcloud.example-hosting.org/index.php/s/${'x'.repeat(20)}` }).fragment;
-    expect(`${PREFIX}${long}`.length).toBeLessThan(510);
+    expect(bytes.length).toBe(386 + LOCATION.length);
+    expect(`${PREFIX}${fragment}`.length).toBeLessThanOrEqual(600);
+    const longLoc = `https://nextcloud.example-hosting.org/index.php/s/${'x'.repeat(20)}`;
+    const o = person(longLoc);
+    expect(`${PREFIX}${createInvitation(o.signer, o.cert, { now }).fragment}`.length).toBeLessThan(650);
+    // Each revoked device adds 32 bytes.
+    const tablet = generateDeviceKeys();
+    const signer = { keys: tablet, cert: issueDeviceCert(owner.id, devicePublicKeys(tablet)) };
+    const cert1 = issueSharingCert(owner.id, owner.sharing.publicKey, { rotation: 1, location: LOCATION, revokedDevices: [owner.device.id] });
+    expect(bytesOf(createInvitation(signer, cert1, { now }).fragment).length).toBe(386 + 32 + LOCATION.length);
   });
 
   it('expiry: rejected at/after 7 days', () => {
@@ -83,52 +90,59 @@ describe('invitation link (compact binary)', () => {
     expect(() => createInvitation(owner.signer, owner.cert, { now: new Date('nope') })).toThrow(FormatError);
   });
 
-  it('location must be an https URL without credentials or fragment (T-002 F-12)', () => {
+  it('the read address is the certified one: https, no credentials or fragment (T-002 F-12); none means no invitation', () => {
     for (const location of ['http://example.org/', 'https://user:pw@example.org/', 'https://example.org/#x', 'javascript:alert(1)', `https://e.org/${'a'.repeat(600)}`]) {
-      expect(() => createInvitation(owner.signer, owner.cert, { location })).toThrow(FormatError);
+      expect(() => issueSharingCert(owner.id, owner.sharing.publicKey, { rotation: 0, location })).toThrow(FormatError);
     }
+    const noStorage = issueSharingCert(owner.id, owner.sharing.publicKey, { rotation: 0 });
+    expect(() => createInvitation(owner.signer, noStorage, { now })).toThrow(FormatError);
   });
 
   it('tampered link is rejected (expiry extension, owner swap, secret swap, location change)', () => {
     const b = bytesOf(fragment);
+    const L = LOCATION.length;
     const dv = (x: Uint8Array) => new DataView(x.buffer, x.byteOffset);
     expect(() => parseInvitationLink(relink(fragment, (x) => dv(x).setUint32(54, dv(b).getUint32(54) - 3600)), { now })).toThrow(SignatureError);
     expect(() => parseInvitationLink(relink(fragment, (x) => dv(x).setUint32(54, dv(b).getUint32(50) + 8 * 86400)), { now })).toThrow(FormatError);
     expect(() => parseInvitationLink(relink(fragment, (x) => x.set(friend.id.master.publicKey, 18)), { now })).toThrow(SignatureError);
-    expect(() => parseInvitationLink(relink(fragment, (x) => x.set(friend.sharing.secretKey, 190)), { now })).toThrow(SignatureError);
-    expect(() => parseInvitationLink(relink(fragment, (x) => (x[260] = 0x41)), { now })).toThrow(SignatureError);
-    expect(() => parseInvitationLink(relink(fragment, (x) => (x[60] = (x[60] as number) ^ 1)), { now })).toThrow(SignatureError); // min_rotation
-    expect(() => parseInvitationLink(relink(fragment, (x) => x.set(friend.device.sign.publicKey, 62)), { now })).toThrow(SignatureError); // device cert
-    expect(() => parseInvitationLink(relink(fragment, (x) => (x[1] = 2)), { now })).toThrow(UnsupportedVersionError);
+    expect(() => parseInvitationLink(relink(fragment, (x) => x.set(friend.sharing.secretKey, 290 + L)), { now })).toThrow(SignatureError);
+    expect(() => parseInvitationLink(relink(fragment, (x) => (x[98 + L - 3] = 0x41)), { now })).toThrow(SignatureError); // location (master-signed)
+    expect(() => parseInvitationLink(relink(fragment, (x) => (x[93] = (x[93] as number) ^ 1)), { now })).toThrow(SignatureError); // rotation
+    expect(() => parseInvitationLink(relink(fragment, (x) => x.set(friend.device.sign.publicKey, 162 + L)), { now })).toThrow(SignatureError); // device cert
+    expect(() => parseInvitationLink(relink(fragment, (x) => (x[1] = 3)), { now })).toThrow(UnsupportedVersionError);
     expect(() => parseInvitationLink(relink(fragment, (x) => (x[0] = 0)), { now })).toThrow(FormatError);
     expect(() => parseInvitationLink(toB64Url(b.subarray(0, b.length - 1)), { now })).toThrow(FormatError);
     expect(() => parseInvitationLink('!!!', { now })).toThrow(FormatError);
+    expect(() => parseInvitationLink('A'.repeat(20_000), { now })).toThrow(FormatError); // size bound before decoding (N-2)
   });
 });
 
 describe('return link', () => {
-  const owner = person();
-  const friend = person();
-  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now, location: LOCATION });
+  const owner = person(LOCATION);
+  const friend = person('https://friend.example/tl/');
+  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
   const received = parseInvitationLink(fragment, { now });
 
-  it('carries the sharing cert and an optional location, compactly', () => {
-    const resp = createInvitationResponse(received, friend.signer, friend.cert, { now: at(1000), location: 'https://friend.example/tl/' });
+  it('carries the sharing cert, and so the certified read address if any, compactly', () => {
+    const resp = createInvitationResponse(received, friend.signer, friend.cert, { now: at(1000) });
     expect(resp[0]).toBe(0x52);
     const v = openInvitationResponse(resp, invitation, { now: at(2000) });
     expect(v.owner).toBe(friend.id.owner);
     expect(v.sharingPublicKey).toEqual(friend.sharing.publicKey);
     expect(v.cert).toEqual(friend.cert);
     expect(v.location).toBe('https://friend.example/tl/');
-    const bare = createInvitationResponse(received, friend.signer, friend.cert, { now: at(1000) });
+    const noStorage = issueSharingCert(friend.id, friend.sharing.publicKey, { rotation: 0 });
+    const bare = createInvitationResponse(received, friend.signer, noStorage, { now: at(1000) });
     expect(bare.length).toBe(398);
     expect(toB64Url(bare).length).toBe(531);
     expect(openInvitationResponse(bare, invitation, { now }).location).toBeUndefined();
+    expect(resp.length).toBe(398 + 'https://friend.example/tl/'.length);
   });
 
-  it('is rejected after expiry, for another invitation, or tampered', () => {
+  it('is rejected after expiry + grace, for another invitation, or tampered', () => {
     const resp = createInvitationResponse(received, friend.signer, friend.cert, { now });
-    expect(() => openInvitationResponse(resp, invitation, { now: at(7 * day) })).toThrow(ExpiredError);
+    expect(openInvitationResponse(resp, invitation, { now: at(7 * day) }).owner).toBe(friend.id.owner); // grace (V3-02)
+    expect(() => openInvitationResponse(resp, invitation, { now: at(14 * day) })).toThrow(ExpiredError);
     expect(() => createInvitationResponse(received, friend.signer, friend.cert, { now: at(8 * day) })).toThrow(ExpiredError);
     const other = createInvitation(owner.signer, owner.cert, { now }).invitation;
     expect(() => openInvitationResponse(resp, other, { now })).toThrow(DecryptionError);
@@ -136,8 +150,9 @@ describe('return link', () => {
     t[t.length - 3] = (t[t.length - 3] as number) ^ 1;
     expect(() => openInvitationResponse(t, invitation, { now })).toThrow(DecryptionError);
     const v2 = resp.slice();
-    v2[1] = 2;
+    v2[1] = 3;
     expect(() => openInvitationResponse(v2, invitation, { now })).toThrow(UnsupportedVersionError);
+    expect(() => openInvitationResponse(new Uint8Array(20_000), invitation, { now })).toThrow(FormatError);
   });
 
   it('is bound to the inviter and the invitation key (T-002 F-12)', () => {
@@ -164,7 +179,7 @@ describe('return link', () => {
 
 describe('one answer per invitation (T-002 F-02)', () => {
   const owner = person();
-  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now, location: LOCATION });
+  const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
   const received = parseInvitationLink(fragment, { now });
 
   it('a single responder is accepted (duplicates of the same person count once)', () => {
@@ -187,10 +202,12 @@ describe('one answer per invitation (T-002 F-02)', () => {
     expect(res.answers.map((a) => a.owner)).toEqual([interceptor.id.owner, friend.id.owner]);
   });
 
-  it('expired invitations accept nothing', () => {
+  it('answers are still collected for 7 days after expiry (V3-02), then nothing is opened', () => {
     const friend = person();
     const r = createInvitationResponse(received, friend.signer, friend.cert, { now });
-    expect(() => collectInvitationAnswers(invitation, [r], { now: at(7 * day) })).toThrow(ExpiredError);
+    expect(collectInvitationAnswers(invitation, [r], { now: at(7 * day) }).accepted?.owner).toBe(friend.id.owner);
+    expect(collectInvitationAnswers(invitation, [r], { now: at(14 * day - 1) }).accepted?.owner).toBe(friend.id.owner);
+    expect(() => collectInvitationAnswers(invitation, [r], { now: at(14 * day) })).toThrow(ExpiredError);
   });
 });
 
@@ -198,7 +215,7 @@ describe('retiring the invitation key (T-002 F-02)', () => {
   it('re-encrypts (not rewraps) every pack that carried the invitation wrap', () => {
     const owner = person();
     const friend = person();
-    const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now, location: LOCATION });
+    const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
     const friendsPack = sealPack(owner.id.owner, te.encode('{"places":["Le Comptoir"]}'), [owner.sharing.publicKey, invitation.keyPair.publicKey]);
     const privatePack = sealPack(owner.id.owner, te.encode('{"places":["home"]}'), [owner.sharing.publicKey]);
     const index = publish(owner, [friendsPack, privatePack]);
@@ -209,7 +226,8 @@ describe('retiring the invitation key (T-002 F-02)', () => {
 
     const res = collectInvitationAnswers(invitation, [createInvitationResponse(received, friend.signer, friend.cert, { now })], { now });
     const accepted = res.accepted!;
-    expect(() => retireInvitationKey([friendsPack], index, invitation.keyPair, () => [invitation.keyPair.publicKey])).toThrow(FormatError);
+    expect(() => retireInvitationKey([friendsPack, privatePack], index, invitation.keyPair, () => [invitation.keyPair.publicKey])).toThrow(FormatError);
+    expect(() => retireInvitationKey([friendsPack], index, invitation.keyPair, () => [owner.sharing.publicKey])).toThrow(FormatError); // V3-08
     const replaced = retireInvitationKey([friendsPack, privatePack], index, invitation.keyPair, () => [owner.sharing.publicKey, accepted.sharingPublicKey]);
     expect(replaced).toHaveLength(1);
     expect(replaced[0]!.oldFile).toBe(packEntry(friendsPack).file);

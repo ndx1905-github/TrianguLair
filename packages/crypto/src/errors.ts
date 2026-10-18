@@ -14,6 +14,7 @@ export type ErrorCode =
   | 'OWNER_MISMATCH'
   | 'REVOKED'
   | 'IDENTITY_MOVED'
+  | 'MOVED'
   | 'EXPIRED'
   | 'ROLLBACK'
   | 'INVALID_PHRASE'
@@ -36,16 +37,26 @@ export class FormatError extends TLCryptoError {
   }
 }
 
-/** A structure declares a format version this library does not read. */
+/**
+ * A structure declares a major format version this library does not read, or lists in `crit` a
+ * security-relevant field this library does not understand (`critical` names it).
+ */
 export class UnsupportedVersionError extends TLCryptoError {
   readonly structure: string;
   readonly found: number;
   readonly supported: number;
-  constructor(structure: string, found: number, supported: number) {
-    super('UNSUPPORTED_VERSION', `${structure}: format version ${found} is not supported (this library reads version ${supported})`);
+  readonly critical: string | undefined;
+  constructor(structure: string, found: number, supported: number, critical?: string) {
+    super(
+      'UNSUPPORTED_VERSION',
+      critical !== undefined
+        ? `${structure}: critical field "${critical}" is not understood by this library (update the app)`
+        : `${structure}: format version ${found} is not supported (this library reads version ${supported})`,
+    );
     this.structure = structure;
     this.found = found;
     this.supported = supported;
+    this.critical = critical;
   }
 }
 
@@ -96,6 +107,19 @@ export class IdentityMovedError extends TLCryptoError {
     this.from = from;
     this.to = to;
     this.conflict = conflict;
+  }
+}
+
+/**
+ * The index is valid, but its master-signed sharing certificate puts the owner's read address
+ * elsewhere than where it was read (`location`): the owner moved storage, and the old address keeps
+ * the newer index as a redirect. Fetch the index again at `location` (and only there).
+ */
+export class StorageMovedError extends TLCryptoError {
+  readonly location: string;
+  constructor(location: string) {
+    super('MOVED', `the owner's content moved to ${location}`);
+    this.location = location;
   }
 }
 
