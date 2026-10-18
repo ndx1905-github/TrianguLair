@@ -27,12 +27,15 @@ import {
   parseJsonObject,
   parseKey,
   parseTransported,
+  sortedUnique,
   str,
   utf8,
   type JsonObject,
 } from './encoding';
 import { DecryptionError, FormatError, IdentityMovedError, RollbackError, SignatureError, StorageMovedError } from './errors';
 import { checkNotRetired, verifyIdentityMove, type DeviceKeys, type IdentityMove } from './identity';
+import type { OwnerInvitation } from './invitation';
+import { invitationToken, MAX_LISTED_INVITATIONS, padListing } from './invitation-listing';
 import { signBody, verifyBody } from './sign';
 import { packHash } from './pack';
 import { isVerified, markVerified, verifiedInfo } from './verified';
@@ -51,6 +54,7 @@ import { isVerified, markVerified, verifiedInfo } from './verified';
  *   "packs": [{"file":"packs/b2b256-<b64url>.bin","hash":"b2b256:<b64url 32B>"}],
  *   "public": {"file":"public/lists.geojson","hash":"b2b256:…"}, // optional, plaintext public lists
  *   "move": {<identity-move>},                   // optional, after an identity change
+ *   "invitations": ["b2b256:…"],                 // optional (minor >= 1): open invitation tokens, padded
  *   "signature": "<Ed25519 by the device key of device_cert>"
  * }
  * The index is signed by a DEVICE key, certified by the master key (device_cert). The sharing
@@ -63,6 +67,12 @@ import { isVerified, markVerified, verifiedInfo } from './verified';
  * index that device signed, whatever their seq. Within one rotation, seq may not jump by more than
  * MAX_SEQ_STEP over the last seen index; a new rotation may restart seq freely.
  *
+ * Invitations (minor 1): `invitations` lists one token per open invitation (invitation-listing.ts),
+ * sorted, padded with dummy tokens to a power of two (at least 4, at most 256). It is what binds
+ * a short invitation link to the owner: the link is unsigned, and a reader accepts it only if the
+ * index read at the owner's certified address lists its token (checkInvitationIndex). An index that
+ * carries the field must declare "minor" >= 1.
+ *
  * Extension (V3-03): unknown top-level fields, and unknown fields in the compact certificates and
  * in pack / public entries, are accepted only when "minor" is higher than INDEX_MINOR; they are
  * covered by the device signature (canonical form of the whole document). Fields listed in "crit"
@@ -72,7 +82,7 @@ import { isVerified, markVerified, verifiedInfo } from './verified';
 
 export const INDEX_VERSION = 4;
 /** Minor version of the index this library writes and fully understands. */
-export const INDEX_MINOR = 0;
+export const INDEX_MINOR = 1;
 /** Largest accepted increase of `seq` over the last seen index within one rotation (2^20). */
 export const MAX_SEQ_STEP = 2 ** 20;
 /** Largest accepted index, in bytes (N-2). */
@@ -108,6 +118,8 @@ export interface SignedIndex {
   packs: IndexPackEntry[];
   public?: IndexPublicEntry;
   move?: IdentityMove;
+  /** Open-invitation tokens, padded (minor >= 1). */
+  invitations?: string[];
   signature: string;
 }
 
@@ -144,6 +156,14 @@ export interface IndexContent {
   public?: IndexPublicEntry;
   move?: IdentityMove;
   /**
+   * Open invitations of this owner (e.g. every invitation record of the recovery vault). Listed
+   * are those not expired at `now`, created by a device that `sharingCert` does not revoke (a link
+   * made by a device declared lost stops working), at a rotation <= the certificate's. The list is
+   * padded (privacy); when non-empty the index declares minor 1. Publish the index listing a new
+   * invitation BEFORE sending its link: the link works only once it is listed.
+   */
+  invitations?: readonly OwnerInvitation[];
+  /**
    * The index currently on the storage (or its anchor). When given, the new index must not be older
    * (checkNoRollback) and, within the same rotation, must use seq = previous.seq + 1 (V3-13).
    */
@@ -171,6 +191,11 @@ export function signIndex(signer: DeviceSigner, content: IndexContent): SignedIn
   };
   if (content.public !== undefined) body['public'] = { file: content.public.file, hash: content.public.hash };
   if (content.move !== undefined) body['move'] = { ...content.move };
+  const listed = listableTokens(content.invitations ?? [], cert, now);
+  if (listed.length > 0) {
+    body['minor'] = 1;
+    body['invitations'] = padListing(listed, signer.keys.sign.secretKey.subarray(0, 32));
+  }
   const signed = signBody('index', body, signer.keys.sign.secretKey);
   // Round-trip through the verifier so we never publish something we would reject.
   const idx = verifyIndex(canonicalize(signed), { expectedOwner: cert.owner, location: cert.location, now: new Date(now) });
@@ -182,6 +207,22 @@ export function signIndex(signer: DeviceSigner, content: IndexContent): SignedIn
     }
   }
   return idx;
+}
+
+function listableTokens(invitations: readonly OwnerInvitation[], cert: SharingCert, now: number): string[] {
+  const ownerPk = parseKey('ed25519', cert.owner);
+  const out: string[] = [];
+  for (const inv of invitations) {
+    if (inv.owner !== cert.owner) throw new FormatError('index: an invitation of another owner cannot be listed');
+    if (!Number.isSafeInteger(inv.rotation) || inv.rotation < 0 || inv.rotation > cert.rotation) {
+      throw new FormatError('index: an invitation made with a newer sharing certificate than this one cannot be listed');
+    }
+    const expires = Date.parse(inv.expires);
+    if (!Number.isFinite(expires) || expires <= now) continue; // expired (or malformed: fails closed)
+    if (cert.revoked_devices.includes(inv.device)) continue; // made by a device declared lost
+    out.push(invitationToken(ownerPk, inv.keyPair.publicKey, inv.rotation, Math.floor(expires / 1000)));
+  }
+  return out;
 }
 
 /** Serializes any signed document (index, cert, ...) as canonical JSON (the only accepted transport form). */
@@ -272,12 +313,12 @@ export function verifyIndex(input: string | Uint8Array | SignedIndex, opts: Veri
   const parsed = isVerified(input) ? parseJsonObject(canonicalize(input), W) : parseTransported(input, W, MAX_INDEX_BYTES);
   // Work on a private deep copy (the result is frozen; never freeze the caller's objects).
   const doc = JSON.parse(canonicalize(parsed)) as JsonObject;
-  const { extensible } = checkStructure(
+  const { extensible, minor } = checkStructure(
     doc,
     W,
     INDEX_VERSION,
     ['version', 'seq', 'owner', 'updated', 'sharing_cert', 'revoked_devices', 'reads', 'device_cert', 'packs', 'signature'],
-    ['public', 'move'],
+    ['public', 'move', 'invitations'],
     INDEX_MINOR,
   );
   parseKey('ed25519', doc['owner'], `${W}.owner`);
@@ -318,6 +359,18 @@ export function verifyIndex(input: string | Uint8Array | SignedIndex, opts: Veri
     const pub = obj(doc, 'public', W);
     checkEntry(pub, `${W}.public`, extensible);
     if (!PUBLIC_RE.test(str(pub, 'file', `${W}.public`))) throw new FormatError(`${W}.public: file must be "public/<name>.geojson"`);
+  }
+
+  if ('invitations' in doc) {
+    if (minor < 1) throw new FormatError(`${W}: "invitations" requires minor >= 1`);
+    const list = arr(doc, 'invitations', W, MAX_LISTED_INVITATIONS);
+    if (list.length === 0) throw new FormatError(`${W}: "invitations" must not be empty (omit it)`);
+    for (const t of list) {
+      const m = typeof t === 'string' ? HASH_RE.exec(t) : null;
+      if (!m) throw new FormatError(`${W}.invitations[]: must be "b2b256:<base64url 32 bytes>"`);
+      fromB64Url(m[1] as string, `${W}.invitations[]`, 32);
+    }
+    sortedUnique(list, W, 'invitations');
   }
 
   let move: IdentityMove | undefined;

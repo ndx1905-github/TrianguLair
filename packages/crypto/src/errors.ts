@@ -13,6 +13,7 @@ export type ErrorCode =
   | 'SIGNATURE'
   | 'OWNER_MISMATCH'
   | 'REVOKED'
+  | 'NOT_LISTED'
   | 'IDENTITY_MOVED'
   | 'MOVED'
   | 'EXPIRED'
@@ -78,11 +79,12 @@ export class DecryptionError extends TLCryptoError {
 }
 
 /**
- * Bad signature (SIGNATURE), signed by someone else than expected (OWNER_MISMATCH), or signed by a
- * key that is revoked: a revoked device, or a master key whose identity moved away (REVOKED).
+ * Bad signature (SIGNATURE), signed by someone else than expected (OWNER_MISMATCH), signed by a
+ * key that is revoked: a revoked device, or a master key whose identity moved away (REVOKED), or
+ * an invitation link that the owner's signed index does not vouch for (NOT_LISTED).
  */
 export class SignatureError extends TLCryptoError {
-  constructor(message: string, code: 'SIGNATURE' | 'OWNER_MISMATCH' | 'REVOKED' = 'SIGNATURE') {
+  constructor(message: string, code: 'SIGNATURE' | 'OWNER_MISMATCH' | 'REVOKED' | 'NOT_LISTED' = 'SIGNATURE') {
     super(code, message);
   }
 }

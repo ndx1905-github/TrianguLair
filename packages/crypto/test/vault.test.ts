@@ -13,7 +13,6 @@ import {
   mergeVaults,
   openSharingKey,
   openVault,
-  parseInvitationLink,
   sealSharingKey,
   sealVault,
   serialize,
@@ -21,7 +20,7 @@ import {
   verifyIndex,
   type VaultRecords,
 } from '../src/index';
-import { person } from './helpers';
+import { accept, invite, person } from './helpers';
 
 const now = new Date('2026-10-18T12:00:00.000Z');
 
@@ -30,8 +29,8 @@ function setup() {
   const marie = person();
   const lea = person();
   const leaIndex = signIndex(lea.signer, { seq: 7, sharingCert: lea.cert, packs: [] });
-  const { invitation, fragment } = createInvitation(marie.signer, marie.cert, { now });
-  const answer = createInvitationResponse(parseInvitationLink(fragment, { now }), lea.signer, lea.cert, { now });
+  const { invitation, fragment, index } = invite(marie, { now });
+  const answer = createInvitationResponse(accept(fragment, index, now), lea.signer, lea.cert, { now });
   const records: VaultRecords = {
     ...emptyVault(marie.id.owner),
     contacts: [contactRecord(leaIndex, true)],
@@ -39,15 +38,15 @@ function setup() {
     retired_owners: [person().id.owner],
     app: { storage: { protocol: 'webdav', user: 'marie' }, groups: [{ name: 'friends' }] },
   };
-  return { marie, lea, leaIndex, invitation, answer, records };
+  return { marie, lea, leaIndex, invitation, index, answer, records };
 }
 
 describe('recovery vault records (V3-10)', () => {
   it('round-trips through the vault data key; certificates and anchors are verified on the way back', () => {
-    const { marie, lea, leaIndex, invitation, answer, records } = setup();
+    const { marie, lea, leaIndex, invitation, index, answer, records } = setup();
     const bytes = sealVault(records, marie.vaultDataKey);
     expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('TLVD');
-    expect(bytes[4]).toBe(1);
+    expect(bytes[4]).toBe(2);
     const back = openVault(bytes, marie.id.owner, marie.vaultDataKey);
     expect(back.contacts[0]!.owner).toBe(lea.id.owner);
     expect(back.contacts[0]!.verified).toBe(true);
@@ -61,6 +60,12 @@ describe('recovery vault records (V3-10)', () => {
     // Another device restores the open invitation and its answers, and keeps collecting (R-04, V3-02).
     const rec = invitationFromRecord(back.invitations[0]!, marie.id.owner);
     expect(rec.invitation.keyPair.publicKey).toEqual(invitation.keyPair.publicKey);
+    expect(rec.invitation.seed).toEqual(invitation.seed);
+    expect(rec.invitation.rotation).toBe(invitation.rotation);
+    expect(rec.invitation.device).toBe(marie.device.id);
+    // ... and keeps it listed in the indexes it publishes until expiry (the link keeps working).
+    const relisted = signIndex(marie.signer, { seq: 9, sharingCert: marie.cert, packs: [], invitations: [rec.invitation], now });
+    expect(relisted.invitations).toEqual(index.invitations);
     expect(rec.answers[0]).toEqual(answer);
     expect(collectInvitationAnswers(rec.invitation, rec.answers, { now, acceptedOwner: rec.accepted! }).accepted?.owner).toBe(lea.id.owner);
   });
@@ -75,7 +80,7 @@ describe('recovery vault records (V3-10)', () => {
     t[10] = (t[10] as number) ^ 1;
     expect(() => openVault(t, marie.id.owner, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'DECRYPT' }));
     const v = bytes.slice();
-    v[4] = 2;
+    v[4] = 1;
     expect(() => openVault(v, marie.id.owner, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VERSION' }));
     expect(() => sealVault(records, new Uint8Array(16))).toThrow(expect.objectContaining({ code: 'FORMAT' }));
   });
@@ -86,8 +91,13 @@ describe('recovery vault records (V3-10)', () => {
     const forged = { ...records.contacts[0]!, sharing_cert: issueSharingCert(mallory.id, lea.sharing.publicKey, { rotation: 0 }) };
     expect(() => sealVault({ ...records, contacts: [forged] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
     expect(() => sealVault({ ...records, retired_owners: ['nope'] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
-    const bad = { ...records.invitations[0]!, secret: 'AAAA' };
+    const bad = { ...records.invitations[0]!, seed: 'AAAA' };
     expect(() => sealVault({ ...records, invitations: [bad] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    // The id must match the seed; rotation is a u32; device a key.
+    const otherSeed = invitationRecord(createInvitation(marie.signer, marie.cert, { now }).invitation);
+    expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, seed: otherSeed.seed }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, rotation: -1 }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    expect(() => sealVault({ ...records, invitations: [{ ...records.invitations[0]!, device: 'x' }] }, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     expect(() => sealVault({ ...records, extra: 1 } as VaultRecords, marie.vaultDataKey)).toThrow(expect.objectContaining({ code: 'FORMAT' }));
     // A newer minor may add fields (kept, ignored).
     expect(() => sealVault({ ...records, minor: 1, extra: 1 } as VaultRecords, marie.vaultDataKey)).not.toThrow();

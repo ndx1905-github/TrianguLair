@@ -22,8 +22,9 @@ import {
   u32be,
   utf8,
 } from './encoding';
-import { DecryptionError, ExpiredError, FormatError, SignatureError } from './errors';
-import { generateX25519KeyPair, type KeyPair } from './identity';
+import { DecryptionError, ExpiredError, FormatError, RollbackError, SignatureError } from './errors';
+import type { KeyPair } from './identity';
+import { deriveInvitation, INVITATION_SEED_BYTES, invitationToken } from './invitation-listing';
 import { checkLocation, MAX_LOCATION } from './location';
 import { findIndexed, openUnchecked, readPackHeader, sealTyped, type PackIndex, type SealOptions } from './pack';
 import { checkNoRollback, sharingCertOf, type DeviceSigner, type IndexAnchor, type SignedIndex } from './signed-index';
@@ -35,48 +36,49 @@ export { checkLocation } from './location';
 
 /*
  * Invitation flow (spec: "Invitation link and return link")
- * 1. Owner: createInvitation(device signer, current sharing cert) -> temporary X25519 key pair
- *    valid <= 7 days and a compact binary link (base64url in the URL fragment). The link is signed
- *    by the owner's DEVICE key and carries that device's master-signed certificate, so inviting
- *    does not need the master key (R-03). It also carries the owner's current SHARING certificate,
- *    whose master signature covers the read address (V3-01): the link cannot choose where the
- *    invitee reads. The owner wraps "friends" content directly to invitation.keyPair.publicKey
- *    (never as a group member: R-02).
- * 2. Invitee: parseInvitationLink() -> checks both certificates, the device signature, the dates,
- *    gets the key pair, reads the owner's index at received.location ONLY (verifyIndex with
- *    expectedOwner and location; follow StorageMovedError), then checkInvitationIndex(): same owner,
- *    index certificate not older than the link's, signing device not revoked there.
- * 3. Invitee: createInvitationResponse(received, own device signer, own sharing cert) -> compact
- *    binary return link signed by the invitee's DEVICE key (with its device cert), carrying their
- *    sharing certificate (and so their certified read address), bound to the inviter and the
- *    invitation key, sealed to the invitation key.
+ * 1. Owner: createInvitation(device signer, current sharing cert) -> OwnerInvitation (temporary
+ *    X25519 key pair derived from a 16-byte seed, valid <= 7 days) and a SHORT link (about 150
+ *    characters with the URL prefix). The link is not signed: it carries only what cannot be fetched
+ *    (owner master key, read address, seed, rotation, expiry). The owner then publishes an index
+ *    listing the invitation (signIndex({ invitations })) BEFORE sending the link: the listing, in
+ *    an index signed by a device that the current master-signed certificate does not revoke and
+ *    read at the master-certified address, replaces the device signature of format 4. The owner
+ *    wraps "friends" content directly to invitation.keyPair.publicKey (never as a group member: R-02).
+ * 2. Invitee: parseInvitationLink() -> the seed gives the key pair; nothing is trusted yet. Read
+ *    the owner's index at received.location ONLY (verifyIndex with expectedOwner and location;
+ *    follow StorageMovedError), then checkInvitationIndex(): same owner, read at its certified
+ *    address, rotation >= the link's, the invitation is LISTED, not expired. Only then show the
+ *    invitation as the owner's, and only then createInvitationResponse() accepts it.
+ * 3. Invitee: createInvitationResponse(confirmed invitation, own device signer, own sharing cert)
+ *    -> compact binary return link signed by the invitee's DEVICE key (with its device cert),
+ *    carrying their sharing certificate (and so their certified read address), bound to the
+ *    inviter and the invitation key, sealed to the invitation key. (Unchanged from format 4.)
  * 4. Owner: collectInvitationAnswers() over EVERY answer received: exactly one responder =>
- *    `accepted`; several => none accepted. Keep the invitation record until expiry + 7 days
- *    (INVITATION_ANSWER_GRACE_MS), even after acceptance, and pass `acceptedOwner`: any other
- *    responder is returned in `late` (R-04). Answers created before expiry are still opened during
- *    the grace period (V3-02). Then checkInvitationIndex(answer, responder's index).
+ *    `accepted`; several => none accepted. Keep the invitation record (and its listing) until
+ *    expiry; keep the record until expiry + 7 days (INVITATION_ANSWER_GRACE_MS), even after
+ *    acceptance, and pass `acceptedOwner`: any other responder is returned in `late` (R-04).
+ *    Answers created before expiry are still opened during the grace period (V3-02). Then
+ *    checkInvitationIndex(answer, responder's index).
  * 5. On acceptance or expiry: retireInvitationKey() RE-ENCRYPTS (new batch keys) every pack that
  *    carried the invitation wrap, so a kept copy of the link opens nothing new. It refuses a
  *    group-key pack (the link holder would keep the group secret: rotate the group instead).
  *
- * Compact sharing certificate (in links and return links), big-endian:
+ * Link (version 5), base64url in the URL fragment, big-endian:
+ *   0    1   magic 0x49 ("I")
+ *   1    1   version (= 5)
+ *   2    32  owner master public key (Ed25519)
+ *   34   16  seed (invitation key pair and id derive from it, invitation-listing.ts)
+ *   50   4   rotation of the owner's sharing certificate when inviting (freshness floor)
+ *   54   4   expires, unix seconds (at most 7 days + 5 min after the reader's clock)
+ *   58   ..  read address without its "https://" prefix (UTF-8, 1..504 bytes; checkLocation)
+ * 58 + (address length - 8) bytes: 146 characters with "https://triangulair.app/i#" and a 40-character
+ * address, 200 characters with an 80-character address. No certificate, no revocation list.
+ *
+ * Compact sharing certificate (in return links), big-endian:
  *   key 32 | rotation u32 | n u16 | n x 32 revoked device keys (sorted) | L u16 | location L | master signature 64
  *   (L = 0: no location.) Rebuilt as a version-3 sharing certificate and verified like any other;
- *   a certificate with extension fields (minor, crit, ...) cannot travel in a link.
+ *   a certificate with extension fields (minor, crit, ...) cannot travel in a return link.
  * Compact device certificate: device pk 32 | box pk 32 | master signature 64.
- *
- * Link (version 4):
- *   0    1   magic 0x49 ("I")
- *   1    1   version (= 4)
- *   2    16  invitation id
- *   18   32  owner master public key (Ed25519)
- *   50   4   created, unix seconds (at most 5 min after the reader's clock)
- *   54   4   expires, unix seconds (expires - created in [60 s, 7 days])
- *   58   ..  owner's compact sharing certificate (location REQUIRED)
- *   ..   128 compact device certificate of the signing device
- *   ..   32  invitation secret key (X25519)
- *   ..   64  Ed25519 signature by the DEVICE key, domain "invitation", over
- *            every byte before the secret key || invitation PUBLIC key
  *
  * Response (version 4): 0x52 ("R") | version (= 4) | crypto_box_seal(inner, invitation public key)
  *   inner: invitation id 16 | responder master pk 32 | created u32 s | compact sharing cert |
@@ -86,7 +88,10 @@ export { checkLocation } from './location';
  *   The signing device must not be revoked by the carried sharing certificate.
  */
 
-export const INVITATION_VERSION = 4;
+/** Version of the invitation LINK (5: short, unsigned, bound by the index listing). */
+export const INVITATION_VERSION = 5;
+/** Version of the return link (unchanged by the short link). */
+export const INVITATION_RESPONSE_VERSION = 4;
 export const INVITATION_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const INVITATION_MIN_TTL_MS = 60 * 1000;
 /** Answers created before expiry are still opened for this long after it (V3-02). */
@@ -95,37 +100,47 @@ const LINK_MAGIC = 0x49;
 const RESPONSE_MAGIC = 0x52;
 const CLOCK_SKEW_S = 5 * 60;
 const MAX_REVOKED = 256;
+const HTTPS = 'https://';
 /** Size bounds checked before any decoding (N-2). */
-const MAX_LINK_CHARS = 12_288;
+const MAX_LINK_CHARS = 1024;
 const MAX_RESPONSE_BYTES = 9_600;
 
 /**
  * Kept privately by the owner until expiry + INVITATION_ANSWER_GRACE_MS, also after acceptance
- * (track it in the recovery vault: invitationRecord / invitationFromRecord).
+ * (track it in the recovery vault: invitationRecord / invitationFromRecord), and passed to
+ * signIndex({ invitations }) so that every index published until expiry lists it.
  */
 export interface OwnerInvitation {
   id: string;
   owner: string;
+  /** The link's secret (16 bytes): keyPair and id derive from it. */
+  seed: Uint8Array;
   keyPair: KeyPair;
+  /** Rotation of the owner's sharing certificate when inviting (in the link and the token). */
+  rotation: number;
+  /** Device that created it ("ed25519:…"): the listing is dropped once that device is revoked. */
+  device: string;
   created: string;
   expires: string;
 }
 
-/** What the invitee obtains from the link. */
+/** What the invitee obtains from the link: UNVERIFIED until checkInvitationIndex accepts it. */
 export interface ReceivedInvitation {
   id: string;
   owner: string;
   ownerPublicKey: Uint8Array;
-  /** Device that signed the link ("ed25519:…"), certified by `owner`. */
-  device: string;
-  /** The owner's sharing certificate when inviting (verified): freshness anchor, and the read address. */
-  cert: SharingCert;
-  /** Master-certified read address (= cert.location): read the owner's index ONLY there. */
+  /** Read address given by the link: read the owner's index there ONLY (and follow MOVED). */
   location: string;
+  /** Freshness floor: the owner's index must have at least this sharing-cert rotation. */
+  rotation: number;
   keyPair: KeyPair;
-  created: string;
   expires: string;
+  /** Token the owner's index must list. */
+  token: string;
 }
+
+/** Received invitations accepted by checkInvitationIndex (createInvitationResponse requires one). */
+const confirmed = new WeakSet<object>();
 
 const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
 
@@ -188,10 +203,28 @@ function readDeviceCert(r: Reader, owner: string): DeviceCert {
   return verifyDeviceCert({ type: 'device-cert', version: DEVICE_CERT_VERSION, owner, device, box, signature }, { expectedOwner: owner });
 }
 
+/** Link fragment of an invitation, for its owner's read address `location` (the certified one). */
+function linkFragment(inv: OwnerInvitation, ownerPublicKey: Uint8Array, location: string): string {
+  checkLocation(location, 'invitation');
+  return toB64Url(
+    concat(
+      Uint8Array.of(LINK_MAGIC, INVITATION_VERSION),
+      ownerPublicKey,
+      inv.seed,
+      u32be(inv.rotation),
+      u32be(Math.floor(Date.parse(inv.expires) / 1000)),
+      utf8(location.slice(HTTPS.length)),
+    ),
+  );
+}
+
 /**
- * Creates an invitation, signed by this DEVICE (no master key needed). `sharingCert` is the
- * owner's current sharing certificate: it must carry the read address (location), which the
- * invitee will use, and must not revoke this device.
+ * Creates an invitation (no master key needed). `sharingCert` is the owner's current sharing
+ * certificate: it must carry the read address (an owner without storage cannot invite: the link
+ * points to the index that vouches for it) and must not revoke `signer`, the device that will
+ * list the invitation. Publish an index with signIndex({ invitations: [..., invitation] }) BEFORE
+ * sending the link: until then the invitee refuses it. Returns the link fragment (put it after
+ * "https://triangulair.app/i#").
  */
 export function createInvitation(
   signer: DeviceSigner,
@@ -206,28 +239,24 @@ export function createInvitation(
   const v = verifySharingCert(sharingCert);
   if (v.cert.location === undefined) throw new FormatError('invitation: the sharing certificate has no read address (connect a storage first)');
   const dc = checkSigner(signer, v.cert, 'invitation');
-  const s = S();
-  const keyPair = generateX25519KeyPair();
-  const id = s.randombytes_buf(16);
+  const seed = S().randombytes_buf(INVITATION_SEED_BYTES);
+  const { id, keyPair } = deriveInvitation(seed);
   const created = Math.floor(now / 1000);
   const expires = created + Math.floor(ttl / 1000);
-  const head = concat(
-    Uint8Array.of(LINK_MAGIC, INVITATION_VERSION),
+  const invitation: OwnerInvitation = {
     id,
-    v.ownerPublicKey,
-    u32be(created),
-    u32be(expires),
-    sharingCertBytes(v.cert, 'invitation'),
-    deviceCertBytes(dc),
-  );
-  const sig = signBinary('invitation', concat(head, keyPair.publicKey), signer.keys.sign.secretKey);
-  const fragment = toB64Url(concat(head, keyPair.secretKey, sig));
+    owner: v.cert.owner,
+    seed,
+    keyPair,
+    rotation: v.cert.rotation,
+    device: dc.device,
+    created: iso(created),
+    expires: iso(expires),
+  };
+  const fragment = linkFragment(invitation, v.ownerPublicKey, v.cert.location);
   // Round-trip: never hand out a link that parseInvitationLink would reject.
   parseInvitationLink(fragment, { now: new Date(created * 1000) });
-  return {
-    invitation: { id: toB64Url(id), owner: v.cert.owner, keyPair, created: iso(created), expires: iso(expires) },
-    fragment,
-  };
+  return { invitation, fragment };
 }
 
 /** True at or after `expires`, and for a malformed `expires` (fails closed, V3-07). */
@@ -242,7 +271,9 @@ export function assertInvitationActive(inv: { expires: string }, now?: Date): vo
 
 /**
  * Accepts the full link (anything after '#') or the bare fragment. Throws ExpiredError after expiry,
- * and FormatError for a link created more than 5 minutes after the reader's clock (V3-04).
+ * and FormatError for an expiry more than 7 days + 5 minutes after the reader's clock (V3-04).
+ * The result is NOT authenticated: anyone can write a link naming any master key. Nothing may be
+ * shown as coming from `owner` before checkInvitationIndex accepts the owner's index for it.
  */
 export function parseInvitationLink(linkOrFragment: string, opts: { now?: Date } = {}): ReceivedInvitation {
   const W = 'invitation-link';
@@ -255,38 +286,32 @@ export function parseInvitationLink(linkOrFragment: string, opts: { now?: Date }
   const r = new Reader(bytes, W);
   if (r.u8() !== LINK_MAGIC) throw new FormatError(`${W}: bad magic`);
   checkByteVersion(r.u8(), W, INVITATION_VERSION);
-  const id = r.bytes(16);
   const ownerPublicKey = r.bytes(32).slice();
   const owner = formatKey('ed25519', ownerPublicKey);
-  const created = r.u32();
+  const seed = r.bytes(INVITATION_SEED_BYTES).slice();
+  const rotation = r.u32();
   const expires = r.u32();
-  if (expires - created < INVITATION_MIN_TTL_MS / 1000 || expires - created > INVITATION_MAX_TTL_MS / 1000 || expires <= created) {
-    throw new FormatError(`${W}: validity must be between 60 s and 7 days`);
-  }
-  if (created * 1000 > now + CLOCK_SKEW_S * 1000) throw new FormatError(`${W}: created in the future`);
-  const cert = readSharingCert(r, owner, W);
-  if (cert.location === undefined) throw new FormatError(`${W}: the owner's certificate has no read address`);
-  const dc = readDeviceCert(r, owner);
-  if (cert.revoked_devices.includes(dc.device)) throw new SignatureError(`${W}: signed by a revoked device`, 'REVOKED');
-  const headEnd = r.offset;
-  const secretKey = r.bytes(32).slice();
-  const sig = r.bytes(64);
+  const rest = bytes.length - r.offset;
+  if (rest < 1 || rest > MAX_LOCATION - HTTPS.length) throw new FormatError(`${W}: bad read address length`);
+  const location = HTTPS + fromUtf8(r.bytes(rest), W);
   r.end();
-  const publicKey = S().crypto_scalarmult_base(secretKey);
-  verifyBinary('invitation', sig, concat(bytes.subarray(0, headEnd), publicKey), parseKey('ed25519', dc.device));
+  checkLocation(location, W);
+  if (expires * 1000 > now + INVITATION_MAX_TTL_MS + CLOCK_SKEW_S * 1000) throw new FormatError(`${W}: expires too far in the future`);
+  const { id, keyPair } = deriveInvitation(seed);
+  S().memzero(seed);
   const out: ReceivedInvitation = {
-    id: toB64Url(id),
+    id,
     owner,
     ownerPublicKey,
-    device: dc.device,
-    cert,
-    location: cert.location,
-    keyPair: { publicKey, secretKey },
-    created: iso(created),
+    location,
+    rotation,
+    keyPair,
     expires: iso(expires),
+    token: invitationToken(ownerPublicKey, keyPair.publicKey, rotation, expires),
   };
   assertInvitationActive(out, new Date(now));
-  return out;
+  Object.freeze(out.keyPair);
+  return Object.freeze(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +337,9 @@ export interface InvitationResponse {
 
 /**
  * Answers an invitation, signed by this DEVICE (no master key needed), with the invitee's current
- * sharing cert (its location, if any, is the read address the inviter will use).
+ * sharing cert (its location, if any, is the read address the inviter will use). `invitation` must
+ * have been accepted by checkInvitationIndex (FormatError otherwise): never answer, nor show, an
+ * invitation whose owner's index does not list it.
  */
 export function createInvitationResponse(
   invitation: ReceivedInvitation,
@@ -321,6 +348,7 @@ export function createInvitationResponse(
   opts: { now?: Date } = {},
 ): Uint8Array {
   const now = nowMs(opts.now, 'invitation-response');
+  if (!confirmed.has(invitation)) throw new FormatError('invitation-response: check the invitation against its owner\'s index first (checkInvitationIndex)');
   assertInvitationActive(invitation, new Date(now));
   const v = verifySharingCert(sharingCert);
   const dc = checkSigner(signer, v.cert, 'invitation-response');
@@ -333,7 +361,7 @@ export function createInvitationResponse(
   );
   const sig = signBinary('invitation-response', concat(body, invitation.ownerPublicKey, invitation.keyPair.publicKey), signer.keys.sign.secretKey);
   const inner = concat(body, sig);
-  return concat(Uint8Array.of(RESPONSE_MAGIC, INVITATION_VERSION), S().crypto_box_seal(inner, invitation.keyPair.publicKey));
+  return concat(Uint8Array.of(RESPONSE_MAGIC, INVITATION_RESPONSE_VERSION), S().crypto_box_seal(inner, invitation.keyPair.publicKey));
 }
 
 /**
@@ -346,7 +374,7 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
   if (!(bytes instanceof Uint8Array) || bytes.length < 2) throw new FormatError(`${W}: too short`);
   if (bytes.length > MAX_RESPONSE_BYTES) throw new FormatError(`${W}: too long`);
   if (bytes[0] !== RESPONSE_MAGIC) throw new FormatError(`${W}: bad magic`);
-  checkByteVersion(bytes[1] as number, W, INVITATION_VERSION);
+  checkByteVersion(bytes[1] as number, W, INVITATION_RESPONSE_VERSION);
   const invCreated = recordTime(invitation.created, W);
   const invExpires = recordTime(invitation.expires, W);
   if (nowMs(opts.now, W) >= invExpires + INVITATION_ANSWER_GRACE_MS) {
@@ -386,10 +414,14 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
  * `expectedOwner` and `location` (V3-01):
  * - the index was read at its own master-certified address (the link's location, or a newer one
  *   reached by following StorageMovedError), never at an address chosen by the link alone;
- * - same owner; the index's sharing certificate is not older than the one carried by the link (same
- *   rotation => the very same certificate; a later rotation keeps every revocation);
- * - the device that signed the link is not revoked in that index (a device declared lost can no
- *   longer pass as the owner to a NEW contact);
+ * - same owner (a link naming another master key than the index's signer is refused);
+ * - for an invitation link: the index's rotation is at least the link's (freshness floor), the
+ *   index LISTS the invitation's token (code NOT_LISTED otherwise: never listed, withdrawn,
+ *   expired, made by a device since declared lost, or a forged link), and it has not expired.
+ *   On success the invitation is marked as confirmed (createInvitationResponse requires it);
+ * - for a return link: the index's sharing certificate is not older than the one carried by the
+ *   answer (same rotation => the very same certificate; a later rotation keeps every revocation),
+ *   and the device that signed the answer is not revoked in that index;
  * - with `lastSeen` (the owner is already a contact): no rollback. A link must never reset an
  *   existing contact's anchor to trust on first use.
  * Then use that index as the first `lastSeen` for this owner.
@@ -397,7 +429,7 @@ export function openInvitationResponse(bytes: Uint8Array, invitation: OwnerInvit
 export function checkInvitationIndex(
   source: ReceivedInvitation | InvitationResponse,
   index: SignedIndex,
-  opts: { lastSeen?: SignedIndex | IndexAnchor } = {},
+  opts: { lastSeen?: SignedIndex | IndexAnchor; now?: Date } = {},
 ): void {
   const W = 'invitation';
   const info = verifiedInfo(index);
@@ -407,9 +439,20 @@ export function checkInvitationIndex(
     throw new FormatError(`${W}: the index must be verified with the address it was read from (location option)`);
   }
   if (index.owner !== source.owner) throw new SignatureError(`${W}: index belongs to another owner`, 'OWNER_MISMATCH');
-  checkSharingCertNotOlder(sharingCertOf(index), source.cert);
-  if (index.revoked_devices.includes(source.device)) throw new SignatureError(`${W}: signed by a device that is now revoked`, 'REVOKED');
+  if ('token' in source) {
+    if (index.sharing_cert.rotation < source.rotation) {
+      throw new RollbackError(`${W}: the index is older than the invitation (rotation ${index.sharing_cert.rotation} < ${source.rotation})`);
+    }
+    if (!(index.invitations ?? []).includes(source.token)) {
+      throw new SignatureError(`${W}: the owner's current index does not list this invitation`, 'NOT_LISTED');
+    }
+    assertInvitationActive(source, opts.now);
+  } else {
+    checkSharingCertNotOlder(sharingCertOf(index), source.cert);
+    if (index.revoked_devices.includes(source.device)) throw new SignatureError(`${W}: signed by a device that is now revoked`, 'REVOKED');
+  }
   if (opts.lastSeen !== undefined) checkNoRollback(index, opts.lastSeen);
+  if ('token' in source) confirmed.add(source);
 }
 
 export interface InvitationAnswers {

@@ -2,7 +2,8 @@
 
 Prototype, revised after the independent review T-002 (`docs/reviews/2026-10-13-crypto-T-002.md`), the second
 review of its fixes (`docs/reviews/2026-10-13-crypto-fixes-review.md`, R-01 to R-13) and the third review of format v3
-(`docs/reviews/2026-10-18-crypto-v3-review.md`, V3-01 to V3-16, N-1 to N-6); not audited.
+(`docs/reviews/2026-10-18-crypto-v3-review.md`, V3-01 to V3-16, N-1 to N-6), then given a short invitation link
+(link version 5, index 4.1); not audited.
 Listed so later phases can decide what to fix.
 
 ## Identity & keys
@@ -17,15 +18,25 @@ Listed so later phases can decide what to fix.
   - what was wrapped to the old sharing key (by me and by friends) stays readable from copies the thief downloaded or
     can still download, until it is re-encrypted;
   - between the theft and the declaration, the stolen device can publish validly signed indexes (and change content),
-    and create or answer invitations in the owner's name (they are device-signed); readers who later see the revocation
-    refuse its indexes;
-  - **after** the declaration, the device can still mint links and answers (device certificates never expire), but they
-    carry the master-signed sharing certificate that holds the read address (V3-01). A new contact, or an inviter
-    checking an answer, reads the index only at that certified address (or at a newer one reached by a master-signed
-    redirect), where the newer rotation revokes the device: `checkInvitationIndex` refuses it. Residuals:
+    create invitations and list them in those indexes, and answer invitations in the owner's name; readers who later
+    see the revocation refuse its indexes, and the next index after the declaration no longer lists its invitations
+    (`signIndex` drops invitations whose creating device the certificate revokes);
+  - **after** the declaration, the device can still mint links (they are unsigned: anyone can write one naming any
+    master key) and answers (device certificates never expire). A link is honoured only if the owner's index read at
+    the link's address is verified there as its master-certified address (an attacker's address only leads, by a
+    master-signed redirect, to the real one) and **lists** the link's token; only a device the current master-signed
+    certificate does not revoke can publish such an index, so the listing replaces the device signature of format 4.
+    An answer carries the master-signed certificate with the responder's address; the inviter reads the revocation
+    there. `checkInvitationIndex` refuses both. Residuals:
+    - **write access to the storage** (the thief kept the storage credentials, before step 4 of the declaration, or
+      the host itself): an index signed by the revoked device under the **old** certificate, listing a link it made,
+      can be put back at the certified address. A new contact without an anchor accepts it (trust on first use), unless
+      the link names a later rotation than that certificate (the link's rotation is a freshness floor, bound in the
+      token: `ROLLBACK`). This is the same residual as with the signed link of format 4, whose carried certificate was
+      the same floor; the declaration's step 4 (revoke the storage credentials) closes it;
     - an **old read address** that still serves a stale index after a storage move (the owner left it there instead
-      of the newest index, or the host rolls it back) is trust on first use for a new contact who holds a link minted
-      with the older certificate. The spec requires leaving the newest index (the redirect) or nothing at an old address;
+      of the newest index, or the host rolls it back) is trust on first use for a new contact who holds a link naming
+      that address and the older rotation (if that stale index lists it). The spec requires leaving the newest index (the redirect) or nothing at an old address;
     - an **answer whose certificate has no address** (the responder publishes nothing) cannot be freshness-checked:
       `checkInvitationIndex` throws `FORMAT` and the app must show the contact as "cannot be checked" until the safety
       code is compared (a thief can only use such a certificate if the victim never published one);
@@ -129,7 +140,8 @@ Listed so later phases can decide what to fix.
   Mitigations: one answer per invitation (several answers → none accepted automatically), safety code, and
   `retireInvitationKey` re-encryption on acceptance or expiry. These require the owner app to actually run the sweep at
   expiry (track open invitations in the recovery vault).
-- Expiry inside the link is enforced by honest clients using their own clock.
+- Expiry inside the link is enforced by honest clients using their own clock (it is bound in the listing token, so it
+  cannot be extended, and the owner's next index after expiry no longer lists it).
 - The invitation response is sealed to the invitation key, so any link holder can also read it (public keys, the
   responder's read address, a signature).
 - **Late answers** (R-04, V3-02): an interceptor who answers first is accepted if no other answer has arrived yet. The
@@ -147,15 +159,37 @@ Listed so later phases can decide what to fix.
   reachable from content opened to the invitation when retiring it (spec "Invitation link and return link").
 - The invitation key must be a direct recipient, never a group member; this is enforced only when retiring
   (`retireInvitationKey` throws on a group-key pack), not when sealing.
-- The link is about 600 characters with the URL prefix (device certificate and sharing certificate inside, R-03 and
-  V3-01), plus 43 characters per revoked device: a QR code of version 17 (level L) to 20 (level M) instead of ~15.
+- **Short link, unsigned** (version 5): 146 characters with the URL prefix and a 40-character address (200 with an
+  80-character one; QR version 7 to 10 at level L or M). It carries the owner's master key, the read address, a
+  16-byte seed (128-bit secret: the invitation key pair and id derive from it), the rotation and the expiry. Its
+  authenticity comes entirely from the owner's index: a parsed link is **unauthenticated** until `checkInvitationIndex`
+  confirms it (`createInvitationResponse` refuses an unconfirmed one; the app must not show "Marie invites you" or
+  any content before). Properties kept from format 4: the read address and revocations are master-certified (the link
+  cannot point elsewhere: V3-01), a revoked device cannot vouch for a link (R-03, R-12 via the rotation floor), expiry
+  is checked against the reader's clock (V3-04: at most 7 days + 5 minutes ahead), and the link is still a bearer
+  secret (F-02 mitigations unchanged). Changed: tampering with the expiry, rotation or seed is no longer a signature
+  error but a token mismatch (`NOT_LISTED`); a tampered address is refused by the certified-address check.
+- **The link works only once listed.** The owner app must publish the index that lists a new invitation before sending
+  it, and keep it listed until expiry (also after acceptance, so a second answer can still arrive: R-04). An owner
+  without storage cannot invite (no index to vouch for the link); the app offers the storage wizard first, as the spec
+  already required for sharing.
+- **The listing reveals metadata** (index 4.1): tokens are unlinkable hashes (only a link holder can recompute one),
+  padded with stable dummy tokens to a power of two (at least 4), but the index shows whether invitations are open, the
+  bucket (≤ 4, ≤ 8, …), and, by diffing two indexes, when one is added or removed. A device change re-derives the
+  dummies (they depend on the publishing device's key), which shows which entries are real across that change. A
+  separate signed file would not help: it would need the index's rollback protection, so the index would reference it.
+- **Older writers drop the listing** (V3-03 rule): a device on index minor 0 rewriting the index removes `invitations`
+  (it does not know the field), which closes every open link until a newer device publishes again.
+- The return link is unchanged (about 530 characters plus the responder's address and 43 per revoked device). It is
+  not shortened: it travels through messaging, and invitees without storage, the common case, need the full
+  device-signed form.
 - `checkLocation` rejects local-network IP literals (IPv4, IPv6, and IPv4 embedded in IPv6: mapped, NAT64, 6to4,
   V3-09) and names (`localhost`, `*.local`, `*.internal`), not public names that resolve to private addresses (DNS
   rebinding): the app's HTTP layer must also refuse private destinations.
 - A link `created` more than 5 minutes after the reader's clock is refused (V3-04). `createInvitation` does not compare
   its `now` option with the real time (the option exists for tests; the app passes nothing). The u32 seconds fields
   overflow in 2106.
-- Size bounds (N-2): link strings of at most 12,288 characters and return links of at most 9,600 bytes are checked
+- Size bounds (N-2): link strings of at most 1,024 characters and return links of at most 9,600 bytes are checked
   before decoding; an index is at most 16 MiB.
 - `retireInvitationKey` requires the bytes of every file listed in the index (V3-08): with many photos it decrypts
   each media header's wraps once (one X25519 per wrap). The app may fetch files in pages but must pass them all.
@@ -182,5 +216,5 @@ Listed so later phases can decide what to fix.
   other's verified indexes (fails closed with `NOT_INDEXED`).
 - Known-answer vectors exist for phrase → owner, the safety code and Padmé; vectors for exact signed bytes per domain, a
   fixed pack, transfer blob, sealed sharing key, vault envelope, invitation link and return link are still to be
-  written (they need deterministic randomness hooks; N-6 of T-002, "before an external audit" item 3 of the third
+  written (they need deterministic randomness hooks, the invitation seed and listing token included; N-6 of T-002, "before an external audit" item 3 of the third
   review). A separate written format specification and fuzzing of every parser are also still to do.

@@ -18,12 +18,14 @@ import {
   sortedUnique,
   str,
   toB64Url,
+  u32,
   u32be,
   utf8,
   type JsonObject,
 } from './encoding';
 import { DecryptionError, FormatError, SignatureError } from './errors';
 import type { OwnerInvitation } from './invitation';
+import { deriveInvitation, INVITATION_SEED_BYTES } from './invitation-listing';
 import { paddedLength } from './pack';
 import { indexAnchor, verifyIndexAnchor, type IndexAnchor, type SignedIndex } from './signed-index';
 import { S } from './sodium';
@@ -37,7 +39,7 @@ import { S } from './sodium';
  *
  * Envelope, big-endian:
  *   0  4   magic "TLVD"
- *   4  1   version (= 1)
+ *   4  1   version (= 2)
  *   5  24  nonce
  *   29 ..  XChaCha20-Poly1305(plaintext, AD = bytes[0..5) || owner master public key 32 || nonce,
  *          key = vault data key)
@@ -51,16 +53,21 @@ import { S } from './sodium';
  *               "verified":true}],          // the user's "verified" mark (local declaration)
  *  "invitations":[{"accepted":"ed25519:…",   // optional: the responder accepted so far
  *                  "answers":["<b64url return link>"], // every answer received (max 16)
- *                  "created":"…","expires":"…","id":"<16B>","secret":"<32B invitation key>"}],
+ *                  "created":"…","device":"ed25519:…", // the device that created it
+ *                  "expires":"…","id":"<16B>",
+ *                  "rotation":3,            // sharing-cert rotation when inviting (in the link and token)
+ *                  "seed":"<16B link seed>"}], // the invitation key pair and id derive from it
  *  "owner":"ed25519:…",
  *  "retired_owners":["ed25519:…"],          // identities that moved away (never trusted again)
- *  "type":"vault-records","version":1}
+ *  "type":"vault-records","version":2}
  * Lists are sorted (contacts by owner, invitations by id) and unique. An invitation record is kept
  * until expiry + INVITATION_ANSWER_GRACE_MS, so any device can collect late answers and run the
- * expiry sweep (retireInvitationKey).
+ * expiry sweep (retireInvitationKey); pass the records to signIndex({ invitations }) so the open
+ * ones stay listed until expiry. Version 2 (short invitation links): `seed`, `rotation` and
+ * `device` replace the 32-byte `secret` of version 1.
  */
 
-export const VAULT_VERSION = 1;
+export const VAULT_VERSION = 2;
 const MAGIC = utf8('TLVD');
 const MAX_CONTACTS = 10_000;
 const MAX_INVITATIONS = 256;
@@ -78,8 +85,12 @@ export interface VaultContact {
 
 export interface VaultInvitation {
   id: string;
-  /** Invitation X25519 secret key (b64url). */
-  secret: string;
+  /** Link seed (b64url of 16 bytes): the invitation key pair and id derive from it. */
+  seed: string;
+  /** Sharing-cert rotation when inviting. */
+  rotation: number;
+  /** Device that created the invitation ("ed25519:…"). */
+  device: string;
   created: string;
   expires: string;
   accepted?: string;
@@ -113,7 +124,9 @@ export function contactRecord(index: SignedIndex, verified = false): VaultContac
 export function invitationRecord(inv: OwnerInvitation, opts: { answers?: Uint8Array[]; accepted?: string } = {}): VaultInvitation {
   const rec: VaultInvitation = {
     id: inv.id,
-    secret: toB64Url(inv.keyPair.secretKey),
+    seed: toB64Url(inv.seed),
+    rotation: inv.rotation,
+    device: inv.device,
     created: inv.created,
     expires: inv.expires,
     answers: [...new Set((opts.answers ?? []).map(toB64Url))],
@@ -124,11 +137,16 @@ export function invitationRecord(inv: OwnerInvitation, opts: { answers?: Uint8Ar
 
 /** The OwnerInvitation (for collectInvitationAnswers / retireInvitationKey) and the answers kept in a record. */
 export function invitationFromRecord(rec: VaultInvitation, owner: string): { invitation: OwnerInvitation; answers: Uint8Array[]; accepted?: string } {
-  const secretKey = fromB64Url(rec.secret, 'vault.invitation.secret', 32);
+  const seed = fromB64Url(rec.seed, 'vault.invitation.seed', INVITATION_SEED_BYTES);
+  const { id, keyPair } = deriveInvitation(seed);
+  if (id !== rec.id) throw new FormatError('vault.invitation: id does not match the seed');
   const invitation: OwnerInvitation = {
-    id: rec.id,
+    id,
     owner,
-    keyPair: { publicKey: S().crypto_scalarmult_base(secretKey), secretKey },
+    seed,
+    keyPair,
+    rotation: rec.rotation,
+    device: rec.device,
     created: rec.created,
     expires: rec.expires,
   };
@@ -170,9 +188,11 @@ function validate(doc: JsonObject, owner: string): VaultRecords {
   for (const i of invitations) {
     const o = asObject(i, `${W}.invitations[]`);
     const X = `${W}.invitations[]`;
-    checkFields(o, X, ['id', 'secret', 'created', 'expires', 'answers'], ['accepted'], extensible);
-    fromB64Url(o['id'], `${X}.id`, 16);
-    fromB64Url(o['secret'], `${X}.secret`, 32);
+    checkFields(o, X, ['id', 'seed', 'rotation', 'device', 'created', 'expires', 'answers'], ['accepted'], extensible);
+    const id = fromB64Url(o['id'], `${X}.id`, 16);
+    if (deriveInvitation(fromB64Url(o['seed'], `${X}.seed`, INVITATION_SEED_BYTES)).id !== toB64Url(id)) throw new FormatError(`${X}: id does not match the seed`);
+    u32(o, 'rotation', X);
+    parseKey('ed25519', o['device'], `${X}.device`);
     if (isoDate(o, 'expires', X) <= isoDate(o, 'created', X)) throw new FormatError(`${X}: expires must follow created`);
     if ('accepted' in o) parseKey('ed25519', o['accepted'], `${X}.accepted`);
     const answers = arr(o, 'answers', X, MAX_ANSWERS);

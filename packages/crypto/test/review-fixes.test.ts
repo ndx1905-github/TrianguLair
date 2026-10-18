@@ -43,7 +43,8 @@ import {
   type SignedIndex,
 } from '../src/index';
 import { checkLocation } from '../src/invitation';
-import { mutateHeader, person, publish, seal, te, trust } from './helpers';
+import { signBody } from '../src/sign';
+import { accept, invite, mutateHeader, person, publish, seal, te, trust } from './helpers';
 
 const now = new Date('2026-10-13T12:00:00.000Z');
 const LOCATION = 'https://cloud.example.org/s/AbCdEfGh12345';
@@ -127,15 +128,15 @@ describe('R-02 (medium): retireInvitationKey and group secrets', () => {
   });
 });
 
-describe('R-03 (medium): invitations and return links are device-signed (no master key)', () => {
-  it('an ordinary device invites and answers with its device key and device certificate only', () => {
+describe('R-03 (medium): inviting and answering need no master key', () => {
+  it('an ordinary device invites (and lists the invitation) and answers with its device key and device certificate only', () => {
     const [owner, friend] = [person(), person()];
     // Only device keys, device certs and sharing certs are used: no Identity anywhere.
-    const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
-    const received = parseInvitationLink(fragment, { now });
+    const { invitation, fragment, index } = invite(owner, { now });
+    expect(index.device_cert.device).toBe(owner.device.id); // the listing is vouched for by this device
+    const received = accept(fragment, index, now);
     expect(received.owner).toBe(owner.id.owner);
-    expect(received.device).toBe(owner.device.id);
-    expect(received.cert).toEqual(owner.cert);
+    expect(received.rotation).toBe(owner.cert.rotation);
     expect(received.location).toBe(owner.location);
     const resp = createInvitationResponse(received, friend.signer, friend.cert, { now });
     const opened = collectInvitationAnswers(invitation, [resp], { now }).accepted!;
@@ -143,46 +144,59 @@ describe('R-03 (medium): invitations and return links are device-signed (no mast
     expect(opened.device).toBe(friend.device.id);
   });
 
-  it('a device revoked by the current sharing cert can neither invite nor answer', () => {
+  it('a device revoked by the current sharing cert can neither invite, list nor answer', () => {
     const { marie, cert1 } = theft();
     expect(() => createInvitation(marie.signer, cert1, { now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
+    const { invitation } = createInvitation(marie.signer, marie.cert, { now });
+    expect(() => signIndex(marie.signer, { seq: 1, sharingCert: cert1, packs: [], invitations: [invitation], now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
     const owner = person();
-    const received = parseInvitationLink(createInvitation(owner.signer, owner.cert, { now }).fragment, { now });
+    const o = invite(owner, { now });
+    const received = accept(o.fragment, o.index, now);
     expect(() => createInvitationResponse(received, marie.signer, cert1, { now })).toThrow(expect.objectContaining({ code: 'REVOKED' }));
-    // A device of another identity cannot sign for this one.
+    // A device of another identity cannot invite for this one, nor list another owner's invitation.
     const mallory = person();
     expect(() => createInvitation(mallory.signer, owner.cert, { now })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    expect(() => publish(mallory, [], { now, invitations: [o.invitation] })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
   });
 
-  it('checkInvitationIndex: same owner, cert not older than the link cert (R-12), signing device not revoked', () => {
+  it('checkInvitationIndex: same owner, index not older than the link (R-12), invitation listed by a non-revoked device', () => {
     const { marie, tabletSigner, cert1 } = theft();
     const k2 = generateX25519KeyPair();
     const cert2 = issueSharingCert(marie.id, k2.publicKey, { rotation: 2, revokedDevices: [marie.device.id], location: marie.location });
     // The tablet invites at rotation 1.
-    const received = parseInvitationLink(createInvitation(tabletSigner, cert1, { now }).fragment, { now });
-    expect(received.cert.rotation).toBe(1);
-    // An old index (rotation 0, signed by the now-revoked phone) served to the new friend is refused.
-    const old = signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [] });
-    expect(() => checkInvitationIndex(received, old)).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
-    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [] }))).not.toThrow();
-    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [] }))).not.toThrow();
-    // The tablet is later revoked too: its old link no longer leads anywhere.
+    const { invitation, fragment } = createInvitation(tabletSigner, cert1, { now });
+    const received = parseInvitationLink(fragment, { now });
+    expect(received.rotation).toBe(1);
+    const listing = { invitations: [invitation], now };
+    const padding = ['b2b256:' + 'A'.repeat(43)];
+    // An old index (rotation 0, signed by the now-revoked phone) served to the new friend is refused, even if it lists the link.
+    // (signIndex refuses to list a rotation-1 invitation under a rotation-0 certificate: the thief signs it by hand.)
+    expect(() => signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], ...listing })).toThrow(expect.objectContaining({ code: 'FORMAT' }));
+    const { signature: _s, ...body } = JSON.parse(serialize(signIndex(marie.signer, { seq: 99, sharingCert: marie.cert, packs: [], now }))) as Record<string, unknown>;
+    const forged = serialize(signBody('index', { ...body, minor: 1, invitations: [received.token, ...padding].sort() }, marie.device.sign.secretKey));
+    const old = verifyIndex(forged, { expectedOwner: marie.id.owner, location: marie.location, now });
+    expect(() => checkInvitationIndex(received, old, { now })).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
+    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [], ...listing }), { now })).not.toThrow();
+    expect(() => checkInvitationIndex(received, signIndex(tabletSigner, { seq: 2, sharingCert: cert2, packs: [], ...listing }), { now })).not.toThrow();
+    // The tablet is later revoked too: the next index no longer lists its invitations, so its old link leads nowhere.
     const phone2 = generateDeviceKeys();
     const phone2Signer = { keys: phone2, cert: issueDeviceCert(marie.id, devicePublicKeys(phone2)) };
     const cert3 = issueSharingCert(marie.id, generateX25519KeyPair().publicKey, { rotation: 3, revokedDevices: [marie.device.id, tabletSigner.keys.id], location: marie.location });
-    expect(() => checkInvitationIndex(received, signIndex(phone2Signer, { seq: 1, sharingCert: cert3, packs: [] }))).toThrow(expect.objectContaining({ code: 'REVOKED' }));
+    const i3 = signIndex(phone2Signer, { seq: 1, sharingCert: cert3, packs: [], ...listing });
+    expect(i3.invitations).toBeUndefined();
+    expect(() => checkInvitationIndex(received, i3, { now })).toThrow(expect.objectContaining({ code: 'NOT_LISTED' }));
     // Another owner's index, or an unverified object.
     const other = person();
     const otherIndex = signIndex(other.signer, { seq: 1, sharingCert: other.cert, packs: [] });
-    expect(() => checkInvitationIndex(received, otherIndex)).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
-    expect(() => checkInvitationIndex(received, { ...signIndex(tabletSigner, { seq: 3, sharingCert: cert1, packs: [] }) } as SignedIndex)).toThrow();
+    expect(() => checkInvitationIndex(received, otherIndex, { now })).toThrow(expect.objectContaining({ code: 'OWNER_MISMATCH' }));
+    expect(() => checkInvitationIndex(received, { ...signIndex(tabletSigner, { seq: 3, sharingCert: cert1, packs: [], ...listing }) } as SignedIndex, { now })).toThrow();
   });
 
   it('checkInvitationIndex on the owner side: the responder\'s index must not be older than the cert in the answer', () => {
     const owner = person();
-    const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
+    const { invitation, fragment, index } = invite(owner, { now });
     const { marie: friend, tabletSigner, cert1 } = theft();
-    const resp = createInvitationResponse(parseInvitationLink(fragment, { now }), tabletSigner, cert1, { now });
+    const resp = createInvitationResponse(accept(fragment, index, now), tabletSigner, cert1, { now });
     const answer = collectInvitationAnswers(invitation, [resp], { now }).accepted!;
     expect(() => checkInvitationIndex(answer, signIndex(friend.signer, { seq: 50, sharingCert: friend.cert, packs: [] }))).toThrow(expect.objectContaining({ code: 'ROLLBACK' }));
     expect(() => checkInvitationIndex(answer, signIndex(tabletSigner, { seq: 1, sharingCert: cert1, packs: [] }))).not.toThrow();
@@ -192,8 +206,8 @@ describe('R-03 (medium): invitations and return links are device-signed (no mast
 describe('R-04 (medium): one answer per invitation, also after acceptance', () => {
   it('an answer from another person arriving after acceptance is reported in `late`', () => {
     const owner = person();
-    const { invitation, fragment } = createInvitation(owner.signer, owner.cert, { now });
-    const received = parseInvitationLink(fragment, { now });
+    const { invitation, fragment, index } = invite(owner, { now });
+    const received = accept(fragment, index, now);
     const [interceptor, friend] = [person(), person()];
     const first = createInvitationResponse(received, interceptor.signer, interceptor.cert, { now });
     // Batch 1: only the interceptor's answer -> accepted.

@@ -1,5 +1,12 @@
 import {
   canonicalize,
+  checkInvitationIndex,
+  createInvitation,
+  parseInvitationLink,
+  serialize,
+  verifyIndex,
+  type OwnerInvitation,
+  type ReceivedInvitation,
   generateDeviceKeys,
   generateRecoveryPhrase,
   generateVaultDataKey,
@@ -67,10 +74,32 @@ export function person(location: string = newLocation()): Person {
 const seqs = new WeakMap<Person, number>();
 
 /** Publishes (signs) a new index for `p` listing `packs`, with the next seq. */
-export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}): SignedIndex {
+export function publish(p: Person, packs: Uint8Array[], extra: Partial<IndexContent> = {}, signer?: DeviceSigner, cert?: SharingCert): SignedIndex {
   const seq = (seqs.get(p) ?? 0) + 1;
   seqs.set(p, seq);
-  return signIndex(p.signer, { seq, sharingCert: p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
+  return signIndex(signer ?? p.signer, { seq, sharingCert: cert ?? p.cert, packs: packs.map((b) => packEntry(b)), ...extra });
+}
+
+/**
+ * Owner side of an invitation: creates it with `signer` (default: p's device) and publishes the
+ * index that lists it (with every invitation in `alsoListed`).
+ */
+export function invite(
+  p: Person,
+  opts: { now?: Date; ttlMs?: number; signer?: DeviceSigner; cert?: SharingCert; packs?: Uint8Array[] } = {},
+): { invitation: OwnerInvitation; fragment: string; index: SignedIndex } {
+  const now = opts.now ?? new Date();
+  const created = createInvitation(opts.signer ?? p.signer, opts.cert ?? p.cert, opts.ttlMs !== undefined ? { now, ttlMs: opts.ttlMs } : { now });
+  const index = publish(p, opts.packs ?? [], { invitations: [created.invitation], now }, opts.signer, opts.cert);
+  return { ...created, index };
+}
+
+/** Invitee side: parses the link, reads `index` at the link's address and confirms the invitation. */
+export function accept(fragment: string, index: SignedIndex, now: Date = new Date()): ReceivedInvitation {
+  const received = parseInvitationLink(fragment, { now });
+  const idx = verifyIndex(serialize(index), { expectedOwner: received.owner, location: received.location, now });
+  checkInvitationIndex(received, idx, { now });
+  return received;
 }
 
 let notaryPerson: Person | undefined;
