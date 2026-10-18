@@ -9,10 +9,10 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 
 | ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-001 | Encrypted format prototype (packages/crypto) | crypto | — | in review |
-| T-002 | Independent review of the crypto prototype | crypto, review | T-001 | to do |
-| T-003 | Storage adapters prototype (packages/storage) | storage | — | in progress |
-| T-004 | Expo app skeleton with map and pins (apps/mobile) | app, map | — | in progress |
+| T-001 | Encrypted format prototype (packages/crypto) | crypto | — | done |
+| T-002 | Independent review of the crypto prototype | crypto, review | T-001 | done |
+| T-003 | Storage adapters prototype (packages/storage) | storage | — | done |
+| T-004 | Expo app skeleton with map and pins (apps/mobile) | app, map | — | done |
 | T-005 | Mockups of the main screens | design | — | to do |
 | T-006 | Continuous integration with GitHub Actions | infra | — | to do |
 | T-007 | Automatic deployment of the web test build | infra, app | T-004, T-006 | to do |
@@ -347,7 +347,7 @@ Depends on: T-006
 
 ### T-201 — Final v1 encrypted format and test vectors
 
-Freeze the format after T-002, publish the specification in docs/format/ and test vectors.
+Format v4 frozen on main at 5b10faf after five independent reviews (docs/reviews/). Remaining before the external audit: a standalone format specification in docs/format/ with pseudocode for every check, known-answer test vectors (positive and negative, from seeded randomness), fuzzing of every parser, a second minimal reader in another language, and a map from each spec promise to the code that enforces it.
 
 Acceptance criteria:
 
@@ -357,7 +357,7 @@ Depends on: T-002
 
 ### T-202 — Production storage adapters and tests against real servers
 
-Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported.
+Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported. Support `index.v<N>.json` next to `index.json` for major format transitions (spec "Format versions").
 
 Acceptance criteria:
 

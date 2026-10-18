@@ -17,16 +17,16 @@ def t(id, phase, title, labels, desc, accept, deps=(), status="todo"):
 # ---------------- Phase 0 ----------------
 t("T-001","P0","Encrypted format prototype (packages/crypto)",["crypto"],
   "Identity from 12 words, Ed25519 master key and replaceable X25519 sharing key, XChaCha20-Poly1305 packs, anonymous per-recipient wraps, groups, signed index, 7-day invitation and return link, Argon2id transfer code, revocation. See \"Architecture › Encrypted sharing\" and \"Format versions\".",
-  ["`npm test` and `npm run typecheck` pass","Format README (byte layout, JSON, algorithms) and THREATS.md present"],status="review")
+  ["`npm test` and `npm run typecheck` pass","Format README (byte layout, JSON, algorithms) and THREATS.md present"],status="done")
 t("T-002","P0","Independent review of the crypto prototype",["crypto","review"],
   "Review by an agent or a person who did not write T-001: primitive choices, wrap anonymity, canonical serialization, anti-rollback, invitation, transfer code. Decide the 5 open questions from T-001 (`seq` field, meaning of `etag`, stable pack id, invitation link size, out-of-band verification of the return link).",
-  ["Review report in docs/reviews/","Open questions decided and reflected in the spec"],deps=["T-001"])
+  ["Review report in docs/reviews/","Open questions decided and reflected in the spec"],deps=["T-001"],status="done")
 t("T-003","P0","Storage adapters prototype (packages/storage)",["storage"],
   "Common get/put/delete/list/head interface with conditional writes (ETag) and typed errors; WebDAV, S3, read-only HTTPS and SFTP (Node only) adapters; in-memory adapter; shared conformance suite; publishSnapshot/fetchSnapshot. See \"Storage protocols\" and \"Layout on storage\".",
-  ["Conformance suite green on every adapter against a local server","Per-protocol README (CORS, public read, ETag semantics)"],status="wip")
+  ["Conformance suite green on every adapter against a local server","Per-protocol README (CORS, public read, ETag semantics)"],status="done")
 t("T-004","P0","Expo app skeleton with map and pins (apps/mobile)",["app","map"],
   "Expo + expo-router, native MapLibre / web MapLibre GL JS behind a common interface, configurable OpenFreeMap Positron style, SVG pins (white icon with strong halo, multi-tag bands, faded friends' pins), bottom sheet, collapsible filter bar, dark mode. See \"Interface\" and \"Base map\".",
-  ["`tsc --noEmit` passes, web export succeeds","Web screenshot in apps/mobile/docs/","eas.json ready for a development build"],status="wip")
+  ["`tsc --noEmit` passes, web export succeeds","Web screenshot in apps/mobile/docs/","eas.json ready for a development build"],status="done")
 t("T-005","P0","Mockups of the main screens",["design"],
   "Map, list, add place, place card, filters, sharing list, invitation, first launch, storage settings. Follow the palette, pins and icon style sheet (24 px grid, 2 px stroke).",
   ["Mockups published and linked from the spec"])
@@ -90,9 +90,9 @@ t("T-119","P1","End-to-end tests on simulators",["infra","tests"],"Maestro or De
 
 # ---------------- Phase 2 ----------------
 t("T-201","P2","Final v1 encrypted format and test vectors",["crypto"],
-  "Freeze the format after T-002, publish the specification in docs/format/ and test vectors.",["Vectors checked by a second implementation"],deps=["T-002"])
+  "Format v4 frozen on main at 5b10faf after five independent reviews (docs/reviews/). Remaining before the external audit: a standalone format specification in docs/format/ with pseudocode for every check, known-answer test vectors (positive and negative, from seeded randomness), fuzzing of every parser, a second minimal reader in another language, and a map from each spec promise to the code that enforces it.",["Vectors checked by a second implementation"],deps=["T-002"])
 t("T-202","P2","Production storage adapters and tests against real servers",["storage"],
-  "Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported.",["Conformance suite green against each server"],deps=["T-003"])
+  "Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported. Support `index.v<N>.json` next to `index.json` for major format transitions (spec \"Format versions\").",["Conformance suite green against each server"],deps=["T-003"])
 t("T-203","P2","Storage settings and migration between storages",["app","storage"],
   "Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, full copy when switching.",["Lossless migration tested"],deps=["T-202"])
 t("T-204","P2","Sync: publishing and reading packs",["sync"],
