@@ -1,0 +1,87 @@
+{
+  "batchcomplete": true,
+  "continue": { "gcmcontinue": "file|4d555345452044455320434152544553|123456799", "continue": "gcmcontinue||" },
+  "query": {
+    "pages": [
+      {
+        "pageid": 123456789,
+        "ns": 6,
+        "title": "File:Musée des Cartes Anciennes - façade.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "width": 4032,
+            "height": 3024,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg/800px-Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "thumbwidth": 800,
+            "thumbheight": 600,
+            "url": "https://upload.wikimedia.org/wikipedia/commons/7/7c/Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "Artist": { "value": "Jeanne Exemple" },
+              "LicenseShortName": { "value": "CC BY-SA 4.0" },
+              "AttributionRequired": { "value": "true" },
+              "LicenseUrl": { "value": "https://creativecommons.org/licenses/by-sa/4.0" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 123456795,
+        "ns": 6,
+        "title": "File:Guide du Musée des Cartes Anciennes.pdf",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "width": 1240,
+            "height": 1754,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Guide.pdf/page1-800px-Guide.pdf.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Guide.pdf",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Guide_du_Mus%C3%A9e_des_Cartes_Anciennes.pdf",
+            "mime": "application/pdf",
+            "extmetadata": { "LicenseShortName": { "value": "CC BY 4.0" } }
+          }
+        ]
+      },
+      {
+        "pageid": 123456793,
+        "ns": 6,
+        "title": "File:Carte de Cassini exposée.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "width": 5000,
+            "height": 3500,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Carte_de_Cassini_expos%C3%A9e.jpg/800px-Carte_de_Cassini_expos%C3%A9e.jpg",
+            "thumbwidth": 800,
+            "thumbheight": 560,
+            "url": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Carte_de_Cassini_expos%C3%A9e.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Carte_de_Cassini_expos%C3%A9e.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "Artist": { "value": "<span class=\"fn\"><a href=\"https://www.flickr.com/people/example\">Paul &amp; Marie</a></span>" },
+              "LicenseShortName": { "value": "CC BY 2.0" },
+              "AttributionRequired": { "value": "true" },
+              "LicenseUrl": { "value": "https://creativecommons.org/licenses/by/2.0" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 123456798,
+        "ns": 6,
+        "title": "File:Salle sans licence.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Salle_sans_licence.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Salle_sans_licence.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {}
+          }
+        ]
+      }
+    ]
+  }
+}

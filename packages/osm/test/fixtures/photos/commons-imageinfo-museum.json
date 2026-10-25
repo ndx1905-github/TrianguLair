@@ -1,0 +1,70 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "normalized": [
+      { "fromencoded": false, "from": "File:Musée des Cartes Anciennes - salle 2.jpg", "to": "File:Musée des Cartes Anciennes - salle 2.jpg" }
+    ],
+    "pages": [
+      {
+        "pageid": 123456789,
+        "ns": 6,
+        "title": "File:Musée des Cartes Anciennes - façade.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 4381225,
+            "width": 4032,
+            "height": 3024,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg/800px-Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "thumbwidth": 800,
+            "thumbheight": 600,
+            "responsiveUrls": {
+              "1.5": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg/1200px-Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg"
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/7/7c/Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=123456789",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "DateTimeOriginal": { "value": "2024-05-18 14:02:11", "source": "commons-desc-page" },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Jeanne_Exemple\" title=\"User:Jeanne Exemple\">Jeanne Exemple</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": { "value": "CC BY-SA 4.0", "source": "commons-desc-page", "hidden": "" },
+              "UsageTerms": { "value": "Creative Commons Attribution-Share Alike 4.0", "source": "commons-desc-page", "hidden": "" },
+              "AttributionRequired": { "value": "true", "source": "commons-desc-page", "hidden": "" },
+              "LicenseUrl": { "value": "https://creativecommons.org/licenses/by-sa/4.0", "source": "commons-desc-page", "hidden": "" },
+              "Copyrighted": { "value": "True", "source": "commons-desc-page", "hidden": "" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 123456790,
+        "ns": 6,
+        "title": "File:Musée des Cartes Anciennes - salle 2.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "size": 2210331,
+            "width": 3000,
+            "height": 2000,
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Mus%C3%A9e_des_Cartes_Anciennes_-_salle_2.jpg/800px-Mus%C3%A9e_des_Cartes_Anciennes_-_salle_2.jpg",
+            "thumbwidth": 800,
+            "thumbheight": 533,
+            "url": "https://upload.wikimedia.org/wikipedia/commons/3/3e/Mus%C3%A9e_des_Cartes_Anciennes_-_salle_2.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mus%C3%A9e_des_Cartes_Anciennes_-_salle_2.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "Artist": { "value": "Unknown author", "source": "commons-desc-page" },
+              "LicenseShortName": { "value": "Public domain", "source": "commons-desc-page", "hidden": "" },
+              "AttributionRequired": { "value": "false", "source": "commons-desc-page", "hidden": "" },
+              "Copyrighted": { "value": "False", "source": "commons-desc-page", "hidden": "" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
