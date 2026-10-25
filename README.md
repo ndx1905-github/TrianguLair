@@ -30,7 +30,7 @@ Early development: **phase 0** (prototypes). Nothing is usable yet.
 
 ## Stack
 
-React Native + Expo, MapLibre, SQLite, Automerge, libsodium. TypeScript everywhere.
+React Native + Expo, MapLibre, SQLite, Yjs, libsodium. TypeScript everywhere.
 
 ## Contributing
 

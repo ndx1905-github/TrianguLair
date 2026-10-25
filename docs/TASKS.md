@@ -25,7 +25,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
 | T-101 | Local SQLite database with spatial index | data | — | to do |
-| T-102 | Automerge model and merging across devices | sync, data | T-101 | to do |
+| T-102 | Yjs model and merging across devices | sync, data | T-101 | to do |
 | T-103 | Map: clustering when zoomed out and filtered display | map | T-004, T-101 | to do |
 | T-104 | List view: sorting, text search | app | T-101 | to do |
 | T-105 | Add a place: nearby places, search, long press | app, osm | T-106, T-101 | to do |
@@ -173,13 +173,14 @@ Acceptance criteria:
 
 - [ ] Tests on 10,000 places within performance targets
 
-### T-102 — Automerge model and merging across devices
+### T-102 — Yjs model and merging across devices
 
-CRDT documents for places, tags, lists; projection to SQLite; property-based tests of merging.
+CRDT document (Yjs: pure JavaScript, no WebAssembly, runs on Hermes) for places, tags, lists; projection to SQLite; merge rules kept explicit where Yjs's last-writer-wins differs (shared base update, one save per place with folding of concurrent creations, deletion and privacy win via per-device slots, character-level comments, unknown fields kept); property-based tests of merging.
 
 Acceptance criteria:
 
 - [ ] Two simulated devices converge after concurrent edits
+- [ ] No WebAssembly in the runtime dependency tree (tested)
 
 Depends on: T-101
 
