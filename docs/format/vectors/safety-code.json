@@ -1,0 +1,139 @@
+{
+ "structure": "safety-code",
+ "spec": "safety-code.md",
+ "description": "Safety code (12 groups of 5 digits) and its QR payload.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "safety-abandon-alice",
+   "description": "Test identity and Alice.",
+   "op": "safety_code",
+   "input": {
+    "a": "ed25519:-fgIxqXPzFIS2x-jBHynqSYhE09pR9YHwiLO2AQ4GBk",
+    "b": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+   },
+   "expect": {
+    "ok": {
+     "groups": [
+      "29309",
+      "82381",
+      "42673",
+      "92010",
+      "55290",
+      "98813",
+      "57025",
+      "27715",
+      "67562",
+      "61806",
+      "14200",
+      "14082"
+     ],
+     "qr": "tlsafe1:H6UkqL2ytSyr7Q2sZIExYRyMakodffmB2uPxgegdJp8"
+    }
+   },
+   "details": {
+    "hash_hex": "1fa524a8bdb2b52cabed0dac648131611c8c6a4a1d7df981dae3f181e81d269f851801ca874f7ea3e3ad282d2a2d0557b2ce535ec2dc18a9bab9d5c27992ce05"
+   }
+  },
+  {
+   "name": "safety-alice-bob",
+   "description": "Alice and Bob.",
+   "op": "safety_code",
+   "input": {
+    "a": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "b": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+   },
+   "expect": {
+    "ok": {
+     "groups": [
+      "57925",
+      "92886",
+      "17194",
+      "21050",
+      "49668",
+      "87573",
+      "31709",
+      "74674",
+      "64284",
+      "56379",
+      "96162",
+      "31868"
+     ],
+     "qr": "tlsafe1:0rjlKCW3v_GJ1jHpGl9qS8bKttouOBXRxNKFMJwVZcE"
+    }
+   },
+   "details": {
+    "hash_hex": "d2b8e52825b7bff189d631e91a5f6a4bc6cab6da2e3815d1c4d285309c1565c152e33d7f5480d052c7fd791adcd812b7925bbd5ca770a229bc30289c5b4f62c1"
+   }
+  },
+  {
+   "name": "safety-bob-alice",
+   "description": "Same pair, other order: identical output.",
+   "op": "safety_code",
+   "input": {
+    "a": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU",
+    "b": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+   },
+   "expect": {
+    "ok": {
+     "groups": [
+      "57925",
+      "92886",
+      "17194",
+      "21050",
+      "49668",
+      "87573",
+      "31709",
+      "74674",
+      "64284",
+      "56379",
+      "96162",
+      "31868"
+     ],
+     "qr": "tlsafe1:0rjlKCW3v_GJ1jHpGl9qS8bKttouOBXRxNKFMJwVZcE"
+    }
+   }
+  },
+  {
+   "name": "safety-same",
+   "description": "An identity with itself (defined, though meaningless).",
+   "op": "safety_code",
+   "input": {
+    "a": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "b": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+   },
+   "expect": {
+    "ok": {
+     "groups": [
+      "70113",
+      "26860",
+      "96563",
+      "15464",
+      "45350",
+      "49863",
+      "34354",
+      "25816",
+      "87337",
+      "58682",
+      "86712",
+      "95514"
+     ],
+     "qr": "tlsafe1:s6NoVqE-pzNCzHaKnrBT7Oi_CEgKZK65piI417lnpY8"
+    }
+   }
+  },
+  {
+   "name": "safety-bad-owner",
+   "description": "Not an owner id.",
+   "op": "safety_code",
+   "input": {
+    "a": "x25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "b": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  }
+ ]
+}

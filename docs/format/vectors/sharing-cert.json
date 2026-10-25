@@ -1,0 +1,512 @@
+{
+ "structure": "sharing-cert",
+ "spec": "sharing-cert.md",
+ "description": "Master-signed sharing certificate (key, read address, revoked devices, rotation).",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "cert-rotation-0",
+   "description": "Alice, rotation 0, with read address.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "expectedOwner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+    }
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs",
+     "rotation": 0,
+     "revoked_devices": [],
+     "location": "https://storage.example.org/alice/"
+    }
+   },
+   "details": {
+    "signed_message": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"type\":\"sharing-cert\",\"version\":3}"
+   }
+  },
+  {
+   "name": "cert-rotation-1",
+   "description": "Rotation 1: new key, d2 revoked; lastSeen = rotation 0.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo",
+     "rotation": 1,
+     "revoked_devices": [
+      "ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk"
+     ],
+     "location": "https://storage.example.org/alice/"
+    }
+   }
+  },
+  {
+   "name": "cert-same-as-lastseen",
+   "description": "Re-delivery of the certificate already held.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo",
+     "rotation": 1,
+     "revoked_devices": [
+      "ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk"
+     ],
+     "location": "https://storage.example.org/alice/"
+    }
+   }
+  },
+  {
+   "name": "cert-no-location",
+   "description": "An owner who publishes nothing: no \"location\".",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"Ddm4CFyr9YeThzdZTXd194SIcyWAMlyeJlG7B8SQdmq3Rxiwsl1PEFYZKJhy27_vVyrKKaK0QHRMTbiKN3--BA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs",
+     "rotation": 0,
+     "revoked_devices": []
+    }
+   }
+  },
+  {
+   "name": "cert-minor-extension",
+   "description": "minor 1: an unknown field is accepted and covered by the signature.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"minor\":1,\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"ZObW3NFxxCAvXGXEP2icQzHb-qUCb0CGfjxP-IqxxDhAoVKOykeQ7Buc78bwWHM5kSIda8L0iY5xAkOJQadGDA\",\"type\":\"sharing-cert\",\"version\":3,\"x_note\":\"future\"}"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs",
+     "rotation": 0,
+     "revoked_devices": [],
+     "location": "https://storage.example.org/alice/"
+    }
+   }
+  },
+  {
+   "name": "cert-crit-known",
+   "description": "crit lists a known field (\"location\").",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[\"location\"],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"cGAe6LFMf72SKGwtYq3_poiSz2eKGjndomw659XpbTWjNGFiOZIEwRqEyd3hnAX5QzouZAcjkUnNam2HrP5oDQ\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs",
+     "rotation": 0,
+     "revoked_devices": [],
+     "location": "https://storage.example.org/alice/"
+    }
+   }
+  },
+  {
+   "name": "cert-max-rotation",
+   "description": "rotation 2^32 - 1.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":4294967295,\"signature\":\"-qFYqvFQEahXLc-_OjlCwTSe9Qb6QMUh7HCoYHcRKDTc8U2_S3LCQrEn27vDTbjqUVbiKEzhL8s_P1UMTc7fDA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "key": "x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs",
+     "rotation": 4294967295,
+     "revoked_devices": [],
+     "location": "https://storage.example.org/alice/"
+    }
+   }
+  },
+  {
+   "name": "cert-tampered",
+   "description": "Rotation changed after signing.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":7,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "cert-domain-confusion",
+   "description": "Body signed under the \"device-cert\" domain.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"QSKFNe0Qc7UpdJrFGlDXg6-LXPIRbqS4rLmzeOI09YILdl0gcX3FzsrxQ8zIjrPUm_M-5eQMZMPPqVQW57_5Cw\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "cert-signed-by-device",
+   "description": "Signed by a device key instead of the master.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"dqvL8WHpEn8OtJLC_cQGrzqkCdsdXmhLNITm7msGHlScmNsLP6ZOsgaSpZluFaQUPlChKTR3RNyEl3iYcSTFBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "cert-version-4",
+   "description": "Major version 4.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"ak54Y33lzhQuY5BcVh634QHkw3v5ORydIi9geUSYNfBox-FLsS7mtASWrDRaCTwLWBJ3bA1P2kKdaH6H3bYpCA\",\"type\":\"sharing-cert\",\"version\":4}"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "cert-version-0",
+   "description": "Version 0.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"NsIL9nvGRDl_E7eWRhUKs3tB7Gi9dbqYZ34p4Ucx3JKaa0HbJN4hNNya6-WRYTjPrUvdOdRnNXdZYvBs_-coBw\",\"type\":\"sharing-cert\",\"version\":0}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-minor-0",
+   "description": "minor 0 must be omitted.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"minor\":0,\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"hnW6l-83uV-GAqpBnlqOwbh7uq2yjLnGappEyQ6pN9aLKi9ENizworD83KriZXYGNdquYZIT0dLZdS2RealWBA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-unknown-field",
+   "description": "Unknown field without a higher minor.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"bErDTrcXJkbfa3uOt9LEMpUSZ7g7_TaHzAPtTPC8t2ajT21d6njWB6D9QunTDt4-guiHAfJTowKaHZKLhJcEDA\",\"type\":\"sharing-cert\",\"version\":3,\"x_note\":\"future\"}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-unknown-crit",
+   "description": "crit names a field this reader does not know.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[\"x_new\"],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"minor\":1,\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"Ckv6ffdOKqfZaxNLyrzkUoNqnfcncLyaDSht9fH9JjnfNojNJ6RDQU-DvgEU_zWElsvLuF1r0pKreBOQBFmXDQ\",\"type\":\"sharing-cert\",\"version\":3,\"x_new\":1}"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION",
+    "critical": "x_new"
+   }
+  },
+  {
+   "name": "cert-crit-absent",
+   "description": "crit names an absent field.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[\"x_new\"],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"DgLpBltnGYgNrQJTsPkXKW5QnMtfaTqnEMGDUuSRQfBQZe1soCbABMueZLrDP4A0BRD-bgIO1Zy8Vtpm3c7iDg\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-crit-reserved",
+   "description": "crit names a reserved field.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[\"signature\"],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"Sf-S-pFaPnHqKhLEAiubnaHRdH6cyN6PZBfAir9UcCkHM6EBCgMSxOmagSQQK4OQ8mM57I5BLhQvPlC95OHuBw\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-crit-unsorted",
+   "description": "crit not sorted.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[\"rotation\",\"location\"],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"Yi5CBss9FiNW3KurF09VOKR_23FZRDgqCOXtsmh8vFbzxEOFb3ZmFwXSZQdQkyPdRAE_FDrr7IJOFNSlYk5DAw\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-crit-empty",
+   "description": "crit empty.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"crit\":[],\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"D4gQ8mkaDf0cpbl112WFlnSkPjl24OdhV4ZD1r4ra5LYFRVPqMGM6XEuRysbxj9-WdtpsXoipVuXXneoy9rXDA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-wrong-type",
+   "description": "type = \"device-cert\".",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"G4N97I8IOtSY7l-Dw-M4p1cX7HadSQNBdjZFGTqKb3YyT1PAGo1yYidRFYJBDD7dnMSM5BP9JoA_72yLpj7YAw\",\"type\":\"device-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-revoked-unsorted",
+   "description": "revoked_devices not sorted.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\",\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\"],\"rotation\":0,\"signature\":\"ETWI63GmODYzsZdYv3vT5gNpXq0m8enyx-fKqDlo3xzjHD1gI2eVSUNelz7luNDA0-aTABXp-x18J5CwGuvMAQ\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-revoked-duplicate",
+   "description": "revoked_devices with a duplicate.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\",\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":0,\"signature\":\"tZ5zGmJ2wNepyO9u-t5J2l5Bi3iq3s0LFU8-YIgjNWjr0dOf3a8VOpgbMZwWERfpx43gk9WNGPLQHmDF8YBQDA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-rotation-2-32",
+   "description": "rotation 2^32 (not a u32).",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":4294967296,\"signature\":\"bkiFelKJs2qCQhjuZedwY-5sPOAxHJvSAGwMgMHdRl0LgKXXOeMbRT3JqS_C47tdrWPtiy-W8QwhOGG4Hc-SAA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-rotation-negative",
+   "description": "rotation -1.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":-1,\"signature\":\"u7J7iAlhcJvQy9T2NcPLH8NtfNY80etJyLA9awTMD0BEkG2yR0gOdLX3kJbJBUs8lm9SQLuTKAQ14U9ep3C6Ag\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-low-order-key",
+   "description": "Sharing key u = 1.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"HAnsJrqwySpHKFY-Afxr55nzgIGp8E0I5yjugAje4y-wUz7s5BZ_as3adb1gnFjvKNQy-yzFlvB19IKkTwedDw\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "cert-key-bit255",
+   "description": "Sharing key with bit 255 set.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUofs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"Rr7rhAc5G2UoaOER6pbrCcqjOArrOZ2_kp5hTT21K-FebXuJ8_JbAfZZ9n0_8iBBEnpRhg_2CkL3pSLLN2gEBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "cert-http-location",
+   "description": "location over http.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"http://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"1gVNDWoAZY6_EmpxPTm9FCEoyQdA6HzUQPrJWPHHe-6iGLPNvET4JNG372S6wUORBJEqeI8mXmC25DByQgv4AQ\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-local-location",
+   "description": "location on a private address.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://192.168.1.10/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"6BHyElsOa-QndPf2n3AmYLC0_y8KZJ-t_ocewO2-sSJGSFxEO4kFoYkTR8JWJcXQKp0lSX-NbjLadXoQlk12Bg\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-whitespace",
+   "description": "Non-canonical text (a space).",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\", \"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-bom",
+   "description": "Leading BOM.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "﻿{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-duplicate-key",
+   "description": "A duplicated \"rotation\" key (the JS parser keeps the last one).",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":9,\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "cert-expected-owner",
+   "description": "expectedOwner = Bob.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "expectedOwner": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+    }
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  },
+  {
+   "name": "cert-retired-owner",
+   "description": "Alice is a retired owner (moved identity).",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "retiredOwners": [
+      "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+     ]
+    }
+   },
+   "expect": {
+    "error": "REVOKED"
+   }
+  },
+  {
+   "name": "cert-rollback",
+   "description": "Rotation 0 after rotation 1.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": false
+   }
+  },
+  {
+   "name": "cert-fork",
+   "description": "Another certificate for rotation 1 (other key).",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:zE9npKVg76YzzyeL8btG9rvif0s58UurCeO2QpxZ1HA\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"d7JMNbe1JvenM0Y4pzP2fnYHVTYkGeBr6Gf7sWtZRmp3_c3NpXXR7pBAm11iqd_W7HFdzxujX5h1hAhd1rTgDw\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": true
+   }
+  },
+  {
+   "name": "cert-fork-extension",
+   "description": "Same rotation, same key, one extension field more: still a fork.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"minor\":1,\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"HlInniHGLqoTBzv3ESTKFmpLfN0xElfRsxkcJA1RxqjarYQ-xiH6yNr0rAuWJtWLCxrg-MhoA9oVvn7XZiWMDg\",\"type\":\"sharing-cert\",\"version\":3,\"x_note\":\"x\"}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": true
+   }
+  },
+  {
+   "name": "cert-unrevoke",
+   "description": "Rotation 2 that no longer revokes d2.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":2,\"signature\":\"z_dMrefxdxY3rNiIwKZYWnh4EUeEwXC1b7YRXWOFLq-4kGp1A0vqYUSVRkBQb2vC8y0IruUU6OxIKaul9UDxDg\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": false
+   }
+  },
+  {
+   "name": "cert-lastseen-other-owner",
+   "description": "lastSeen belongs to Bob.",
+   "op": "verify_sharing_cert",
+   "input": {
+    "text": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}",
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:zE9npKVg76YzzyeL8btG9rvif0s58UurCeO2QpxZ1HA\",\"location\":\"https://bob.example.net/tl/\",\"owner\":\"ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"CoK2IEhEgdYvNBCTpncQ7jYyPnBxG-dX0U1_VHVQasKqln6MzUM8Hr2PLzAVUrM4PCtbWVNy7e4YDU39bAaYAw\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  }
+ ]
+}

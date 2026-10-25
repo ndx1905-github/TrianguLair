@@ -1,5 +1,5 @@
 import sys; sys.path.insert(0, "scripts")
-from tasks import T, MILESTONES
+from tasks import T, MILESTONES, checkbox
 ST = {"todo": "to do", "wip": "in progress", "review": "in review", "done": "done"}
 out = ["# Tasks", "",
        "The [specification](SPEC.md) broken down into tasks. Each task is also a GitHub issue (same ID in the title).",
@@ -14,7 +14,7 @@ for p, name in MILESTONES.items():
 out += ["## Details", ""]
 for x in T:
     out += [f"### {x['id']} — {x['title']}", "", x["desc"], "", "Acceptance criteria:", ""]
-    out += [f"- [ ] {a}" for a in x["accept"]]
+    out += [checkbox(a) for a in x["accept"]]
     if x["deps"]: out += ["", "Depends on: " + ", ".join(x["deps"])]
     out.append("")
 open("docs/TASKS.md", "w", encoding="utf-8").write("\n".join(out))

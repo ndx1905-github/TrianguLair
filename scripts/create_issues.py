@@ -3,7 +3,7 @@ Creates missing issues and updates existing ones (matched by the T-xxx ID at the
 Usage: GH_REPO=owner/repo python3 scripts/create_issues.py   (requires an authenticated gh)"""
 import json, os, subprocess, sys
 sys.path.insert(0, "scripts")
-from tasks import T, MILESTONES
+from tasks import T, MILESTONES, checkbox
 
 REPO = os.environ.get("GH_REPO", "ndx1905-github/TrianguLair")
 COLORS = {"crypto":"b60205","storage":"0e8a16","sync":"1d76db","app":"5319e7","map":"0052cc","osm":"7cb342",
@@ -50,7 +50,7 @@ existing = {i["title"].split(" ")[0]: i["number"]
 num = dict(existing)
 def body_of(x):
     deps = ", ".join(f"{d} (#{num[d]})" if d in num else d for d in x["deps"]) or "—"
-    return (f"{x['desc']}\n\n**Acceptance criteria**\n\n" + "\n".join(f"- [ ] {a}" for a in x["accept"]) +
+    return (f"{x['desc']}\n\n**Acceptance criteria**\n\n" + "\n".join(checkbox(a) for a in x["accept"]) +
             f"\n\n**Depends on**: {deps}\n\nSpec: [docs/SPEC.md](../blob/main/docs/SPEC.md) · Tasks: [docs/TASKS.md](../blob/main/docs/TASKS.md)")
 for x in T:  # create missing first so dependency links resolve
     if x["id"] not in num:

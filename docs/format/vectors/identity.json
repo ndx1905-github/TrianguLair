@@ -1,0 +1,183 @@
+{
+ "structure": "identity",
+ "spec": "identity-and-keys.md",
+ "description": "Recovery phrase -> master key, owner id and vault key; the primary-identity blob TLPI.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "phrase-abandon",
+   "description": "BIP39 test phrase (entropy = 16 zero bytes).",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:-fgIxqXPzFIS2x-jBHynqSYhE09pR9YHwiLO2AQ4GBk",
+     "master_seed_hex": "c6610f316c868513fb70b5cb31f2b5ada9b47c37a7fbc0bd177aa084fc15e811",
+     "vault_key_hex": "4f9e9acb7e6f3e024742c1ca8b61929e06e27bfb4316b906d32fda3496619478"
+    }
+   },
+   "details": {
+    "normalized": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "entropy_hex": "00000000000000000000000000000000",
+    "root_hex": "06d9e5da0b09b625ff63557127f6302666238a59ccd2117567dcd1178e33542b",
+    "master_seed_hex": "c6610f316c868513fb70b5cb31f2b5ada9b47c37a7fbc0bd177aa084fc15e811",
+    "master_public_hex": "f9f808c6a5cfcc5212db1fa3047ca7a92621134f6947d607c222ced804381819",
+    "vault_key_hex": "4f9e9acb7e6f3e024742c1ca8b61929e06e27bfb4316b906d32fda3496619478"
+   }
+  },
+  {
+   "name": "phrase-alice",
+   "description": "Alice's phrase (from the seeded generator).",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "accident frame furnace hurry olympic enable hurdle era orient scout early access"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "master_seed_hex": "3bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd1",
+     "vault_key_hex": "4855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+    }
+   },
+   "details": {
+    "normalized": "accident frame furnace hurry olympic enable hurdle era orient scout early access",
+    "entropy_hex": "016b917937d9a4929be2629c98291480",
+    "root_hex": "b3c0144b8b723029e2b3798e10ae28b11295f43eb714bb5d86614d838b23e6a1",
+    "master_seed_hex": "3bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd1",
+    "master_public_hex": "aea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf969",
+    "vault_key_hex": "4855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+   }
+  },
+  {
+   "name": "phrase-normalized",
+   "description": "Case and whitespace are normalized (NFKD, trim, lowercase, single spaces): same identity as phrase-alice.",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "  ACCIDENT   FRAME   FURNACE   HURRY   OLYMPIC   ENABLE   HURDLE   ERA   ORIENT   SCOUT   EARLY   ACCESS\t"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "master_seed_hex": "3bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd1",
+     "vault_key_hex": "4855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+    }
+   }
+  },
+  {
+   "name": "phrase-bad-checksum",
+   "description": "Last word changed: checksum mismatch.",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+   },
+   "expect": {
+    "error": "INVALID_PHRASE"
+   }
+  },
+  {
+   "name": "phrase-11-words",
+   "description": "Eleven words.",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+   },
+   "expect": {
+    "error": "INVALID_PHRASE"
+   }
+  },
+  {
+   "name": "phrase-24-words",
+   "description": "A valid 24-word BIP39 phrase is refused (12 words only).",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+   },
+   "expect": {
+    "error": "INVALID_PHRASE"
+   }
+  },
+  {
+   "name": "phrase-unknown-word",
+   "description": "A word outside the English list.",
+   "op": "identity_from_phrase",
+   "input": {
+    "phrase": "abandonx abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+   },
+   "expect": {
+    "error": "INVALID_PHRASE"
+   }
+  },
+  {
+   "name": "tlpi-alice",
+   "description": "\"TLPI\" | 1 | master seed 32 | vault key 32 (69 bytes).",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5049013bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "vault_key_hex": "4855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+    }
+   }
+  },
+  {
+   "name": "tlpi-bad-magic",
+   "description": "Magic \"TLPJ\".",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5048013bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlpi-version-2",
+   "description": "Unknown major version.",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5049023bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "tlpi-version-0",
+   "description": "Version 0 is malformed.",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5049003bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlpi-truncated",
+   "description": "68 bytes.",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5049013bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlpi-trailing",
+   "description": "70 bytes.",
+   "op": "decode_primary_identity",
+   "input": {
+    "bytes_hex": "544c5049013bd53e117c161b717b779835c83849edf712a5272c77bc7646717ecec0ef2cd14855a2d1d929bae6fd1e0f2a00c822e5c0d116c2640c6188d536d151651ba7eb00"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  }
+ ]
+}
