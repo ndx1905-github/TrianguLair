@@ -10,11 +10,13 @@
  * Timings are the median of several runs and are printed (see README).
  * Set PERF_REPORT=1 to print the table.
  */
-import * as A from '@automerge/automerge';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { deflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
+import { loadDataDoc, savePlaceIds } from '../src/crdt/doc.ts';
 import type { Polygon } from 'geojson';
 import { NodeSqliteDriver } from '../src/driver/node.ts';
 import { DataStore } from '../src/store.ts';
@@ -233,10 +235,18 @@ describe.each([
   });
 
   it('document: size, load, full projection', () => {
-    const bytes = once(key('document save()'), () => A.save(store.doc));
+    const bytes = once(key('document encodeStateAsUpdate()'), () => Y.encodeStateAsUpdate(store.doc));
     timings[key(`document size (KB) = ${(bytes.byteLength / 1024).toFixed(0)}`)] = 0;
-    const doc = once(key('document load()'), () => A.load<{ saves: object }>(bytes));
-    expect(Object.keys(doc.saves).length).toBe(N);
+    const v2 = once(key('document encodeStateAsUpdateV2()'), () => Y.encodeStateAsUpdateV2(store.doc));
+    const kb = (b: Uint8Array) => (b.byteLength / 1024).toFixed(0);
+    timings[key(`document size, v2 encoding (KB) = ${kb(v2)}`)] = 0;
+    timings[key(`document size deflated, v1 / v2 (KB) = ${kb(deflateRawSync(bytes))} / ${kb(deflateRawSync(v2))}`)] = 0;
+    once(key('document load (applyUpdateV2)'), () => {
+      const d = new Y.Doc();
+      Y.applyUpdateV2(d, v2);
+    });
+    const doc = once(key('document load (applyUpdate)'), () => loadDataDoc(bytes));
+    expect(savePlaceIds(doc).length).toBe(N);
     const fresh = DataStore.open({ driver: new NodeSqliteDriver(':memory:'), meId: ME, disable });
     once(key('new device: merge the 10k document + full projection'), () => fresh.merge(bytes));
     expect(fresh.repo.dumpOwnData()).toBe(store.repo.dumpOwnData());

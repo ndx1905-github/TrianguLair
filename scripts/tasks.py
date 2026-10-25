@@ -50,9 +50,9 @@ t("T-010","P0","Forgejo mirror of the repository",["infra","maintainer"],
 t("T-101","P1","Local SQLite database with spatial index",["data"],
   "Schema from \"Data model\" (people, groups, places, saves, tags, save_tags, tag_mappings, lists, list_items, access, media), migrations, \"places in this area\" queries.",
   ["Tests on 10,000 places within performance targets"])
-t("T-102","P1","Automerge model and merging across devices",["sync","data"],
-  "CRDT documents for places, tags, lists; projection to SQLite; property-based tests of merging.",
-  ["Two simulated devices converge after concurrent edits"],deps=["T-101"])
+t("T-102","P1","Yjs model and merging across devices",["sync","data"],
+  "CRDT document (Yjs: pure JavaScript, no WebAssembly, runs on Hermes) for places, tags, lists; projection to SQLite; merge rules kept explicit where Yjs's last-writer-wins differs (shared base update, one save per place with folding of concurrent creations, deletion and privacy win via per-device slots, character-level comments, unknown fields kept); property-based tests of merging.",
+  ["Two simulated devices converge after concurrent edits","No WebAssembly in the runtime dependency tree (tested)"],deps=["T-101"])
 t("T-103","P1","Map: clustering when zoomed out and filtered display",["map"],
   "Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance.",
   ["60 fps on the reference device"],deps=["T-004","T-101"])

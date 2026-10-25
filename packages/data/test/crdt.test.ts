@@ -1,21 +1,41 @@
-import * as A from '@automerge/automerge';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { createDataDoc, DocTx, TOMBSTONE_RETENTION_MS, TRASH_RETENTION_MS } from '../src/crdt/doc.ts';
+import * as Y from 'yjs';
+import {
+  createDataDoc,
+  DocTx,
+  mergeDataDocs,
+  hasSave,
+  loadDataDoc,
+  readTombstones,
+  roots,
+  saveEntry,
+  saveEntryKeys,
+  savePlaceIds,
+  tagIdsOf,
+  TOMBSTONE_RETENTION_MS,
+  TRASH_RETENTION_MS,
+} from '../src/crdt/doc.ts';
 import { readTags } from '../src/crdt/project.ts';
 import { NodeSqliteDriver } from '../src/driver/node.ts';
 import { saveIdFor } from '../src/ids.ts';
 import { DataStore } from '../src/store.ts';
+import { clientIdFor } from '../src/crdt/doc.ts';
 import { fakeClock, hexActor, localPoint, ME, osmPoint, rect, seqIds } from './helpers.ts';
 import { openStore } from './stores.ts';
 
-/** Two devices of the same person. */
-function twoDevices() {
-  const a = openStore({ actor: hexActor(1), newId: seqIds('a-') });
-  const b = openStore({ actor: hexActor(2), newId: seqIds('b-') });
+/** Two devices of the same person (`swap`: exchange their Yjs client ids, which break LWW ties). */
+function twoDevices(swap = false) {
+  const a = openStore({ actor: hexActor(swap ? 2 : 1), newId: seqIds('a-') });
+  const b = openStore({ actor: hexActor(swap ? 1 : 2), newId: seqIds('b-') });
   return { a, b };
+}
+
+/** Same document version: same state vector and same deletions. */
+function sameVersion(x: DataStore, y: DataStore): boolean {
+  return Y.equalSnapshots(Y.snapshot(x.doc), Y.snapshot(y.doc));
 }
 
 /** Full exchange until both hold the same document. */
@@ -27,13 +47,18 @@ function sync(...stores: DataStore[]): void {
 
 const P1 = 'osm:node/1';
 
-describe('Automerge document', () => {
-  it('two devices that never met share the root maps (deterministic base change)', () => {
-    const d1 = A.change(createDataDoc(hexActor(1)), (d) => new DocTx(d).putSave({ place: osmPoint(1, 'A', 1, 1) }));
-    const d2 = A.change(createDataDoc(hexActor(2)), (d) => new DocTx(d).putSave({ place: osmPoint(2, 'B', 2, 2) }));
-    const m = A.merge(d1, d2);
-    expect(Object.keys(m.saves).sort()).toEqual(['osm:node/1', 'osm:node/2']);
-    expect(A.getConflicts(m, 'saves')).toBeUndefined();
+describe('Yjs document', () => {
+  it('two devices that never met share the root maps (named roots, deterministic base update)', () => {
+    const d1 = createDataDoc(hexActor(1));
+    const d2 = createDataDoc(hexActor(2));
+    // The only initial write comes from the same base update: identical bytes, nothing to conflict.
+    expect(Y.encodeStateAsUpdate(d1)).toEqual(Y.encodeStateAsUpdate(d2));
+    expect([...Y.decodeStateVector(Y.encodeStateVector(d1)).keys()]).toEqual([0]);
+    d1.transact(() => new DocTx(d1).putSave({ place: osmPoint(1, 'A', 1, 1) }));
+    d2.transact(() => new DocTx(d2).putSave({ place: osmPoint(2, 'B', 2, 2) }));
+    const m = mergeDataDocs(d1, d2);
+    expect(savePlaceIds(m)).toEqual(['osm:node/1', 'osm:node/2']);
+    expect(roots(m).meta.get('schema')).toBe(1);
   });
 
   it('edits on two devices converge to the same projection', () => {
@@ -48,7 +73,8 @@ describe('Automerge document', () => {
     expect(s.comment).toBe('Very good pizza, nice terrace'); // character-level merge
     expect(s.status).toBe('tried');
     expect(a.repo.dumpOwnData()).toBe(b.repo.dumpOwnData());
-    expect(A.getHeads(a.doc).sort()).toEqual(A.getHeads(b.doc).sort());
+    expect(sameVersion(a, b)).toBe(true);
+    expect(a.heads()).toEqual(b.heads());
   });
 
   it('the same OSM place saved offline on both devices: one save, both contributions kept', () => {
@@ -90,34 +116,94 @@ describe('Automerge document', () => {
     expect(a.repo.queryPlaces({}).map((h) => h.id)).toEqual([P1]);
   });
 
-  it('delete while the other device restores: deletion wins', () => {
-    const { a, b } = twoDevices();
-    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
-    a.deleteSave(P1);
-    sync(a, b);
-    a.restoreSave(P1);
-    a.deleteSave(P1); // deleted again on A…
-    b.restoreSave(P1); // …while B restores
-    sync(a, b);
-    expect(a.repo.getSave(a.saveId(P1))!.deletedAt).not.toBeNull();
-    expect(b.repo.getSave(b.saveId(P1))!.deletedAt).not.toBeNull();
-  });
+  // Yjs maps are last-writer-wins (ties by client id); these rules are
+  // implemented with per-device slots, so they must hold for both orders.
+  describe.each([{ swap: false }, { swap: true }])('whichever device has the larger client id (swap: $swap)', ({ swap }) => {
+    it('delete while the other device restores: deletion wins', () => {
+      const { a, b } = twoDevices(swap);
+      a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+      a.deleteSave(P1);
+      sync(a, b);
+      a.restoreSave(P1);
+      a.deleteSave(P1); // deleted again on A…
+      b.restoreSave(P1); // …while B restores
+      sync(a, b);
+      expect(a.repo.getSave(a.saveId(P1))!.deletedAt).not.toBeNull();
+      expect(b.repo.getSave(b.saveId(P1))!.deletedAt).not.toBeNull();
+    });
 
-  it('private on one device while the other shares: privacy wins', () => {
-    const { a, b } = twoDevices();
-    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
-    const list = a.createList({ name: 'All', kind: 'filter' });
-    sync(a, b);
-    a.updateSave(P1, { sharing: 'private' });
-    b.updateSave(P1, { sharing: 'friends' });
-    sync(a, b);
-    for (const s of [a, b]) {
-      expect(s.repo.getSave(s.saveId(P1))!.sharing).toBe('private');
-      expect(s.repo.listItems(list)).toEqual([]);
-    }
-    b.updateSave(P1, { sharing: 'friends' }); // a later, informed choice
-    sync(a, b);
-    expect(a.repo.listItems(list)).toEqual([a.saveId(P1)]);
+    it('private on one device while the other shares: privacy wins', () => {
+      const { a, b } = twoDevices(swap);
+      a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+      const list = a.createList({ name: 'All', kind: 'filter' });
+      sync(a, b);
+      a.updateSave(P1, { sharing: 'private' });
+      b.updateSave(P1, { sharing: 'friends' });
+      sync(a, b);
+      for (const s of [a, b]) {
+        expect(s.repo.getSave(s.saveId(P1))!.sharing).toBe('private');
+        expect(s.repo.listItems(list)).toEqual([]);
+      }
+      b.updateSave(P1, { sharing: 'friends' }); // a later, informed choice
+      sync(a, b);
+      expect(a.repo.listItems(list)).toEqual([a.saveId(P1)]);
+    });
+
+    it('a deletion wins over a restore that did not see it, even after a delete/restore on the restoring device', () => {
+      const { a, b } = twoDevices(swap);
+      a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+      sync(a, b);
+      a.deleteSave(P1);
+      b.deleteSave(P1);
+      b.restoreSave(P1); // B restores only its own deletion
+      sync(a, b);
+      for (const s of [a, b]) expect(s.repo.getSave(s.saveId(P1))!.deletedAt).not.toBeNull();
+      a.restoreSave(P1); // an informed restore
+      sync(a, b);
+      for (const s of [a, b]) expect(s.repo.getSave(s.saveId(P1))!.deletedAt).toBeNull();
+    });
+
+    it('deletion wins for tags and lists too', () => {
+      const { a, b } = twoDevices(swap);
+      const t = a.createTag({ name: 'Pizza' });
+      const l = a.createList({ name: 'L', kind: 'manual' });
+      a.deleteTag(t);
+      a.deleteList(l);
+      sync(a, b);
+      a.restoreTag(t);
+      a.deleteTag(t);
+      b.restoreTag(t);
+      b.restoreList(l);
+      a.restoreList(l);
+      a.deleteList(l);
+      sync(a, b);
+      for (const s of [a, b]) {
+        expect(s.repo.tags().find((x) => x.id === t)!.deletedAt).not.toBeNull();
+        expect(s.repo.lists().map((x) => x.id)).toEqual([]);
+      }
+    });
+
+    it('privacy wins over a "friends" that did not see it, even after a private/friends on that device', () => {
+      const { a, b } = twoDevices(swap);
+      a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+      sync(a, b);
+      a.updateSave(P1, { sharing: 'private' });
+      b.updateSave(P1, { sharing: 'private' });
+      b.updateSave(P1, { sharing: 'friends' });
+      sync(a, b);
+      for (const s of [a, b]) expect(s.repo.getSave(s.saveId(P1))!.sharing).toBe('private');
+    });
+
+    it('concurrent edits of a plain field converge (last writer wins, same value everywhere)', () => {
+      const { a, b } = twoDevices(swap);
+      a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+      sync(a, b);
+      a.updateSave(P1, { status: 'tried' });
+      b.updateSave(P1, { status: 'favorite' });
+      sync(a, b);
+      expect(a.repo.getSave(a.saveId(P1))!.status).toBe(b.repo.getSave(b.saveId(P1))!.status);
+      expect(a.repo.dumpOwnData()).toBe(b.repo.dumpOwnData());
+    });
   });
 
   it('a save made private leaves materialized lists at once', () => {
@@ -172,10 +258,10 @@ describe('Automerge document', () => {
     expect(s.purgeTrash()).toBe(1);
     expect(s.repo.getSave(s.saveId(P1))).toBeNull();
     expect(s.repo.trash()).toEqual([]);
-    expect(Object.keys(s.doc.tombstones)).toEqual([`save:${P1}`]);
+    expect(Object.keys(readTombstones(s.doc))).toEqual([`save:${P1}`]);
     clock.set(clock.now() + TOMBSTONE_RETENTION_MS);
     s.purgeTrash();
-    expect(Object.keys(s.doc.tombstones)).toEqual([]);
+    expect(Object.keys(readTombstones(s.doc))).toEqual([]);
     expect(s.repo.queryPlaces({}).map((h) => h.id)).toEqual(['osm:node/2']);
   });
 
@@ -232,6 +318,68 @@ describe('Automerge document', () => {
     expect(s.repo.tagMappings()).toEqual([]);
   });
 
+  it('three devices save the same place offline: folds chain without losing anyone', () => {
+    const a = openStore({ actor: hexActor(1), newId: seqIds('a-') });
+    const b = openStore({ actor: hexActor(2), newId: seqIds('b-') });
+    const c = openStore({ actor: hexActor(3), newId: seqIds('c-') });
+    const tags = [a, b, c].map((s, i) => s.createTag({ name: `tag ${i}` }));
+    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), tagIds: [tags[0]!], comment: 'from a' });
+    b.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), tagIds: [tags[1]!], comment: 'from b', sharing: 'private' });
+    c.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), tagIds: [tags[2]!], comment: 'from c', status: 'tried' });
+    a.merge(b.doc); // A folds {A, B}
+    c.merge(b.doc); // C folds {B, C}, concurrently
+    sync(a, b, c);
+    for (const s of [a, b, c]) {
+      const save = s.repo.getSave(s.saveId(P1))!;
+      expect(new Set(save.tagIds)).toEqual(new Set(tags));
+      for (const x of ['a', 'b', 'c']) expect(save.comment.split(`from ${x}`)).toHaveLength(2); // each exactly once
+      expect(save.sharing).toBe('private');
+      expect(save.status).toBe('tried');
+      expect(s.repo.queryPlaces({})).toHaveLength(1);
+    }
+    expect(a.repo.dumpOwnData()).toBe(b.repo.dumpOwnData());
+    expect(a.repo.dumpOwnData()).toBe(c.repo.dumpOwnData());
+  });
+
+  it('two devices healing the same duplicate at once do not duplicate the comment', () => {
+    const { a, b } = twoDevices();
+    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), comment: 'terrace' });
+    b.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), comment: 'closed mondays' });
+    const fromA = a.exportDoc();
+    const fromB = b.exportDoc();
+    a.importChanges(fromB); // both heal before seeing the other's heal
+    b.importChanges(fromA);
+    sync(a, b);
+    const comment = a.repo.getSave(a.saveId(P1))!.comment;
+    expect(comment.split('terrace')).toHaveLength(2);
+    expect(comment.split('closed mondays')).toHaveLength(2);
+    expect(a.repo.dumpOwnData()).toBe(b.repo.dumpOwnData());
+    expect(saveEntryKeys(a.doc, P1)).toHaveLength(2); // both entries kept, one canonical
+  });
+
+  it('a change that throws leaves the document and the database unchanged', () => {
+    const s = openStore({ actor: hexActor(5) });
+    s.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    const dump = s.repo.dumpOwnData();
+    const heads = s.heads();
+    expect(() =>
+      s.change((tx) => {
+        tx.createTag({ name: 'half' });
+        tx.updateSave(P1, { comment: 'half-written' });
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(s.docLoaded).toBe(false); // dropped, reloaded from SQLite on next use
+    expect(tagIdsOf(s.doc)).toEqual([]);
+    expect(s.heads()).toEqual(heads);
+    expect(s.repo.dumpOwnData()).toBe(dump);
+    s.updateSave(P1, { comment: 'ok' });
+    expect(s.repo.getSave(s.saveId(P1))!.comment).toBe('ok');
+    const other = openStore({ actor: hexActor(6) });
+    other.merge(s.exportDoc());
+    expect(other.repo.dumpOwnData()).toBe(s.repo.dumpOwnData());
+  });
+
   it('validates edits', () => {
     const s = openStore();
     s.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
@@ -257,13 +405,13 @@ describe('persistence', () => {
     const s = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(7), compactEvery: 5 });
     const t = s.createTag({ name: 'Pizza' });
     for (let i = 1; i <= 8; i++) s.putSave({ place: osmPoint(i, `Place ${i}`, 48 + i / 100, 2), tagIds: [t] });
-    const heads = A.getHeads(s.doc);
+    const heads = s.heads();
     const dump = s.repo.dumpOwnData();
     s.close();
     const r = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(7) });
     expect(r.docLoaded).toBe(false); // the projection is current: reads need no document
     expect(r.repo.queryPlaces({ source: 'mine' })).toHaveLength(8);
-    expect(A.getHeads(r.doc).sort()).toEqual([...heads].sort());
+    expect(r.heads()).toEqual(heads);
     expect(r.repo.dumpOwnData()).toBe(dump);
     expect(r.repo.db.get<{ n: number }>(`SELECT count(*) AS n FROM doc_chunks`)!.n).toBeLessThan(6);
     r.close();
@@ -296,11 +444,110 @@ describe('persistence', () => {
     expect(b.repo.dumpOwnData()).toBe(a.repo.dumpOwnData());
   });
 
+  it('reuses the device actor as Yjs client id across sessions', () => {
+    const file = join(dir, 'actor.db');
+    const open = () => DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: 'device-1', compactEvery: 3 });
+    for (let i = 1; i <= 4; i++) {
+      const s = open();
+      s.putSave({ place: osmPoint(i, `Place ${i}`, 48, 2) });
+      expect(s.doc.clientID).toBe(clientIdFor('device-1'));
+      s.close();
+    }
+    const s = open();
+    // Only the base update's client and this device: loading its own updates did not make Yjs pick a new id.
+    expect([...Y.decodeStateVector(s.heads()).keys()].sort()).toEqual([0, clientIdFor('device-1')].sort());
+    expect(savePlaceIds(s.doc)).toHaveLength(4);
+    s.close();
+  });
+
+  it('refuses a database whose document is not stored as Yjs updates', () => {
+    const file = join(dir, 'old.db');
+    DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME }).close();
+    const db = new NodeSqliteDriver(file);
+    db.run(`DELETE FROM meta WHERE key = 'doc_format'`);
+    db.close();
+    expect(() => DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME })).toThrow(/stored as an older format/);
+  });
+
+  it('keeps an out-of-order update until its dependencies arrive, across a reopen', () => {
+    const a = openStore({ actor: hexActor(1) });
+    const file = join(dir, 'pending.db');
+    const b = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(2) });
+    const base = b.heads();
+    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    const first = a.exportDoc(base);
+    const mid = a.heads();
+    a.updateSave(P1, { comment: 'second' });
+    const second = a.exportDoc(mid);
+    b.importChanges(second); // depends on `first`, not received yet
+    expect(b.repo.getSave(b.saveId(P1))).toBeNull();
+    b.close();
+    const b2 = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(2) });
+    b2.importChanges(first);
+    expect(b2.repo.getSave(b2.saveId(P1))!.comment).toBe('second');
+    expect(b2.repo.dumpOwnData()).toBe(a.repo.dumpOwnData());
+    b2.close();
+  });
+
+  it('keeps fields written by a newer version through edits, merges, folding, relinking and compaction (spec "Format versions")', () => {
+    const file = join(dir, 'unknown.db');
+    const a = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(1), newId: seqIds('a-') });
+    const tag = a.createTag({ name: 'Pizza' });
+    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    a.putSave({ place: localPoint('manual01', 'Spot', 48.85, 2.35) });
+    const list = a.createList({ name: 'L', kind: 'filter' });
+    // A newer app version, on another device, writes fields this version does not know.
+    const newer = loadDataDoc(a.exportDoc(), hexActor(9));
+    const seen = a.heads();
+    newer.transact(() => {
+      const r = roots(newer);
+      const e = saveEntry(newer, P1)!;
+      e.set('rating', 4.5);
+      const review = new Y.Map<unknown>();
+      e.set('review', review);
+      review.set('text', new Y.Text('great dough'));
+      saveEntry(newer, 'local:manual01')!.set('visitedAt', 1234);
+      r.tags.get(tag)!.set('emoji', 'pizza');
+      (r.lists.get(list)!.get('filter') as Y.Map<unknown>).set('openNow', true);
+      r.meta.set('minor', 3);
+      newer.getMap('visits').set('2026-10-01', P1);
+    });
+    a.importChanges(Y.encodeStateAsUpdate(newer, seen));
+    // This version edits the same items…
+    a.updateSave(P1, { comment: 'edited', sharing: 'private', status: 'tried' });
+    a.addSaveTag(P1, tag);
+    a.updateTag(tag, { name: 'Pizzas', color: '#f00' });
+    a.setListFilter(list, { statuses: ['tried'] });
+    a.relinkSave('local:manual01', osmPoint(2, 'Spot', 48.85, 2.35));
+    // …another device saved the same place offline (folded on merge)…
+    const c = openStore({ actor: hexActor(3), newId: seqIds('c-') });
+    c.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), comment: 'from c' });
+    a.merge(c.doc);
+    a.compact();
+    a.close();
+    // …and after a reopen, what goes back to the newer device still carries its fields.
+    const r = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(1) });
+    const back = loadDataDoc(r.exportDoc());
+    const e = saveEntry(back, P1)!;
+    expect(e.get('rating')).toBe(4.5);
+    expect(((e.get('review') as Y.Map<unknown>).get('text') as Y.Text).toString()).toBe('great dough');
+    expect(saveEntry(back, 'osm:node/2')!.get('visitedAt')).toBe(1234);
+    expect(hasSave(back, 'local:manual01')).toBe(false);
+    expect(roots(back).tags.get(tag)!.get('emoji')).toBe('pizza');
+    expect((roots(back).lists.get(list)!.get('filter') as Y.Map<unknown>).get('openNow')).toBe(true);
+    expect(roots(back).meta.get('minor')).toBe(3);
+    expect(back.getMap('visits').get('2026-10-01')).toBe(P1);
+    expect(r.repo.getSave(r.saveId(P1))).toMatchObject({ sharing: 'private', status: 'tried' });
+    expect(r.repo.getSave(r.saveId(P1))!.comment).toContain('edited');
+    r.close();
+  });
+
   it('readTags ignores unknown parents', () => {
-    const doc = A.change(createDataDoc(), (d) => {
-      const tx = new DocTx(d, { now: () => 1, newId: seqIds('t') });
+    const doc = createDataDoc();
+    doc.transact(() => {
+      const tx = new DocTx(doc, { now: () => 1, newId: seqIds('t') });
       const id = tx.createTag({ name: 'x' });
-      d.tags[id]!.parentId = new A.ImmutableString('ghost');
+      roots(doc).tags.get(id)!.set('parentId', 'ghost');
     });
     expect(readTags(doc, ME)[0]!.parentId).toBeNull();
     expect(saveIdFor(ME, P1)).toBe(`${ME}|${P1}`);

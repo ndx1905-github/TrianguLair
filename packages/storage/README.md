@@ -55,7 +55,7 @@ Friends never write to someone else's storage, so there is no inbox. They send a
   2. It then writes `index.json` conditionally: `If-Match: <previousIndexEtag>`, or `If-None-Match: *` on the first publish (`null`).
   3. Finally it writes the optional public GeoJSON.
 
-  An interrupted publish therefore never leaves an index pointing at missing packs. If another device published in the meantime, it throws `PreconditionFailed`. The caller then fetches, merges (Automerge) and retries. Packs that were uploaded but not referenced are harmless. Pack ids must be unique or content-derived, so a pack upload never overwrites a pack referenced by the live index. Garbage collection is the caller's job, after the index commit.
+  An interrupted publish therefore never leaves an index pointing at missing packs. If another device published in the meantime, it throws `PreconditionFailed`. The caller then fetches, merges (Yjs) and retries. Packs that were uploaded but not referenced are harmless. Pack ids must be unique or content-derived, so a pack upload never overwrites a pack referenced by the live index. Garbage collection is the caller's job, after the index commit.
 - `fetchSnapshot(adapter, lastEtag)` sends one `HEAD`. If the ETag has not changed, it returns `{ changed: false }`. Otherwise it sends a `GET` and returns `{ changed: true, etag, index }`. It throws `NotFound` when there is no index.
 - `fetchPack(adapter, id)` returns the bytes of a pack. It throws `NotFound` if the pack is missing.
 

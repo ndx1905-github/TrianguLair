@@ -9,9 +9,10 @@
  * 2. At every step, on every device, no list contains a private save (nor a
  *    trashed one), whatever the edits and merges.
  */
-import * as A from '@automerge/automerge';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
+import { hasSave, listIdsOf, tagIdsOf } from '../src/crdt/doc.ts';
 import { NodeSqliteDriver } from '../src/driver/node.ts';
 import { DataStore } from '../src/store.ts';
 import type { ListFilter, SaveStatus, Sharing } from '../src/types.ts';
@@ -98,9 +99,9 @@ const pick = <T>(xs: readonly T[], i: number): T | undefined => (xs.length ? xs[
 function apply(devices: Device[], op: Op): void {
   const { store: s, clock } = devices[op.dev]!;
   const doc = s.doc;
-  const tags = Object.keys(doc.tags).sort();
-  const lists = Object.keys(doc.lists).sort();
-  const has = (p: number) => !!doc.saves[placeId(p)];
+  const tags = tagIdsOf(doc);
+  const lists = listIdsOf(doc);
+  const has = (p: number) => hasSave(doc, placeId(p));
   switch (op.k) {
     case 'put': {
       const tag = pick(tags, op.tag);
@@ -208,10 +209,12 @@ describe('merging across devices (property-based)', () => {
         for (const op of ops) apply(devices, op);
         fullSync(devices);
         const [first, ...rest] = devices.map((d) => d.store);
-        const heads = A.getHeads(first!.doc).sort();
+        const heads = first!.heads();
+        const snap = Y.snapshot(first!.doc);
         const dump = first!.repo.dumpOwnData();
         for (const s of rest) {
-          expect(A.getHeads(s.doc).sort()).toEqual(heads);
+          expect(s.heads()).toEqual(heads);
+          expect(Y.equalSnapshots(Y.snapshot(s.doc), snap)).toBe(true);
           expect(s.repo.dumpOwnData()).toBe(dump);
         }
         // Incremental projection == full projection from scratch.

@@ -112,7 +112,7 @@ Each direction of the relationship is independent:
 - Pack files are named after the hash of their content and never modified: a new version of a pack is a new file. The pack's logical identifier is stored inside the encrypted content, so the files themselves do not reveal which pack they are a version of; comparing two successive indexes still shows which file replaced which when a single pack changed, which the app blurs by grouping replacements.
 - The index is the file `index.json` at the read address (during a major format transition, newer majors are published next to it as `index.v<N>.json`, see Format versions). It is public: it reveals the number of devices declared lost, the number of publications (and so when I invite, since an invitation needs a publication), the number of packs and a rough bucket of the number of open invitations (padded), never their content, recipients or invitees.
 - Friends' content is kept in cache in the app (decrypted in the local database, itself protected by the phone's encryption) for instant display. It is refreshed on opening, regularly as long as the app stays open, and on demand (pull to refresh) , and ends just after the app is closed; no periodic task. By comparing the old and new versions, the app knows exactly what has changed: this is what feeds the What's new view.
-- Several devices of the same user write to the same storage; an automatic merge technique (CRDT, Automerge library) avoids conflicts.
+- Several devices of the same user write to the same storage; an automatic merge technique (CRDT, Yjs library) avoids conflicts.
 - The storage still sees file sizes and update dates; the app adds padding to limit what can be inferred from them.
 
 ### No duplicates, lightweight storages
@@ -141,7 +141,7 @@ Goal: friends who do not have the same app version continue to read each other, 
 
 - **Two version levels** in the index and every signed or encrypted JSON structure: `version` is the major version (incompatible changes: a reader refuses a major it does not know), `minor` (absent means 0) marks compatible additions. Binary structures (invitation link, return link, sealed keys, transfer) carry only a major version.
 - **Ignore the unknown**: an app silently ignores the fields and item types it does not know when the document declares a higher minor version than its own. The signature (or the encryption) covers the whole document, unknown fields included. Without a higher minor, an unknown field is an error. When it rewrites a document (the case of two devices of the same user with different versions):
-  - **content documents** (places and lists in Automerge, the recovery vault: its records, their unknown fields and its free-form app part) keep the unknown fields and records as is, with the higher minor version;
+  - **content documents** (places and lists in the Yjs document, the recovery vault: its records, their unknown fields and its free-form app part) keep the unknown fields and records as is, with the higher minor version;
   - **documents derived from the owner's current state** (the signed index above all) are written again from that state: an older device drops the fields it does not know and writes its own minor version. It never copies them, because it cannot tell whether they are still true (an open-invitation list copied blindly would outlive expiry, or a declaration of loss). The next newer device to publish puts them back.
 
   A future field that an older device must neither drop nor copy needs a new major version.
@@ -173,7 +173,7 @@ All building blocks use an existing standard; the only project-specific format i
 | Content encryption | XChaCha20-Poly1305 (libsodium) | Proven library, available in TypeScript |
 | Key wrapping | X25519 (libsodium sealed boxes), structure inspired by JWE (RFC 7516) | One public key per person |
 | Signature | Ed25519 | Content authenticity |
-| Multi-device synchronization | CRDT (Automerge) | Automatic merging of modifications |
+| Multi-device synchronization | CRDT (Yjs) | Automatic merging of modifications; pure JavaScript, so it runs in React Native's engine (Hermes) |
 | Sharing links | URL with key in the fragment (#) | The fragment is never sent to the server |
 | Place data | OpenStreetMap (ODbL license) | Name, category, hours, cuisine, diets, terrace, reservation, entry price, website, phone; free photos via Wikimedia Commons and Panoramax; neighborhood boundaries and street paths for zones |
 | Place identifiers | OpenStreetMap (node/123, way/456) | Name and coordinates copied locally |
@@ -762,12 +762,12 @@ Each pack contains batches: a batch key wrapped for each recipient, then the pla
 
 ## Tech stack and self-hosting
 
-Recommendation: TypeScript everywhere, with a local-first React Native app (SQLite, Automerge for synchronization, libsodium for encryption) and a storage chosen by the user (WebDAV, S3, SFTP). No server of the project's own; only existing services remain necessary (tiles, search, OpenStreetMap).
+Recommendation: TypeScript everywhere, with a local-first React Native app (SQLite, Yjs for synchronization, libsodium for encryption) and a storage chosen by the user (WebDAV, S3, SFTP). No server of the project's own; only existing services remain necessary (tiles, search, OpenStreetMap).
 
 ```mermaid
 flowchart LR
   subgraph Moi["My phone"]
-    App["TrianguLair app\nSQLite + Automerge\nlibsodium"]
+    App["TrianguLair app\nSQLite + Yjs\nlibsodium"]
   end
   Sto[("My storage\nWebDAV · S3 · SFTP\nencrypted packs + signed index")]
   Ami["A friend's app"]
@@ -786,7 +786,7 @@ The app is the only active component: it reads and writes the encrypted packs on
 | Android / iOS app | React Native (new architecture) + Expo, with no proprietary services | Flutter | One codebase, map as a true native view, neutral governance (React Foundation), publishable on F-Droid |
 | Map in the app | MapLibre React Native (MapLibre Native) | — | Library maintained by the MapLibre organization; vector tiles, offline packs |
 | Local database | SQLite with spatial extension | — | Fast "places in this zone" queries, offline |
-| Synchronization | Automerge (CRDT) | Custom synchronization | Conflict-free merging between devices |
+| Synchronization | Yjs (CRDT) | Automerge (its core is WebAssembly, which Hermes lacks); custom synchronization | Conflict-free merging between devices; pure JavaScript, no WebAssembly or native module, same code on the phone and in tests |
 | Encryption | libsodium | Web Crypto | Proven primitives, same libraries on phone and browser |
 | Storage | WebDAV, S3 or SFTP, behind a common adapter | Read-only HTTPS | Standard, often already available |
 | Viewing without the app | uMap for public lists (v1); custom page in v2 | — | No web code to develop or host in v1 |
@@ -917,7 +917,7 @@ No project does exactly "a local-first, encrypted place-saving app", but several
 | --- | --- | --- |
 | CryptPad | Encrypted collaborative suite whose sharing links carry the key in the fragment (#) | Proven model for "with the link" lists |
 | Nextcloud | Self-hostable storage with WebDAV and read-only sharing links | Reference storage |
-| Automerge | CRDT library for local-first applications | Synchronization between devices |
+| Yjs | CRDT library for local-first and collaborative applications | Synchronization between devices |
 | uMap | Collaborative maps on OSM, self-hostable | Compatible export format, no social dimension |
 | Organic Maps / CoMaps | Free offline maps with bookmarks | Export target (KML/GPX) |
 
@@ -1066,5 +1066,5 @@ Durations estimated for one or two part-time people; to be readjusted after phas
 - [WebDAV, RFC 4918](https://www.rfc-editor.org/rfc/rfc4918)
 - [JSON Web Encryption, RFC 7516](https://www.rfc-editor.org/rfc/rfc7516)
 - [libsodium documentation](https://doc.libsodium.org)
-- [Automerge](https://automerge.org)
+- [Yjs](https://docs.yjs.dev)
 - [Abandoned price tag proposal (OSM wiki)](https://wiki.openstreetmap.org/wiki/Proposal:Restaurant_Classification)

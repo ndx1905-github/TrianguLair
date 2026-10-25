@@ -29,14 +29,37 @@ export type {
 export {
   createDataDoc,
   loadDataDoc,
+  baseDocUpdate,
+  clientIdFor,
   healDoc,
   mergeDataDocs,
   DocTx,
   DOC_SCHEMA,
   TRASH_RETENTION_MS,
   TOMBSTONE_RETENTION_MS,
+  roots,
+  saveEntry,
+  saveEntryKeys,
+  savePlaceIds,
+  hasSave,
+  tagIdsOf,
+  listIdsOf,
+  readTombstones,
+  readDeletedAt,
+  readSharing,
+  updateText,
 } from './crdt/doc.ts';
-export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, MediaInput } from './crdt/doc.ts';
-export { projectAll, projectChanges, readSave, readTags, readList, readTagMappings } from './crdt/project.ts';
-export { DataStore } from './store.ts';
+export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, MediaInput, DocMedia } from './crdt/doc.ts';
+export {
+  projectAll,
+  projectChanges,
+  trackChanges,
+  emptyTouched,
+  readSave,
+  readTags,
+  readList,
+  readTagMappings,
+} from './crdt/project.ts';
+export type { Touched, ProjectedSave } from './crdt/project.ts';
+export { DataStore, DOC_FORMAT, PROJECTION_VERSION } from './store.ts';
 export type { OpenStoreOptions } from './store.ts';
