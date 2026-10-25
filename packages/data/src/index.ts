@@ -25,3 +25,17 @@ export type {
   ForeignSaveInput,
   OpenRepositoryOptions,
 } from './sqlite/repository.ts';
+export {
+  createDataDoc,
+  loadDataDoc,
+  healDoc,
+  mergeDataDocs,
+  DocTx,
+  DOC_SCHEMA,
+  TRASH_RETENTION_MS,
+  TOMBSTONE_RETENTION_MS,
+} from './crdt/doc.ts';
+export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, MediaInput } from './crdt/doc.ts';
+export { projectAll, projectChanges, readSave, readTags, readList, readTagMappings } from './crdt/project.ts';
+export { DataStore } from './store.ts';
+export type { OpenStoreOptions } from './store.ts';
