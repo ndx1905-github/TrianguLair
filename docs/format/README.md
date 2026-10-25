@@ -325,7 +325,23 @@ them after an intended change. `reference-reader/` runs an independent Python im
 (canonical JSON, signatures, keys, read addresses, certificates, identity moves, signed index with ordering and
 anchors, packs, Padmé, invitation links, tokens, acceptance, listing padding, safety code) against the same files.
 
-## 11. Changes made while writing this specification
+## 11. Fuzzing
+
+`packages/crypto/test/fuzz.test.ts` (fast-check) feeds random and mutated inputs (byte flips, insertions, deletions,
+truncations, JSON-significant characters, structural JSON mutations **re-signed or re-sealed with the right key** so
+that the deep checks run) to every parser: canonical JSON, `checkLocation`, `decodePrimaryIdentity`,
+`verifySharingCert`, `verifyDeviceCert`, `verifyIdentityMove`, `verifyIndex` (text and bytes), `readPackHeader`, pack
+decryption and `openPack`, `openGroupKey`, `parseInvitationLink` with the acceptance checks, `openInvitationResponse`
+(outer and inner bytes), `openSharingKey` (both modes), `decryptTransfer`, `decodeKeyExport`, `openVault` (envelopes,
+and hostile records sealed with the vault data key, which `verifyIndexAnchor` and the record checks parse). Each
+property requires that only a `TLCryptoError` escapes, that no call takes more than 5 s, and that altered
+authenticated data is never accepted (an accepted mutated pack opens to the original content; an accepted `TLSK` or
+key export carries the genuine certificate and secret). Property tests also check that `checkNoRollback` is the total
+order of (rotation, seq), that `signIndex` → `serialize` → `verifyIndex` round-trips, and that canonical JSON
+round-trips. CI runs a fixed seed with bounded runs (about 5 s); `npm run fuzz:long` runs 20 000 cases per property,
+`FUZZ_SEED=random` changes the seed, and `FUZZ_STATS=<file>` records the outcome distribution of each property.
+
+## 12. Changes made while writing this specification
 
 No wire-format change. Ambiguities found while writing the second reader from this text are listed in
 [reference-reader/README.md](reference-reader/README.md#gaps-found-in-the-documentation) together with the fix made

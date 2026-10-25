@@ -11,7 +11,10 @@ import { ready, identityFromPhrase, sealPack, verifyIndex, openPack } from '@tri
 await ready(); // required once before anything else
 ```
 
-`npm test` (vitest) and `npm run typecheck` (tsc, strict).
+`npm test` (vitest) and `npm run typecheck` (tsc, strict). The normative format specification, with pseudocode for every
+check, known-answer vectors and a second reader in Python, is [`docs/format/`](../../docs/format/README.md); this README
+is an overview of the API. `npm run vectors` regenerates the vectors, `npm run reader` runs the Python reader against
+them, `npm run fuzz:long` runs the fuzz tests for longer (`FUZZ_RUNS`, `FUZZ_SEED`).
 
 ## Encoding conventions
 
