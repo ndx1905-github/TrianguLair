@@ -1,7 +1,7 @@
 /**
  * Device identity used by the data store until identity creation exists
  * (first-launch flow, T-0xx): a fixed local owner id and a per-device
- * Automerge actor kept in the device settings.
+ * document actor kept in the device settings.
  */
 import { getSetting, setSetting } from './deviceSettings';
 

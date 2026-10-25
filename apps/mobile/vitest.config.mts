@@ -13,7 +13,7 @@ export default defineConfig({
       { find: /^@triangulair\/data$/, replacement: here('../../packages/data/src/index.ts') },
       { find: /^@triangulair\/osm$/, replacement: here('../../packages/osm/src/index.ts') },
       // Their runtime dependencies come from this app's node_modules.
-      { find: /^@automerge\/automerge$/, replacement: here('./node_modules/@automerge/automerge/dist/cjs/fullfat_node.cjs') },
+      { find: /^yjs$/, replacement: here('./node_modules/yjs/dist/yjs.mjs') },
       { find: /^opening_hours$/, replacement: here('./node_modules/opening_hours/build/opening_hours.esm.mjs') },
     ],
   },

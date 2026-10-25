@@ -2,9 +2,8 @@
 //
 // The app consumes the workspace packages (@triangulair/data, @triangulair/osm)
 // straight from their TypeScript sources in ../../packages. Each package keeps
-// its own lockfile, so their runtime dependencies (@automerge/automerge,
-// opening_hours) are also dependencies of this app and are resolved from
-// apps/mobile/node_modules, even when a package has no node_modules of its own.
+// its own lockfile, so their runtime dependencies (yjs, opening_hours) are also
+// dependencies of this app and are resolved from apps/mobile/node_modules, even when a package has no node_modules of its own.
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
@@ -28,14 +27,14 @@ config.resolver.sourceExts = [...new Set([...config.resolver.sourceExts, 'json']
 
 const defaultResolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  // Automerge on web: the "browser" entry imports a .wasm file, which Metro
-  // cannot bundle. The base64 build inlines the WebAssembly module instead.
-  // (Temporary: packages/data is moving from Automerge to Yjs.)
-  if (platform === 'web' && moduleName === '@automerge/automerge') {
-    return {
-      type: 'sourceFile',
-      filePath: path.join(appRoot, 'node_modules/@automerge/automerge/dist/cjs/fullfat_base64.cjs'),
-    };
+  // The OSM fixtures (test data of packages/osm) are only bundled in fixture
+  // mode (EXPO_PUBLIC_OSM_FIXTURES=1); otherwise src/osm/fixtures.ts is empty.
+  if (
+    process.env.EXPO_PUBLIC_OSM_FIXTURES !== '1' &&
+    moduleName === './fixtures' &&
+    context.originModulePath === path.join(appRoot, 'src/osm/client.ts')
+  ) {
+    return { type: 'empty' };
   }
   // sql.js (web database) has Node-only branches that are never taken in a browser.
   if (platform === 'web' && (moduleName === 'node:fs' || moduleName === 'node:crypto')) {

@@ -40,9 +40,9 @@ build step and no change to the root `package.json`:
 
 - `metro.config.js` watches `packages/data` and `packages/osm`, maps their names to their folders
   (`extraNodeModules`, package `exports` honored) and resolves their runtime dependencies
-  (`@automerge/automerge`, `opening_hours`) from this app's `node_modules`. On web it redirects
-  Automerge to its base64 build (the default browser entry imports a `.wasm` file Metro cannot
-  bundle; temporary until packages/data moves to Yjs) and empties sql.js's Node-only imports.
+  (`yjs` and its `lib0`, `opening_hours`) from this app's `node_modules`. On web it empties
+  sql.js's Node-only imports. Outside fixture mode it replaces `src/osm/fixtures.ts` by an empty
+  module, so the OSM fixture JSON never reaches a production bundle.
 - `tsconfig.json` maps the package names to their sources (`paths`) and allows `.ts` import
   extensions; `vitest.config.mts` has the same aliases.
 
@@ -75,8 +75,8 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 
 - **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
   `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
-  Type-checked, not run yet: the package's Automerge (WebAssembly) does not run on Hermes; the move
-  to Yjs removes that blocker.
+  Type-checked, not run on a device yet (the document is Yjs, pure JavaScript, so Hermes is no
+  longer a blocker).
 - **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
   the database file saved to IndexedDB after each write (debounced, and on page hide). When
   IndexedDB is unavailable the data stays in memory and the map says so. sql.js has no R*Tree/FTS5:
@@ -84,7 +84,7 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 - **Demo data**: on first launch the 15 sample places in Paris are seeded as tags, my saves (status,
   price, comments), a friend's saves ("Léa") and illustrative OSM info (opening hours, terrace,
   happy hours) so the filters have data (`src/data/demo.ts`).
-- Owner id is a placeholder (`local-me`) until identity creation exists; the Automerge actor is a
+- Owner id is a placeholder (`local-me`) until identity creation exists; the document actor is a
   per-device random id kept in localStorage / expo-sqlite's kv-store.
 
 ### OSM services, offline and fixture mode

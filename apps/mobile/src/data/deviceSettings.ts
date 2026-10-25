@@ -1,5 +1,5 @@
 /**
- * Small per-device values (Automerge actor, demo seed flag). Web:
+ * Small per-device values (document actor, demo seed flag). Web:
  * localStorage, guarded (it can throw or be empty). Native: expo-sqlite's
  * synchronous key-value store (see deviceSettings.native.ts).
  */

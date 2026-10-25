@@ -2,8 +2,7 @@
  * Native: expo-sqlite (synchronous JSI API) through the data package's
  * driver. R*Tree needs the expo-sqlite config plugin flag (app.json).
  *
- * Not run yet: the data package's Automerge (WebAssembly) does not run on
- * Hermes; packages/data is moving to Yjs, which removes that blocker.
+ * Not run yet on a device (needs a development build).
  */
 import { openDatabaseSync } from 'expo-sqlite';
 import { DataStore } from '@triangulair/data';

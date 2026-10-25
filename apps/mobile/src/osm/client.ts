@@ -12,6 +12,7 @@ let client: OsmClient | null = null;
 
 export function osmClient(): OsmClient {
   if (client) return client;
+  // Outside fixture mode Metro replaces ./fixtures by an empty module (metro.config.js).
   const fetchImpl = OSM_FIXTURES
     ? createFixtureFetch((require('./fixtures') as typeof import('./fixtures')).loadFixtures())
     : undefined;
