@@ -1,0 +1,45 @@
+{
+  "version": "0.6",
+  "generator": "OpenStreetMap server",
+  "copyright": "OpenStreetMap and contributors",
+  "attribution": "http://www.openstreetmap.org/copyright",
+  "license": "http://opendatacommons.org/licenses/odbl/1-0/",
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456730,
+      "lat": 48.8588100,
+      "lon": 2.3617700,
+      "timestamp": "2021-04-02T12:00:00Z",
+      "version": 1,
+      "changeset": 102345678,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "visible": true,
+      "tags": { "amenity": "restaurant", "name": "Le Petit Fictif", "cuisine": "french" }
+    },
+    {
+      "type": "node",
+      "id": 9123456730,
+      "lat": 48.8588100,
+      "lon": 2.3617700,
+      "timestamp": "2024-02-11T09:30:00Z",
+      "version": 2,
+      "changeset": 147654321,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "visible": true,
+      "tags": { "amenity": "restaurant", "name": "Le Petit Fictif", "cuisine": "french", "opening_hours": "Mo-Sa 12:00-14:00,19:00-22:00" }
+    },
+    {
+      "type": "node",
+      "id": 9123456730,
+      "timestamp": "2026-09-03T17:41:20Z",
+      "version": 3,
+      "changeset": 180987654,
+      "user": "streetcomplete_user",
+      "uid": 7654321,
+      "visible": false
+    }
+  ]
+}

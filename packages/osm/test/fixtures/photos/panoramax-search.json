@@ -1,0 +1,68 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "stac_extensions": [
+        "https://stac-extensions.github.io/view/v1.0.0/schema.json",
+        "https://stac-extensions.github.io/perspective-imagery/v1.0.0/schema.json"
+      ],
+      "id": "0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b",
+      "collection": "0191a2b3-0000-7e6f-8a9b-0c1d2e3f0000",
+      "geometry": { "type": "Point", "coordinates": [2.3623012, 48.8590201] },
+      "bbox": [2.3623012, 48.8590201, 2.3623012, 48.8590201],
+      "properties": {
+        "datetime": "2025-06-14T10:21:33+00:00",
+        "created": "2025-06-15T08:00:12.123456+00:00",
+        "license": "CC-BY-SA-4.0",
+        "view:azimuth": 251,
+        "geovisio:producer": "rue_par_rue",
+        "geovisio:image": "https://panoramax.example.org/api/pictures/0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b/hd.jpg",
+        "geovisio:thumbnail": "https://panoramax.example.org/api/pictures/0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b/thumb.jpg",
+        "pers:interior_orientation": { "camera_manufacturer": "GoPro", "camera_model": "Max", "field_of_view": 360 }
+      },
+      "providers": [{ "name": "rue_par_rue", "roles": ["producer"] }],
+      "assets": {
+        "hd": { "href": "https://panoramax.example.org/api/pictures/0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b/hd.jpg", "type": "image/jpeg", "roles": ["data"] },
+        "sd": { "href": "https://panoramax.example.org/api/pictures/0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b/sd.jpg", "type": "image/jpeg", "roles": ["visual"] },
+        "thumb": { "href": "https://panoramax.example.org/api/pictures/0191a2b3-c4d5-7e6f-8a9b-0c1d2e3f4a5b/thumb.jpg", "type": "image/jpeg", "roles": ["thumbnail"] }
+      },
+      "links": [
+        { "rel": "license", "href": "https://spdx.org/licenses/CC-BY-SA-4.0.html", "title": "License for this object (CC-BY-SA-4.0)" },
+        { "rel": "collection", "href": "https://panoramax.example.org/api/collections/0191a2b3-0000-7e6f-8a9b-0c1d2e3f0000" }
+      ]
+    },
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "018f0000-1111-7222-8333-944445555666",
+      "collection": "018f0000-0000-7222-8333-944440000000",
+      "geometry": { "type": "Point", "coordinates": [2.3619100, 48.8592300] },
+      "properties": {
+        "datetime": "2024-03-02T16:45:00+00:00",
+        "license": "etalab-2.0",
+        "view:azimuth": 120,
+        "geovisio:producer": "IGN"
+      },
+      "assets": {
+        "hd": { "href": "https://panoramax.example.org/api/pictures/018f0000-1111-7222-8333-944445555666/hd.jpg", "type": "image/jpeg" },
+        "sd": { "href": "https://panoramax.example.org/api/pictures/018f0000-1111-7222-8333-944445555666/sd.jpg", "type": "image/jpeg" },
+        "thumb": { "href": "https://panoramax.example.org/api/pictures/018f0000-1111-7222-8333-944445555666/thumb.jpg", "type": "image/jpeg" }
+      },
+      "links": [{ "rel": "license", "href": "https://www.etalab.gouv.fr/licence-ouverte-open-licence/" }]
+    },
+    {
+      "type": "Feature",
+      "stac_version": "1.0.0",
+      "id": "018e9999-aaaa-7bbb-8ccc-9ddddeeeefff",
+      "geometry": { "type": "Point", "coordinates": [2.3622000, 48.8590900] },
+      "properties": { "datetime": "2023-09-09T09:09:09+00:00" },
+      "assets": {
+        "hd": { "href": "https://panoramax.example.org/api/pictures/018e9999-aaaa-7bbb-8ccc-9ddddeeeefff/hd.jpg" }
+      },
+      "links": []
+    }
+  ],
+  "links": [{ "rel": "self", "href": "https://panoramax.example.org/api/search?place_position=2.362151,48.8591" }]
+}

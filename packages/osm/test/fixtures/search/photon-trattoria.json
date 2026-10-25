@@ -1,0 +1,64 @@
+{
+  "features": [
+    {
+      "geometry": { "coordinates": [2.3621507, 48.8591004], "type": "Point" },
+      "type": "Feature",
+      "properties": {
+        "osm_type": "N",
+        "osm_id": 9123456702,
+        "osm_key": "amenity",
+        "osm_value": "restaurant",
+        "type": "house",
+        "name": "Trattoria Da Lucia",
+        "housenumber": "12",
+        "street": "Rue de Bretagne",
+        "district": "Quartier des Enfants-Rouges",
+        "city": "Paris",
+        "postcode": "75003",
+        "county": "Paris",
+        "state": "Île-de-France",
+        "country": "France",
+        "countrycode": "FR"
+      }
+    },
+    {
+      "geometry": { "coordinates": [4.8320114, 45.7578137], "type": "Point" },
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 501234567,
+        "osm_key": "amenity",
+        "osm_value": "restaurant",
+        "type": "house",
+        "name": "Trattoria Lucia",
+        "housenumber": "3",
+        "street": "Rue Mercière",
+        "city": "Lyon",
+        "postcode": "69002",
+        "state": "Auvergne-Rhône-Alpes",
+        "country": "France",
+        "countrycode": "FR",
+        "extent": [4.8319, 45.7579, 4.8321, 45.7577]
+      }
+    },
+    {
+      "geometry": { "coordinates": [2.3488, 48.8534], "type": "Point" },
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 23456789,
+        "osm_key": "highway",
+        "osm_value": "residential",
+        "type": "street",
+        "name": "Rue Lucia",
+        "city": "Paris",
+        "postcode": "75004",
+        "state": "Île-de-France",
+        "country": "France",
+        "countrycode": "FR",
+        "extent": [2.3480, 48.8537, 2.3495, 48.8531]
+      }
+    }
+  ],
+  "type": "FeatureCollection"
+}

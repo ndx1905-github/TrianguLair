@@ -1,0 +1,25 @@
+{
+  "place_id": 87654321,
+  "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+  "osm_type": "node",
+  "osm_id": 3123456789,
+  "lat": "48.8592402",
+  "lon": "2.3625311",
+  "category": "place",
+  "type": "house",
+  "place_rank": 30,
+  "importance": 0.00000999999999995449,
+  "addresstype": "place",
+  "name": "",
+  "display_name": "16, Rue de Bretagne, Quartier des Enfants-Rouges, Paris 3e Arrondissement, Paris, Île-de-France, France métropolitaine, 75003, France",
+  "address": {
+    "house_number": "16",
+    "road": "Rue de Bretagne",
+    "quarter": "Quartier des Enfants-Rouges",
+    "city": "Paris",
+    "postcode": "75003",
+    "country": "France",
+    "country_code": "fr"
+  },
+  "boundingbox": ["48.8591902", "48.8592902", "2.3624811", "2.3625811"]
+}
