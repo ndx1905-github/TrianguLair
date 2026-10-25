@@ -62,6 +62,14 @@ export function encodingVectors(): VectorFile {
   const high = x.slice();
   high[31] = (high[31] as number) | 0x80;
   b.add('key-x25519-bit255', 'A valid key with bit 255 set (non-canonical: two strings for one key).', 'parse_key', { kind: 'x25519', value: 'x25519:' + toB64Url(high) }, 'INVALID_KEY');
+  // p + 2 (little-endian): a non-canonical encoding (>= p) of u = 2 with bit 255 clear.
+  const p2 = new Uint8Array(32).fill(0xff);
+  p2[0] = 0xed + 2;
+  p2[31] = 0x7f;
+  b.add('key-x25519-p-plus-2', 'FINDING (format note F-1): u = p + 2, a non-canonical encoding of u = 2 below 2^255, is ACCEPTED (only bit 255 and small order are checked).', 'parse_key', { kind: 'x25519', value: 'x25519:' + toB64Url(p2) }, 'ok');
+  const p1 = p2.slice();
+  p1[0] = 0xed + 1;
+  b.add('key-x25519-p-plus-1', 'u = p + 1 (= 1 mod p) is of low order: refused.', 'parse_key', { kind: 'x25519', value: 'x25519:' + toB64Url(p1) }, 'INVALID_KEY');
   b.add('key-wrong-prefix', 'x25519 key where ed25519 is expected.', 'parse_key', { kind: 'ed25519', value: formatKey('x25519', x) }, 'FORMAT');
   b.add('key-31-bytes', 'Wrong length.', 'parse_key', { kind: 'ed25519', value: 'ed25519:' + toB64Url(new Uint8Array(31)) }, 'FORMAT');
   b.add('key-padding', 'base64 padding is refused.', 'parse_key', { kind: 'ed25519', value: owner + '=' }, 'FORMAT');

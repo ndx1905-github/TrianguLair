@@ -377,6 +377,32 @@
    }
   },
   {
+   "name": "key-x25519-p-plus-2",
+   "description": "FINDING (format note F-1): u = p + 2, a non-canonical encoding of u = 2 below 2^255, is ACCEPTED (only bit 255 and small order are checked).",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:7________________________________________38"
+   },
+   "expect": {
+    "ok": {
+     "hex": "efffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    }
+   }
+  },
+  {
+   "name": "key-x25519-p-plus-1",
+   "description": "u = p + 1 (= 1 mod p) is of low order: refused.",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:7v_______________________________________38"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
    "name": "key-wrong-prefix",
    "description": "x25519 key where ed25519 is expected.",
    "op": "parse_key",
