@@ -261,6 +261,8 @@ describe('persistence', () => {
     const dump = s.repo.dumpOwnData();
     s.close();
     const r = DataStore.open({ driver: new NodeSqliteDriver(file), meId: ME, actor: hexActor(7) });
+    expect(r.docLoaded).toBe(false); // the projection is current: reads need no document
+    expect(r.repo.queryPlaces({ source: 'mine' })).toHaveLength(8);
     expect(A.getHeads(r.doc).sort()).toEqual([...heads].sort());
     expect(r.repo.dumpOwnData()).toBe(dump);
     expect(r.repo.db.get<{ n: number }>(`SELECT count(*) AS n FROM doc_chunks`)!.n).toBeLessThan(6);

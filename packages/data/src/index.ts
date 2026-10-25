@@ -22,6 +22,7 @@ export type {
   PlaceSort,
   PlaceSource,
   MySaveSummary,
+  MapPin,
   ForeignSaveInput,
   OpenRepositoryOptions,
 } from './sqlite/repository.ts';

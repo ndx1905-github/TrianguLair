@@ -99,6 +99,19 @@ describe.each(ALL_MODES)('queries ($name)', ({ disable }) => {
     expect(hits.find((h) => h.id === 'osm:node/6')!.mine).toBeNull();
   });
 
+  it('map pins agree with queryPlaces', () => {
+    const repo = seed();
+    for (const source of ['all', 'mine', 'friends'] as const) {
+      const pins = repo.mapPins(paris, source);
+      expect(pins.map((p) => p.id).sort()).toEqual(repo.queryPlaces({ bbox: paris, source }).map((h) => h.id).sort());
+    }
+    const pins = Object.fromEntries(repo.mapPins(paris).map((p) => [p.id, p]));
+    expect(pins['osm:node/1']).toMatchObject({ mine: true, friends: false, mainTagId: 't-pizza', kind: 'place' });
+    expect(pins['osm:node/4']).toMatchObject({ mine: true, friends: true });
+    expect(pins['osm:node/6']).toMatchObject({ mine: false, friends: true, mainTagId: null });
+    expect(repo.mapPins([179, -17, -179, -16]).map((p) => p.id)).toEqual(['osm:node/5']);
+  });
+
   it('source filter: mine / friends', () => {
     const repo = seed();
     expect(repo.queryPlaces({ bbox: paris, source: 'mine' }).map((h) => h.id).sort()).toEqual(['osm:node/1', 'osm:node/2', 'osm:node/4']);

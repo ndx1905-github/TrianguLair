@@ -42,68 +42,103 @@ export interface OpenStoreOptions {
   compactEvery?: number;
 }
 
+/** Bump when the projection code changes in a way that needs a rebuild. */
+export const PROJECTION_VERSION = 1;
+
+/** Above this many bytes of missing changes, merge by reloading (much faster than applying ops one by one). */
+const LARGE_MERGE_BYTES = 256 * 1024;
+
 export class DataStore {
   readonly repo: Repository;
-  private _doc: A.Doc<DataDoc>;
+  private _doc: A.Doc<DataDoc> | null;
+  private readonly actor: string | undefined;
   private readonly ctx: EditContext;
   private readonly compactEvery: number;
   private chunks = 0;
 
-  private constructor(repo: Repository, doc: A.Doc<DataDoc>, ctx: EditContext, compactEvery: number) {
+  private constructor(
+    repo: Repository,
+    doc: A.Doc<DataDoc> | null,
+    actor: string | undefined,
+    ctx: EditContext,
+    compactEvery: number,
+  ) {
     this.repo = repo;
     this._doc = doc;
+    this.actor = actor;
     this.ctx = ctx;
     this.compactEvery = compactEvery;
   }
 
-  /** Opens (or creates) the store in this database and brings the projection up to date. */
+  /**
+   * Opens (or creates) the store in this database. When the projection is
+   * up to date (the normal case: chunks and projection are written in the
+   * same transaction), the document is not loaded until it is needed, so the
+   * map can be drawn from SQLite right away (spec: launch under 2 s).
+   */
   static open(options: OpenStoreOptions): DataStore {
     const repo = Repository.open(options.driver, {
       meId: options.meId,
       ...(options.meDisplayName !== undefined && { meDisplayName: options.meDisplayName }),
       ...(options.disable && { disable: options.disable }),
     });
-    const db = options.driver;
-    const rows = db.all<{ kind: string; bytes: Uint8Array }>(`SELECT kind, bytes FROM doc_chunks ORDER BY seq`);
-    let doc: A.Doc<DataDoc>;
-    if (rows.length === 0) {
-      doc = createDataDoc(options.actor);
-    } else {
-      const [first, ...rest] = rows;
-      if (first!.kind !== 'snapshot') throw new Error('document storage does not start with a snapshot');
-      doc = loadDataDoc(new Uint8Array(first!.bytes), options.actor);
-      for (const r of rest) doc = A.loadIncremental(doc, new Uint8Array(r.bytes));
-    }
     const ctx: EditContext = { now: options.now ?? (() => Date.now()), newId: options.newId ?? randomId };
-    const store = new DataStore(repo, doc, ctx, options.compactEvery ?? 200);
-    store.chunks = Math.max(0, rows.length - 1);
+    const store = new DataStore(repo, null, options.actor, ctx, options.compactEvery ?? 200);
+    const db = options.driver;
+    const count = db.get<{ n: number }>(`SELECT count(*) AS n FROM doc_chunks`)!.n;
+    store.chunks = Math.max(0, count - 1);
     repo.transaction(() => {
-      if (rows.length === 0) db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [A.save(doc)]);
-      store.catchUpProjection();
+      if (count === 0) {
+        const doc = createDataDoc(options.actor);
+        db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [A.save(doc)]);
+        store._doc = doc;
+      }
+      const meta = (key: string) => db.get<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key])?.value;
+      const heads = meta('projected_heads');
+      if (count === 0 || meta('projection_version') !== String(PROJECTION_VERSION)) {
+        projectAll(store.doc, repo);
+        store.recordHeads();
+      } else if (!heads) {
+        // Projection state lost (repair, or a write outside DataStore): load and rebuild.
+        store.catchUpProjection(null);
+        store.recordHeads();
+      }
+      // Otherwise the projection is current: chunks and projected heads are
+      // always written in the same transaction. The document stays unloaded.
     });
     return store;
   }
 
-  private catchUpProjection(): void {
-    const row = this.repo.db.get<{ value: string }>(`SELECT value FROM meta WHERE key = 'projected_heads'`);
-    const heads = row ? (JSON.parse(row.value) as A.Heads) : null;
-    const now = A.getHeads(this._doc);
-    if (heads && sameHeads(heads, now)) return;
-    if (heads && heads.length > 0 && A.hasHeads(this._doc, heads)) projectChanges(this._doc, this.repo, heads);
-    else projectAll(this._doc, this.repo);
-    this.recordHeads();
+  private loadDoc(): A.Doc<DataDoc> {
+    const rows = this.repo.db.all<{ kind: string; bytes: Uint8Array }>(`SELECT kind, bytes FROM doc_chunks ORDER BY seq`);
+    const [first, ...rest] = rows;
+    if (!first || first.kind !== 'snapshot') throw new Error('document storage does not start with a snapshot');
+    // One load of all chunks concatenated (faster than loading them one by one).
+    return loadDataDoc(concat(rows.map((r) => new Uint8Array(r.bytes))), this.actor);
+  }
+
+  private catchUpProjection(heads: A.Heads | null): void {
+    const doc = this.doc;
+    if (heads && sameHeads(heads, A.getHeads(doc))) return;
+    if (heads && heads.length > 0 && A.hasHeads(doc, heads)) projectChanges(doc, this.repo, heads);
+    else projectAll(doc, this.repo);
   }
 
   private recordHeads(): void {
-    this.repo.db.run(
-      `INSERT INTO meta (key, value) VALUES ('projected_heads', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      [JSON.stringify(A.getHeads(this._doc))],
-    );
+    const set = `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
+    this.repo.db.run(set, ['projected_heads', JSON.stringify(A.getHeads(this.doc))]);
+    this.repo.db.run(set, ['projection_version', String(PROJECTION_VERSION)]);
   }
 
-  /** The current document (immutable snapshot). */
+  /** The current document (immutable snapshot), loaded on first use. */
   get doc(): A.Doc<DataDoc> {
+    if (!this._doc) this._doc = this.loadDoc();
     return this._doc;
+  }
+
+  /** Whether the document has been loaded (it is loaded lazily). */
+  get docLoaded(): boolean {
+    return this._doc !== null;
   }
 
   get meId(): string {
@@ -116,13 +151,15 @@ export class DataStore {
   }
 
   /** Stores and projects a new document state reached from the current one. */
-  private commit(next: A.Doc<DataDoc>): void {
-    const before = A.getHeads(this._doc);
+  private commit(next: A.Doc<DataDoc>, full = false): void {
+    const before = A.getHeads(this.doc);
     if (sameHeads(before, A.getHeads(next))) return;
     const chunk = A.saveSince(next, before);
     this.repo.transaction(() => {
       this.repo.db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('incremental', ?)`, [chunk]);
-      projectChanges(next, this.repo, before);
+      // After a large merge, a full projection is cheaper than computing the diff.
+      if (full) projectAll(next, this.repo);
+      else projectChanges(next, this.repo, before);
       this._doc = next;
       this.recordHeads();
     });
@@ -135,10 +172,12 @@ export class DataStore {
    * operations in `fn` are applied together:
    *
    *   store.change(tx => { const id = tx.createTag({ name: 'Pizza' }); tx.addSaveTag(placeId, id); });
+   *
+   * For a large import, prefer batches of a few hundred saves per change.
    */
   change<T>(fn: (tx: DocTx) => T, message?: string): T {
     let out!: T;
-    const next = A.change(this._doc, message ? { message, time: Math.floor(this.ctx.now() / 1000) } : {}, (d) => {
+    const next = A.change(this.doc, message ? { message, time: Math.floor(this.ctx.now() / 1000) } : {}, (d) => {
       out = fn(new DocTx(d, this.ctx));
     });
     this.commit(next);
@@ -147,31 +186,48 @@ export class DataStore {
 
   /** Merges another replica of my document (another device), then heals and projects. */
   merge(remote: Uint8Array | A.Doc<DataDoc>): void {
-    const other = remote instanceof Uint8Array ? loadDataDoc(remote) : remote;
-    let next = A.merge(A.clone(this._doc), other);
+    const local = this.doc;
+    const reload = (bytes: Uint8Array) =>
+      loadDataDoc(concat([A.save(local), bytes]), A.getActorId(local));
+    let next: A.Doc<DataDoc>;
+    let large = false;
+    if (remote instanceof Uint8Array && remote.byteLength > LARGE_MERGE_BYTES / 4) {
+      next = reload(remote); // saved documents are compressed (~4x)
+      large = true;
+    } else {
+      const other = remote instanceof Uint8Array ? loadDataDoc(remote) : remote;
+      const missing = A.getChanges(local, other);
+      if (missing.length === 0) return;
+      large = missing.reduce((n, c) => n + c.byteLength, 0) > LARGE_MERGE_BYTES;
+      next = large ? reload(A.save(other)) : A.merge(A.clone(local), other);
+    }
     next = healDoc(next);
-    this.commit(next);
+    this.commit(next, large);
   }
 
   /** Changes since `heads` (to send to another device); full document without argument. */
   exportDoc(sinceHeads?: A.Heads): Uint8Array {
-    return sinceHeads ? A.saveSince(this._doc, sinceHeads) : A.save(this._doc);
+    return sinceHeads ? A.saveSince(this.doc, sinceHeads) : A.save(this.doc);
   }
 
   /** Applies changes exported by another device with `exportDoc(heads)`. */
   importChanges(bytes: Uint8Array): void {
-    let next = A.loadIncremental(A.clone(this._doc), bytes);
+    const local = this.doc;
+    const large = bytes.byteLength > LARGE_MERGE_BYTES / 4;
+    let next = large
+      ? loadDataDoc(concat([A.save(local), bytes]), A.getActorId(local))
+      : A.loadIncremental(A.clone(local), bytes);
     next = healDoc(next);
-    this.commit(next);
+    this.commit(next, large);
   }
 
   heads(): A.Heads {
-    return A.getHeads(this._doc);
+    return A.getHeads(this.doc);
   }
 
   /** Replaces the stored chunks by one snapshot. */
   compact(): void {
-    const bytes = A.save(this._doc);
+    const bytes = A.save(this.doc);
     this.repo.transaction(() => {
       this.repo.db.run(`DELETE FROM doc_chunks`);
       this.repo.db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [bytes]);
@@ -182,7 +238,7 @@ export class DataStore {
   /** Rebuilds the whole projection from the document (repair tool). */
   reproject(): void {
     this.repo.transaction(() => {
-      projectAll(this._doc, this.repo);
+      projectAll(this.doc, this.repo);
       this.recordHeads();
     });
   }
@@ -262,6 +318,16 @@ export class DataStore {
   purgeTrash(): number {
     return this.change((tx) => tx.purgeTrash());
   }
+}
+
+function concat(parts: readonly Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.byteLength;
+  }
+  return out;
 }
 
 function sameHeads(a: A.Heads, b: A.Heads): boolean {

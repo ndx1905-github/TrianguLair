@@ -107,6 +107,19 @@ export interface PlaceHit {
   distanceM: number | null;
 }
 
+export interface MapPin {
+  id: string;
+  lat: number;
+  lon: number;
+  kind: PlaceKind;
+  status: PlaceStatus;
+  /** My main tag (active), for the pin's icon and color. */
+  mainTagId: string | null;
+  mine: boolean;
+  /** Saved by at least one friend (faded pin when not mine). */
+  friends: boolean;
+}
+
 export interface ForeignSaveInput {
   id: string;
   ownerId: string;
@@ -990,6 +1003,38 @@ export class Repository {
       lastUpdatedAt: (r.last_at as number | null) ?? 0,
       distanceM: q.from ? haversineM(q.from, { lat: r.lat as number, lon: r.lon as number }) : null,
     }));
+  }
+
+  /**
+   * Lightweight query for the map layer (T-103): one compact row per pin,
+   * without the per-row aggregates of `queryPlaces`. Feed it to a MapLibre
+   * GeoJSON source; open the card with `queryPlaces`/`savesForPlace`.
+   */
+  mapPins(bbox: BBox, source: PlaceSource = 'all'): MapPin[] {
+    const sp = spatialClause(this.capabilities, splitBBox(bbox));
+    const friendExists = `EXISTS (SELECT 1 FROM saves f WHERE f.place_id = p.id AND f.owner_id <> ? AND f.deleted_at IS NULL AND f.sharing <> 'private')`;
+    const cond = source === 'mine' ? 'my_id IS NOT NULL' : source === 'friends' ? 'friends = 1' : '(my_id IS NOT NULL OR friends = 1)';
+    return this.db
+      .all<{ id: string; lat: number; lon: number; kind: string; status: string; main: string | null; mine: number; friends: number }>(
+        `SELECT * FROM (
+           SELECT p.id, p.lat, p.lon, p.kind, p.status,
+             (SELECT t.id FROM tags t WHERE t.id = ms.main_tag_id AND t.active = 1) AS main,
+             (ms.id IS NOT NULL) AS mine, ms.id AS my_id, ${friendExists} AS friends
+           FROM places p LEFT JOIN saves ms ON ms.place_id = p.id AND ms.owner_id = ? AND ms.deleted_at IS NULL
+           WHERE ${sp.sql}
+         ) WHERE ${cond}`,
+        [this.meId, this.meId, ...sp.params],
+      )
+      .map((r) => ({
+        id: r.id,
+        lat: r.lat,
+        lon: r.lon,
+        kind: r.kind as PlaceKind,
+        status: r.status as PlaceStatus,
+        mainTagId: r.main,
+        mine: r.mine === 1,
+        friends: r.friends === 1,
+      }));
   }
 
   /** Full-text search over the places I or my friends saved. */
