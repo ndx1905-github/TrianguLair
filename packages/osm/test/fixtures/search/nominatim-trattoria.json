@@ -1,0 +1,58 @@
+[
+  {
+    "place_id": 108765432,
+    "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "osm_type": "node",
+    "osm_id": 9123456702,
+    "lat": "48.8591004",
+    "lon": "2.3621507",
+    "category": "amenity",
+    "type": "restaurant",
+    "place_rank": 30,
+    "importance": 0.00009999999999998899,
+    "addresstype": "amenity",
+    "name": "Trattoria Da Lucia",
+    "display_name": "Trattoria Da Lucia, 12, Rue de Bretagne, Quartier des Enfants-Rouges, Paris 3e Arrondissement, Paris, Île-de-France, France métropolitaine, 75003, France",
+    "address": {
+      "amenity": "Trattoria Da Lucia",
+      "house_number": "12",
+      "road": "Rue de Bretagne",
+      "quarter": "Quartier des Enfants-Rouges",
+      "suburb": "Paris 3e Arrondissement",
+      "city_district": "Paris",
+      "city": "Paris",
+      "ISO3166-2-lvl6": "FR-75C",
+      "state": "Île-de-France",
+      "ISO3166-2-lvl4": "FR-IDF",
+      "region": "France métropolitaine",
+      "postcode": "75003",
+      "country": "France",
+      "country_code": "fr"
+    },
+    "boundingbox": ["48.8590504", "48.8591504", "2.3621007", "2.3622007"]
+  },
+  {
+    "place_id": 98765123,
+    "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "osm_type": "way",
+    "osm_id": 23456789,
+    "lat": "48.8534000",
+    "lon": "2.3488000",
+    "category": "highway",
+    "type": "residential",
+    "place_rank": 26,
+    "importance": 0.05340001,
+    "addresstype": "road",
+    "name": "Rue Lucia",
+    "display_name": "Rue Lucia, Quartier Notre-Dame, Paris 4e Arrondissement, Paris, Île-de-France, France métropolitaine, 75004, France",
+    "address": {
+      "road": "Rue Lucia",
+      "quarter": "Quartier Notre-Dame",
+      "city": "Paris",
+      "postcode": "75004",
+      "country": "France",
+      "country_code": "fr"
+    },
+    "boundingbox": ["48.8531", "48.8537", "2.3480", "2.3495"]
+  }
+]

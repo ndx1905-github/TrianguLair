@@ -1,0 +1,111 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.5 1bd436f1",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-25T06:41:12Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456702,
+      "lat": 48.8591004,
+      "lon": 2.3621507,
+      "timestamp": "2025-11-02T18:22:41Z",
+      "version": 5,
+      "changeset": 172345678,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "tags": {
+        "amenity": "restaurant",
+        "name": "Trattoria Da Lucia",
+        "cuisine": "italian;pizza",
+        "opening_hours": "Tu-Su 12:00-14:30,19:00-22:30; PH off"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456720,
+      "lat": 48.8602311,
+      "lon": 2.3601420,
+      "timestamp": "2026-09-14T09:03:12Z",
+      "version": 8,
+      "changeset": 181234567,
+      "user": "streetcomplete_user",
+      "uid": 7654321,
+      "tags": {
+        "disused:amenity": "restaurant",
+        "old_name": "Chez Paulette",
+        "check_date": "2026-09-14"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456721,
+      "lat": 48.8598876,
+      "lon": 2.3611108,
+      "timestamp": "2026-08-30T15:44:09Z",
+      "version": 4,
+      "changeset": 180123456,
+      "user": "streetcomplete_user",
+      "uid": 7654321,
+      "tags": {
+        "shop": "vacant",
+        "check_date": "2026-08-30"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456722,
+      "lat": 48.8587002,
+      "lon": 2.3630155,
+      "timestamp": "2026-07-03T11:12:55Z",
+      "version": 6,
+      "changeset": 179012345,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "tags": {
+        "amenity": "fast_food",
+        "cuisine": "bubble_tea",
+        "name": "Tapioca Corner",
+        "opening_hours": "Mo-Su 11:00-21:00"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456723,
+      "lat": 48.8583321,
+      "lon": 2.3640987,
+      "timestamp": "2026-05-21T08:00:01Z",
+      "version": 3,
+      "changeset": 177890123,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "tags": {
+        "amenity": "bar",
+        "name": "Le Zinc Fictif",
+        "end_date": "2026-06-30"
+      }
+    },
+    {
+      "type": "way",
+      "id": 412345678,
+      "center": { "lat": 48.8579912, "lon": 2.3624401 },
+      "nodes": [4123456001, 4123456002, 4123456003, 4123456004, 4123456001],
+      "timestamp": "2024-03-11T10:15:00Z",
+      "version": 12,
+      "changeset": 148765432,
+      "user": "culture_mapper",
+      "uid": 2345678,
+      "tags": {
+        "tourism": "museum",
+        "museum": "history",
+        "name": "Musée des Cartes Anciennes",
+        "opening_hours": "Tu-Su 10:00-18:00; Mo off; PH off",
+        "fee": "yes",
+        "charge": "12 EUR; 8 EUR reduced",
+        "building": "yes"
+      }
+    }
+  ]
+}

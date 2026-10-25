@@ -1,0 +1,24 @@
+{
+  "features": [
+    {
+      "geometry": { "coordinates": [2.3625311, 48.8592402], "type": "Point" },
+      "type": "Feature",
+      "properties": {
+        "osm_type": "N",
+        "osm_id": 3123456789,
+        "osm_key": "place",
+        "osm_value": "house",
+        "type": "house",
+        "housenumber": "16",
+        "street": "Rue de Bretagne",
+        "district": "Quartier des Enfants-Rouges",
+        "city": "Paris",
+        "postcode": "75003",
+        "state": "Île-de-France",
+        "country": "France",
+        "countrycode": "FR"
+      }
+    }
+  ],
+  "type": "FeatureCollection"
+}

@@ -1,0 +1,37 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.5 1bd436f1",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-25T06:41:12Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456702,
+      "lat": 48.8591004,
+      "lon": 2.3621507,
+      "timestamp": "2025-11-02T18:22:41Z",
+      "version": 5,
+      "changeset": 172345678,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "tags": {
+        "amenity": "restaurant",
+        "name": "Trattoria Da Lucia",
+        "cuisine": "italian;pizza",
+        "diet:vegetarian": "yes",
+        "outdoor_seating": "yes",
+        "reservation": "recommended",
+        "opening_hours": "Tu-Su 12:00-14:30,19:00-22:30; PH off",
+        "website": "www.trattoria-dalucia.example",
+        "phone": "+33 1 42 00 00 01",
+        "addr:housenumber": "12",
+        "addr:street": "Rue de Bretagne",
+        "addr:postcode": "75003",
+        "addr:city": "Paris",
+        "addr:country": "FR"
+      }
+    }
+  ]
+}

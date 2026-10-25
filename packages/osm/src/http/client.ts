@@ -88,6 +88,13 @@ export interface HttpRequest {
   acceptStatus?: number[];
   /** Override `maxRetries` for this request (used for endpoint failover). */
   retries?: number;
+  /**
+   * Cache and coalescing key; defaults to method + URL + body. Overpass sets
+   * one without the endpoint, so a failover result is found again later.
+   */
+  key?: string;
+  /** Checks the parsed body before it is cached; throwing rejects (and does not cache) it. */
+  validate?: (data: unknown) => void;
 }
 
 export interface HttpResult<T> {
@@ -196,6 +203,7 @@ export class HttpClient {
     if (!shared) {
       const controller = new AbortController();
       const promise = this.fetchWithRetries(req, controller.signal).then(async (r) => {
+        if (r.data !== null) req.validate?.(r.data);
         if (useCache) {
           const now = this.clock.now();
           await this.cache.set(key, {
@@ -358,6 +366,7 @@ function originOf(url: string): string {
 }
 
 function cacheKey(req: HttpRequest): string {
+  if (req.key) return req.key;
   return `${req.method ?? 'GET'} ${req.url}${req.body ? `\n${req.body}` : ''}`;
 }
 

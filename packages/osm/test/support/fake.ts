@@ -83,10 +83,13 @@ export function fakeFetch(): FakeFetch {
       const test =
         typeof match === 'function'
           ? match
-          : (c: Call) =>
-              typeof match === 'string'
-                ? c.url.includes(match) || (c.body ?? '').includes(match)
-                : match.test(c.url) || match.test(c.body ?? '');
+          : (c: Call) => {
+              // Bodies are form-encoded (Overpass): match the decoded text.
+              const body = decodeURIComponent((c.body ?? '').replace(/\+/g, ' '));
+              return typeof match === 'string'
+                ? c.url.includes(match) || body.includes(match)
+                : match.test(c.url) || match.test(body);
+            };
       const r: Responder =
         typeof respond === 'function'
           ? respond
