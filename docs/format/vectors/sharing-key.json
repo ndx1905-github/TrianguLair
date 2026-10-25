@@ -1,0 +1,330 @@
+{
+ "structure": "sharing-key",
+ "spec": "identity-and-keys.md",
+ "description": "TLSK: the sharing key and vault data key sealed to a device (mode 1) or to the phrase-derived vault key (mode 2).",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "tlsk-device",
+   "description": "Mode 1, sealed to device d1.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    },
+    "options": {
+     "expectedOwner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+    }
+   },
+   "expect": {
+    "ok": {
+     "cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+     "secret_hex": "581bbd64770af02d465f0ca9f43e870796d6c5d010c29607804c199faff6dff5",
+     "public_hex": "b76a262e771494eea241d64556146c2420f13c3dc7d525934b137e89d754a17b",
+     "vault_key_hex": "2e2f78b1ed438079ec0f6502bc37823297b6283df1ed90d0a78cd65173d4c1c6"
+    }
+   }
+  },
+  {
+   "name": "tlsk-vault",
+   "description": "Mode 2, the phrase-protected copy (nonce 24 || XChaCha20-Poly1305, AD = bytes[0..6) || nonce).",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b02021014303c72338f808371a7a23fd734f16bd15799508c557913e64c9fcd606b7ea9751507d9465fb8350c00140591605c33ec9534aef258ebe2d169585e81bc6257bbd0aff834725f9f28a79046fe29dc634ad263cfca1a77a022d492c6977a377682d905bcfd3edb70f41105dd6d592608126db89de1d9eb057540cfe638c6dc1f2168ec41ea8783102c8f711de282449d99d544ad171b5d788bc48de5574f0c163c2a679e532cc4c9848e151cedb6a8edd6a3a132389c1944ae74bfc9ce6ff2bb43284b2a7c2b7cb9c27c3fe483e78279f3461b884ab059e293d857484e6ecb92fae93297a726b6c9ce55f8d3ad7f82d32d634f44501544f42decf2a92c5449b3fa500550adbf7879f72f8f7348088e0d92cfbaef9bbeb3817c47bcef7cfac5be21d10c8c836756383a084087aca455c57e0d20e740c3d2cc5b4580faa11d8146bc44aa38555ae8d47b597cb30b3fa9907e34711d1c1092b08c76ec91412eba1d8fee60796b4d32a317f0bde36c386687f65cc13fec9ccd2d3b83022b543ac0c85173fc39d0ec648bfdcda0fff9717745a08b6c2400279121cc6baae8167bdb0a82cf693afcee61e2dbd39770fd31f704e0408ae02bb56f43d6fac4eb1dedd56a7d61f7a7e48f81ac6ed6e8cf57eaf3decef5e96d6b4b37d4bf3210d0dc0f828226b21aa5f253609ee3c53c4d1d9ccc0f7ff2ba917f35beaa5ea21983b5bb5926b56226c8fb385ae53db8123a349ca517c6ea87c1113d78780866c6eaa4ca3fa78dc4172beeac482aea2fe1bd43599f2fd5194a64d9b93889ff792f793ee54fd76aecac3d9dcf2acb69b8393b5e870934",
+    "holder": {
+     "phrase": "accident frame furnace hurry olympic enable hurdle era orient scout early access"
+    }
+   },
+   "expect": {
+    "ok": {
+     "cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+     "secret_hex": "581bbd64770af02d465f0ca9f43e870796d6c5d010c29607804c199faff6dff5",
+     "public_hex": "b76a262e771494eea241d64556146c2420f13c3dc7d525934b137e89d754a17b",
+     "vault_key_hex": "2e2f78b1ed438079ec0f6502bc37823297b6283df1ed90d0a78cd65173d4c1c6"
+    }
+   },
+   "details": {
+    "nonce_hex": "1014303c72338f808371a7a23fd734f16bd15799508c5579",
+    "ad_hex": "544c534b02021014303c72338f808371a7a23fd734f16bd15799508c5579"
+   }
+  },
+  {
+   "name": "tlsk-device-same-cert-lastseen",
+   "description": "lastSeen = the same certificate: accepted.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    },
+    "options": {
+     "expectedOwner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "lastSeen": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "ok": {
+     "cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+     "secret_hex": "581bbd64770af02d465f0ca9f43e870796d6c5d010c29607804c199faff6dff5",
+     "public_hex": "b76a262e771494eea241d64556146c2420f13c3dc7d525934b137e89d754a17b",
+     "vault_key_hex": "2e2f78b1ed438079ec0f6502bc37823297b6283df1ed90d0a78cd65173d4c1c6"
+    }
+   }
+  },
+  {
+   "name": "tlsk-mode-mismatch",
+   "description": "A mode-1 blob opened with the phrase.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "phrase": "accident frame furnace hurry olympic enable hurdle era orient scout early access"
+    }
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlsk-other-device",
+   "description": "Sealed to d1, opened by d2.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk",
+     "box_public_hex": "6e0d37ad439e55875f0223ae841fe286ea7006b7af70cbc92ffdab657cb71062",
+     "box_secret_hex": "6c744e381a1ace61ac122ee7facfecbce8e884ad8dfe1b7297c2e5ee33bd3436"
+    }
+   },
+   "expect": {
+    "error": "DECRYPT"
+   }
+  },
+  {
+   "name": "tlsk-vault-tampered",
+   "description": "Mode 2, last ciphertext byte flipped.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b02021014303c72338f808371a7a23fd734f16bd15799508c557913e64c9fcd606b7ea9751507d9465fb8350c00140591605c33ec9534aef258ebe2d169585e81bc6257bbd0aff834725f9f28a79046fe29dc634ad263cfca1a77a022d492c6977a377682d905bcfd3edb70f41105dd6d592608126db89de1d9eb057540cfe638c6dc1f2168ec41ea8783102c8f711de282449d99d544ad171b5d788bc48de5574f0c163c2a679e532cc4c9848e151cedb6a8edd6a3a132389c1944ae74bfc9ce6ff2bb43284b2a7c2b7cb9c27c3fe483e78279f3461b884ab059e293d857484e6ecb92fae93297a726b6c9ce55f8d3ad7f82d32d634f44501544f42decf2a92c5449b3fa500550adbf7879f72f8f7348088e0d92cfbaef9bbeb3817c47bcef7cfac5be21d10c8c836756383a084087aca455c57e0d20e740c3d2cc5b4580faa11d8146bc44aa38555ae8d47b597cb30b3fa9907e34711d1c1092b08c76ec91412eba1d8fee60796b4d32a317f0bde36c386687f65cc13fec9ccd2d3b83022b543ac0c85173fc39d0ec648bfdcda0fff9717745a08b6c2400279121cc6baae8167bdb0a82cf693afcee61e2dbd39770fd31f704e0408ae02bb56f43d6fac4eb1dedd56a7d61f7a7e48f81ac6ed6e8cf57eaf3decef5e96d6b4b37d4bf3210d0dc0f828226b21aa5f253609ee3c53c4d1d9ccc0f7ff2ba917f35beaa5ea21983b5bb5926b56226c8fb385ae53db8123a349ca517c6ea87c1113d78780866c6eaa4ca3fa78dc4172beeac482aea2fe1bd43599f2fd5194a64d9b93889ff792f793ee54fd76aecac3d9dcf2acb69b8393b5e870935",
+    "holder": {
+     "phrase": "accident frame furnace hurry olympic enable hurdle era orient scout early access"
+    }
+   },
+   "expect": {
+    "error": "DECRYPT"
+   }
+  },
+  {
+   "name": "tlsk-vault-header-tampered",
+   "description": "Mode 2, the mode byte is in the AD: changing the version byte to 3 is refused first.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b03021014303c72338f808371a7a23fd734f16bd15799508c557913e64c9fcd606b7ea9751507d9465fb8350c00140591605c33ec9534aef258ebe2d169585e81bc6257bbd0aff834725f9f28a79046fe29dc634ad263cfca1a77a022d492c6977a377682d905bcfd3edb70f41105dd6d592608126db89de1d9eb057540cfe638c6dc1f2168ec41ea8783102c8f711de282449d99d544ad171b5d788bc48de5574f0c163c2a679e532cc4c9848e151cedb6a8edd6a3a132389c1944ae74bfc9ce6ff2bb43284b2a7c2b7cb9c27c3fe483e78279f3461b884ab059e293d857484e6ecb92fae93297a726b6c9ce55f8d3ad7f82d32d634f44501544f42decf2a92c5449b3fa500550adbf7879f72f8f7348088e0d92cfbaef9bbeb3817c47bcef7cfac5be21d10c8c836756383a084087aca455c57e0d20e740c3d2cc5b4580faa11d8146bc44aa38555ae8d47b597cb30b3fa9907e34711d1c1092b08c76ec91412eba1d8fee60796b4d32a317f0bde36c386687f65cc13fec9ccd2d3b83022b543ac0c85173fc39d0ec648bfdcda0fff9717745a08b6c2400279121cc6baae8167bdb0a82cf693afcee61e2dbd39770fd31f704e0408ae02bb56f43d6fac4eb1dedd56a7d61f7a7e48f81ac6ed6e8cf57eaf3decef5e96d6b4b37d4bf3210d0dc0f828226b21aa5f253609ee3c53c4d1d9ccc0f7ff2ba917f35beaa5ea21983b5bb5926b56226c8fb385ae53db8123a349ca517c6ea87c1113d78780866c6eaa4ca3fa78dc4172beeac482aea2fe1bd43599f2fd5194a64d9b93889ff792f793ee54fd76aecac3d9dcf2acb69b8393b5e870934",
+    "holder": {
+     "phrase": "accident frame furnace hurry olympic enable hurdle era orient scout early access"
+    }
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "tlsk-vault-other-identity",
+   "description": "Mode 2 opened with Bob's phrase.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b02021014303c72338f808371a7a23fd734f16bd15799508c557913e64c9fcd606b7ea9751507d9465fb8350c00140591605c33ec9534aef258ebe2d169585e81bc6257bbd0aff834725f9f28a79046fe29dc634ad263cfca1a77a022d492c6977a377682d905bcfd3edb70f41105dd6d592608126db89de1d9eb057540cfe638c6dc1f2168ec41ea8783102c8f711de282449d99d544ad171b5d788bc48de5574f0c163c2a679e532cc4c9848e151cedb6a8edd6a3a132389c1944ae74bfc9ce6ff2bb43284b2a7c2b7cb9c27c3fe483e78279f3461b884ab059e293d857484e6ecb92fae93297a726b6c9ce55f8d3ad7f82d32d634f44501544f42decf2a92c5449b3fa500550adbf7879f72f8f7348088e0d92cfbaef9bbeb3817c47bcef7cfac5be21d10c8c836756383a084087aca455c57e0d20e740c3d2cc5b4580faa11d8146bc44aa38555ae8d47b597cb30b3fa9907e34711d1c1092b08c76ec91412eba1d8fee60796b4d32a317f0bde36c386687f65cc13fec9ccd2d3b83022b543ac0c85173fc39d0ec648bfdcda0fff9717745a08b6c2400279121cc6baae8167bdb0a82cf693afcee61e2dbd39770fd31f704e0408ae02bb56f43d6fac4eb1dedd56a7d61f7a7e48f81ac6ed6e8cf57eaf3decef5e96d6b4b37d4bf3210d0dc0f828226b21aa5f253609ee3c53c4d1d9ccc0f7ff2ba917f35beaa5ea21983b5bb5926b56226c8fb385ae53db8123a349ca517c6ea87c1113d78780866c6eaa4ca3fa78dc4172beeac482aea2fe1bd43599f2fd5194a64d9b93889ff792f793ee54fd76aecac3d9dcf2acb69b8393b5e870934",
+    "holder": {
+     "phrase": "example innocent ripple foil guilt subway ten direct machine sentence blast imitate"
+    }
+   },
+   "expect": {
+    "error": "DECRYPT"
+   }
+  },
+  {
+   "name": "tlsk-bad-magic",
+   "description": "Magic \"TLSL\".",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534a0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlsk-crafted-ok",
+   "description": "Mode 1 written from the documented payload.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201ee17b74b8b0468799befedbb280044ec7364704a091107766ff3870ba672800d3d8d4605b297c8260a9f78cd111eccce58ee666980a457dd0d08c6a9e81cc921cf68757f9792ef35a5a4dcf4a0ce7ed8b19e5b541ea47b1436db5b3ba83275f2f22a5cff37b4f09e1c97964dd3ed6c786ee3f021b54e0ea80bb4db28f0795c656692a474b01bbd4ed211b230fc8d3d36b0ef0e42c71dc4e17b553a7102131cdba7bac438a0ced6bf56d2b14b513167484292dd2006127df21c247a0cb32e3d64f7abb671cc8c9e1349c5df63c1ee1b0a26e7fb91614708dac6cbe3a2f095c90bc0c0112972a5a12d34162efe46fc80e92f735a1221afa01fd1abc30ab889a02ce85d86f64b866176603c8051aaeb45304560451d37b8e22ee11bde6fba4fd04d33a66affbd01c47d493b0cb9e2a188745cd05996ba3957e67ea6283b558a42e03ff004330d6f360161f37d3d87f7e8f1561c044b78fcdf23f0894dd1abe3be435e7d7847ffb16c44f902dd056528a4aefbcec3df7d96aa039902c2f5ba77902e66d05477ad28cf0fef4de22add9a57f660ad80073ae9279e49376e5c9d74b008a44564a49901b991a68b9a7cdaffed56117710103a118388955166770dd83276f49934c9e9e519a1bef43c3937025e2984c30ea06bc84d6c913e2be2143b608b0d3ce1d77ef0e5c844a76a9b1b1084b11641dea826bdfb3ffdce180c3469559b6f68f4f527d02f53af9c99ae8ef6bea83b8fc5be96a9411088116ea20a6f1128eaa515e829721b618f12b1bc958231508ff4425bdc86c76736c416cc21ae9da70382e64076831636c5c39e129b3b9af371a4dcd4a244fa90be",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "ok": {
+     "cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+     "secret_hex": "581bbd64770af02d465f0ca9f43e870796d6c5d010c29607804c199faff6dff5",
+     "public_hex": "b76a262e771494eea241d64556146c2420f13c3dc7d525934b137e89d754a17b",
+     "vault_key_hex": "2e2f78b1ed438079ec0f6502bc37823297b6283df1ed90d0a78cd65173d4c1c6"
+    }
+   }
+  },
+  {
+   "name": "tlsk-to-other-device",
+   "description": "Payload addressed to d2, sealed to d1.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b020130dcdfa08526c155fd92d46ae5cc84d79f7206ae6b1fa67c3c5e3b122bb33a39a5579493a2d54b2f038509530415ad329a881b9ba1edbb3dd881a0f2d30479e39e47477b520cb4f1ecf367d2ebecbb36f6a0181051ea6bbcec4eb585b5852846e028c79e1bd27bbe3d0151b9fd42b4710ab19f61e2b55866f3c92435292ea694c229d51f805eb7a2ecfa32544ad22c6496bf93a1014291cc44806a9bf71d8d79f48c067c7b0690650afe6c675b0334d4da76f23d3e2ba05bb849ff926f6667f02e607a36b2ea2486c966f748d1f5e668c36801f3e9d65028d0959241749a2d56ff698be1bbd283715130541b92643061254590902235fe9571f152cc511f32b987984ba31acf3ac5f285748e9913222b082a7ce60f8ac0da5589da8de121087b77b81606a3f975bcd3dd9f963a867b38e92275ce4ff9d4599c26a5eb967f0f7c4bbc0be07d7a667ae4bbcd707579612aec7999d3b932738bdc7d29b0c01948c83270004d71cfeaaea8945905914693380bf6a86dbed0dfbfd1e798ab8b4063e9ce5be460f8a22c8c5326171e9653b6d137661f11e49e7d6616d255b36dbbcb15608cf9e6b2f689a46f5de5c11b211c2da63ed5f1f36fbf7590c21091ef8d3333b0d3c488af0f4d98d8a3e6e9ff3dc7c8d08616da91b4a4680cdca0408cc73c52e60eb7c701cfbc583695cbeffa378922fd83ed6e043b407d394219c5a7e068f54d463d3854bc46b3fe6ebc33df5566cbd9f684291168ee8e2b34c995323986d9e33d637f06971ac0b14726f951bb8481b234b934f52d257cd12d6b01dd7c628e93e2d6ddf7e1d046fe3643c070b5b5839d6f9dae6248be4f8c",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlsk-secret-mismatch",
+   "description": "The secret is not the certified key's.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b02018704e0a6dd87e6687ee84fca834bf2b331ef1d3db22f1f4b1cd2b9ab3fe2070afcead2b3e8084bdc8f49a787d1fc0e8f5c04cd0ae448ec5492e0a8ecf68b4b205ec303dbaed1c073f572c41d2e74ae1e9986bd1277353ffb7ac0c64d5e9841ed27f688f249c7cc5c99fd580caae3c447fd67cf83212c9a646aacfa8e4ac987e669813386029a9cecede98c27ea3dcd2d39021ddab746bdd761ecf2b795cb22ea373aaa68644ed4d34f8e8b878d96907815de489cd3fe817ae5dbefc7d2acd4d7830932abe8f696c80a43d9e02a83b118f98c035cfdf3276e9f5bee3dde7190ad15f4102b19d3063a442a2b92e29f8dec10b9800fcc9f7a24716db3af1d6cfacadaab21fb954572ee0f7a6f12800659d574093df2e184fd8af58d506d30d6a273eec70865fcc6886d7249beb6df934c3e9674a2ee8992a0b949a75b9e7de31123b1cc21a2ea35b3ccf861a1495b0ad1f0ff8c9b1f3e49b03403ebdb7825e49f947d915fbfdca37566ca1f9a2c198f0c52c02ec283a8d116578ee2bec917fe0c556cc7626aa739966425f2788c9953f8319371df337d91a12aa72837aba4b55d524a594e7608e824884d4b4cd1530d743ca308cf5e3cad48f4912868eca10bcbfc8896099ce137f936a854b24170253f8fdd52b48e9a67ad06bd130e5b5ad191b64cbd0a45062a538eb863c9d873e59b9ddcb21990beaa948e3d10cf1ac35ed5e3119d4f9ffd5b769e1cd3bd177fa91afdcdadd26f3d262e772e3bd095e3776fd9ef5aecfe4bd1e339545ad8e72b480d862c7d27808df04761fae2640196f29fb57baf6f095ee6476efb8eee274131097147e9c305e1ddfd47f7",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlsk-payload-version-3",
+   "description": "Payload version 3.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201105fc5de0d4378a05a8bf4082801c1a95f1118679ee38eeb09b87f554002d06b28935357e196040b50c220d5e8dc2722cc0e7c9696a2ea6fcaece7b37e82bef2ebeccd9a9c0de1f00c3ce2fb0969232c0d016b90155192fd14ddc0a379db400aa75137f56a333ab8abb9866481765ad3a93347d612495b07155c8cdd9629a731697ed457883d6dc0964e2a411ff468088c110115b67396ed688654eedb3a3455a9f6c3d5ef1322c5912cf9b043835fe59b818fab833fa2543d65b6ba27abb59fd27c8e3db4bed7240a4e10515243fe7c12117ebd376363882b642f9392377acc3f6b857e36b0ef010d0fdc31740913123ae61d1b92686a738b515d8e2a0d05888b8793d74ef6bd4b6f21cc75472ca39cd4be33369e9b142dbf8af481adb9dea0774d5e28e26bd67f2c5bfc17cb93c582b72e09f2d09840c9cba540c25e9c4f26d60fa33a9407f729d515ea01cc03766193d36fdb5f036f72b36b745dbdb98d80f21a026a070406aa475d00003b3540e780916a04d9c9c06fddb9438b5ca074643ffd87ee6bf67c764843cddb8123b9361f1baa6d889f7e4fe1a9eaa2b888fe112cafe0d07e5c4a7e507e15dd8f831da4cac19e9c074c08b62c21c33ae7dcf1283619b06f386617516bcf2a322167602087b8d1a247f66255deebf05b09147fe61a6b10a4aca9c6fc3c278198ab9b6a445bcc02de00a600f4a88873dcd394185329da5f690a944b6e856cee3e5832e1e94d0de91a7f247d37cc16ee9c8d44610cb32a52f5c8a74c477eb22157028fbed5340a30d432e0da7c43c098aa3d5546dc2c8e6575621cbca70e1205b440b3c6063547d85c1eb6448ea9",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "tlsk-payload-unknown-field",
+   "description": "Unknown payload field without a minor.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b02013c5770857eb179332128566fb692e8f1471fd1ad3f0cae315a8fe4ab8dfbb1066c25c19c46ef2d7fe84e14a7d90978805e7b6c0ce1fd0d77c24729306ecaa1996a188f9a0f71e157bab59d9ea55ca0e7b965391325269136a2aa007984cf638e7c7b20402cdbb46a3b36fe7a069838762d3c1d8156465f362c8617822be1ec22438d336523818ec59e7f26f9307ce48bf7fbdac493ac95f0b855bb397c1013cde14befe5764b60d600511350f97d9c2c3c5bb959ae72269c1730625c725c6aceda957efb5d6483f2f76d8d9494abe962321e60dc0f1574a6f39ef721ec8d4f013cc746b4f1f26a529f12c352a1e41e2729eae84342cdfe0f5daa0a17262e2e0a9f2527841f53f1eb446e1660485cf5b733d2f718dea4523d290a2c3e90639b97a4dc000da83cbc4ca03f5df2e12b2b805b5e128c1e35020251ab82f91be31bf0bb9e25037e67a7f48a61a7134bad7148dcbe5b7d63f58133d1afe780b2910e10a71d80c60e947f3364fe99e96905b37f716f5521866bbd77a59d66d4daae7866c34a7f1c5a6297dfb71b5305b0084b22e57e0299a468c28a24f75a0b233f93016ac2eb8ddfbbea0c1119f0ae426e46b6a32fe7c4ed366d7cb3deec48035c25d286d0f6e275e6858fed988784abdce4e2e523e920e2a30b77f9e31250c32a268fabf212ca362363489a9f1ab0a731f7b99caaf5148ff5a21e588c71d0695f3713c4bd1538b88f2ce13f72fc53c8157fa3d3fcbf9747f22ceee450040e545488feb81707d5020c9042c99446dc48a00bf51c53353bc48bbf358474aed29b415394f3921417b864d314b35e784e709d4014f87abaeaf077b168e047d4fe4db3ad2fd11ebd",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "tlsk-payload-minor-unknown-field",
+   "description": "Unknown payload field with minor 1: ignored.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201b58e0c39e8e5e7842a84efd1e44f342bf2bc767652042d382192c4d2664e476e98846e96ef113e25d321f4786d758e6c78d03ec8f0b0f562a4c5bd05646425a37330a558fe6148969388a8680f9445cc35935800776e6f6a236c5f8e31fd1f41d1ca6b89633f6e49ea9274947fbd23885bec18ef6bf9741a91407eff6397946fc42d8fac3e674620e596dd3e9f5e2cf2e230f7b0f5d30cbdedfcf4cd68124781d4f2b3ffe6922ce12cf7a1da54364fea51d5518b5c8218f03d177df5b868f6338b3aca92fa2ad3d225fff9acd55f9463e9b247dd7a42ca45ddf6cb941dc651a44598cefd3c9483f3d8c7f6a78db7562e757aa5bc47d4013f738ccb5807dd7af3dd124155989351ef3492b599ceb66f8f1a1423a0a9b2cc2d1f470ad7b019274c6bb0d2bf25b46251fef4ca1a03cefd6a43ade028391da81f49751c3724b1214a2ebde3af573c652248798c64d264ff5c7df71bc038f8963ad09740118dca0d0825bc0a47173a811e21a4f3f56c802c240d7f76341f3ee01a6387443c4e17f1756911f8eedbe8fff9d8686fafd26e73cb97ab63dc8504244c50ac4fd7e1e6029b9e5061b8befd74e0d9e592045a0e59491e977b3f60d18d2f675312f54034749cf3593b05eecdbc2c308fab05f4e812bc23959ecc70ea97775e200b82a3d95b1f677ab097f3dc4ee20da968b3294d395e9ce5fce92577b690431fce81c90baf660ea51037f2492cddbadd4297c0220305114eac7f166859f1bdcf22a7a10ae5d7e76923d53a850f1c71d80c082e96011cc1db3aeb3ed97d823231d96df38c28c4615683f7aee56807d013cc830767cf0a80729e8cd6283a8a9f57fd9b835d8d499a592bad733df255496b91ebf1",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "ok": {
+     "cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+     "secret_hex": "581bbd64770af02d465f0ca9f43e870796d6c5d010c29607804c199faff6dff5",
+     "public_hex": "b76a262e771494eea241d64556146c2420f13c3dc7d525934b137e89d754a17b",
+     "vault_key_hex": "2e2f78b1ed438079ec0f6502bc37823297b6283df1ed90d0a78cd65173d4c1c6"
+    }
+   }
+  },
+  {
+   "name": "tlsk-envelope-version-3",
+   "description": "Envelope version byte 3.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0301d935d8167428b850d9d479ef600f63da575bd39c4afc5ff35e89fa62c222f6796c01113602c9bfa94a08a068cf805053db1918a6470c894bd846de6d59eebfe6458f45af120bd29fd8a5e6f80e670de4f5a9637441c4a7d7c1366ed2aa9b4a63d242e2cc7ef9c3ea7dfb2957a17dcac3b96ee35177fce96011f8075aece892f06bf9e7abb3633d672e853e45ebef6f8f331b6b33ba6d5c0008bb3d1157837e13b8cb2ad4bb43eeecb4b0c1b7258c49c71f58ab3b8ac644a5d96d243b5968ffbe95ea98492316f79d906bf70b0810953b879b443e9521811e595d56cf5966d16aaf4c000287f1d025ca40f450295c11f5ea7c67b2feff87c5bf3ed8a1f70810595b0f2726b90d7c21a1cc554abb30c4521778cb6730a61f50d0bec8c45180db3313f7406f19dcf05941eae0ac1bbcbcc93ab49b14cfc8a745ff14cb409f2313d993453f0e40669cc9e24e74298d0b8f4cc31fd75f5fcff68d1802961dd10b92631abdd96f9a828c653c33ce5837e357ea88c1044d57ff0309b02d421a6ca5472528ff95f30b37602b91ecca09a4104ed7da9051c18ce62ae02ca8a79e4350655f7caec75a1645a2f5f30c63bffe2c4644f5d66472f0204e2907377997d9a934dca0c0fd6bcb17f1e54fb483fd024e14106aa59f041492b56b1e6e8cac5b9884fa7e90270857fc08260d9ffb451d5e478fa3adf9610e7d533c32b49b1f0249a622041614813fada636c5009f4348d6813e5fb6799c29449cac840734889b118dfc59d07c6b778c03c6da530c2d9ba6c05957e880ac8c5c625038f52aa8f7e42badfa41c9b4bfd7474b9e9e6c6060b835ad664d1926e6326723a1",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    }
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "tlsk-rollback",
+   "description": "lastSeen = rotation 1: a rotation-0 key pushed back is refused (R-08).",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    },
+    "options": {
+     "lastSeen": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}"
+    }
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": false
+   }
+  },
+  {
+   "name": "tlsk-other-owner",
+   "description": "expectedOwner = Bob.",
+   "op": "open_sharing_key",
+   "input": {
+    "bytes_hex": "544c534b0201f030d929f8352ea3082f85d19dcce487ee9051c15a10104ca880e0a3545b663dd480298dc870c12c1d549c99f639d465c9f11aa4859f2a421b955a1bd4b76abbbeda0449ed60caadb3f4f5de77ef0a0f4ca72cd38bef6f09cdbf20d0a52f9d6153593e839a27e66892a411c6479f03c57ee23b79c7d759ea2bef4a384375fad4acf745d1790e471d113330dfbd921dc6cb73ba5ed359c9d282cfb692400f5a8a4338870cfebbe3e9ffc039749695f27f6e13d98f94348a94e4f69891ec999e104d89cb9f9b62096173029a8fcae3c0e4bb06f0e3eb03d4c5df87869ec9e7799c3a449fa19a8cdc5f605f938bfeaee62cb7be0f2effbc4ade6b1b33ebe06280f792f83564c3ec8293c109e9cccb5dbefb00cd3f1ec7d126575df42350ed16e0506d5b99513cff7214387b8774ea018c3667136dad16ed5567aca517bb469d6d01dd2d0c4daf0a5712e39b98f1e90d88cac7d080e4de237cac816ee1b0db1d6afeb6a71e57ca6926e47995ea5f8ad6fcb275107736a52909d5b20f34c384a8b1c29b4f9c83d43d0bd1fee2636360a51a68fe5220717fd56c11ab257378565d9cdd1a283933e6ee8978b583d05dfdb20908395ad9b5f793c54f5b00fd5ef415e43a75278f6576f4c5cb44079af93dac491b0499c1320a3981622a592f7eae79787a1290cae02dcbb19742eaaa50769374c35778a80f266d1f654d3b6f613cef7cabe848e88ad69104fae43860e5bf882b8693202218aa5eb683d6382a9c2f5be6943894e252294144c6ed84f6cd4e7bc4a7d25557453f99f823e5b00de32691e670d583bda81be1c0fd6d122fad1d16f240f42c6ba3bec897f5bf",
+    "holder": {
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box_public_hex": "e64014c23fdfc09c7906341e2496f671a67d8bd19e7e9f4024fa509780ce7649",
+     "box_secret_hex": "84df2f8cd62fcd5760b2efa8de8dfea8a6878e63c6590c7175df50f997f12ad1"
+    },
+    "options": {
+     "expectedOwner": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+    }
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  }
+ ]
+}

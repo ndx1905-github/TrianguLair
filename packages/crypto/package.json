@@ -9,7 +9,8 @@
   "types": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "vectors": "UPDATE_VECTORS=1 vitest run test/vectors.test.ts"
   },
   "dependencies": {
     "@scure/bip39": "^2.4.0",
@@ -17,6 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   }
