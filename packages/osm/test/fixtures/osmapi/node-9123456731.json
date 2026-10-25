@@ -1,0 +1,21 @@
+{
+  "version": "0.6",
+  "generator": "OpenStreetMap server",
+  "copyright": "OpenStreetMap and contributors",
+  "attribution": "http://www.openstreetmap.org/copyright",
+  "license": "http://opendatacommons.org/licenses/odbl/1-0/",
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456731,
+      "lat": 48.8599000,
+      "lon": 2.3640000,
+      "timestamp": "2026-10-25T06:59:58Z",
+      "version": 2,
+      "changeset": 182345678,
+      "user": "mapper_paris",
+      "uid": 1234567,
+      "tags": { "amenity": "cafe", "name": "Café Tout Neuf" }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.5 1bd436f1",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-25T06:41:12Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456799,
+      "lat": 48.8588300,
+      "lon": 2.3617900,
+      "tags": { "amenity": "restaurant", "name": "Bao Fictif", "cuisine": "chinese" }
+    }
+  ]
+}
