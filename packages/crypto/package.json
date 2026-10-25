@@ -10,7 +10,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "vectors": "UPDATE_VECTORS=1 vitest run test/vectors.test.ts"
+    "vectors": "UPDATE_VECTORS=1 vitest run test/vectors.test.ts",
+    "reader": "python3 -B ../../docs/format/reference-reader/run_vectors.py"
   },
   "dependencies": {
     "@scure/bip39": "^2.4.0",
