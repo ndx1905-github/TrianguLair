@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Projection of the Automerge document into SQLite.
+ * Projection of the Yjs document into SQLite.
  *
  * Deterministic: the rows written for an item depend only on the document
  * state (never on the device, the order of merges or the previous rows), so
  * two devices holding the same document hold the same projection, and an
  * incremental projection equals a full one (both property-tested).
  */
-import * as A from '@automerge/automerge';
+import * as Y from 'yjs';
 import { saveIdFor } from '../ids.ts';
 import type { Repository } from '../sqlite/repository.ts';
 import type {
@@ -20,11 +20,28 @@ import type {
   PriceLevel,
   SaveRecord,
   SaveStatus,
-  Sharing,
   TagMappingRecord,
   TagRecord,
 } from '../types.ts';
-import { filterFromDoc, readDeletedAt, readSharing, snapshotFromDoc, str, strOrNull, type DataDoc } from './doc.ts';
+import {
+  filterFromDoc,
+  getMap,
+  getNum,
+  getStr,
+  getStrOrNull,
+  getText,
+  keysOf,
+  placeOfEntry,
+  readDeletedAt,
+  readSharing,
+  roots,
+  saveEntry,
+  saveMedia,
+  savePlaceIds,
+  saveTagIds,
+  snapshotFromEntry,
+  type DataDoc,
+} from './doc.ts';
 
 export { saveIdFor };
 
@@ -34,46 +51,43 @@ export interface ProjectedSave {
   media: MediaRecord[];
 }
 
-export function readSave(doc: A.Doc<DataDoc>, placeId: string, meId: string): ProjectedSave | null {
-  const s = doc.saves[placeId];
+export function readSave(doc: DataDoc, placeId: string, meId: string): ProjectedSave | null {
+  const s = saveEntry(doc, placeId);
   if (!s) return null;
   const id = saveIdFor(meId, placeId);
-  const tags = Object.keys(s.tagIds ?? {}).sort();
-  let main = strOrNull(s.mainTagId);
+  const tags = saveTagIds(s);
+  let main = getStrOrNull(s, 'mainTagId');
   if (main !== null && !tags.includes(main)) main = tags[0] ?? null;
   if (main === null) main = tags[0] ?? null;
   const tagIds = main === null ? tags : [main, ...tags.filter((t) => t !== main)];
-  const media: MediaRecord[] = Object.keys(s.media ?? {})
-    .sort()
-    .map((mid) => {
-      const m = s.media[mid]!;
-      return {
-        id: mid,
-        saveId: id,
-        file: str(m.file),
-        blurhash: strOrNull(m.blurhash),
-        width: m.width ?? null,
-        height: m.height ?? null,
-        createdAt: m.createdAt,
-      };
-    });
+  const media: MediaRecord[] = saveMedia(s).map(([mid, m]) => {
+    return {
+      id: mid,
+      saveId: id,
+      file: String(m.file ?? ''),
+      blurhash: m.blurhash ?? null,
+      width: m.width ?? null,
+      height: m.height ?? null,
+      createdAt: m.createdAt ?? 0,
+    };
+  });
   return {
     save: {
       id,
       ownerId: meId,
       placeId,
-      comment: String(s.comment ?? ''),
-      commentVisibility: str(s.commentVisibility) as CommentVisibility,
-      status: strOrNull(s.status) as SaveStatus | null,
-      priceLevel: (s.priceLevel ?? null) as PriceLevel | null,
+      comment: getText(s, 'comment'),
+      commentVisibility: (getStrOrNull(s, 'commentVisibility') ?? 'friends') as CommentVisibility,
+      status: getStrOrNull(s, 'status') as SaveStatus | null,
+      priceLevel: getNum(s, 'priceLevel') as PriceLevel | null,
       sharing: readSharing(s),
       mainTagId: main,
       tagIds,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
+      createdAt: getNum(s, 'createdAt') ?? 0,
+      updatedAt: getNum(s, 'updatedAt') ?? getNum(s, 'createdAt') ?? 0,
       deletedAt: readDeletedAt(s),
     },
-    place: snapshotFromDoc(placeId, s.place),
+    place: snapshotFromEntry(placeId, s),
     media,
   };
 }
@@ -83,12 +97,13 @@ export function readSave(doc: A.Doc<DataDoc>, placeId: string, meId: string): Pr
  * can create one: the tag with the smallest id in the cycle loses its parent)
  * and `active` = not in the trash and no ancestor in the trash.
  */
-export function readTags(doc: A.Doc<DataDoc>, meId: string): (TagRecord & { active: boolean })[] {
-  const ids = Object.keys(doc.tags).sort();
+export function readTags(doc: DataDoc, meId: string): (TagRecord & { active: boolean })[] {
+  const all = roots(doc).tags;
+  const ids = [...all.keys()].sort();
   const parent = new Map<string, string | null>();
   for (const id of ids) {
-    const p = strOrNull(doc.tags[id]!.parentId);
-    parent.set(id, p !== null && p !== id && doc.tags[p] ? p : null);
+    const p = getStrOrNull(all.get(id)!, 'parentId');
+    parent.set(id, p !== null && p !== id && all.has(p) ? p : null);
   }
   for (;;) {
     let broke = false;
@@ -119,105 +134,119 @@ export function readTags(doc: A.Doc<DataDoc>, meId: string): (TagRecord & { acti
     const known = activeMemo.get(id);
     if (known !== undefined) return known;
     const p = parent.get(id) ?? null;
-    const v = readDeletedAt(doc.tags[id]) === null && (p === null || isActive(p));
+    const v = readDeletedAt(all.get(id)) === null && (p === null || isActive(p));
     activeMemo.set(id, v);
     return v;
   };
   return ids.map((id) => {
-    const t = doc.tags[id]!;
+    const t = all.get(id)!;
     return {
       id,
       ownerId: meId,
       parentId: parent.get(id) ?? null,
-      name: str(t.name),
-      color: strOrNull(t.color),
-      icon: strOrNull(t.icon),
-      osmCategories: Object.keys(t.osmCategories ?? {}).sort(),
+      name: getStr(t, 'name'),
+      color: getStrOrNull(t, 'color'),
+      icon: getStrOrNull(t, 'icon'),
+      osmCategories: keysOf(getMap(t, 'osmCategories')),
       deletedAt: readDeletedAt(t),
       active: isActive(id),
     };
   });
 }
 
-export function readList(doc: A.Doc<DataDoc>, id: string, meId: string): ListRecord | null {
-  const l = doc.lists[id];
+export function readList(doc: DataDoc, id: string, meId: string): ListRecord | null {
+  const l = roots(doc).lists.get(id);
   if (!l) return null;
   return {
     id,
     ownerId: meId,
-    name: str(l.name),
-    description: String(l.description ?? ''),
-    visibility: str(l.visibility) as ListVisibility,
-    linkKey: strOrNull(l.linkKey),
-    kind: str(l.kind) as ListKind,
-    filter: filterFromDoc(l.filter),
-    manualItems: Object.keys(l.items ?? {}).sort(),
-    createdAt: l.createdAt,
-    updatedAt: l.updatedAt,
+    name: getStr(l, 'name'),
+    description: getText(l, 'description'),
+    visibility: (getStrOrNull(l, 'visibility') ?? 'link') as ListVisibility,
+    linkKey: getStrOrNull(l, 'linkKey'),
+    kind: getStr(l, 'kind') as ListKind,
+    filter: filterFromDoc(getMap(l, 'filter')),
+    manualItems: keysOf(getMap(l, 'items')),
+    createdAt: getNum(l, 'createdAt') ?? 0,
+    updatedAt: getNum(l, 'updatedAt') ?? 0,
     deletedAt: readDeletedAt(l),
   };
 }
 
-export function readTagMappings(doc: A.Doc<DataDoc>): TagMappingRecord[] {
-  return Object.keys(doc.tagMappings)
-    .sort()
-    .map((k) => {
-      const [personId, theirTag] = k.split('\n') as [string, string];
-      return { personId, theirTag, myTagId: str(doc.tagMappings[k]) };
-    });
+export function readTagMappings(doc: DataDoc): TagMappingRecord[] {
+  const m = roots(doc).tagMappings;
+  return [...m.keys()].sort().map((k) => {
+    const i = k.indexOf('\n');
+    return { personId: k.slice(0, i), theirTag: k.slice(i + 1), myTagId: String(m.get(k)) };
+  });
 }
 
 /** Rebuilds my whole projection from the document. */
-export function projectAll(doc: A.Doc<DataDoc>, repo: Repository): void {
+export function projectAll(doc: DataDoc, repo: Repository): void {
   repo.transaction(() => {
     repo.writeOwnTags(readTags(doc, repo.meId));
     const keep = new Set<string>();
-    for (const placeId of Object.keys(doc.saves).sort()) {
+    for (const placeId of savePlaceIds(doc)) {
       const p = readSave(doc, placeId, repo.meId)!;
       keep.add(p.save.id);
       repo.writeOwnSave(p.save, p.place, p.media);
     }
     for (const id of repo.ownSaveIds()) if (!keep.has(id)) repo.removeOwnSave(id);
-    const lists = new Set(Object.keys(doc.lists));
-    for (const id of [...lists].sort()) repo.writeOwnList(readList(doc, id, repo.meId)!);
+    const lists = roots(doc).lists;
+    for (const id of [...lists.keys()].sort()) repo.writeOwnList(readList(doc, id, repo.meId)!);
     for (const id of repo.ownListIds()) if (!lists.has(id)) repo.removeOwnList(id);
     repo.writeTagMappings(readTagMappings(doc));
     repo.markListsDirty();
   });
 }
 
+/** What a set of Yjs transactions touched, for an incremental projection. */
 export interface Touched {
+  /** Place ids. */
   saves: Set<string>;
   tags: boolean;
+  /** List ids. */
   lists: Set<string>;
   tagMappings: boolean;
+  /** Something outside the known layout changed (meta): re-project everything. */
   all: boolean;
 }
 
-export function touchedBetween(doc: A.Doc<DataDoc>, before: A.Heads, after: A.Heads = A.getHeads(doc)): Touched {
-  const t: Touched = { saves: new Set(), tags: false, lists: new Set(), tagMappings: false, all: false };
-  if (before.length === 0) {
-    t.all = true;
-    return t;
-  }
-  for (const patch of A.diff(doc, before, after)) {
-    const [root, id] = patch.path;
-    if (patch.path.length < 2) {
-      if (root === 'tombstones' || root === undefined) continue;
-      t.all = true;
-      continue;
-    }
-    if (root === 'saves') t.saves.add(String(id));
-    else if (root === 'tags') t.tags = true;
-    else if (root === 'lists') t.lists.add(String(id));
-    else if (root === 'tagMappings') t.tagMappings = true;
-  }
-  return t;
+export function emptyTouched(): Touched {
+  return { saves: new Set(), tags: false, lists: new Set(), tagMappings: false, all: false };
 }
 
-/** Projects what changed in the document between `before` and its current heads. */
-export function projectChanges(doc: A.Doc<DataDoc>, repo: Repository, before: A.Heads): void {
-  const t = touchedBetween(doc, before);
+type DeepHandler = (events: Y.YEvent<Y.AbstractType<unknown>>[]) => void;
+
+/**
+ * Runs `fn` (local edits, `Y.applyUpdate`, healing…) and returns what it
+ * touched, from the Yjs events of the root types.
+ */
+export function trackChanges<T>(doc: DataDoc, fn: () => T, into: Touched = emptyTouched()): { result: T; touched: Touched } {
+  const r = roots(doc);
+  const keyed = (add: (key: string) => void): DeepHandler => (events) => {
+    for (const ev of events) {
+      if (ev.path.length === 0) for (const k of (ev as Y.YMapEvent<unknown>).keysChanged) add(k);
+      else add(String(ev.path[0]));
+    }
+  };
+  const handlers: [Y.AbstractType<unknown>, DeepHandler][] = [
+    [r.saves as Y.AbstractType<unknown>, keyed((k) => into.saves.add(placeOfEntry(k)))],
+    [r.lists as Y.AbstractType<unknown>, keyed((k) => into.lists.add(k))],
+    [r.tags as Y.AbstractType<unknown>, () => (into.tags = true)],
+    [r.tagMappings as Y.AbstractType<unknown>, () => (into.tagMappings = true)],
+    [r.meta as Y.AbstractType<unknown>, () => (into.all = true)],
+  ];
+  for (const [t, h] of handlers) t.observeDeep(h);
+  try {
+    return { result: fn(), touched: into };
+  } finally {
+    for (const [t, h] of handlers) t.unobserveDeep(h);
+  }
+}
+
+/** Projects what a set of transactions touched (see `trackChanges`). */
+export function projectChanges(doc: DataDoc, repo: Repository, t: Touched): void {
   if (t.all) return projectAll(doc, repo);
   repo.transaction(() => {
     if (t.tags) repo.writeOwnTags(readTags(doc, repo.meId));

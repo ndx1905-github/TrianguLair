@@ -3,7 +3,7 @@
  * Repository over the local SQLite database.
  *
  * Two kinds of writes go through here:
- * - the projection of my own data from the Automerge document (`DataStore`
+ * - the projection of my own data from the Yjs document (`DataStore`
  *   is the only caller; the app never edits my saves, tags or lists here), and
  * - local caches that are not mine to merge: OSM data on place cards, friends'
  *   decrypted saves, people.

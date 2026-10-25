@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * DataStore: the user's data on one device. Edits go through the Automerge
- * document; each change is appended to SQLite (`doc_chunks`) and projected
- * into the tables, in one transaction. Reads go to the repository.
+ * DataStore: the user's data on one device. Edits go through the Yjs
+ * document; each change's update is appended to SQLite (`doc_chunks`) and
+ * projected into the tables, in one transaction. Reads go to the repository.
  */
-import * as A from '@automerge/automerge';
+import * as Y from 'yjs';
 import type { SqlDriver } from './driver/types.ts';
 import { randomId, type IdGenerator } from './ids.ts';
 import type { PlaceSnapshotInput } from './place.ts';
@@ -21,7 +21,7 @@ import {
   type SavePatch,
   type TagInput,
 } from './crdt/doc.ts';
-import { projectAll, projectChanges, saveIdFor } from './crdt/project.ts';
+import { emptyTouched, projectAll, projectChanges, saveIdFor, trackChanges, type Touched } from './crdt/project.ts';
 import { Repository } from './sqlite/repository.ts';
 import type { Capabilities } from './sqlite/schema.ts';
 import type { ListFilter, ListVisibility, PlaceSnapshot } from './types.ts';
@@ -31,7 +31,11 @@ export interface OpenStoreOptions {
   /** My identity (public key); owner of everything in the document. */
   meId: string;
   meDisplayName?: string;
-  /** Automerge actor of this device (hex). Random by default; keep it stable per device. */
+  /**
+   * Stable per-device actor (any string), hashed to this device's Yjs client
+   * id. Random per session by default. Never open the same database twice at
+   * once with the same actor.
+   */
   actor?: string;
   /** Clock (ms). Injected for tests. */
   now?: () => number;
@@ -45,24 +49,21 @@ export interface OpenStoreOptions {
 /** Bump when the projection code changes in a way that needs a rebuild. */
 export const PROJECTION_VERSION = 1;
 
-/** Above this many bytes of missing changes, merge by reloading (much faster than applying ops one by one). */
-const LARGE_MERGE_BYTES = 256 * 1024;
+/** Encoding of the chunks in `doc_chunks` (recorded in `meta.doc_format`). */
+export const DOC_FORMAT = 'yjs-update-v1';
+
+/** Above this many touched saves, re-project everything (cheaper than row-by-row diffs). */
+const FULL_PROJECTION_SAVES = 2000;
 
 export class DataStore {
   readonly repo: Repository;
-  private _doc: A.Doc<DataDoc> | null;
+  private _doc: DataDoc | null;
   private readonly actor: string | undefined;
   private readonly ctx: EditContext;
   private readonly compactEvery: number;
   private chunks = 0;
 
-  private constructor(
-    repo: Repository,
-    doc: A.Doc<DataDoc> | null,
-    actor: string | undefined,
-    ctx: EditContext,
-    compactEvery: number,
-  ) {
+  private constructor(repo: Repository, doc: DataDoc | null, actor: string | undefined, ctx: EditContext, compactEvery: number) {
     this.repo = repo;
     this._doc = doc;
     this.actor = actor;
@@ -87,20 +88,21 @@ export class DataStore {
     const db = options.driver;
     const count = db.get<{ n: number }>(`SELECT count(*) AS n FROM doc_chunks`)!.n;
     store.chunks = Math.max(0, count - 1);
+    const meta = (key: string) => db.get<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key])?.value;
+    if (count > 0 && meta('doc_format') !== DOC_FORMAT) {
+      throw new Error(`the document in this database is stored as ${meta('doc_format') ?? 'an older format'}, not ${DOC_FORMAT}`);
+    }
     repo.transaction(() => {
       if (count === 0) {
         const doc = createDataDoc(options.actor);
-        db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [A.save(doc)]);
+        db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [Y.encodeStateAsUpdate(doc)]);
+        store.setMeta('doc_format', DOC_FORMAT);
         store._doc = doc;
       }
-      const meta = (key: string) => db.get<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key])?.value;
-      const heads = meta('projected_heads');
-      if (count === 0 || meta('projection_version') !== String(PROJECTION_VERSION)) {
+      if (count === 0 || meta('projection_version') !== String(PROJECTION_VERSION) || !meta('projected_heads')) {
+        // New store, new projection code, or projection state lost (repair,
+        // or a write outside DataStore): load the document and rebuild.
         projectAll(store.doc, repo);
-        store.recordHeads();
-      } else if (!heads) {
-        // Projection state lost (repair, or a write outside DataStore): load and rebuild.
-        store.catchUpProjection(null);
         store.recordHeads();
       }
       // Otherwise the projection is current: chunks and projected heads are
@@ -109,29 +111,25 @@ export class DataStore {
     return store;
   }
 
-  private loadDoc(): A.Doc<DataDoc> {
+  private loadDoc(): DataDoc {
     const rows = this.repo.db.all<{ kind: string; bytes: Uint8Array }>(`SELECT kind, bytes FROM doc_chunks ORDER BY seq`);
-    const [first, ...rest] = rows;
-    if (!first || first.kind !== 'snapshot') throw new Error('document storage does not start with a snapshot');
-    // One load of all chunks concatenated (faster than loading them one by one).
-    return loadDataDoc(concat(rows.map((r) => new Uint8Array(r.bytes))), this.actor);
+    if (rows[0]?.kind !== 'snapshot') throw new Error('document storage does not start with a snapshot');
+    // One Yjs transaction applying every chunk (Yjs updates are commutative and idempotent).
+    return loadDataDoc(rows.map((r) => new Uint8Array(r.bytes)), this.actor);
   }
 
-  private catchUpProjection(heads: A.Heads | null): void {
-    const doc = this.doc;
-    if (heads && sameHeads(heads, A.getHeads(doc))) return;
-    if (heads && heads.length > 0 && A.hasHeads(doc, heads)) projectChanges(doc, this.repo, heads);
-    else projectAll(doc, this.repo);
+  private setMeta(key: string, value: string): void {
+    this.repo.db.run(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, value]);
   }
 
   private recordHeads(): void {
-    const set = `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
-    this.repo.db.run(set, ['projected_heads', JSON.stringify(A.getHeads(this.doc))]);
-    this.repo.db.run(set, ['projection_version', String(PROJECTION_VERSION)]);
+    // The state vector marks which projection is current; a missing value triggers a rebuild on open.
+    this.setMeta('projected_heads', JSON.stringify([...Y.decodeStateVector(Y.encodeStateVector(this.doc))].sort((a, b) => a[0] - b[0])));
+    this.setMeta('projection_version', String(PROJECTION_VERSION));
   }
 
-  /** The current document (immutable snapshot), loaded on first use. */
-  get doc(): A.Doc<DataDoc> {
+  /** The current document (a live Yjs document), loaded on first use. Edit it only through `change`. */
+  get doc(): DataDoc {
     if (!this._doc) this._doc = this.loadDoc();
     return this._doc;
   }
@@ -150,25 +148,47 @@ export class DataStore {
     return saveIdFor(this.repo.meId, placeId);
   }
 
-  /** Stores and projects a new document state reached from the current one. */
-  private commit(next: A.Doc<DataDoc>, full = false): void {
-    const before = A.getHeads(this.doc);
-    if (sameHeads(before, A.getHeads(next))) return;
-    const chunk = A.saveSince(next, before);
-    this.repo.transaction(() => {
-      this.repo.db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('incremental', ?)`, [chunk]);
-      // After a large merge, a full projection is cheaper than computing the diff.
-      if (full) projectAll(next, this.repo);
-      else projectChanges(next, this.repo, before);
-      this._doc = next;
-      this.recordHeads();
-    });
+  /**
+   * Runs `fn` on the document, collecting the Yjs updates it produced and
+   * what it touched, then stores and projects them in one SQLite
+   * transaction. On any error the in-memory replica is dropped and reloaded
+   * from SQLite on next use (Yjs has no rollback; SQLite does).
+   */
+  private apply<T>(fn: (doc: DataDoc) => T, extra: Uint8Array[] = []): T {
+    const doc = this.doc;
+    const updates: Uint8Array[] = [];
+    const onUpdate = (u: Uint8Array) => updates.push(u);
+    doc.on('update', onUpdate);
+    let out: { result: T; touched: Touched };
+    try {
+      out = trackChanges(doc, () => fn(doc), emptyTouched());
+    } catch (e) {
+      if (updates.length) this._doc = null;
+      throw e;
+    } finally {
+      doc.off('update', onUpdate);
+    }
+    const chunks = [...updates, ...extra];
+    if (chunks.length === 0) return out.result;
+    const chunk = chunks.length === 1 ? chunks[0]! : Y.mergeUpdates(chunks);
+    try {
+      this.repo.transaction(() => {
+        this.repo.db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('incremental', ?)`, [chunk]);
+        if (out.touched.saves.size > FULL_PROJECTION_SAVES) projectAll(doc, this.repo);
+        else projectChanges(doc, this.repo, out.touched);
+        this.recordHeads();
+      });
+    } catch (e) {
+      this._doc = null;
+      throw e;
+    }
     this.chunks++;
     if (this.chunks >= this.compactEvery) this.compact();
+    return out.result;
   }
 
   /**
-   * One atomic edit (one Automerge change, one SQLite transaction). Several
+   * One atomic edit (one Yjs transaction, one SQLite transaction). Several
    * operations in `fn` are applied together:
    *
    *   store.change(tx => { const id = tx.createTag({ name: 'Pizza' }); tx.addSaveTag(placeId, id); });
@@ -176,58 +196,46 @@ export class DataStore {
    * For a large import, prefer batches of a few hundred saves per change.
    */
   change<T>(fn: (tx: DocTx) => T, message?: string): T {
-    let out!: T;
-    const next = A.change(this.doc, message ? { message, time: Math.floor(this.ctx.now() / 1000) } : {}, (d) => {
-      out = fn(new DocTx(d, this.ctx));
-    });
-    this.commit(next);
-    return out;
+    // `message` becomes the Yjs transaction origin (local only; Yjs updates carry no message).
+    return this.apply((doc) => doc.transact(() => fn(new DocTx(doc, this.ctx)), message ?? 'local'));
   }
 
-  /** Merges another replica of my document (another device), then heals and projects. */
-  merge(remote: Uint8Array | A.Doc<DataDoc>): void {
+  /**
+   * Merges another replica of my document (another device): a Yjs update
+   * (`exportDoc()` of the other device, full or since my state vector) or a
+   * live Y.Doc. Then heals and projects.
+   */
+  merge(remote: Uint8Array | DataDoc): void {
     const local = this.doc;
-    const reload = (bytes: Uint8Array) =>
-      loadDataDoc(concat([A.save(local), bytes]), A.getActorId(local));
-    let next: A.Doc<DataDoc>;
-    let large = false;
-    if (remote instanceof Uint8Array && remote.byteLength > LARGE_MERGE_BYTES / 4) {
-      next = reload(remote); // saved documents are compressed (~4x)
-      large = true;
-    } else {
-      const other = remote instanceof Uint8Array ? loadDataDoc(remote) : remote;
-      const missing = A.getChanges(local, other);
-      if (missing.length === 0) return;
-      large = missing.reduce((n, c) => n + c.byteLength, 0) > LARGE_MERGE_BYTES;
-      next = large ? reload(A.save(other)) : A.merge(A.clone(local), other);
-    }
-    next = healDoc(next);
-    this.commit(next, large);
+    const update = remote instanceof Uint8Array ? remote : Y.encodeStateAsUpdate(remote, Y.encodeStateVector(local));
+    this.importChanges(update);
   }
 
-  /** Changes since `heads` (to send to another device); full document without argument. */
-  exportDoc(sinceHeads?: A.Heads): Uint8Array {
-    return sinceHeads ? A.saveSince(this.doc, sinceHeads) : A.save(this.doc);
+  /** Changes this device has that a device at `sinceStateVector` lacks; full document without argument. */
+  exportDoc(sinceStateVector?: Uint8Array): Uint8Array {
+    return sinceStateVector ? Y.encodeStateAsUpdate(this.doc, sinceStateVector) : Y.encodeStateAsUpdate(this.doc);
   }
 
-  /** Applies changes exported by another device with `exportDoc(heads)`. */
+  /** Applies a Yjs update exported by another device with `exportDoc(stateVector)`. */
   importChanges(bytes: Uint8Array): void {
-    const local = this.doc;
-    const large = bytes.byteLength > LARGE_MERGE_BYTES / 4;
-    let next = large
-      ? loadDataDoc(concat([A.save(local), bytes]), A.getActorId(local))
-      : A.loadIncremental(A.clone(local), bytes);
-    next = healDoc(next);
-    this.commit(next, large);
+    const doc = this.doc;
+    const extra: Uint8Array[] = [];
+    this.apply(() => {
+      Y.applyUpdate(doc, bytes, 'remote');
+      // Structs waiting for missing dependencies are not in the update event; keep the raw bytes for them.
+      if (doc.store.pendingStructs !== null || doc.store.pendingDs !== null) extra.push(bytes);
+      healDoc(doc);
+    }, extra);
   }
 
-  heads(): A.Heads {
-    return A.getHeads(this.doc);
+  /** My state vector (what I have), to ask another device for what I miss. Replaces Automerge heads. */
+  heads(): Uint8Array {
+    return Y.encodeStateVector(this.doc);
   }
 
-  /** Replaces the stored chunks by one snapshot. */
+  /** Replaces the stored chunks by one snapshot (`Y.encodeStateAsUpdate`). */
   compact(): void {
-    const bytes = A.save(this.doc);
+    const bytes = Y.encodeStateAsUpdate(this.doc);
     this.repo.transaction(() => {
       this.repo.db.run(`DELETE FROM doc_chunks`);
       this.repo.db.run(`INSERT INTO doc_chunks (kind, bytes) VALUES ('snapshot', ?)`, [bytes]);
@@ -244,6 +252,7 @@ export class DataStore {
   }
 
   close(): void {
+    this._doc?.destroy();
     this.repo.db.close();
   }
 
@@ -318,21 +327,4 @@ export class DataStore {
   purgeTrash(): number {
     return this.change((tx) => tx.purgeTrash());
   }
-}
-
-function concat(parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
-  let off = 0;
-  for (const p of parts) {
-    out.set(p, off);
-    off += p.byteLength;
-  }
-  return out;
-}
-
-function sameHeads(a: A.Heads, b: A.Heads): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
-  return sa.every((h, i) => h === sb[i]);
 }

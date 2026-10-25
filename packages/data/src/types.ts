@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Domain types shared by the SQLite layer, the Automerge documents and the
+ * Domain types shared by the SQLite layer, the Yjs document and the
  * list filters. Field names follow docs/SPEC.md, "Data model".
  */
 import type { Geometry, LineString, MultiLineString, MultiPolygon, Point, Polygon } from 'geojson';
@@ -35,7 +35,7 @@ export interface LatLon {
 }
 
 /**
- * The part of a place that travels with a save (in the Automerge document and,
+ * The part of a place that travels with a save (in the Yjs document and,
  * later, in packs): identity, name and geometry. Everything else about a place
  * (opening hours, website, OSM tags…) is a local cache fetched from OSM.
  */

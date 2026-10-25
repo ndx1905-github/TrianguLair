@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "license": "MPL-2.0",
-  "description": "TrianguLair local data: SQLite schema with spatial and full-text indexes, Automerge documents for the user's own data, list filters",
+  "description": "TrianguLair local data: SQLite schema with spatial and full-text indexes, Yjs document (pure JavaScript CRDT) for the user's own data, list filters",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -15,9 +15,6 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@automerge/automerge": "^3.5.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -41,5 +38,8 @@
     "expo-sqlite": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "yjs": "^13.6.33"
   }
 }
