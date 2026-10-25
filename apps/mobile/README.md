@@ -1,8 +1,25 @@
-# TrianguLair mobile app (phase 0 skeleton)
+# TrianguLair mobile app
 
 An Expo / React Native app for iOS and Android. The web build is for testing only.
-It shows a full-screen OpenStreetMap map with sample places in Paris, tag-colored pins,
-a collapsible tag filter bar and a bottom sheet for the selected place.
+Wired to the workspace packages `@triangulair/data` (local SQLite + document) and
+`@triangulair/osm` (Overpass, Photon, opening hours, photos):
+
+- **Map** (index): pins from `Repository.mapPins` for the visible area, clustering when zoomed
+  out (T-103 basic), filter bar driven by my tags and OSM criteria (open now, terrace, happy
+  hour, vegetarian), filtered display (matching pins in color, the others grey, faded, smaller).
+- **Add a place** (`/add`, T-105): nearby OSM places around the map center sorted by distance,
+  search as you type (Photon session) plus the local part (my and friends' places), long press /
+  right click on the map or "drop a point" for a manual point; each candidate says "Already in my
+  places" / "Saved by N friends"; the form sets tags (first = main), status, price, comment and its
+  visibility, sharing.
+- **Place card** (sheet on the map, side panel on wide screens, `/place/[id]` page; T-107 UI):
+  category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
+  reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
+  comment/sharing (saved immediately), move to trash. OSM data is refreshed when stale.
+- **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
+  same filter bar; two panes (list + card) on wide screens.
+- **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
+  on web to force one. No UI string is hard-coded in components.
 
 - **Expo SDK 57** (React Native 0.86, New Architecture, React 19.2), TypeScript, expo-router
 - **Map:** `@maplibre/maplibre-react-native` 11 on native and `maplibre-gl` 5 on web, behind one
@@ -17,6 +34,17 @@ Install dependencies from this folder. The app currently has its own lockfile, l
 ```sh
 npm install --workspaces=false
 ```
+
+The workspace packages are used from their TypeScript sources (`../../packages/*/src`), with no
+build step and no change to the root `package.json`:
+
+- `metro.config.js` watches `packages/data` and `packages/osm`, maps their names to their folders
+  (`extraNodeModules`, package `exports` honored) and resolves their runtime dependencies
+  (`@automerge/automerge`, `opening_hours`) from this app's `node_modules`. On web it redirects
+  Automerge to its base64 build (the default browser entry imports a `.wasm` file Metro cannot
+  bundle; temporary until packages/data moves to Yjs) and empties sql.js's Node-only imports.
+- `tsconfig.json` maps the package names to their sources (`paths`) and allows `.ts` import
+  extensions; `vitest.config.mts` has the same aliases.
 
 ### Web (testing)
 
@@ -43,11 +71,42 @@ You can also build locally with `npx expo run:android` / `npx expo run:ios` (nee
 The bundle ID / package `org.triangulair.app` is a **placeholder** until the final identifier is chosen.
 Before the first EAS build, run `eas init` to link a project (it adds `extra.eas.projectId`).
 
+### Data on each platform
+
+- **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
+  `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
+  Type-checked, not run yet: the package's Automerge (WebAssembly) does not run on Hermes; the move
+  to Yjs removes that blocker.
+- **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
+  the database file saved to IndexedDB after each write (debounced, and on page hide). When
+  IndexedDB is unavailable the data stays in memory and the map says so. sql.js has no R*Tree/FTS5:
+  the package's fallback indexes are used.
+- **Demo data**: on first launch the 15 sample places in Paris are seeded as tags, my saves (status,
+  price, comments), a friend's saves ("Léa") and illustrative OSM info (opening hours, terrace,
+  happy hours) so the filters have data (`src/data/demo.ts`).
+- Owner id is a placeholder (`local-me`) until identity creation exists; the Automerge actor is a
+  per-device random id kept in localStorage / expo-sqlite's kv-store.
+
+### OSM services, offline and fixture mode
+
+All OSM calls go through one `createOsmClient()` (`src/osm/client.ts`). Failures never block a
+screen: the add screen falls back to the places on this device ("Nearby, on this device") with a
+clear message, the card keeps its cached info. **Fixture mode** answers every OSM request with the
+osm package's test fixtures (synthetic places in the Marais), for offline demos:
+
+```sh
+EXPO_PUBLIC_OSM_FIXTURES=1 npx expo export --platform web
+```
+
+In fixture mode the demo seed also saves "Trattoria Da Lucia" (a fixture place), so the add screen
+shows "Already in my places".
+
 ### Checks
 
 ```sh
-npm run typecheck   # tsc --noEmit
-npm test            # vitest: pin bands, SVG, filtering, layout, theme, camera
+npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app)
+npm test            # vitest: pins, clustering, filters, card wording, add-place logic, list query,
+                    # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity)
 ```
 
 ## Configuration
@@ -65,13 +124,17 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 ## Layout
 
 ```
-src/app/              expo-router screens (_layout, index = map screen)
-src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts
-src/components/       FilterBar, PlaceSheet, TagChip, MapAttribution
-src/pins/             bands.ts (band computation), pinSvg.ts (pin SVG), fromPlace.ts
-src/places/           types, mockPlaces (15 places in Paris), filter.ts
-src/theme/            tags.ts (10 tag colors), icons.ts (MDI icon paths), colors.ts (light/dark UI)
-src/config.ts         map style URLs, attribution, initial camera
+src/app/              expo-router screens: index (map), list, add, place/[id], _layout (providers)
+src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
+src/components/       FilterBar, PlaceSheet, PlaceCard, SaveEditor, ScreenHeader, DataGate, ui
+src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPersistence, demo, usePlaces
+src/osm/              client (one OSM client), fixtureFetch + fixtures (fixture mode), errors
+src/places/           pure logic: filters, clustering, model, card, add, list, camera
+src/pins/             bands.ts, pinSvg.ts, build.ts (pins from places and the filter)
+src/i18n/             core (plurals, placeholders), en, fr, provider
+src/state/            AppState (filter, last map area, focus) shared by the screens
+src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
+src/config.ts         map style URLs, attribution, initial camera, fixture flag
 ```
 
 ## Pins
@@ -86,6 +149,10 @@ src/config.ts         map style URLs, attribution, initial camera
 - **Friends-only places** (`ownerIsMe: false`): the bands are drawn at 50% opacity over white, which
   gives a lighter pin, and the whole pin is slightly translucent.
 - **Selected pin:** drawn 1.3× larger.
+- **Filter active:** matching pins take the color and icon of the filtered tag; the others (and
+  places lacking the information, spec "unknown info") are grey, 40% opacity and 0.72× smaller.
+- **Clusters:** computed in JS on the viewport's pins (radius 56 px, none from zoom 15); a bubble in
+  the majority color of its matching members, grey if none matches; tapping zooms in.
 
 Both platforms use the same SVG string (`pinSvg()`):
 
@@ -94,7 +161,7 @@ Both platforms use the same SVG string (`pinSvg()`):
 
 This is simple, and native and web look the same, which is good enough for tens or a few hundred
 pins. **Later:** move native rendering to a `GeoJSONSource` + `SymbolLayer`, with one pre-rendered
-image per color/icon combination (made at build time or with Skia) and clustering.
+image per color/icon combination (made at build time or with Skia) and engine-side clustering.
 
 ## Responsiveness and accessibility
 
@@ -111,7 +178,20 @@ image per color/icon combination (made at build time or with Skia) and clusterin
 
 ## Screenshots
 
-`docs/screenshot-web.png` (phone, place sheet open), `docs/screenshot-web-tablet.png` (tablet, side
-panel) and `docs/screenshot-web-dark.png` (phone, dark) were taken from the web export with Playwright
-(Chromium). The sandbox that produced them had no access to `tiles.openfreemap.org`, so the style
-request was answered with a background-only placeholder: the base map is blank, pins and UI are real.
+Taken from the web export in fixture mode with Playwright (Chromium), clock set to Friday
+23 October 2026, 18:30 in Paris (`scripts/shots.py`). The sandbox had no access to the tile server
+or photo hosts: the map style is answered with a background-only placeholder (blank base map) and
+photos with a placeholder image; pins, clusters, UI, data and credit lines are real.
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-map-clusters.png` | Map zoomed out: clusters in the majority tag color, multi-tag pins, friends' places faded |
+| `docs/phone-map-filters.png` | Filters Bar + Terrace: matching pins in color, the others and their clusters grey |
+| `docs/phone-place-card.png` | Card of an OSM place: opening line, address, chips, Panoramax photos with credits |
+| `docs/phone-add-nearby.png` | Add screen: nearby places by distance, "Already in my places" |
+| `docs/phone-add-search.png`, `docs/phone-add-form.png` | Search as you type, then the save form |
+| `docs/phone-list.png`, `docs/phone-list-search.png` | List (recent), text search in comments |
+| `docs/tablet-map-filter-card.png` | Tablet: "Open now" filter, card as side panel with happy hour |
+| `docs/tablet-list.png` | Tablet: list by distance and card side by side |
+| `docs/phone-dark-card.png` | Dark mode |
+| `docs/phone-fr-add.png` | French UI |

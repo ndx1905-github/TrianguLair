@@ -16,22 +16,53 @@ export interface MapPin extends LatLon {
   iconPath: string;
   /** Friends-only place: lighter / translucent pin. */
   faded: boolean;
+  /** Outside the active filter: grey, translucent and smaller (spec "Filtered display"). */
+  greyed: boolean;
+}
+
+/** A bubble standing for several pins when zoomed out. */
+export interface MapCluster extends LatLon {
+  id: string;
+  count: number;
+  /** Majority tag color; null = no member matches the filter (grey). */
+  color: string | null;
+  label: string;
+}
+
+/** Visible area, reported after each camera move. */
+export interface MapRegion {
+  /** [west, south, east, north]. */
+  bbox: [number, number, number, number];
+  center: LatLon;
+  zoom: number;
+}
+
+/** A camera request; `key` must change for the same position to be applied again. */
+export interface CameraTarget {
+  center: LatLon;
+  zoom: number;
+  key: number;
 }
 
 /**
  * Common interface of Map.native.tsx (MapLibre React Native) and Map.web.tsx
- * (MapLibre GL JS). `center` / `zoom` are the initial camera; later changes
- * re-center the map.
+ * (MapLibre GL JS). `center` / `zoom` are the initial camera; `camera` moves
+ * the map later (cluster taps, "show on map").
  */
 export interface MapViewProps {
   styleUrl: string;
   center: LatLon;
   zoom: number;
+  camera?: CameraTarget | null;
   pins: MapPin[];
+  clusters?: MapCluster[];
   selectedPinId?: string | null;
   onPinPress?: (id: string) => void;
+  onClusterPress?: (id: string) => void;
   onLongPress?: (at: LatLon) => void;
   /** Tap on the map background (not on a pin). */
   onMapPress?: (at: LatLon) => void;
+  /** After the camera stops moving (and once when the map is ready). */
+  onRegionChange?: (region: MapRegion) => void;
   style?: StyleProp<ViewStyle>;
 }

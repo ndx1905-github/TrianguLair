@@ -2,7 +2,10 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { DataProvider } from '../data/DataProvider';
 import { ThemeProvider, useIsDark, useUiColors } from '../hooks/useUiColors';
+import { I18nProvider } from '../i18n';
+import { AppStateProvider } from '../state/AppState';
 
 function ThemedStack() {
   const c = useUiColors();
@@ -23,9 +26,15 @@ function ThemedStack() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <ThemedStack />
-      </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider>
+          <DataProvider>
+            <AppStateProvider>
+              <ThemedStack />
+            </AppStateProvider>
+          </DataProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }

@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '../hooks/useLayout';
 import { useUiColors } from '../hooks/useUiColors';
-import type { Place } from '../places/types';
-import { TagChip } from './TagChip';
+import { PlaceCard } from './PlaceCard';
 
 interface Props {
-  place: Place | null;
+  placeId: string | null;
   onClose: () => void;
   /** Height covered at the bottom of the screen (0 when hidden or in side-panel mode). */
   onCoverHeight?: (h: number) => void;
@@ -19,15 +18,14 @@ interface Props {
  * - Compact screens (phones): bottom sheet docked at the bottom, full width.
  * - Wide screens (tablets, unfolded foldables, landscape): side panel on the
  *   right, next to the map (spec "Screen adaptation").
- * Phase 0: no drag gesture (tap the map or the close button to dismiss).
  */
-export function PlaceSheet({ place, onClose, onCoverHeight }: Props) {
+export function PlaceSheet({ placeId: place, onClose, onCoverHeight }: Props) {
   const c = useUiColors();
   const insets = useSafeAreaInsets();
   const { wide, sheetWidth, gutter, height } = useLayout();
   const anim = useRef(new Animated.Value(0)).current;
   // Keep the last place rendered while the sheet animates out.
-  const [shown, setShown] = useState<Place | null>(place);
+  const [shown, setShown] = useState<string | null>(place);
 
   useEffect(() => {
     if (place) setShown(place);
@@ -64,7 +62,7 @@ export function PlaceSheet({ place, onClose, onCoverHeight }: Props) {
         width: '100%' as const,
         left: 0,
         bottom: 0,
-        maxHeight: Math.round(height * 0.6),
+        maxHeight: Math.round(height * 0.62),
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         paddingBottom: insets.bottom + 28,
@@ -85,35 +83,11 @@ export function PlaceSheet({ place, onClose, onCoverHeight }: Props) {
         },
       ]}
       onLayout={(e) => onCoverHeight?.(wide || !place ? 0 : e.nativeEvent.layout.height)}
-      accessibilityLabel={`Place: ${shown.name}`}
       testID="place-sheet"
     >
       {!wide && <View style={[styles.grabber, { backgroundColor: c.border }]} />}
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.name, { color: c.text }]} accessibilityRole="header">
-            {shown.name}
-          </Text>
-          <Pressable
-            onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-            hitSlop={10}
-            style={[styles.close, { backgroundColor: c.surfaceAlt }]}
-          >
-            <Text style={{ color: c.textMuted, fontSize: 16 }} maxFontSizeMultiplier={1.5}>
-              ✕
-            </Text>
-          </Pressable>
-        </View>
-        <Text style={[styles.owner, { color: c.textMuted }]}>
-          {shown.ownerIsMe ? 'In my places' : 'From friends’ lists'}
-        </Text>
-        <View style={styles.tags}>
-          {shown.tags.map((t) => (
-            <TagChip key={t} tag={t} />
-          ))}
-        </View>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <PlaceCard key={shown} placeId={shown} onClose={onClose} onDeleted={onClose} />
       </ScrollView>
     </Animated.View>
   );
@@ -130,17 +104,6 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   scroll: { flexGrow: 0 },
-  content: { paddingBottom: 2 },
+  content: { paddingBottom: 12 },
   grabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, marginBottom: 10 },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 4 },
-  name: { flex: 1, fontSize: 22, fontWeight: '700' },
-  close: {
-    minWidth: 44,
-    minHeight: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  owner: { fontSize: 14, marginTop: 4 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
 });
