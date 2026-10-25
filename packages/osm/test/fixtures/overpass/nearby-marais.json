@@ -1,0 +1,133 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.5 1bd436f1",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-25T06:41:12Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 9123456701,
+      "lat": 48.8596123,
+      "lon": 2.3631872,
+      "tags": {
+        "amenity": "bar",
+        "name": "Le Comptoir des Archives",
+        "opening_hours": "Mo-Sa 17:00-02:00",
+        "happy_hours": "Mo-Sa 17:00-20:00",
+        "outdoor_seating": "sidewalk",
+        "addr:housenumber": "41",
+        "addr:street": "Rue des Archives",
+        "addr:postcode": "75003",
+        "addr:city": "Paris",
+        "contact:instagram": "comptoirdesarchives"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456702,
+      "lat": 48.8591004,
+      "lon": 2.3621507,
+      "tags": {
+        "amenity": "restaurant",
+        "name": "Trattoria Da Lucia",
+        "cuisine": "italian;pizza",
+        "diet:vegetarian": "yes",
+        "diet:vegan": "limited",
+        "diet:gluten_free": "no",
+        "outdoor_seating": "yes",
+        "reservation": "recommended",
+        "opening_hours": "Tu-Su 12:00-14:30,19:00-22:30; PH off",
+        "website": "www.trattoria-dalucia.example",
+        "phone": "+33 1 42 00 00 01;+33 6 00 00 00 02",
+        "wheelchair": "limited",
+        "addr:housenumber": "12",
+        "addr:street": "Rue de Bretagne",
+        "addr:postcode": "75003",
+        "addr:city": "Paris",
+        "name:it": "Trattoria Da Lucia"
+      }
+    },
+    {
+      "type": "way",
+      "id": 412345678,
+      "center": { "lat": 48.8579912, "lon": 2.3624401 },
+      "tags": {
+        "tourism": "museum",
+        "museum": "history",
+        "name": "Musée des Cartes Anciennes",
+        "fee": "yes",
+        "charge": "12 EUR; 8 EUR reduced",
+        "opening_hours": "Tu-Su 10:00-18:00; Mo off; PH off",
+        "wikidata": "Q99999901",
+        "wikimedia_commons": "Category:Musée des Cartes Anciennes",
+        "image": "https://commons.wikimedia.org/wiki/File:Mus%C3%A9e_des_Cartes_Anciennes_-_fa%C3%A7ade.jpg",
+        "building": "yes",
+        "addr:housenumber": "23",
+        "addr:street": "Rue de Sévigné",
+        "addr:postcode": "75003",
+        "addr:city": "Paris"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456703,
+      "lat": 48.8590377,
+      "lon": 2.3619902,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Café Pendule",
+        "opening_hours": "Mo-Fr 08:00-18:00; Sa,Su 09:00-19:00",
+        "internet_access": "wlan",
+        "diet:vegan": "only",
+        "cuisine": "coffee_shop"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456704,
+      "lat": 48.8594511,
+      "lon": 2.3612045,
+      "tags": {
+        "shop": "books",
+        "name": "Librairie du Haut Marais",
+        "second_hand": "yes",
+        "opening_hours": "Tu-Sa 10:30-19:30"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456705,
+      "lat": 48.8589901,
+      "lon": 2.3620411,
+      "tags": {
+        "amenity": "parking",
+        "name": "Parking Saint-Gilles",
+        "access": "customers"
+      }
+    },
+    {
+      "type": "node",
+      "id": 9123456706,
+      "lat": 48.8601200,
+      "lon": 2.3633100,
+      "tags": {
+        "shop": "cheese",
+        "name": "Fromagerie Martin",
+        "organic": "only"
+      }
+    },
+    {
+      "type": "relation",
+      "id": 1234567,
+      "center": { "lat": 48.8574000, "lon": 2.3651000 },
+      "tags": {
+        "leisure": "park",
+        "name": "Square du Temple-Fictif",
+        "type": "multipolygon",
+        "opening_hours": "Mo-Su 08:00-sunset"
+      }
+    }
+  ]
+}
