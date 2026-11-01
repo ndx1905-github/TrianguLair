@@ -1,0 +1,571 @@
+{
+ "structure": "invitation-link",
+ "spec": "invitation-link.md",
+ "description": "Short invitation link (version 5), its derivations and listing token, and the invitee-side acceptance against the owner's index.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {
+  "i1": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[{\"file\":\"packs/b2b256-xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY.bin\",\"hash\":\"b2b256:xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY\"},{\"file\":\"media/b2b256-_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk.bin\",\"hash\":\"b2b256:_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk\"}],\"public\":{\"file\":\"public/lists.geojson\",\"hash\":\"b2b256:jAp1E2k92V9nIEoIZv0KdEUUJBIDMO5lTbpHG91OLU0\"},\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":1,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"LK9UzGfQ2QcF45p8qwhvGCHsqtJatUZm1tuo8HLNM8HfrMlLHvldoeBRbp7hJDrcsycXAqnRYdyll5IE_Vf4Aw\",\"updated\":\"2026-10-20T12:00:00.000Z\",\"version\":4}"
+ },
+ "vectors": [
+  {
+   "name": "link-ok",
+   "description": "inv1: Alice, rotation 0, expires T0 + 7 days.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "id": "L3FHmE2hCtBSlA3ej3n_RA",
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "location": "https://storage.example.org/alice/",
+     "rotation": 0,
+     "expires": "2026-10-27T12:00:00.000Z",
+     "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+     "invitation_secret_hex": "0f72e6d59aa602cf7dc7fc59310985999fbb286b6b75f6baec363b2ac779746d",
+     "token": "b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc"
+    }
+   },
+   "details": {
+    "link_bytes_hex": "4905aea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf969be71b7eb3364fb60c1c8cefda56e7194000000006ae0924073746f726167652e6578616d706c652e6f72672f616c6963652f",
+    "seed_hex": "be71b7eb3364fb60c1c8cefda56e7194",
+    "id_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d69642d76310abe71b7eb3364fb60c1c8cefda56e7194",
+    "secret_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d6b65792d76310abe71b7eb3364fb60c1c8cefda56e7194",
+    "token_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d6c697374696e672d76320aaea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf969c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719000000006ae09240002268747470733a2f2f73746f726167652e6578616d706c652e6f72672f616c6963652f",
+    "full_link": "https://triangulair.app/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv"
+   }
+  },
+  {
+   "name": "link-full-url",
+   "description": "The full https://triangulair.app/i#... link: everything after \"#\" is the fragment.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "https://triangulair.app/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "id": "L3FHmE2hCtBSlA3ej3n_RA",
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "location": "https://storage.example.org/alice/",
+     "rotation": 0,
+     "expires": "2026-10-27T12:00:00.000Z",
+     "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+     "invitation_secret_hex": "0f72e6d59aa602cf7dc7fc59310985999fbb286b6b75f6baec363b2ac779746d",
+     "token": "b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc"
+    }
+   }
+  },
+  {
+   "name": "link-expired",
+   "description": "Reader clock = expires.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-27T12:00:00.000Z"
+   },
+   "expect": {
+    "error": "EXPIRED"
+   }
+  },
+  {
+   "name": "link-max-ahead",
+   "description": "expires exactly 7 days + 5 minutes after the reader's clock.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauChfHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "id": "L3FHmE2hCtBSlA3ej3n_RA",
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "location": "https://storage.example.org/alice/",
+     "rotation": 0,
+     "expires": "2026-10-27T13:05:00.000Z",
+     "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+     "invitation_secret_hex": "0f72e6d59aa602cf7dc7fc59310985999fbb286b6b75f6baec363b2ac779746d",
+     "token": "b2b256:aZ7hgdlTzKiBDc8kbmbTnTSm35QZ9T3MAsldD3nx1Iw"
+    }
+   }
+  },
+  {
+   "name": "link-too-far-ahead",
+   "description": "expires 7 days + 5 minutes + 1 s after the reader's clock.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauChfXN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-bad-magic",
+   "description": "First byte 0x48.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SAWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-version-4",
+   "description": "Version 4 (the old signed link).",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQSupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "link-version-0",
+   "description": "Version 0.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQCupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-no-address",
+   "description": "No address bytes.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQA",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-truncated",
+   "description": "40 bytes.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZA",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-address-504",
+   "description": "Address of 504 bytes (512 with \"https://\").",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGV4YW1wbGUub3JnL2FhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "id": "L3FHmE2hCtBSlA3ej3n_RA",
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "location": "https://example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "rotation": 0,
+     "expires": "2026-10-27T12:00:00.000Z",
+     "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+     "invitation_secret_hex": "0f72e6d59aa602cf7dc7fc59310985999fbb286b6b75f6baec363b2ac779746d",
+     "token": "b2b256:QrvJ6zUaw5GwJGcmKnOsAL65_d_v7wAAtZdARwtNw2c"
+    }
+   }
+  },
+  {
+   "name": "link-address-505",
+   "description": "Address of 505 bytes.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGV4YW1wbGUub3JnL2FhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-too-long",
+   "description": "Fragment of 751 characters.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-local-address",
+   "description": "Address \"localhost/\".",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGxvY2FsaG9zdC8",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-non-canonical-address",
+   "description": "Address \"EXAMPLE.org/\".",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQEVYQU1QTEUub3JnLw",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-address-invalid-utf8",
+   "description": "Address with an invalid UTF-8 byte.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGV4YW1wbGUub3JnL_8",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-85-bytes",
+   "description": "A link of 85 bytes (its last base64url character has 4 unused bits, here zero).",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2UveA",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "id": "L3FHmE2hCtBSlA3ej3n_RA",
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "location": "https://storage.example.org/alice/x",
+     "rotation": 0,
+     "expires": "2026-10-27T12:00:00.000Z",
+     "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+     "invitation_secret_hex": "0f72e6d59aa602cf7dc7fc59310985999fbb286b6b75f6baec363b2ac779746d",
+     "token": "b2b256:g7dbVYXdllatQPQbjA6hremfOzbLvu-_os-3yV8NHfI"
+    }
+   }
+  },
+  {
+   "name": "link-non-canonical-b64",
+   "description": "The same link with a non-zero unused bit in the last character.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2UveB",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "link-padding",
+   "description": "base64 \"=\" padding.",
+   "op": "parse_invitation_link",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv=",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "token-inv1",
+   "description": "Listing token of inv1 (in index i1).",
+   "op": "invitation_token",
+   "input": {
+    "owner_public_hex": "aea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf969",
+    "invitation_public_hex": "c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719",
+    "rotation": 0,
+    "expires": 1793102400,
+    "location": "https://storage.example.org/alice/"
+   },
+   "expect": {
+    "ok": {
+     "token": "b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc"
+    }
+   }
+  },
+  {
+   "name": "accept-ok",
+   "description": "inv1 against index i1 read at the link's address.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "token": "b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc",
+     "rotation": 0,
+     "seq": 1
+    }
+   }
+  },
+  {
+   "name": "accept-lastseen",
+   "description": "An existing contact: index i2 (lists inv1) with lastSeen i1.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[{\"file\":\"packs/b2b256-xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY.bin\",\"hash\":\"b2b256:xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY\"},{\"file\":\"media/b2b256-_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk.bin\",\"hash\":\"b2b256:_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk\"}],\"public\":{\"file\":\"public/lists.geojson\",\"hash\":\"b2b256:jAp1E2k92V9nIEoIZv0KdEUUJBIDMO5lTbpHG91OLU0\"},\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":2,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"76JoFkjvnfIuN6S7psUT9mhwAcGDosmPktz-VRHM1yxNLzuPg5nyY6LIdz89e1BL_970BElFYU6hcaEqnDqjAQ\",\"updated\":\"2026-10-20T12:30:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z",
+    "lastSeen": {
+     "$ref": "i1"
+    }
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "token": "b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc",
+     "rotation": 0,
+     "seq": 2
+    }
+   }
+  },
+  {
+   "name": "accept-rollback-lastseen",
+   "description": "An existing contact must not be reset: i1 with lastSeen i2.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z",
+    "lastSeen": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[{\"file\":\"packs/b2b256-xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY.bin\",\"hash\":\"b2b256:xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY\"},{\"file\":\"media/b2b256-_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk.bin\",\"hash\":\"b2b256:_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk\"}],\"public\":{\"file\":\"public/lists.geojson\",\"hash\":\"b2b256:jAp1E2k92V9nIEoIZv0KdEUUJBIDMO5lTbpHG91OLU0\"},\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":2,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"76JoFkjvnfIuN6S7psUT9mhwAcGDosmPktz-VRHM1yxNLzuPg5nyY6LIdz89e1BL_970BElFYU6hcaEqnDqjAQ\",\"updated\":\"2026-10-20T12:30:00.000Z\",\"version\":4}"
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": false
+   }
+  },
+  {
+   "name": "accept-not-listed",
+   "description": "The owner's index does not list the invitation.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:4T3YKSqQ5mPwq5RgoPnssRrJFlq36B3tZ3J6pUM-EXY\",\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":3,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"rDkIAST9ta5Z8FuMWUo3q1VHTkmeXd3dfWbcB5l1kfu8d3fPrcuoIFjQo2VZppZDNUcITJR-CR4gAIavXRzKCA\",\"updated\":\"2026-10-20T12:00:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-tampered-expiry",
+   "description": "Expiry shortened by one hour in the link: token mismatch.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCEMHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-tampered-seed",
+   "description": "Another seed (another invitation key): token mismatch.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5aVfA_ReBCmFaAaYIUgQdMUAAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-link-rotation-ahead",
+   "description": "Link rotation 1, index rotation 0: the index is older than the link.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAABauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "ROLLBACK",
+    "fork": false
+   }
+  },
+  {
+   "name": "accept-rewritten-address",
+   "description": "Address rewritten; the genuine index served there redirects to the certified address.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGV2aWwuZXhhbXBsZS5uZXQveC8",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "MOVED",
+    "location": "https://storage.example.org/alice/"
+   }
+  },
+  {
+   "name": "accept-rewritten-address-followed",
+   "description": "After following MOVED: the token binds the address (V4-04).",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQGV2aWwuZXhhbXBsZS5uZXQveC8",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z",
+    "read_from": "https://storage.example.org/alice/"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-other-owner",
+   "description": "The link names Bob's master key, the index is Alice's.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQV6JruZfDI1lxnwTQYmwZrDfZzAM5lrFgA4cw4fBQOyFb5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  },
+  {
+   "name": "accept-later-rotation",
+   "description": "Index of rotation 1: a key change cancelled the invitation (R5-01).",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:4T3YKSqQ5mPwq5RgoPnssRrJFlq36B3tZ3J6pUM-EXY\",\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"seq\":1,\"sharing_cert\":{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\"},\"signature\":\"gAWdkPmQ9O_ejQA7_2wf6--Rq5NN-ki_z-5tqaZDV75fYnVHF4ARBvAJ9SLb19OFcWbefVekegf9ejh72JqcBg\",\"updated\":\"2026-10-20T12:40:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-later-rotation-still-listed",
+   "description": "A faulty writer lists inv1 under rotation 1: refused by the reader too.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"seq\":2,\"sharing_cert\":{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\"},\"signature\":\"YUhRK-2HWLi4zeuF7GFlyI5K4i7k1elajapqmi9hRhYdsLWZFiHuk9cv_tao9y6SIQkAX3P7QE2jPgMEZkR3Dg\",\"updated\":\"2026-10-20T12:00:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-expired",
+   "description": "At expiry.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": {
+     "$ref": "i1"
+    },
+    "now": "2026-10-27T12:00:00.000Z"
+   },
+   "expect": {
+    "error": "EXPIRED"
+   }
+  },
+  {
+   "name": "accept-tampered-index",
+   "description": "Index text altered.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:ZjsXDCcG736olNCDBnuJOULk6t3zO4fijAe64eYMRFc\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[{\"file\":\"packs/b2b256-xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY.bin\",\"hash\":\"b2b256:xlF_q23FUZg21sIv0EDyh9_kz7Zp35NGo9cpNso9WJY\"},{\"file\":\"media/b2b256-_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk.bin\",\"hash\":\"b2b256:_rfSBLVwZaMnkDenPK_jno645rqJ6yTrcDhdTdCkDYk\"}],\"public\":{\"file\":\"public/lists.geojson\",\"hash\":\"b2b256:jAp1E2k92V9nIEoIZv0KdEUUJBIDMO5lTbpHG91OLU0\"},\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":2,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"LK9UzGfQ2QcF45p8qwhvGCHsqtJatUZm1tuo8HLNM8HfrMlLHvldoeBRbp7hJDrcsycXAqnRYdyll5IE_Vf4Aw\",\"updated\":\"2026-10-20T12:00:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "accept-stolen-device-tofu",
+   "description": "RESIDUAL: d2's link and index under the old certificate, for a new contact without anchor.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5aUQ8-FcVXp0Y_drPiwkvThwAAAAAauCVxHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:bg03rUOeVYdfAiOuhB_ihupwBrevcMvJL_2rZXy3EGI\",\"device\":\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\",\"signature\":\"hMBt-Wiz1NIehKtH5h6h-E06go7H6Ywg-v2kggeFXuhkrBuRIcQTMRZu7dClR1RMVpRXdXoPvUnvRcEcu18oAQ\"},\"invitations\":[\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:HNqiA1DSWXKMzDH9svPIGxOi-hE0XU2maOiE9v6ZAO8\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[],\"seq\":3,\"sharing_cert\":{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\"},\"signature\":\"u7hEDtU7MeZBmF0ZLq6NsEhcLAWVliYglKDPKLpaz6vOewbhciXzvDwGOYxJeKwZNn1zh0VkhDalgs9zTnyfCw\",\"updated\":\"2026-10-20T12:15:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "token": "b2b256:HNqiA1DSWXKMzDH9svPIGxOi-hE0XU2maOiE9v6ZAO8",
+     "rotation": 0,
+     "seq": 3
+    }
+   }
+  },
+  {
+   "name": "accept-stolen-device-after-declaration",
+   "description": "The index after the declaration (rotation 1) lists nothing of d2.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5aUQ8-FcVXp0Y_drPiwkvThwAAAAAauCVxHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"invitations\":[\"b2b256:4T3YKSqQ5mPwq5RgoPnssRrJFlq36B3tZ3J6pUM-EXY\",\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"seq\":1,\"sharing_cert\":{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\"},\"signature\":\"gAWdkPmQ9O_ejQA7_2wf6--Rq5NN-ki_z-5tqaZDV75fYnVHF4ARBvAJ9SLb19OFcWbefVekegf9ejh72JqcBg\",\"updated\":\"2026-10-20T12:40:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "NOT_LISTED"
+   }
+  },
+  {
+   "name": "accept-revoked-device-index",
+   "description": "d2 signs an index under the certificate that revokes it.",
+   "op": "accept_invitation",
+   "input": {
+    "link": "SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5aUQ8-FcVXp0Y_drPiwkvThwAAAABauCVxHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "index": "{\"device_cert\":{\"box\":\"x25519:bg03rUOeVYdfAiOuhB_ihupwBrevcMvJL_2rZXy3EGI\",\"device\":\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\",\"signature\":\"hMBt-Wiz1NIehKtH5h6h-E06go7H6Ywg-v2kggeFXuhkrBuRIcQTMRZu7dClR1RMVpRXdXoPvUnvRcEcu18oAQ\"},\"invitations\":[\"b2b256:06vV_XRfSyJaYwoXStsHlQLFeokL9E2d5r6wHYENr74\",\"b2b256:7Y1pA1xuC_32Y_zVU1d7OKKr6PZZv-PzlDASc9DTX0M\",\"b2b256:mTVNN6YOyioJwj7CCzZp4wa3J0K7NzOv23ubshTZBQw\",\"b2b256:vLs_oJUcRBxElWERuAkJmqWjMHbWGSCWCoysyjKcWcg\"],\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"packs\":[],\"reads\":[\"4\"],\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"seq\":2,\"sharing_cert\":{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\"},\"signature\":\"qOua1qKCi36Og0D7rPJKXF3Bq3ThmWn0id6TzQ8ydgf1D_7UW53SwQlCJkcJxKgwrrVgSnNP4YQDLPxvTqM1CQ\",\"updated\":\"2026-10-20T12:00:00.000Z\",\"version\":4}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "error": "REVOKED"
+   }
+  }
+ ]
+}

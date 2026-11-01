@@ -9,7 +9,10 @@
   "types": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "vectors": "UPDATE_VECTORS=1 vitest run test/vectors.test.ts",
+    "reader": "python3 -B ../../docs/format/reference-reader/run_vectors.py",
+    "fuzz:long": "FUZZ_RUNS=20000 vitest run test/fuzz.test.ts"
   },
   "dependencies": {
     "@scure/bip39": "^2.4.0",
@@ -17,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "fast-check": "^4.10.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   }

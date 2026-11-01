@@ -1,0 +1,807 @@
+{
+ "structure": "encoding",
+ "spec": "README.md",
+ "description": "Canonical JSON (the JCS subset), public key strings, read addresses.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "json-simple",
+   "description": "Already canonical.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1,\"b\":[true,false,null],\"c\":\"x\"}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":1,\"b\":[true,false,null],\"c\":\"x\"}"
+    }
+   }
+  },
+  {
+   "name": "json-nested-sorted",
+   "description": "Keys sorted at every depth.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":{\"b\":1,\"c\":{\"d\":[{\"e\":\"f\",\"g\":0}]}},\"z\":-5}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":{\"b\":1,\"c\":{\"d\":[{\"e\":\"f\",\"g\":0}]}},\"z\":-5}"
+    }
+   }
+  },
+  {
+   "name": "json-raw-non-ascii",
+   "description": "Non-ASCII characters are written raw (UTF-8), not escaped.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"é漢😀\"}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":\"é漢😀\"}"
+    }
+   }
+  },
+  {
+   "name": "json-utf16-key-order",
+   "description": "Keys sort by UTF-16 code units: U+1F600 (D83D DE00) sorts BEFORE U+FFFD, unlike code-point order.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"😀\":1,\"�\":2}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"😀\":1,\"�\":2}"
+    }
+   }
+  },
+  {
+   "name": "json-control-escapes",
+   "description": "Control characters: \\b \\t \\n \\f \\r short forms, others \\u00XX lowercase; quote and backslash escaped.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"\\u0001\\b\\t\\n\\f\\r\\\"\\\\\\u001f\"}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":\"\\u0001\\b\\t\\n\\f\\r\\\"\\\\\\u001f\"}"
+    }
+   }
+  },
+  {
+   "name": "json-del-and-u2028-raw",
+   "description": "U+007F and U+2028 are written raw.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\" \"}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":\" \"}"
+    }
+   }
+  },
+  {
+   "name": "json-lone-surrogate",
+   "description": "A lone surrogate is written as a lowercase \\udXXX escape and ACCEPTED (outside I-JSON/JCS; see README \"Canonical JSON\").",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"\\ud800\"}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":\"\\ud800\"}"
+    }
+   }
+  },
+  {
+   "name": "json-max-safe-int",
+   "description": "Largest safe integers.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":9007199254740991,\"b\":-9007199254740991}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{\"a\":9007199254740991,\"b\":-9007199254740991}"
+    }
+   }
+  },
+  {
+   "name": "json-empty-object",
+   "description": "Empty object.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{}"
+   },
+   "expect": {
+    "ok": {
+     "canonical": "{}"
+    }
+   }
+  },
+  {
+   "name": "json-whitespace",
+   "description": "Insignificant whitespace.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\": 1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-trailing-newline",
+   "description": "Trailing newline.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1}\n"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-key-order",
+   "description": "Keys not sorted.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"b\":1,\"a\":2}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-duplicate-key",
+   "description": "Duplicate key (identical values): the canonical re-serialization is shorter.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1,\"a\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-bom",
+   "description": "Leading U+FEFF (BOM) is kept by the strict decoder, so the text is not canonical.",
+   "op": "canonical_json",
+   "input": {
+    "text": "﻿{\"a\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-float",
+   "description": "Floats are not allowed.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1.5}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-float-integral",
+   "description": "1.0 is not the canonical spelling of 1.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1.0}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-exponent",
+   "description": "Exponent notation.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":1e3}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-negative-zero",
+   "description": "-0 (canonical form is 0).",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":-0}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-unsafe-int",
+   "description": "2^53 is not a safe integer.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":9007199254740992}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-escaped-non-ascii",
+   "description": "Non-ASCII written as an escape.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"\\u00e9\"}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-escaped-slash",
+   "description": "Escaped solidus.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"\\/\"}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-uppercase-escape",
+   "description": "Uppercase hex in a \\u escape.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":\"\\u001F\"}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-top-level-array",
+   "description": "Top level must be an object.",
+   "op": "canonical_json",
+   "input": {
+    "text": "[1]"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-invalid",
+   "description": "Invalid JSON.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "json-nan",
+   "description": "NaN is not JSON.",
+   "op": "canonical_json",
+   "input": {
+    "text": "{\"a\":NaN}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "key-ed25519",
+   "description": "Ed25519 key string.",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI"
+   },
+   "expect": {
+    "ok": {
+     "hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    }
+   }
+  },
+  {
+   "name": "key-ed25519-zero",
+   "description": "Ed25519 keys are NOT point-validated when parsed (a small-order key verifies nothing).",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "expect": {
+    "ok": {
+     "hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   }
+  },
+  {
+   "name": "key-x25519",
+   "description": "X25519 key string.",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:1dgAAt65XqchS-iFHGXnZmfiBxUshPesOHWo8SpXxFA"
+   },
+   "expect": {
+    "ok": {
+     "hex": "d5d80002deb95ea7214be8851c65e76667e207152c84f7ac3875a8f12a57c450"
+    }
+   }
+  },
+  {
+   "name": "key-x25519-zero",
+   "description": "All-zero X25519 key.",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "key-x25519-low-order",
+   "description": "u = 1, a low-order point.",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "key-x25519-bit255",
+   "description": "A valid key with bit 255 set (non-canonical: two strings for one key).",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:1dgAAt65XqchS-iFHGXnZmfiBxUshPesOHWo8SpXxNA"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "key-x25519-p-plus-2",
+   "description": "FINDING (format note F-1): u = p + 2, a non-canonical encoding of u = 2 below 2^255, is ACCEPTED (only bit 255 and small order are checked).",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:7________________________________________38"
+   },
+   "expect": {
+    "ok": {
+     "hex": "efffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    }
+   }
+  },
+  {
+   "name": "key-x25519-p-plus-1",
+   "description": "u = p + 1 (= 1 mod p) is of low order: refused.",
+   "op": "parse_key",
+   "input": {
+    "kind": "x25519",
+    "value": "x25519:7v_______________________________________38"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "key-wrong-prefix",
+   "description": "x25519 key where ed25519 is expected.",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "x25519:1dgAAt65XqchS-iFHGXnZmfiBxUshPesOHWo8SpXxFA"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "key-31-bytes",
+   "description": "Wrong length.",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "key-padding",
+   "description": "base64 padding is refused.",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "key-standard-alphabet",
+   "description": "\"+\" and \"/\" (standard alphabet) are refused.",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:+++++++++++++++++++++++++++++++++++++++++++"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "key-non-canonical-b64",
+   "description": "Last character with non-zero unused bits (decodes to the same bytes as another string).",
+   "op": "parse_key",
+   "input": {
+    "kind": "ed25519",
+    "value": "ed25519:QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-ok",
+   "description": "Typical read address.",
+   "op": "check_location",
+   "input": {
+    "location": "https://storage.example.org/alice/"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-port-query",
+   "description": "Non-default port and query.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org:8443/x?y=1"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-public-ipv4",
+   "description": "Just below the CGNAT range 100.64/10.",
+   "op": "check_location",
+   "input": {
+    "location": "https://100.63.255.255/"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-public-ipv6",
+   "description": "Compressed lowercase IPv6 literal on a non-local prefix.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[2001:db8::1]/"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-punycode",
+   "description": "IDN in its ASCII (punycode) form.",
+   "op": "check_location",
+   "input": {
+    "location": "https://xn--bcher-kva.example/"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-percent",
+   "description": "Percent-encoded path.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/a%20b/"
+   },
+   "expect": {
+    "ok": {}
+   }
+  },
+  {
+   "name": "loc-http",
+   "description": "Not https.",
+   "op": "check_location",
+   "input": {
+    "location": "http://example.org/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-no-path",
+   "description": "Not canonical: the WHATWG serialization adds \"/\".",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-default-port",
+   "description": "Not canonical: the default port is dropped.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org:443/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-uppercase-host",
+   "description": "Not canonical: the host is lowercased.",
+   "op": "check_location",
+   "input": {
+    "location": "https://EXAMPLE.org/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-unicode-host",
+   "description": "Not canonical: the host is serialized as punycode.",
+   "op": "check_location",
+   "input": {
+    "location": "https://bücher.example/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-space",
+   "description": "Whitespace.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/a b"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-backslash",
+   "description": "Backslash.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org\\x/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-credentials",
+   "description": "Credentials.",
+   "op": "check_location",
+   "input": {
+    "location": "https://user:pw@example.org/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-fragment",
+   "description": "Fragment.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/#x"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-dot-segment",
+   "description": "Not canonical: dot segments are removed.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/a/../b"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-localhost",
+   "description": "localhost.",
+   "op": "check_location",
+   "input": {
+    "location": "https://localhost/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-dot-local",
+   "description": "*.local.",
+   "op": "check_location",
+   "input": {
+    "location": "https://printer.local/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-dot-internal",
+   "description": "*.internal.",
+   "op": "check_location",
+   "input": {
+    "location": "https://db.corp.internal/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-private-v4",
+   "description": "Private IPv4.",
+   "op": "check_location",
+   "input": {
+    "location": "https://10.1.2.3/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-cgnat",
+   "description": "CGNAT 100.64/10.",
+   "op": "check_location",
+   "input": {
+    "location": "https://100.64.0.1/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-link-local",
+   "description": "Link-local IPv4.",
+   "op": "check_location",
+   "input": {
+    "location": "https://169.254.1.1/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-ipv4-shorthand",
+   "description": "Not canonical (WHATWG serializes 127.0.0.1); local anyway.",
+   "op": "check_location",
+   "input": {
+    "location": "https://127.1/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-loopback",
+   "description": "IPv6 loopback.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[::1]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-mapped",
+   "description": "IPv4-mapped loopback.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[::ffff:7f00:1]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-nat64",
+   "description": "NAT64 of 10.0.0.1.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[64:ff9b::a00:1]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-6to4",
+   "description": "6to4 of 192.168.1.1.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[2002:c0a8:101::]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-ula",
+   "description": "Unique-local IPv6.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[fd00::1]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-v6-uncompressed",
+   "description": "Not canonical: WHATWG compresses the zeros.",
+   "op": "check_location",
+   "input": {
+    "location": "https://[2001:db8:0:0:0:0:0:1]/"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-513-bytes",
+   "description": "513 bytes (max 512).",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "loc-512-bytes",
+   "description": "Exactly 512 bytes.",
+   "op": "check_location",
+   "input": {
+    "location": "https://example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "expect": {
+    "ok": {}
+   }
+  }
+ ]
+}

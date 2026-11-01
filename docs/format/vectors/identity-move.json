@@ -1,0 +1,152 @@
+{
+ "structure": "identity-move",
+ "spec": "identity-move.md",
+ "description": "Identity move: the old master signs, the new master countersigns.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "move-ok",
+   "description": "Alice -> Alice-new.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"A-6pRUTEcaCHZkOkgimBvHxqlIaYX3dXmoewekmJyyMVGnaBx_DhNoZFGj8Tou_y0qaL3Y1kf-BFKRKbX3GjBg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"32Dplnq2869LSdPWAdDu3SrPpIblkQNdq3JSBUkTr5p5eOofnqNJQ6Fb32BDgxgWx_J4ww8ED2nmqwX9ZXJaCg\",\"type\":\"identity-move\",\"version\":1}",
+    "options": {
+     "expectedFrom": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+    }
+   },
+   "expect": {
+    "ok": {
+     "from": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "to": "ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4",
+     "issued": "2026-10-20T12:00:00.000Z"
+    }
+   },
+   "details": {
+    "to_signature_message": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"type\":\"identity-move\",\"version\":1}",
+    "signature_message": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"32Dplnq2869LSdPWAdDu3SrPpIblkQNdq3JSBUkTr5p5eOofnqNJQ6Fb32BDgxgWx_J4ww8ED2nmqwX9ZXJaCg\",\"type\":\"identity-move\",\"version\":1}"
+   }
+  },
+  {
+   "name": "move-resigned",
+   "description": "Written from the documented signed bytes.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"A-6pRUTEcaCHZkOkgimBvHxqlIaYX3dXmoewekmJyyMVGnaBx_DhNoZFGj8Tou_y0qaL3Y1kf-BFKRKbX3GjBg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"32Dplnq2869LSdPWAdDu3SrPpIblkQNdq3JSBUkTr5p5eOofnqNJQ6Fb32BDgxgWx_J4ww8ED2nmqwX9ZXJaCg\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "ok": {
+     "from": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "to": "ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4",
+     "issued": "2026-10-20T12:00:00.000Z"
+    }
+   }
+  },
+  {
+   "name": "move-expected-from",
+   "description": "expectedFrom = Bob.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"A-6pRUTEcaCHZkOkgimBvHxqlIaYX3dXmoewekmJyyMVGnaBx_DhNoZFGj8Tou_y0qaL3Y1kf-BFKRKbX3GjBg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"32Dplnq2869LSdPWAdDu3SrPpIblkQNdq3JSBUkTr5p5eOofnqNJQ6Fb32BDgxgWx_J4ww8ED2nmqwX9ZXJaCg\",\"type\":\"identity-move\",\"version\":1}",
+    "options": {
+     "expectedFrom": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+    }
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  },
+  {
+   "name": "move-bad-to-signature",
+   "description": "to_signature replaced by the old master's signature over the same bytes (no countersignature).",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"rcU3qSniMS80urLCUp2J6bk_by_uD-YpU4-atYs4UBxdXjR3KqMNXG0w5PJA-o49e8xz7PwZI1GhMwoaxLoeAg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"ZixVEZAE5bJ6sWlF6IGqFDSxrA1dgpxCEsdDZlPKAK28Q_H8kJN2lm-FDf44-YqjpvkoOfbvDS660mr3lQVcCQ\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "move-tampered-issued",
+   "description": "issued changed after signing.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:01.000Z\",\"signature\":\"A-6pRUTEcaCHZkOkgimBvHxqlIaYX3dXmoewekmJyyMVGnaBx_DhNoZFGj8Tou_y0qaL3Y1kf-BFKRKbX3GjBg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"32Dplnq2869LSdPWAdDu3SrPpIblkQNdq3JSBUkTr5p5eOofnqNJQ6Fb32BDgxgWx_J4ww8ED2nmqwX9ZXJaCg\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "move-same-identity",
+   "description": "from = to.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"57CY0660b-2jYve6C3L3iF5frK96oHiS0lQ8_ksm2IOSDgB0VIMNiCPoufe-r98SdUtg2Vztxa1pd8a3XIyaDg\",\"to\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"to_signature\":\"bks79Kdxujjwdj2AVhJB-IJ4QrHjgLAA7Zt9ZXtOZYMTvqej0YQ3VH3GrM8-JyEW4oFQ_Yg-hiw9OomE1yDwDw\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "move-bad-date",
+   "description": "issued = 30 February.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-02-30T00:00:00.000Z\",\"signature\":\"P2MSd74w1z2HlrE1oFkc_SR-IjZxxKHdG5LUcZkzw8ed2XbFVySj5jprdJ_insMyVY3ziUi2jjPAH9DFDjrpAA\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"aNo1WF-ektxDKmf-vR1D9x-VlRiODTbqVELu0UYWOUXJHZP7oM0pahzvsq_AgIRYNMtM0YP2soeZrsNs4-ZEDA\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "move-date-no-millis",
+   "description": "issued without milliseconds is a valid date.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00Z\",\"signature\":\"nTYotKAn-LKXgZYWOUq0Whn7gMIQwAKNpn3Lyz1TiMIvI2h7Vd1CzqIJjWCRVEKyRejfLRW0kpd3aDTL3lqwAg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"0P1KBwwWDE-f6RHWP5ycKD0mg1q6iK_OYiCaZZulizMjMckQPR56pZSd0WaF9yHVog1vSu6Qdw3DoEwuFu8WDQ\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "ok": {
+     "from": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "to": "ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4",
+     "issued": "2026-10-20T12:00:00Z"
+    }
+   }
+  },
+  {
+   "name": "move-date-offset",
+   "description": "issued with a +01:00 offset is refused (UTC \"Z\" only).",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T13:00:00+01:00\",\"signature\":\"gJ8zvSha7VtWWHaK2ayWEo9S2uja1d36N6Mupo8uFDJQhXHsT0Q7qxMQEMczCa4KJMpBEfUs6sSLrsWsADBwAQ\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"2aDGbHpvjvji3g-IyOpgVZH-_e6OTzBvLkcV3soV9EqlSH0IjE3372n0eIdP6Fd8OuApNQXIVFSuapyf_RpiDQ\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "move-version-2",
+   "description": "Version 2.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"signature\":\"l4Kyk4b-w8jY1gnDHP-41zmeB79Ml0hjBHLC8Kt1QSj46Dsdg1PuYmvhW0UcTSvCzQWr_73D3N-61SOp1mq5DQ\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"x5mfQO-1gnvtIgpo8tINsxYOmvVq0Dszysgc7RCn4j5hAkDztdWqfOSwJTpPDTECPxy0J2VDKAZ79kZs-1CpBQ\",\"type\":\"identity-move\",\"version\":2}"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "move-unknown-field",
+   "description": "Unknown field.",
+   "op": "verify_identity_move",
+   "input": {
+    "text": "{\"from\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"issued\":\"2026-10-20T12:00:00.000Z\",\"reason\":\"stolen\",\"signature\":\"fPo85kyoakWMMOiQ-mBY61LDkgN95lalBg0FBsktFVSSz1AHtVa3egstXBdWy7wW7MTrH4YgqPsxnLQPfpGLCg\",\"to\":\"ed25519:23t6W2H4IPi7tqtViY9OzL2pxeN4_-D_ZdTG3vSBS_4\",\"to_signature\":\"ErYzRksxP18KkwNO5BPPwyasFH1WFur9kwK6EPOYBdnGEKYncPIsW-kiOCym0JNBiELtGf_wv1Lq2I-8EVimBw\",\"type\":\"identity-move\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  }
+ ]
+}

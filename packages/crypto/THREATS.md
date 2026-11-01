@@ -283,8 +283,9 @@ Listed so later phases can decide what to fix.
 - Error codes are local information; reflecting them to a remote party would create oracles.
 - The verified-index registry is a module-level `WeakSet`: two bundled copies of this package do not recognise each
   other's verified indexes (fails closed with `NOT_INDEXED`).
-- Known-answer vectors exist for phrase → owner, the safety code and Padmé; vectors for exact signed bytes per domain, a
-  fixed pack, transfer blob, sealed sharing key, vault envelope, invitation link, record signature, padded listing and
-  return link are still to be written (they need deterministic randomness hooks, the invitation seed and listing token
-  included; N-6 of T-002, "before an external audit" item 3 of the third
-  review). A separate written format specification and fuzzing of every parser are also still to do.
+- The standalone format specification is `docs/format/` (T-201), with 472 known-answer vectors (positive and negative)
+  for every structure in `docs/format/vectors/`, generated from seeded randomness and checked by
+  `test/vectors.test.ts` and by an independent Python reader (`docs/format/reference-reader/`); every parser is fuzzed
+  (`test/fuzz.test.ts`). Format notes found while writing them (no change, the format is frozen): X25519 encodings
+  `u ≥ p + 2` with bit 255 clear are accepted although non-canonical (F-1); lone-surrogate escapes are accepted by
+  canonical JSON (F-2); the index size bound counts UTF-16 code units for text input (F-3).

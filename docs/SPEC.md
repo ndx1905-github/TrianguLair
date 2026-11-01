@@ -1044,7 +1044,7 @@ Project:
 
 ## Open questions
 
-- [x] Exact format of the encrypted packs: compact binary format inspired by JWE, specified in `packages/crypto/README.md` (to be published in `docs/format/`, T-201).
+- [x] Exact format of the encrypted packs: compact binary format inspired by JWE, specified in [`docs/format/`](format/README.md) with test vectors (T-201).
 - [ ] Refresh frequency while the app stays open.
 - [ ] Offer a default storage to beginners (partner host), or only a wizard?
 - [ ] Project name: TrianguLair chosen; check the domains (triangulair, and triangulaire to redirect typos) and trademarks on TMview (classes 9 and 42).

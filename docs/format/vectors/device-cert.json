@@ -1,0 +1,171 @@
+{
+ "structure": "device-cert",
+ "spec": "device-cert.md",
+ "description": "Master-signed device certificate.",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "dc-ok",
+   "description": "Device d1 of Alice.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\",\"type\":\"device-cert\",\"version\":1}",
+    "options": {
+     "expectedOwner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+    }
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box": "x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk"
+    }
+   }
+  },
+  {
+   "name": "dc-minor-extension",
+   "description": "minor 1 with an unknown field.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"minor\":1,\"name\":\"phone\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"-5nlnAjYBZCoEnbHoBR0xavJtw1Nh2Kk8t41zV31w8x_dBa_YBOkobn2V7pFEGF2rjIoPFQvlxOIjQTvrRXnAw\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "ok": {
+     "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+     "device": "ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA",
+     "box": "x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk"
+    }
+   }
+  },
+  {
+   "name": "dc-tampered",
+   "description": "box key replaced after signing.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:bg03rUOeVYdfAiOuhB_ihupwBrevcMvJL_2rZXy3EGI\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "dc-other-master",
+   "description": "owner = Alice, signed by Bob's master.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"5C9a3WcGxdGPPp9B8RtuZ7oWlhnc9dCQ7oq7BEaK_NHjTWfYhKPAC0-g5IW0T_meRl9qvOfe8WdxprzjvVzzCA\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "dc-domain-confusion",
+   "description": "Signed under \"sharing-cert\".",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"wZPXuzUAVttXm0DUbOl8DdR9LJNSVWccEvwzpcnF0pfVIyEGVsW3-KQQCw2d0DuWhRgKtOPFC3SyNOO8EGBUBA\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "SIGNATURE"
+   }
+  },
+  {
+   "name": "dc-version-2",
+   "description": "Version 2.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"ksmUMK3I0NhuoEJDsgTGLiNgE2okOzNojvBC6z1f0t5W-DRQJaHtXGD5iOp2Bump_HeAIkxRve0tr5OqRXK1CA\",\"type\":\"device-cert\",\"version\":2}"
+   },
+   "expect": {
+    "error": "UNSUPPORTED_VERSION"
+   }
+  },
+  {
+   "name": "dc-missing-box",
+   "description": "box missing.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"Vu3Psht6Ed5ur1NIuBvGfOQNPp2a5cJ4U_mJCgXTqRGp8IroRdA9GH78K7IJTkz0J84fV70mYJS-orRSTm7kAQ\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "dc-unknown-field",
+   "description": "Unknown field without minor.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"name\":\"phone\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"C4SnGiXKLCa-6ergXQfEd58CuJsfm8GNufjb_jrYkGmkiFH-k3bloOKgHtSi3YOk77T5KFtjMaPt_YUjQqQZAA\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "dc-low-order-box",
+   "description": "box u = 1.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"LHPXTD-iSLTQOABC5935ctdzMT3I7ULY-bRPNlzEFdocnsseTqtkqN-c-pzPgI7LyRKi4hc-eForESMlz2JLAg\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "INVALID_KEY"
+   }
+  },
+  {
+   "name": "dc-device-as-x25519",
+   "description": "device given as an x25519 key.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"x25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"f5xxGaAYqHKL0D2fJMalm7r_jmmCW4td9pyUwQCiJR4g-IJwN2cozjezj8F7_5IzWEtjGbJbgHJ2oEm5DaLPDA\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  },
+  {
+   "name": "dc-expected-owner",
+   "description": "expectedOwner = Bob.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\",\"type\":\"device-cert\",\"version\":1}",
+    "options": {
+     "expectedOwner": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU"
+    }
+   },
+   "expect": {
+    "error": "OWNER_MISMATCH"
+   }
+  },
+  {
+   "name": "dc-retired",
+   "description": "Alice retired.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\",\"type\":\"device-cert\",\"version\":1}",
+    "options": {
+     "retiredOwners": [
+      "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk"
+     ]
+    }
+   },
+   "expect": {
+    "error": "REVOKED"
+   }
+  },
+  {
+   "name": "dc-key-order",
+   "description": "Keys out of order.",
+   "op": "verify_device_cert",
+   "input": {
+    "text": "{\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\",\"type\":\"device-cert\",\"version\":1}"
+   },
+   "expect": {
+    "error": "FORMAT"
+   }
+  }
+ ]
+}

@@ -1,0 +1,218 @@
+{
+ "structure": "invitation-record",
+ "spec": "invitation-record.md",
+ "description": "Invitation record (vault form), its device signature, and the listing decision (invitationStatus / signIndex skip reasons).",
+ "generator": "packages/crypto/test/vectors/generate.ts (npm run vectors in packages/crypto)",
+ "fixtures": {},
+ "vectors": [
+  {
+   "name": "record-signature",
+   "description": "The record signature of inv1 (domain \"invitation-record\", device d1).",
+   "op": "signature",
+   "input": {
+    "domain": "invitation-record",
+    "public_key_hex": "2f95d069bb261b61b99d39c40ea03cbf67abc84ef1b9103144dc205cd9959880",
+    "message_hex": "aea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf9692f7147984da10ad052940dde8f79ff44c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719000000006ad757c06ae09240002268747470733a2f2f73746f726167652e6578616d706c652e6f72672f616c6963652f",
+    "signature_hex": "fd494c26d6e93a7e9a5df190652fef2216cae18b2ac80460447f997ed8e133c152bda1b39378af7b0c64040459e69ac5e3103b8581004543fe18273e5b25f103"
+   },
+   "expect": {
+    "ok": {}
+   },
+   "details": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}"
+   }
+  },
+  {
+   "name": "status-listed",
+   "description": "inv1 under rotation 0 at NOW.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "listed"
+    }
+   }
+  },
+  {
+   "name": "status-expired",
+   "description": "At expiry.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-27T12:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "expired"
+    }
+   }
+  },
+  {
+   "name": "status-superseded",
+   "description": "Under rotation 1 (any rotation cancels, R5-01).",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "superseded"
+    }
+   }
+  },
+  {
+   "name": "status-revoked",
+   "description": "Created by d2, which rotation 1 revokes.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:bg03rUOeVYdfAiOuhB_ihupwBrevcMvJL_2rZXy3EGI\",\"device\":\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\",\"signature\":\"hMBt-Wiz1NIehKtH5h6h-E06go7H6Ywg-v2kggeFXuhkrBuRIcQTMRZu7dClR1RMVpRXdXoPvUnvRcEcu18oAQ\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"CleaF1CxslW4cIGMxnKOTQ\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"GuEmXBONOt2ya4ge7UY0tQ\",\"signature\":\"2MGQUAT5po4VbReJC_q6mn6mOc1dtfQMhv2xfHBaTN8qhsWDohwqsOlLmGuNrX9N2n6yth1-HfeiuouWEqYEAA\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:Ktt4YAd-WTP_mTh-rRHGjuI_xP58oqZeRsOa0mNh3jo\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[\"ed25519:gUIhlYfVS2rX3BRgdi_x7Q2In4gzER-YwbjDugCSnXk\"],\"rotation\":1,\"signature\":\"RPm4QRpJBzn1Lwpwr54Fh7sovch1tzN4sE4oEzf6PH2wJZT4ACF95oYmdNsSzZwmz4Cfh91bZanSLX6jgOFgBQ\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "revoked"
+    }
+   }
+  },
+  {
+   "name": "status-not-yet-clock",
+   "description": "Created 10 minutes after the publisher's clock.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T13:10:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T13:10:00.000Z\",\"id\":\"v1O011AAl3BgfJ5MnKQt4w\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"CPM0EUdQJmOCnR5cAF9YBA\",\"signature\":\"u3mrA4_8JpTpQLoogttG9wPWJXeYd4P4zJ7wCmp8TAfv8uzQuLZ6qT698TVJO25cJDZ_XaAEdUm8zf2m3McgCw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "not-yet"
+    }
+   }
+  },
+  {
+   "name": "status-not-yet-rotation",
+   "description": "Created under rotation 1, publisher still holds rotation 0.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"QfUnHuKjJhcc1-14j_n7nw\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":1,\"seed\":\"N47M4TNBT4VtMp92cRHbSQ\",\"signature\":\"HocS9BH_SiOpra2CcX7uOIlfGthTE_roHce-m5UBKpqzwSC_KUB63glgKmXejQnSuu4g6iWi3Tnn-EmOu1mHBQ\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "not-yet"
+    }
+   }
+  },
+  {
+   "name": "status-forged-signature",
+   "description": "Signature of another record.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"2MGQUAT5po4VbReJC_q6mn6mOc1dtfQMhv2xfHBaTN8qhsWDohwqsOlLmGuNrX9N2n6yth1-HfeiuouWEqYEAA\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  },
+  {
+   "name": "status-lifetime-8-days",
+   "description": "Correctly signed, lifetime 8 days.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-28T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"IXF1SWHd-Fbc8e3JN0cAjN9L5kPKjbyd3DCN_C_vrsJi02YbAbOUfmGqn6MAlYc-t3bjtmPSIImClaBCK1INAA\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  },
+  {
+   "name": "status-other-device-name",
+   "description": "d2 signs a record carrying d1's certificate.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"h6xMkR61Q2ASAH0QMeHk8D7nmo7fDBYS7vjKhUjlBfq8Qa1MdxEWVENwcf7VTh6kj3o-YkhaNAeZDZI7ocVnAg\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  },
+  {
+   "name": "status-other-owner",
+   "description": "Alice's record checked as Bob's.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU",
+    "sharing_cert": "{\"key\":\"x25519:zE9npKVg76YzzyeL8btG9rvif0s58UurCeO2QpxZ1HA\",\"location\":\"https://bob.example.net/tl/\",\"owner\":\"ed25519:eia7mXwyNZcZ8E0GJsGaw32cwDOZaxYAOHMOHwUDshU\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"CoK2IEhEgdYvNBCTpncQ7jYyPnBxG-dX0U1_VHVQasKqln6MzUM8Hr2PLzAVUrM4PCtbWVNy7e4YDU39bAaYAw\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  },
+  {
+   "name": "status-id-mismatch",
+   "description": "id does not derive from the seed.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.000Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"QFrfnAflc1Xdn56FyEJCdw\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  },
+  {
+   "name": "status-millis",
+   "description": "created with milliseconds: not a whole second.",
+   "op": "invitation_status",
+   "input": {
+    "record": "{\"answers\":[],\"created\":\"2026-10-20T12:00:00.500Z\",\"device_cert\":{\"box\":\"x25519:5kAUwj_fwJx5BjQeJJb2caZ9i9Gefp9AJPpQl4DOdkk\",\"device\":\"ed25519:L5XQabsmG2G5nTnEDqA8v2eryE7xuRAxRNwgXNmVmIA\",\"signature\":\"oHCnMfBlmG0hsb6YqOM2tvhZwiAjrrDRoDWOFGRf9DfGcmUl9dsoeAQFLcBxK5TTzgYX_e7AeNML1MR9SZeoDw\"},\"expires\":\"2026-10-27T12:00:00.000Z\",\"id\":\"L3FHmE2hCtBSlA3ej3n_RA\",\"location\":\"https://storage.example.org/alice/\",\"rotation\":0,\"seed\":\"vnG36zNk-2DByM79pW5xlA\",\"signature\":\"_UlMJtbpOn6aXfGQZS_vIhbK4YsqyARgRH-ZftjhM8FSvaGzk3ivewxkBARZ5prF4xA7hYEARUP-GCc-WyXxAw\"}",
+    "owner": "ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk",
+    "sharing_cert": "{\"key\":\"x25519:t2omLncUlO6iQdZFVhRsJCDxPD3H1SWTSxN-iddUoXs\",\"location\":\"https://storage.example.org/alice/\",\"owner\":\"ed25519:rqZ3K9qiMRFVjqThgHn_pB2Hz9d7ucp4My-JhKcs-Wk\",\"revoked_devices\":[],\"rotation\":0,\"signature\":\"JfpGslhDgtbC-or_CBqrHSa92r6VUlixssd9INeFepow20EYIjsd8OKQdXyQdRzI7g9EFs5NeYc3Uy40S7G3DA\",\"type\":\"sharing-cert\",\"version\":3}",
+    "now": "2026-10-20T13:00:00.000Z"
+   },
+   "expect": {
+    "ok": {
+     "status": "invalid"
+    }
+   }
+  }
+ ]
+}
