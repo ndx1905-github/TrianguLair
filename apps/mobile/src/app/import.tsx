@@ -260,7 +260,7 @@ function ImportScreen() {
               </Text>
             ))}
             <Text style={[styles.small, { color: c.textMuted }]}>{t('import.done.undoHint', { days: UNDO_DAYS })}</Text>
-            <Button label={t('import.done.map')} onPress={() => router.replace('/')} testID="import-to-map" />
+            <Button label={t('import.done.map')} onPress={back} testID="import-to-map" />
             <Button label={t('import.undo')} kind="secondary" onPress={() => void undo(step.report)} testID="import-undo-now" />
             <Button label={t('import.again')} kind="secondary" onPress={() => setStep({ kind: 'home' })} />
           </View>
@@ -372,8 +372,8 @@ export default function ImportRoute() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  p: { fontSize: 15, lineHeight: 21 },
+  p: { fontSize: 15 },
   big: { fontSize: 20, fontWeight: '700' },
-  small: { fontSize: 13, lineHeight: 18 },
+  small: { fontSize: 13 },
   busy: { alignItems: 'stretch', gap: 14, paddingVertical: 40 },
 });

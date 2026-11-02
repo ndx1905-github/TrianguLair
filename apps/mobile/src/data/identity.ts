@@ -1,11 +1,12 @@
 /**
- * Device identity used by the data store until identity creation exists
- * (first-launch flow, T-0xx): a fixed local owner id and a per-device
- * document actor kept in the device settings.
+ * Data-store ids of this device: the per-device document actor kept in the
+ * device settings, and the id generator. The owner id is my identity's
+ * master key (`src/identity`); `LOCAL_ME_ID` only names the placeholder owner
+ * of databases created before identities existed, migrated on open.
  */
 import { getSetting, setSetting } from './deviceSettings';
 
-/** Owner of my data on this device until a key pair is created. */
+/** Placeholder owner of databases created before the first-launch flow existed (migrated on open). */
 export const LOCAL_ME_ID = 'local-me';
 
 function randomHex(bytes: number): string {

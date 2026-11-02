@@ -60,7 +60,7 @@ async def paint(page, pts):
     await page.wait_for_timeout(400)
 
 async def open_map(page, path='/'):
-    await page.goto(BASE + path)
+    await page.goto(url(path))
     await page.wait_for_selector('[data-pin-id]' if path == '/' else '[data-testid="map"]', timeout=30000)
     await page.wait_for_timeout(800)
 

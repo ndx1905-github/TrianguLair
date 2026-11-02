@@ -14,7 +14,7 @@ const SQL = await initSqlJs();
 function openStore(bytes?: Uint8Array, onWrite?: () => void) {
   const driver = new SqlJsDriver(bytes ? new SQL.Database(bytes) : new SQL.Database(), onWrite);
   let n = 0;
-  const store = DataStore.open({ driver, meId: 'local-me', actor: 'aa'.repeat(16), newId: () => `id${String(++n).padStart(8, '0')}` });
+  const store = DataStore.open({ driver, meId: 'ed25519:test-owner', actor: 'aa'.repeat(16), newId: () => `id${String(++n).padStart(8, '0')}` });
   return { driver, store };
 }
 

@@ -11,6 +11,10 @@ import asyncio, json, sys, datetime
 from playwright.async_api import async_playwright
 
 BASE = __import__('os').environ.get('SHOTS_BASE', 'http://127.0.0.1:8765')
+
+def url(path):
+    # Fixture mode: `autostart=1` creates the identity without the first-launch screens.
+    return BASE + path + ('&' if '?' in path else '?') + 'autostart=1'
 OUT = sys.argv[1]
 # Friday 23 October 2026, 18:30 in Paris: happy hours on, some places open, some not yet.
 NOW = datetime.datetime(2026, 10, 23, 16, 30, tzinfo=datetime.timezone.utc)
@@ -43,7 +47,7 @@ async def setup(p, width, height, dark=False, lang='en-US'):
     return b, page, errors
 
 async def ready(page):
-    await page.goto(BASE + '/')
+    await page.goto(url('/'))
     await page.wait_for_selector('[data-pin-id]', timeout=30000)
     await page.wait_for_timeout(800)
 

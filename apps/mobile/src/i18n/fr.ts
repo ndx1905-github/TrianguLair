@@ -1,9 +1,12 @@
 import type { Messages } from './core';
+import { firstLaunchFr } from './firstLaunch.fr';
 import { frFiltersTags } from './filtersTags.fr';
 import { zonesListsFr } from './zonesLists.fr';
 
 /** Français. */
 export const fr: Messages = {
+  // First launch, recovery kit, app lock, settings (T-205), kept in their own file.
+  ...firstLaunchFr,
   // Zones and lists (T-110, T-112), kept in their own file.
   ...zonesListsFr,
 

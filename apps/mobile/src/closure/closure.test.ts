@@ -87,7 +87,7 @@ describe('closed-place check against the fixtures (run.ts)', () => {
   it('flags the disused restaurant, then "still open" sticks across the next monthly check', async () => {
     const SQL = await initSqlJs();
     let n = 0;
-    const store = DataStore.open({ driver: new SqlJsDriver(new SQL.Database()), meId: 'local-me', actor: 'bb'.repeat(16), newId: () => `id${++n}` });
+    const store = DataStore.open({ driver: new SqlJsDriver(new SQL.Database()), meId: 'ed25519:test-owner', actor: 'bb'.repeat(16), newId: () => `id${++n}` });
     seedDemoData(store, { tagName: (id) => TAGS[id].label, fixtures: true, now: NOW.getTime() });
     const osm = createOsmClient({
       userAgent: 'TrianguLair-tests/0.0.1 (+https://github.com/triangulair/triangulair)',
