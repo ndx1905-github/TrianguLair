@@ -554,6 +554,15 @@ export interface ListInput {
   items?: readonly string[];
 }
 
+/** Editable fields of a list (filter and items have their own edits). */
+export interface ListPatch {
+  name?: string;
+  description?: string;
+  visibility?: ListVisibility;
+  linkKey?: string | null;
+  kind?: ListKind;
+}
+
 export interface MediaInput {
   id?: string;
   file: string;
@@ -935,10 +944,16 @@ export class DocTx {
     return l;
   }
 
-  updateList(id: string, patch: { name?: string; description?: string; visibility?: ListVisibility; linkKey?: string | null }): void {
+  /**
+   * Edits a list. Changing `kind` keeps both the saved filter and the manual
+   * selection, so switching back restores the previous definition.
+   */
+  updateList(id: string, patch: ListPatch): void {
     const l = this.list(id);
     const visibility = patch.visibility === undefined ? undefined : check(patch.visibility, LIST_VIS, 'list visibility');
+    const kind = patch.kind === undefined ? undefined : check(patch.kind, ['filter', 'manual'] as const, 'list kind');
     if (patch.name !== undefined) l.set('name', patch.name.trim());
+    if (kind !== undefined && getStr(l, 'kind') !== kind) l.set('kind', kind);
     if (patch.description !== undefined) updateText(textOf(l, 'description'), patch.description);
     if (visibility !== undefined) l.set('visibility', visibility);
     if (patch.linkKey !== undefined) l.set('linkKey', patch.linkKey);

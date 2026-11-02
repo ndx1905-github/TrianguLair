@@ -16,6 +16,7 @@ import {
   type DataDoc,
   type EditContext,
   type ListInput,
+  type ListPatch,
   type MediaInput,
   type SaveInput,
   type SavePatch,
@@ -24,7 +25,7 @@ import {
 import { emptyTouched, projectAll, projectChanges, saveIdFor, trackChanges, type Touched } from './crdt/project.ts';
 import { Repository } from './sqlite/repository.ts';
 import type { Capabilities } from './sqlite/schema.ts';
-import type { ListFilter, ListVisibility, PlaceSnapshot } from './types.ts';
+import type { ListFilter, PlaceSnapshot } from './types.ts';
 
 export interface OpenStoreOptions {
   driver: SqlDriver;
@@ -306,7 +307,7 @@ export class DataStore {
   createList(input: ListInput): string {
     return this.change((tx) => tx.createList(input));
   }
-  updateList(id: string, patch: { name?: string; description?: string; visibility?: ListVisibility; linkKey?: string | null }): void {
+  updateList(id: string, patch: ListPatch): void {
     this.change((tx) => tx.updateList(id, patch));
   }
   setListFilter(id: string, filter: ListFilter): void {

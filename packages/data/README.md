@@ -111,6 +111,12 @@ cross the antimeridian (`west > east`).
 - Identical OSM neighborhoods are the same `osm:relation/…` place; drawn
   zones stay distinct (`local:` ids).
 
+### Additions for the app (T-110, T-112)
+
+- `updateList(id, patch)` also takes `kind` (`ListPatch`, exported): switching between `filter` and
+  `manual` keeps both the saved filter and the manual selection (switching back restores them).
+- A `drawn` filter zone may carry an optional `name` (label only; the key and matching stay the shape).
+
 ## Schema (version 1)
 
 Tables follow the spec's data model; names in parentheses are additions.
