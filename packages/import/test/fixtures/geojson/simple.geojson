@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "title": "Fromagerie Martin", "notes": "Comté 24 months", "category": "Cheese; Shops", "status": "to try", "marker-color": "#d97706", "created": "2025-02-14" },
+      "geometry": { "type": "Point", "coordinates": [2.36331, 48.86012] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Somewhere without geometry", "lat": "48.8601", "lng": "2.3500" },
+      "geometry": null
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "A track" },
+      "geometry": { "type": "GeometryCollection", "geometries": [] }
+    }
+  ]
+}

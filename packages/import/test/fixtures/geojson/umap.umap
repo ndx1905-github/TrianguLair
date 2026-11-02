@@ -1,0 +1,22 @@
+{
+  "type": "umap",
+  "uri": "https://umap.openstreetmap.fr/fr/map/sorties_123",
+  "properties": { "name": "Sorties" },
+  "geometry": { "type": "Point", "coordinates": [2.36, 48.86] },
+  "layers": [
+    {
+      "type": "FeatureCollection",
+      "_umap_options": { "name": "Bars", "color": "DarkRed", "displayOnLoad": true },
+      "features": [
+        { "type": "Feature", "properties": { "name": "Le Comptoir des Archives", "description": "Terrace in the courtyard" }, "geometry": { "type": "Point", "coordinates": [2.36319, 48.85961] } }
+      ]
+    },
+    {
+      "type": "FeatureCollection",
+      "_umap_options": { "name": "Cafés", "color": "#0D9488" },
+      "features": [
+        { "type": "Feature", "properties": { "name": "Café Pendule", "_umap_options": { "color": "#0D9488" } }, "geometry": { "type": "Point", "coordinates": [2.36199, 48.85904] } }
+      ]
+    }
+  ]
+}

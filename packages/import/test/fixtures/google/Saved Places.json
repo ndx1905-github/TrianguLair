@@ -1,0 +1,50 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": { "coordinates": [2.3621507, 48.8591004], "type": "Point" },
+      "properties": {
+        "Google Maps URL": "http://maps.google.com/?cid=1234567890123456789",
+        "Location": {
+          "Address": "12 Rue de Bretagne, 75003 Paris, France",
+          "Business Name": "Trattoria Da Lucia",
+          "Country Code": "FR",
+          "Geo Coordinates": { "Latitude": "48.8591004", "Longitude": "2.3621507" }
+        },
+        "Published": "2021-06-12T19:03:11Z",
+        "Title": "Trattoria Da Lucia",
+        "Updated": "2021-06-12T19:03:11Z"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": { "coordinates": [2.3631, 48.8596], "type": "Point" },
+      "properties": {
+        "Google Maps URL": "http://maps.google.com/?cid=9876543210987654321",
+        "Location": {
+          "Address": "41 Rue des Archives, 75003 Paris, France",
+          "Business Name": "Le Comptoir des Archives",
+          "Country Code": "FR",
+          "Geo Coordinates": { "Latitude": "48.8596", "Longitude": "2.3631" }
+        },
+        "Published": "2022-01-08T21:40:00Z",
+        "Title": "Le Comptoir des Archives",
+        "Updated": "2022-02-01T10:00:00Z"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": { "coordinates": [2.3538, 48.8611], "type": "Point" },
+      "properties": {
+        "Google Maps URL": "http://maps.google.com/?q=48.8611,2.3538",
+        "Location": {
+          "Geo Coordinates": { "Latitude": "48.8611", "Longitude": "2.3538" }
+        },
+        "Published": "2023-04-30T08:12:45Z",
+        "Title": "Dropped pin",
+        "Updated": "2023-04-30T08:12:45Z"
+      },
+      "type": "Feature"
+    }
+  ]
+}

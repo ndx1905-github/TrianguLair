@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Pin Drop Export</name>
+    <Folder>
+      <name>Paris bars</name>
+      <Placemark>
+        <name>Le Comptoir des Archives</name>
+        <description>Great terrace</description>
+        <Point><coordinates>2.3631872,48.8596123,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

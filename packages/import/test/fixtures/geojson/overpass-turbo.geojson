@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-turbo",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "@id": "node/9123456704", "name": "Librairie du Haut Marais", "shop": "books" },
+      "geometry": { "type": "Point", "coordinates": [2.3612045, 48.8594511] },
+      "id": "node/9123456704"
+    },
+    {
+      "type": "Feature",
+      "properties": { "@id": "way/412345678", "name": "Musée des Cartes Anciennes", "tourism": "museum" },
+      "geometry": { "type": "Polygon", "coordinates": [[[2.3622, 48.8578], [2.3627, 48.8578], [2.3627, 48.8582], [2.3622, 48.8582], [2.3622, 48.8578]]] },
+      "id": "way/412345678"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": { "coordinates": [2.3488, 48.8534], "type": "Point" },
+      "properties": { "address": "Place du Parvis Notre-Dame, 75004 Paris, France", "name": "Home" },
+      "type": "Feature"
+    },
+    {
+      "geometry": { "coordinates": [2.3376, 48.8606], "type": "Point" },
+      "properties": { "address": "Rue de Rivoli, 75001 Paris, France", "name": "Work" },
+      "type": "Feature"
+    }
+  ]
+}
