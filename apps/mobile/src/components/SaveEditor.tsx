@@ -6,6 +6,7 @@ import { useI18n } from '../i18n';
 import type { AppTag } from '../places/model';
 import { makeMain } from '../places/add';
 import { toggleIn } from '../places/filters';
+import { tagPath } from '../tags/tree';
 import { SectionTitle, Segmented } from './ui';
 
 export interface SaveFields {
@@ -57,7 +58,7 @@ export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
             testID={`tag-selected-${tag.name}`}
           >
             <Text style={styles.tagOnText} maxFontSizeMultiplier={2}>
-              {i === 0 ? `★ ${tag.name}` : tag.name}
+              {i === 0 ? `★ ${tagPath(tag.id, byId)}` : tagPath(tag.id, byId)}
             </Text>
           </Pressable>
         ))}
@@ -73,7 +74,7 @@ export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
           >
             <View style={[styles.dot, { backgroundColor: tag.color }]} />
             <Text style={[styles.tagOffText, { color: c.text }]} maxFontSizeMultiplier={2}>
-              {tag.name}
+              {tagPath(tag.id, byId)}
             </Text>
           </Pressable>
         ))}

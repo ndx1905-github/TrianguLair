@@ -41,7 +41,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         if (getSetting('demo-seeded') !== '1') {
           try {
-            seedDemoData(app.store, { tagName: (id) => tRef.current(`demoTag.${id}`), fixtures: OSM_FIXTURES });
+            seedDemoData(app.store, {
+              tagName: (id) => tRef.current(`demoTag.${id}`),
+              subTagName: (id) => tRef.current(`demoTag.${id}`),
+              fixtures: OSM_FIXTURES,
+            });
           } catch (e) {
             console.warn('Demo data could not be seeded', e);
           }

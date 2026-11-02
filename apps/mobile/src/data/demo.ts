@@ -17,7 +17,10 @@ import {
   type SaveStatus,
 } from '@triangulair/data';
 
-import { TAGS, TAG_IDS, type TagId } from '../theme/tags';
+import type { ForeignTag } from '@triangulair/data';
+
+import type { IconName } from '../theme/icons';
+import { PALETTE, TAGS, TAG_IDS, type TagId } from '../theme/tags';
 
 export interface DemoPlace {
   id: string;
@@ -39,6 +42,12 @@ export interface DemoPlace {
   ageDays: number;
 }
 
+/** Demo sub-tags ("Restaurant › Pizza"), created under a demo tag. */
+export const DEMO_SUB_TAGS: { id: 'pizza'; label: string; parent: TagId; color: string; icon: IconName }[] = [
+  { id: 'pizza', label: 'Pizza', parent: 'restaurant', color: PALETTE.orange, icon: 'pizza' },
+];
+
+
 const p = (n: number) => `local:demoplace${String(n).padStart(2, '0')}`;
 
 /** Phase-0 sample places around Paris. Coordinates are approximate. */
@@ -59,6 +68,18 @@ export const DEMO_PLACES: DemoPlace[] = [
   { id: p(14), name: 'Café de Flore', lat: 48.8541, lon: 2.3326, tags: ['cafe'], ownerIsMe: false, category: 'amenity=cafe', osmTags: { amenity: 'cafe', opening_hours: 'Mo-Su 07:30-01:30', outdoor_seating: 'yes' }, ageDays: 70 },
   { id: p(15), name: 'Philharmonie de Paris', lat: 48.8918, lon: 2.3939, tags: ['music', 'view'], ownerIsMe: true, category: 'amenity=concert_hall', osmTags: { amenity: 'concert_hall', opening_hours: 'Tu-Su 12:00-20:00' }, ageDays: 100 },
 ];
+
+/**
+ * Léa's own tags that match none of mine (spec "Others' tags"): they keep
+ * her colors until I map them. "Rooftop" uses my Viewpoint color on purpose
+ * (the tag panel flags the clash).
+ */
+export const DEMO_FRIEND_EXTRA_TAGS: Record<string, ForeignTag[]> = {
+  [p(10)]: [{ name: 'Rooftop', color: PALETTE.cyan, icon: 'view' }],
+  [p(14)]: [{ name: 'Terrasses', color: PALETTE.yellow, icon: 'cafe' }],
+  [p(9)]: [{ name: 'Pique-nique', color: PALETTE.lime, icon: 'park' }],
+  [p(13)]: [{ name: 'Bouffe', color: PALETTE.earth, icon: 'restaurant' }],
+};
 
 export const DEMO_FRIEND = { id: 'demo-friend-lea', displayName: 'Léa' };
 
@@ -83,6 +104,20 @@ export const FIXTURE_SAVED_PLACE = {
   },
 };
 
+/**
+ * Fixture mode: a saved place that OSM now tags `disused:amenity=restaurant`
+ * (osm package fixture), never checked yet, so the monthly closed-place check
+ * flags it "maybe closed" when the app opens.
+ */
+export const FIXTURE_CLOSED_PLACE = {
+  osm: { type: 'node' as const, id: 9123456720 },
+  name: 'Chez Paulette',
+  category: 'amenity=restaurant',
+  lat: 48.8602311,
+  lon: 2.360142,
+  osmTags: { amenity: 'restaurant', cuisine: 'french', opening_hours: 'Tu-Sa 12:00-14:00,19:00-22:00', 'addr:street': 'Rue Charlot', 'addr:city': 'Paris' },
+};
+
 export function hasAnyData(store: DataStore): boolean {
   return store.repo.tags().length > 0 || store.repo.queryPlaces({ limit: 1 }).length > 0 || store.repo.trash().length > 0;
 }
@@ -90,6 +125,8 @@ export function hasAnyData(store: DataStore): boolean {
 export interface SeedOptions {
   /** Tag name for a demo tag id, in the device language. */
   tagName: (id: TagId) => string;
+  /** Name of a demo sub-tag (default: English). */
+  subTagName?: (id: (typeof DEMO_SUB_TAGS)[number]['id']) => string;
   fixtures: boolean;
   now?: number;
 }
@@ -105,6 +142,9 @@ export function seedDemoData(store: DataStore, opts: SeedOptions): boolean {
     for (const id of TAG_IDS) {
       const def = TAGS[id];
       tagIds.set(id, tx.createTag({ name: opts.tagName(id), color: def.color, icon: def.icon, osmCategories: def.osmCategories }));
+    }
+    for (const sub of DEMO_SUB_TAGS) {
+      tagIds.set(sub.id as TagId, tx.createTag({ name: opts.subTagName?.(sub.id) ?? sub.label, parentId: tagIds.get(sub.parent)!, color: sub.color, icon: sub.icon }));
     }
     for (const d of DEMO_PLACES) {
       if (!d.ownerIsMe) continue;
@@ -122,10 +162,20 @@ export function seedDemoData(store: DataStore, opts: SeedOptions): boolean {
       const f = FIXTURE_SAVED_PLACE;
       tx.putSave({
         place: { osm: f.osm, name: f.name, category: f.category, geometry: { type: 'Point', coordinates: [f.lon, f.lat] } },
-        tagIds: [tagIds.get('restaurant')!],
-        mainTagId: tagIds.get('restaurant')!,
+        tagIds: [tagIds.get('pizza' as TagId)!, tagIds.get('restaurant')!],
+        mainTagId: tagIds.get('pizza' as TagId)!,
         status: 'to_try',
         priceLevel: 2,
+      });
+      const c = FIXTURE_CLOSED_PLACE;
+      tx.putSave({
+        place: { osm: c.osm, name: c.name, category: c.category, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } },
+        tagIds: [tagIds.get('restaurant')!],
+        mainTagId: tagIds.get('restaurant')!,
+        status: 'tried',
+        priceLevel: 2,
+        comment: 'Blanquette on Thursdays.',
+        commentVisibility: 'friends',
       });
     }
   }, 'demo data');
@@ -145,7 +195,7 @@ export function seedDemoData(store: DataStore, opts: SeedOptions): boolean {
           id: saveIdFor(DEMO_FRIEND.id, d.id),
           ownerId: DEMO_FRIEND.id,
           place,
-          theirTags: d.tags.map((t) => TAGS[t].label),
+          theirTags: [...d.tags.map((t) => TAGS[t].label), ...(DEMO_FRIEND_EXTRA_TAGS[d.id] ?? [])],
           createdAt: now - d.ageDays * day,
           updatedAt: now - d.ageDays * day,
         });
@@ -160,6 +210,9 @@ export function seedDemoData(store: DataStore, opts: SeedOptions): boolean {
         address: '12 Rue de Bretagne, 75003 Paris',
         osmSyncedAt: now,
       });
+      const c = FIXTURE_CLOSED_PLACE;
+      // Never checked: the closed-place check runs when the app opens.
+      repo.updatePlaceOsmData(placeIdFromOsm(c.osm.type, c.osm.id), { osmTags: c.osmTags, openingHours: c.osmTags.opening_hours, osmSyncedAt: null });
     }
   });
   return true;

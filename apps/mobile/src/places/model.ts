@@ -45,6 +45,27 @@ export interface PlaceFacts {
   /** Normalized OSM data, when the place has cached OSM tags. */
   info: PlaceInfo | null;
   status: PlaceRecord['status'];
+  /** My save's status (null: none, or not mine). */
+  saveStatus?: SaveRecord['status'];
+  /** My save's sharing (null when not mine). */
+  sharing?: SaveRecord['sharing'] | null;
+  /** My price level, or my friends' average for their places. */
+  priceLevel?: SaveRecord['priceLevel'];
+  /** Folded name, tags, comment, address, cuisine (text filter). */
+  searchText?: string;
+  /** Friends' tags on this place that map to none of mine (shown in their author's color). */
+  friendTags?: FriendTagRef[];
+}
+
+/** A friend's tag not mapped to one of mine, on one place. */
+export interface FriendTagRef {
+  /** `friendTagKey(personId, name)`. */
+  key: string;
+  personId: string;
+  name: string;
+  /** The author's color (null: none received). */
+  color: string | null;
+  icon: string | null;
 }
 
 /**
@@ -80,6 +101,9 @@ export function placeFacts(
     tagIds: mySave ? mySave.tagIds.filter((t) => activeTagIds.has(t)) : [],
     info: placeInfoOf(place),
     status: place.status,
+    saveStatus: mySave && mySave.deletedAt === null ? mySave.status : null,
+    sharing: mySave && mySave.deletedAt === null ? mySave.sharing : null,
+    priceLevel: mySave && mySave.deletedAt === null ? mySave.priceLevel : null,
   };
 }
 

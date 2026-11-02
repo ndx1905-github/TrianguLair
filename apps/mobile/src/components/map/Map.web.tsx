@@ -15,7 +15,7 @@ import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
 type MapLibreModule = typeof import('maplibre-gl');
 
 function pinKey(pin: MapPin, selected: boolean): string {
-  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, selected].join('|');
+  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, selected].join('|');
 }
 
 function clusterKey(c: MapCluster): string {
@@ -36,7 +36,7 @@ function makePinElement(pin: MapPin, selected: boolean, onPress: (id: string) =>
     `width:${width}px;height:${height}px;padding:0;margin:0;border:0;background:none;` +
     `cursor:pointer;display:block;z-index:${selected ? 3 : pin.greyed ? 0 : 1}`;
   el.innerHTML = pinSvg(
-    { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed },
+    { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed },
     { width, height },
   );
   el.addEventListener('click', (ev) => {
@@ -90,6 +90,7 @@ export default function Map({
   onLongPress,
   onMapPress,
   onRegionChange,
+  onUserMoveStart,
   style,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -100,8 +101,8 @@ export default function Map({
   const [ready, setReady] = useState(false);
 
   // Latest callbacks, so map listeners registered once always call the current props.
-  const cb = useRef({ onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress });
-  cb.current = { onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress };
+  const cb = useRef({ onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart });
+  cb.current = { onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart };
 
   // Create the map once.
   useEffect(() => {
@@ -132,6 +133,10 @@ export default function Map({
       );
       const m = map;
       m.on('moveend', () => cb.current.onRegionChange?.(regionOf(m)));
+      // Only gestures carry an originalEvent (jumpTo / flyTo do not).
+      m.on('movestart', (e: { originalEvent?: unknown }) => {
+        if (e.originalEvent) cb.current.onUserMoveStart?.();
+      });
       // `resize` (window, fold/unfold) changes the visible area too.
       m.on('resize', () => cb.current.onRegionChange?.(regionOf(m)));
       mapRef.current = map;

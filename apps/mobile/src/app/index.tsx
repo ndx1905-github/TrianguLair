@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BBox } from '@triangulair/data';
 
+import { ClosureNotice } from '../components/ClosureNotice';
 import { FilterBar } from '../components/FilterBar';
 import Map from '../components/map/Map';
 import type { CameraTarget, LatLon, MapRegion } from '../components/map/types';
@@ -14,13 +15,15 @@ import { Banner } from '../components/ui';
 import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK, OSM_FIXTURES } from '../config';
 import { useData } from '../data/DataProvider';
 import { useTags, useViewportFacts } from '../data/usePlaces';
+import { usePrunedFilter } from '../filters/usePrunedFilter';
 import { useLayout } from '../hooks/useLayout';
 import { useIsDark, useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { buildPin, pinClusterColor, toMapCluster } from '../pins/build';
 import { fitCamera } from '../places/camera';
 import { clusterPins, expansionZoom } from '../places/clustering';
-import { expandTagSelection, isFilterActive, matchPlace, summarize } from '../places/filters';
+import { EMPTY_FILTER, expandTagSelection, isFilterActive, matchPlace, summarize } from '../places/filters';
+import { useClosureCheck } from '../closure/useClosureCheck';
 import { useAppState } from '../state/AppState';
 
 /** Places are loaded for the visible area plus this margin on each side. */
@@ -43,8 +46,20 @@ function MapScreen() {
   const { repo, persistence } = useData();
   const { tags, byId } = useTags();
   const { filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus } = useAppState();
+  usePrunedFilter();
+  const closure = useClosureCheck();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Moving the map folds the bar (spec); the remembered state stays the user's own choice.
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+  const barOpen = filterOpen && !autoCollapsed;
+  const onBarOpenChange = useCallback(
+    (open: boolean) => {
+      setAutoCollapsed(false);
+      setFilterOpen(open);
+    },
+    [setFilterOpen],
+  );
   const [sheetCover, setSheetCover] = useState(0);
   const [camera, setCamera] = useState<CameraTarget | null>(null);
 
@@ -78,9 +93,11 @@ function MapScreen() {
 
   const { pins, clusters } = useMemo(() => {
     const ctx = { tagSet: expandTagSelection(filter.tagIds, tags), now, ...(country ? { country } : {}) };
-    const all = facts.map((f) =>
-      buildPin({ facts: f, match: matchPlace(f, filter, ctx) }, filter, tags, byId, filterActive),
-    );
+    const all = facts.flatMap((f) => {
+      const match = matchPlace(f, filter, ctx);
+      // Closed places stay in my places but leave the map (unless the "Closed" status is chosen).
+      return match === 'hidden' ? [] : [buildPin({ facts: f, match }, filter, tags, byId, filterActive)];
+    });
     const selected = all.filter((p) => p.id === selectedId);
     const rest = all.filter((p) => p.id !== selectedId).map((p) => ({ ...p, color: pinClusterColor(p) }));
     const res = clusterPins(rest, { zoom: region?.zoom ?? initial.zoom });
@@ -130,10 +147,34 @@ function MapScreen() {
         onMapPress={() => setSelectedId(null)}
         onLongPress={onLongPress}
         onRegionChange={setRegion}
+        onUserMoveStart={() => filterOpen && setAutoCollapsed(true)}
       />
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
-        <FilterBar summary={summary} filter={filter} onChange={setFilter} open={filterOpen} onOpenChange={setFilterOpen} />
+        <FilterBar
+          summary={summary}
+          filter={filter}
+          onChange={setFilter}
+          open={barOpen}
+          onOpenChange={onBarOpenChange}
+          tags={tags}
+          personName={(id) => repo.getPerson(id)?.displayName || id}
+          onManageTags={() => router.push('/tags')}
+          maxHeight={Math.max(200, Math.round(height * (wide ? 0.6 : 0.5)))}
+        />
+        {closure.notice && (
+          <View style={{ marginHorizontal: gutter, marginTop: 8, maxWidth: wide ? 460 : undefined }}>
+            <ClosureNotice
+              places={closure.notice.places}
+              onReview={() => {
+                closure.dismiss();
+                setFilter({ ...EMPTY_FILTER, placeStatuses: ['maybe_closed'] });
+                onBarOpenChange(false);
+              }}
+              onLater={closure.dismiss}
+            />
+          </View>
+        )}
         {(persistence === 'memory' || OSM_FIXTURES) && (
           <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }} pointerEvents="none">
             {persistence === 'memory' ? <Banner tone="warning">{t('data.memoryOnly')}</Banner> : <Banner>{t('osm.fixtureShort')}</Banner>}

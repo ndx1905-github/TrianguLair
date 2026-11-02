@@ -20,6 +20,11 @@ const PIN_PATH =
 export const ICON_HALO = '#1F2937';
 const CLIP_ID ='tl-pin-clip'; // Same shape for every pin: duplicate ids are harmless on web.
 
+/** Grey disc with a white cross, top right of the head ("maybe closed"). */
+const CLOSED_BADGE =
+  `<circle cx="33" cy="6" r="5.6" fill="#6B7280" stroke="#FFFFFF" stroke-width="1.4"/>` +
+  `<path d="M30.6 3.6L35.4 8.4M35.4 3.6L30.6 8.4" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/>`;
+
 export interface PinSpec {
   /** Tag colors in order (first = primary). */
   colors: readonly string[];
@@ -29,6 +34,8 @@ export interface PinSpec {
   faded: boolean;
   /** Outside the active filter: grey and translucent (drawn smaller by the map). */
   greyed?: boolean;
+  /** Maybe closed: a small grey cross badge at the top right. */
+  maybeClosed?: boolean;
 }
 
 /** Pin scale factors (viewBox 40x52 = scale 1). */
@@ -86,6 +93,7 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
     `<path d="${icon}" fill="none" stroke="${halo}" stroke-width="4" stroke-linejoin="round"/>` +
     `<path d="${icon}" fill="#FFFFFF"/>` +
     `</g>` +
+    (spec.maybeClosed ? CLOSED_BADGE : '') +
     `</g></svg>`
   );
 }

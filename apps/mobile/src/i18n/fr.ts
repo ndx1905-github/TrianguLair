@@ -1,4 +1,5 @@
 import type { Messages } from './core';
+import { frFiltersTags } from './filtersTags.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -232,4 +233,6 @@ export const fr: Messages = {
   'demoTag.music': 'Musique',
   'demoTag.shop': 'Boutique',
   'demoTag.hotel': 'Hôtel',
+
+  ...frFiltersTags,
 };

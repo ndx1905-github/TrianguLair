@@ -1,4 +1,5 @@
 import type { Messages } from './core';
+import { enFiltersTags } from './filtersTags.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -232,4 +233,6 @@ export const en: Messages = {
   'demoTag.music': 'Music',
   'demoTag.shop': 'Shop',
   'demoTag.hotel': 'Hotel',
+
+  ...enFiltersTags,
 };

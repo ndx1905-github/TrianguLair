@@ -23,8 +23,8 @@ function PinMarker({ pin, selected, onPress }: { pin: MapPin; selected: boolean;
   const width = PIN_VIEWBOX.width * scale;
   const height = PIN_VIEWBOX.height * scale;
   const xml = useMemo(
-    () => pinSvg({ colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed }, { width, height }),
-    [pin.colors, pin.iconPath, pin.faded, pin.greyed, width, height],
+    () => pinSvg({ colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed }, { width, height }),
+    [pin.colors, pin.iconPath, pin.faded, pin.greyed, pin.maybeClosed, width, height],
   );
   // Anchor "bottom" + offset so that the pin tip (not the view bottom) sits on the coordinate.
   const tipGap = height * (1 - PIN_ANCHOR.y);
@@ -69,6 +69,7 @@ export default function Map({
   onLongPress,
   onMapPress,
   onRegionChange,
+  onUserMoveStart,
   style,
 }: MapViewProps) {
   const lastPinPress = useRef(0);
@@ -113,6 +114,9 @@ export default function Map({
         onLongPress={(e) => {
           const [lon, lat] = e.nativeEvent.lngLat;
           onLongPress?.({ lat, lon });
+        }}
+        onRegionWillChange={(e) => {
+          if (e.nativeEvent.userInteraction) onUserMoveStart?.();
         }}
         onRegionDidChange={(e) => {
           const { bounds, center: c, zoom: z } = e.nativeEvent;
