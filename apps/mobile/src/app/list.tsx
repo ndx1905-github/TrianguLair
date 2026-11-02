@@ -6,7 +6,7 @@ import type { PlaceHit } from '@triangulair/data';
 
 import { DataGate } from '../components/DataGate';
 import { FilterBar } from '../components/FilterBar';
-import { PlaceCard } from '../components/PlaceCard';
+import { PlaceOrZoneCard as PlaceCard } from '../zones/ZoneCard';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Segmented } from '../components/ui';
 import { INITIAL_CENTER } from '../config';

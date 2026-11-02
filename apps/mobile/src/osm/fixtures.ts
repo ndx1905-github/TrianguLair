@@ -15,6 +15,9 @@ import photonReverse from '../../../../packages/osm/test/fixtures/search/photon-
 import photon from '../../../../packages/osm/test/fixtures/search/photon-trattoria.json';
 import type { OsmFixtures } from './fixtureFetch';
 
+// Zones (neighbourhoods, streets, areas by name): synthetic, see zoneFixtures.ts.
+export { loadZoneFixtures } from './zoneFixtures';
+
 // JSON imports are typed structurally (strings, number[]), not as the service formats.
 export function loadFixtures(): OsmFixtures {
   return {

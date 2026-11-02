@@ -18,6 +18,22 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   comment/sharing (saved immediately), move to trash. OSM data is refreshed when stale.
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
+- **Zones** (`/zone/new`, T-110): from an OSM neighbourhood (Overpass `place=neighbourhood|quarter|suburb`
+  in the visible area, tap one on the map, or Nominatim search by name), from street segments (tap a
+  start and an end, the path follows the streets through intersections; "Add a segment" chains
+  contiguous or separate ones; saved as LineString / MultiLineString), or drawn by points (tap the
+  first point to close, then move a vertex or add one on an edge; self-intersections refused) or by
+  painting (three thicknesses, eraser, "move map"; strokes rasterized in metres, merged, traced,
+  Douglas–Peucker + Chaikin, saved as a "fuzzy outline" polygon). Zones are drawn with a ~20 % fill
+  and a 2.5 px outline (painted: three blurred rings; streets: thick translucent line + centre line),
+  a rounded-square badge without tip, greyed outside the filter. The zone card has the same personal
+  fields as a place plus "places inside" (`src/zones/`).
+- **Lists** (`/lists`, `/lists/[id]`, `/lists/edit`, T-112): saved filter (tags with sub-tags,
+  categories, statuses, prices, zones from my zones / by name via Nominatim / outlined on the map,
+  exceptions added or removed by hand) or manual selection; live preview (map with the zones, members
+  in color, others faded, count) and, for every place, why it is in or out ("Private: never in a
+  list", "Does not match: tags, zones"…). Membership always comes from `Repository.evaluateList`.
+  Visibility (link / public) is stored; sharing itself is phase 2 (`src/lists/`).
 - **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
   on web to force one. No UI string is hard-coded in components.
 
@@ -98,6 +114,10 @@ osm package's test fixtures (synthetic places in the Marais), for offline demos:
 EXPO_PUBLIC_OSM_FIXTURES=1 npx expo export --platform web
 ```
 
+Zone sources have their own synthetic fixtures (`src/osm/zoneFixtures.ts`: four quarters of the
+Marais, a few streets with shared intersection nodes, "Paris" for Nominatim), routed by
+`zoneFixtureFetch.ts`. Real queries carry a `/* tl:… */` marker comment.
+
 In fixture mode the demo seed also saves "Trattoria Da Lucia" (a fixture place), so the add screen
 shows "Already in my places".
 
@@ -129,6 +149,9 @@ src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), type
 src/components/       FilterBar, PlaceSheet, PlaceCard, SaveEditor, ScreenHeader, DataGate, ui
 src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPersistence, demo, usePlaces
 src/osm/              client (one OSM client), fixtureFetch + fixtures (fixture mode), errors
+src/zones/            zone geometry (raster painting/buffer, simplify, streets graph, drawing), OSM zone
+                      queries, map shapes and badges, zone editor and card
+src/lists/            list draft/filter building and "why in/out", list editor and map
 src/places/           pure logic: filters, clustering, model, card, add, list, camera
 src/pins/             bands.ts, pinSvg.ts, build.ts (pins from places and the filter)
 src/i18n/             core (plurals, placeholders), en, fr, provider
@@ -195,3 +218,18 @@ photos with a placeholder image; pins, clusters, UI, data and credit lines are r
 | `docs/tablet-list.png` | Tablet: list by distance and card side by side |
 | `docs/phone-dark-card.png` | Dark mode |
 | `docs/phone-fr-add.png` | French UI |
+
+Zones and lists (`scripts/shots_zones.py`, same setup):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-zone-neighbourhood.png`, `docs/tablet-zone-neighbourhood.png` | OSM neighbourhoods to tap, one picked |
+| `docs/phone-zone-draw-points.png`, `docs/phone-dark-zone-draw.png` | Drawing by points (closed; a vertex selected to move, dark mode) |
+| `docs/phone-zone-paint.png` | Painted zone with fuzzy outline |
+| `docs/phone-zone-streets.png` | Street segment following the streets between two handles |
+| `docs/phone-zone-card.png`, `docs/tablet-map-zone-card.png` | Zone card (places inside, tags, status…) |
+| `docs/phone-map-zones.png` | Zones on the map: outlined, painted, street, badges |
+| `docs/phone-list-editor.png`, `docs/tablet-list-editor.png` | List editor: tags, statuses, zones (mine, by name), visibility |
+| `docs/phone-list-preview.png`, `docs/phone-list-reasons.png` | Preview map and count; why each place is in or out (private never) |
+| `docs/phone-list-view.png`, `docs/phone-list-view-rows.png`, `docs/tablet-list-view.png` | A list: map, rows, card |
+| `docs/phone-fr-list-editor.png` | French, manual list |

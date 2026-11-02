@@ -1,7 +1,11 @@
 import type { Messages } from './core';
+import { zonesListsFr } from './zonesLists.fr';
 
 /** Français. */
 export const fr: Messages = {
+  // Zones and lists (T-110, T-112), kept in their own file.
+  ...zonesListsFr,
+
   'common.back': 'Retour',
   'common.cancel': 'Annuler',
   'common.close': 'Fermer',

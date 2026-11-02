@@ -22,6 +22,9 @@ import { fitCamera } from '../places/camera';
 import { clusterPins, expansionZoom } from '../places/clustering';
 import { expandTagSelection, isFilterActive, matchPlace, summarize } from '../places/filters';
 import { useAppState } from '../state/AppState';
+import { MapShortcuts } from '../zones/MapShortcuts';
+import { useZonePlaces } from '../zones/useZonePlaces';
+import { zoneShapes } from '../zones/zoneLayer';
 
 /** Places are loaded for the visible area plus this margin on each side. */
 const VIEWPORT_MARGIN = 0.25;
@@ -72,23 +75,28 @@ function MapScreen() {
 
   const bbox = useMemo(() => (region ? padBBox(region.bbox, VIEWPORT_MARGIN) : null), [region]);
   const facts = useViewportFacts(bbox);
+  const zones = useZonePlaces(useMemo(() => facts.map((f) => f.id), [facts]));
   const filterActive = isFilterActive(filter);
   const now = useMemo(() => new Date(), [facts, filter]); // re-evaluated with the data or the filter
   const summary = useMemo(() => summarize(facts, filter, tags, now, country), [facts, filter, tags, now, country]);
 
-  const { pins, clusters } = useMemo(() => {
+  const { pins, clusters, shapes } = useMemo(() => {
     const ctx = { tagSet: expandTagSelection(filter.tagIds, tags), now, ...(country ? { country } : {}) };
-    const all = facts.map((f) =>
-      buildPin({ facts: f, match: matchPlace(f, filter, ctx) }, filter, tags, byId, filterActive),
-    );
+    const all = facts.map((f) => ({
+      ...buildPin({ facts: f, match: matchPlace(f, filter, ctx) }, filter, tags, byId, filterActive),
+      // Zones get a square badge and are not clustered (their shape is drawn anyway).
+      ...(zones.has(f.id) ? { badge: true } : {}),
+    }));
     const selected = all.filter((p) => p.id === selectedId);
-    const rest = all.filter((p) => p.id !== selectedId).map((p) => ({ ...p, color: pinClusterColor(p) }));
+    const badges = all.filter((p) => p.badge && p.id !== selectedId);
+    const rest = all.filter((p) => p.id !== selectedId && !p.badge).map((p) => ({ ...p, color: pinClusterColor(p) }));
     const res = clusterPins(rest, { zoom: region?.zoom ?? initial.zoom });
     return {
-      pins: [...res.singles, ...selected],
+      pins: [...badges, ...res.singles, ...selected],
       clusters: res.clusters,
+      shapes: zoneShapes([...zones.values()], new globalThis.Map(all.map((p) => [p.id, p])), selectedId),
     };
-  }, [facts, filter, tags, byId, filterActive, selectedId, region?.zoom, initial.zoom, now, country]);
+  }, [facts, zones, filter, tags, byId, filterActive, selectedId, region?.zoom, initial.zoom, now, country]);
 
   const mapClusters = useMemo(
     () => clusters.map((cl) => toMapCluster(cl, t('map.cluster', { count: cl.count }))),
@@ -130,6 +138,8 @@ function MapScreen() {
         onMapPress={() => setSelectedId(null)}
         onLongPress={onLongPress}
         onRegionChange={setRegion}
+        shapes={shapes}
+        onShapePress={setSelectedId}
       />
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
@@ -164,6 +174,7 @@ function MapScreen() {
             ☰ {t('nav.list')}
           </Text>
         </Pressable>
+        <MapShortcuts />
         <Pressable
           onPress={openAdd}
           style={[styles.fab, { backgroundColor: c.accent, shadowColor: c.shadow }]}

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Camera, Map as MLMap, Marker, type CameraRef } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Layer, Map as MLMap, Marker, type CameraRef, type LayerProps } from '@maplibre/maplibre-react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
+import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
+import { SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
 import { clusterBubbleSize, clusterColors } from './cluster';
 import type { MapCluster, MapPin, MapViewProps } from './types';
 
@@ -20,16 +22,24 @@ const PIN_PRESS_GUARD_MS = 350;
 
 function PinMarker({ pin, selected, onPress }: { pin: MapPin; selected: boolean; onPress: (id: string) => void }) {
   const scale = pinScale(pin, selected);
-  const width = PIN_VIEWBOX.width * scale;
-  const height = PIN_VIEWBOX.height * scale;
-  const xml = useMemo(
-    () => pinSvg({ colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed }, { width, height }),
-    [pin.colors, pin.iconPath, pin.faded, pin.greyed, width, height],
-  );
-  // Anchor "bottom" + offset so that the pin tip (not the view bottom) sits on the coordinate.
+  const box = pin.badge ? BADGE_VIEWBOX : PIN_VIEWBOX;
+  const width = box.width * scale;
+  const height = box.height * scale;
+  const xml = useMemo(() => {
+    const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed };
+    return pin.badge ? badgeSvg(spec, { width, height }) : pinSvg(spec, { width, height });
+  }, [pin.colors, pin.iconPath, pin.faded, pin.greyed, pin.badge, width, height]);
+  // Pins: anchor "bottom" + offset so that the tip (not the view bottom) sits on the coordinate.
+  // Zone badges: centred.
   const tipGap = height * (1 - PIN_ANCHOR.y);
   return (
-    <Marker id={pin.id} lngLat={[pin.lon, pin.lat]} anchor="bottom" offset={[0, tipGap]} onPress={() => onPress(pin.id)}>
+    <Marker
+      id={pin.id}
+      lngLat={[pin.lon, pin.lat]}
+      anchor={pin.badge ? 'center' : 'bottom'}
+      offset={pin.badge ? [0, 0] : [0, tipGap]}
+      onPress={() => onPress(pin.id)}
+    >
       <View style={{ width, height }} accessible accessibilityRole="button" accessibilityLabel={pin.label}>
         <SvgXml xml={xml} width={width} height={height} />
       </View>
@@ -69,6 +79,8 @@ export default function Map({
   onLongPress,
   onMapPress,
   onRegionChange,
+  shapes = [],
+  onShapePress,
   style,
 }: MapViewProps) {
   const lastPinPress = useRef(0);
@@ -88,6 +100,8 @@ export default function Map({
     },
     [onClusterPress],
   );
+
+  const shapeData = useMemo(() => shapesToGeoJSON(shapes), [shapes]);
 
   const camKey = useRef<number | null>(null);
   useEffect(() => {
@@ -120,6 +134,22 @@ export default function Map({
         }}
       >
         <Camera ref={cameraRef} initialViewState={{ center: [center.lon, center.lat], zoom }} />
+        <GeoJSONSource
+          id={SHAPES_SOURCE}
+          data={shapeData}
+          onPress={(e) => {
+            const hit = e.nativeEvent.features.find((f) => f.properties?.press === 1);
+            if (!hit || !onShapePress) return;
+            // Handled here: do not also report a map press.
+            e.stopPropagation();
+            lastPinPress.current = Date.now();
+            onShapePress(String(hit.properties!.id));
+          }}
+        >
+          {SHAPE_LAYERS.map((layer) => (
+            <Layer key={layer.id} {...(layer as LayerProps)} />
+          ))}
+        </GeoJSONSource>
         {clusters.map((c) => (
           <ClusterMarker key={c.id} cluster={c} onPress={handleClusterPress} />
         ))}

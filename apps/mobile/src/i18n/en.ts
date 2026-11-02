@@ -1,7 +1,11 @@
 import type { Messages } from './core';
+import { zonesListsEn } from './zonesLists.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
+  // Zones and lists (T-110, T-112), kept in their own file.
+  ...zonesListsEn,
+
   'common.back': 'Back',
   'common.cancel': 'Cancel',
   'common.close': 'Close',

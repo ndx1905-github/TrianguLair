@@ -1,5 +1,9 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
+import type { MapShape } from '../../zones/shapes';
+
+export type { MapShape };
+
 export interface LatLon {
   lat: number;
   lon: number;
@@ -18,6 +22,8 @@ export interface MapPin extends LatLon {
   faded: boolean;
   /** Outside the active filter: grey, translucent and smaller (spec "Filtered display"). */
   greyed: boolean;
+  /** Zone badge: a rounded square without a tip, centred on the point (spec "Zones"). */
+  badge?: boolean;
 }
 
 /** A bubble standing for several pins when zoomed out. */
@@ -62,6 +68,10 @@ export interface MapViewProps {
   onLongPress?: (at: LatLon) => void;
   /** Tap on the map background (not on a pin). */
   onMapPress?: (at: LatLon) => void;
+  /** Zones, street segments, drafts and candidate shapes drawn under the pins. */
+  shapes?: MapShape[];
+  /** Tap on a pressable shape (zone area, candidate neighbourhood or street). */
+  onShapePress?: (id: string) => void;
   /** After the camera stops moving (and once when the map is ready). */
   onRegionChange?: (region: MapRegion) => void;
   style?: StyleProp<ViewStyle>;
