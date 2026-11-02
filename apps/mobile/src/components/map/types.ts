@@ -18,6 +18,8 @@ export interface MapPin extends LatLon {
   faded: boolean;
   /** Outside the active filter: grey, translucent and smaller (spec "Filtered display"). */
   greyed: boolean;
+  /** Maybe closed: small grey cross on the pin (spec "Pins" > "Statuses"). */
+  maybeClosed?: boolean;
 }
 
 /** A bubble standing for several pins when zoomed out. */
@@ -64,5 +66,7 @@ export interface MapViewProps {
   onMapPress?: (at: LatLon) => void;
   /** After the camera stops moving (and once when the map is ready). */
   onRegionChange?: (region: MapRegion) => void;
+  /** The user starts moving the map (drag, pinch), not a programmatic camera move. */
+  onUserMoveStart?: () => void;
   style?: StyleProp<ViewStyle>;
 }

@@ -14,7 +14,7 @@ import type { MapCluster, MapPin } from '../components/map/types';
 import type { Cluster } from '../places/clustering';
 import { filteredTagOf, type FilterState, type Match } from '../places/filters';
 import { placeIcon, type AppTag, type PlaceFacts } from '../places/model';
-import { iconPath, UNTAGGED_COLOR } from '../theme/tags';
+import { iconPath, isIconName, UNTAGGED_COLOR } from '../theme/tags';
 
 export interface PinInput {
   facts: PlaceFacts;
@@ -31,8 +31,19 @@ export function buildPin(
   const greyed = filterActive && match !== 'match';
   const filtered = filterActive && !greyed ? filteredTagOf(facts, filter, tags) : null;
   const shownTags = filtered ? [filtered] : facts.tagIds;
-  const colors = shownTags.map((id) => tagById.get(id)?.color ?? UNTAGGED_COLOR);
-  const icon = filtered ? (tagById.get(filtered)?.icon ?? placeIcon(facts, tagById)) : placeIcon(facts, tagById);
+  let colors = shownTags.map((id) => tagById.get(id)?.color ?? UNTAGGED_COLOR);
+  let icon = filtered ? (tagById.get(filtered)?.icon ?? placeIcon(facts, tagById)) : placeIcon(facts, tagById);
+  // A friend's tag I have not mapped keeps its author's color and icon (spec "Others' tags").
+  const friendTags = facts.friendTags ?? [];
+  if (!filtered && friendTags.length > 0) {
+    const chosen = filterActive ? friendTags.filter((t) => filter.friendTags?.includes(t.key)) : [];
+    const shown = chosen.length ? chosen : friendTags;
+    // Chosen in the filter: the pin takes that tag; otherwise my tags first, then theirs as bands.
+    colors = chosen.length ? [] : colors;
+    const iconFirst = colors.length === 0;
+    colors = [...colors, ...shown.map((t) => t.color ?? UNTAGGED_COLOR)];
+    if (iconFirst && isIconName(shown[0]!.icon)) icon = shown[0]!.icon;
+  }
   return {
     id: facts.id,
     lat: facts.lat,
@@ -42,6 +53,7 @@ export function buildPin(
     iconPath: iconPath(icon),
     faded: !facts.mine,
     greyed,
+    ...(facts.status === 'maybe_closed' ? { maybeClosed: true } : {}),
   };
 }
 

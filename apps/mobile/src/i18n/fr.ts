@@ -1,4 +1,5 @@
 import type { Messages } from './core';
+import { frFiltersTags } from './filtersTags.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -327,4 +328,5 @@ export const fr: Messages = {
   'import.done.undoHint': 'Vous pouvez annuler cet import pendant {days} jours depuis cet écran.',
   'import.done.map': 'Les voir sur la carte',
   'import.again': 'Importer un autre fichier',
+  ...frFiltersTags,
 };

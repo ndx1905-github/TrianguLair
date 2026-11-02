@@ -5,7 +5,7 @@ import { DataStore, placeIdFromOsm } from '@triangulair/data';
 import { listQuery } from '../places/list';
 import { buildPin } from '../pins/build';
 import { placeFacts, toAppTag } from '../places/model';
-import { DEMO_FRIEND, DEMO_PLACES, FIXTURE_SAVED_PLACE, hasAnyData, seedDemoData } from './demo';
+import { DEMO_FRIEND, DEMO_PLACES, FIXTURE_CLOSED_PLACE, FIXTURE_SAVED_PLACE, hasAnyData, seedDemoData } from './demo';
 import { SqlJsDriver } from './sqljsDriver';
 import { TAGS } from '../theme/tags';
 
@@ -64,9 +64,12 @@ describe('demo data', () => {
     expect(seedDemoData(store, { tagName: (id) => TAGS[id].label, fixtures: true })).toBe(false);
 
     const repo = store.repo;
-    expect(repo.tags()).toHaveLength(10);
+    expect(repo.tags()).toHaveLength(11);
+    const pizza = repo.tags().find((t) => t.name === 'Pizza')!;
+    expect(repo.tags().find((t) => t.id === pizza.parentId)?.name).toBe('Restaurant');
     const mine = repo.queryPlaces({ source: 'mine', limit: 100 });
-    expect(mine).toHaveLength(DEMO_PLACES.filter((p) => p.ownerIsMe).length + 1);
+    // + the two fixture places (Trattoria, and Chez Paulette for the closed-place check).
+    expect(mine).toHaveLength(DEMO_PLACES.filter((p) => p.ownerIsMe).length + 2);
     const friendsOnly = repo.queryPlaces({ source: 'friends', limit: 100 }).filter((h) => !h.mine);
     expect(friendsOnly.map((h) => h.name).sort()).toEqual(DEMO_PLACES.filter((p) => !p.ownerIsMe).map((p) => p.name).sort());
     expect(repo.getPerson(DEMO_FRIEND.id)?.displayName).toBe('Léa');
@@ -76,6 +79,11 @@ describe('demo data', () => {
     expect(repo.getPlace(baron.id)?.osmTags?.happy_hours).toBe('Tu-Fr 17:00-19:00');
     const trattoria = repo.getMySaveForPlace(placeIdFromOsm('node', FIXTURE_SAVED_PLACE.osm.id));
     expect(trattoria?.status).toBe('to_try');
+    expect(trattoria?.mainTagId).toBe(pizza.id);
+    // Léa's own tags travel with their colors.
+    const rooftop = repo.friendTags().find((t) => t.name === 'Rooftop');
+    expect(rooftop?.color).toBe('#0891B2');
+    expect(repo.getPlace(placeIdFromOsm('node', FIXTURE_CLOSED_PLACE.osm.id))?.osmSyncedAt).toBeNull();
   });
 
   it('pins: main tag first; friends-only places faded and colored by category', () => {

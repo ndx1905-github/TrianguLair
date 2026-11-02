@@ -3,6 +3,10 @@ import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 import { parseOsmPlaceId, type SavePatch } from '@triangulair/data';
 import type { Photo } from '@triangulair/osm';
 
+import { useRouter } from 'expo-router';
+
+import { isDueOnCardOpen } from '../closure/glue';
+import { checkPlaces, resolveClosure } from '../closure/run';
 import { useData } from '../data/DataProvider';
 import { useFactsLookup, useTags } from '../data/usePlaces';
 import { useUiColors } from '../hooks/useUiColors';
@@ -11,6 +15,8 @@ import { osmClient } from '../osm/client';
 import { classifyOsmError } from '../osm/errors';
 import { cardInfo } from '../places/card';
 import { placeInfoOf } from '../places/model';
+import { ClosureSection } from './ClosureSection';
+import { DirectionsSection } from './DirectionsSection';
 import { SaveEditor, type SaveFields } from './SaveEditor';
 import { Banner, Button, Pill, SectionTitle } from './ui';
 
@@ -36,6 +42,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
   const { repo, mutate, version } = useData();
   const { tags } = useTags();
   const lookup = useFactsLookup();
+  const router = useRouter();
 
   const place = useMemo(() => repo.getPlace(placeId), [repo, placeId, version]);
   const save = useMemo(() => {
@@ -64,7 +71,17 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
     const osm = osmClient();
     (async () => {
       let current = info;
-      if (!place.osmSyncedAt || Date.now() - place.osmSyncedAt > REFRESH_AFTER_MS) {
+      const stale = !place.osmSyncedAt || Date.now() - place.osmSyncedAt > REFRESH_AFTER_MS;
+      if (save && (stale || isDueOnCardOpen(place, new Date()))) {
+        // My place: the refresh is the closed-place check (spec: card opened, last check over a month old).
+        try {
+          const [res] = await checkPlaces([place], osm, mutate, ctrl.signal);
+          if (res?.place) current = res.place;
+        } catch (e) {
+          if (classifyOsmError(e) === 'aborted') return;
+          setOffline(true);
+        }
+      } else if (stale) {
         try {
           const fresh = await osm.overpass.getPlace({ type: osmRef.osmType, id: osmRef.osmId }, { signal: ctrl.signal });
           if (fresh && !ctrl.signal.aborted) {
@@ -164,7 +181,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
         )}
       </View>
 
-      {card.maybeClosed && <Banner tone="warning">{t('card.maybeClosed')}</Banner>}
+      <ClosureSection place={place} mine={!!save} />
       {card.opening && (
         <Text style={[styles.opening, { color: toneColor }]} maxFontSizeMultiplier={2} testID="opening-line">
           {card.opening.text}
@@ -195,6 +212,8 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
           {card.phone && <Button kind="secondary" label={t('card.call')} onPress={() => void Linking.openURL(`tel:${card.phone!.replace(/\s/g, '')}`)} />}
         </View>
       )}
+
+      <DirectionsSection place={place} address={card.address} />
 
       {photos.length > 0 && (
         <>
@@ -247,6 +266,12 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
       {fields ? (
         <>
           <SaveEditor value={fields} tags={tags} onChange={apply} onCommentCommit={(text) => apply({ comment: text })} />
+          <View style={[styles.wrap, { marginTop: 8 }]}>
+            <Button kind="secondary" label={t('fb.manageTags')} onPress={() => router.push('/tags')} testID="card-manage-tags" />
+            {place.status === 'open' && (
+              <Button kind="secondary" label={t('closure.report')} onPress={() => resolveClosure(place, 'closed', mutate)} testID="closure-report" />
+            )}
+          </View>
           <View style={{ marginTop: 20 }}>
             {confirmDelete ? (
               <View style={{ gap: 8 }}>

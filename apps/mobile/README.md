@@ -27,6 +27,32 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   share sheet on web, share sheet on native). Logic in `@triangulair/import` (see its README).
   Native file access uses `expo-document-picker`, `expo-file-system` and `expo-sharing`
   (new native modules: a new development build is needed). Screenshots: `docs/*-import-*.png`.
+- **Filter bar** (T-109, `components/FilterBar.tsx`, logic in `src/places/filters.ts` and `src/filters/`):
+  my tags (choosing a sub-tag of a chosen tag narrows to it), friends' unmapped tags in their
+  author's color, categories (OSM groups) then their sub-filters (type, cuisine, museum type, shop
+  type), practical criteria (open now, happy hour, terrace, takes reservations, free entry,
+  second-hand, organic, also at my friends'), diets (all chosen ones required), "entry ≤ €X", my
+  status, "maybe closed" / "closed" (closed places are hidden unless chosen), visibility (only me /
+  shared / friends' places), price level, text. Groups ANDed, values ORed; a place lacking source
+  info is "unknown" and drawn faded. Collapses to one line of removable pills; moving the map folds
+  it without changing the remembered choice. Filter and open state are kept per device (versioned
+  JSON, parsed defensively; storage falls back to memory when blocked).
+- **Tags** (`/tags`, T-108): tree of my tags with color (spec palette), icon (curated set, below),
+  places, linked OSM categories and linked friends' tags; create (color and icon suggested from the
+  name), edit, re-parent (no cycles offered), delete to the trash with undo. "My friends' tags":
+  matched by manual mapping, then by name (case, accents, plurals, en/fr synonyms), else kept in
+  their author's color, with "Link to my tag", "Adopt" and a warning when the color equals one of
+  mine. The card shows tag paths ("Restaurant › Pizza"); the first tag is the main one.
+- **Closed places** (T-113, `src/closure/`): the osm package's `ClosureChecker` and monthly schedule
+  run while the app is open only (on open, on return to the foreground at most every 6 h, aborted
+  when the app leaves the foreground), in batches of 50 never-checked-first places, and when a card
+  of mine opens with a check over a month old (every OSM refresh of my places is a check). Results go
+  to the place cache (`status`, `closedSignals`, `osmSyncedAt` = last check). A grouped notice at
+  most monthly; the card shows "Maybe closed" with reasons and date, "Confirm closed" / "Still open"
+  (answers kept per device and fed back so dismissed signals do not return); the pin gets a small
+  grey cross; "Report closed" on my places.
+- **Go there** (T-116): directions in the phone's navigation app (`geo:` on Android, Apple Maps on
+  iOS, Google Maps on web) and "open in" Apple Maps / Google Maps / OpenStreetMap (new tab on web).
 - **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
   on web to force one. No UI string is hard-coded in components.
 
@@ -145,7 +171,10 @@ src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPers
 src/osm/              client (one OSM client), fixtureFetch + fixtures (fixture mode), errors
 src/places/           pure logic: filters, clustering, model, card, add, list, camera
 src/pins/             bands.ts, pinSvg.ts, build.ts (pins from places and the filter)
-src/i18n/             core (plurals, placeholders), en, fr, provider
+src/i18n/             core (plurals, placeholders), en, fr (+ filtersTags.en/fr), provider
+src/filters/          filter storage, collapsed-summary pills, labels, usePrunedFilter
+src/tags/             tag tree, friends' tags mapping, suggested color/icon, icon set, text folding
+src/closure/          closed-place glue (pure), runner, useClosureCheck, signal wording
 src/state/            AppState (filter, last map area, focus) shared by the screens
 src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
 src/config.ts         map style URLs, attribution, initial camera, fixture flag
@@ -155,6 +184,9 @@ src/config.ts         map style URLs, attribution, initial camera, fixture flag
 
 - **Shape:** teardrop pin with an SVG `viewBox` of 40×52. The tip is the anchor point.
 - **Tag colors:** the colors are saturated and set in `src/theme/tags.ts`.
+- **Tag icons:** Material Design Icons paths (Apache-2.0, `src/theme/icons.ts`, `iconsExtra.ts`), about
+  50 curated in 8 groups (`src/tags/iconSet.ts`); not the spec's Maki/Temaki set yet.
+- **Maybe closed:** small grey disc with a white cross at the top right.
 - **Icon:** the icon of the first tag, drawn **white** with a dark halo. The halo is the same path
   drawn first with a dark stroke.
 - **Several tags:** the round body is split into up to **3 horizontal color bands** of equal height,
@@ -209,3 +241,17 @@ photos with a placeholder image; pins, clusters, UI, data and credit lines are r
 | `docs/tablet-list.png` | Tablet: list by distance and card side by side |
 | `docs/phone-dark-card.png` | Dark mode |
 | `docs/phone-fr-add.png` | French UI |
+
+Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHOTS_BASE` picks the server):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-closure-notice.png` | Monthly check on open: grouped "maybe closed" notice |
+| `docs/phone-filters-expanded.png` | Expanded bar: tag + its sub-tags, friends' tags, Eat & drink with type and cuisine, Terrace |
+| `docs/phone-filters-collapsed.png` | Collapsed summary: one removable pill per filter, matching pins in color, the rest grey |
+| `docs/phone-maybe-closed-card.png`, `docs/phone-dark-maybe-closed.png` | Card: "Maybe closed" with reason, date, confirm / still open |
+| `docs/phone-card-directions.png` | Card: directions and open in Apple Maps / Google Maps / OSM |
+| `docs/phone-tags.png`, `docs/phone-tag-editor.png` | Tag tree; editor of the sub-tag "Restaurant › Pizza" |
+| `docs/phone-friend-tags.png` | Friends' tags: author colors, color clash warning, link picker |
+| `docs/tablet-filters-expanded.png`, `docs/tablet-tag-new.png` | Tablet: Culture + "Entry ≤ €20"; new tag with suggested icon |
+| `docs/phone-fr-filters.png` | French filter bar |

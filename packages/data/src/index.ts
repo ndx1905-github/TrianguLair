@@ -15,7 +15,7 @@ export * from './filter.ts';
 export * from './place.ts';
 export { migrate, detectCapabilities, readCapabilities, rebuildIndexes, SCHEMA_VERSION } from './sqlite/schema.ts';
 export type { Capabilities, MigrateOptions } from './sqlite/schema.ts';
-export { Repository } from './sqlite/repository.ts';
+export { Repository, parseTheirTags } from './sqlite/repository.ts';
 export type {
   PlaceQuery,
   PlaceHit,
@@ -24,6 +24,8 @@ export type {
   MySaveSummary,
   MapPin,
   ForeignSaveInput,
+  ForeignTag,
+  FriendTagRow,
   OpenRepositoryOptions,
 } from './sqlite/repository.ts';
 export {

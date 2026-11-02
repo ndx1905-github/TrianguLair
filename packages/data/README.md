@@ -78,7 +78,7 @@ task. The app also needs a `crypto.getRandomValues` polyfill (or pass
 | Module | Main exports |
 | --- | --- |
 | `DataStore` (store.ts) | `open(options)`, `change(tx => …)` (one atomic change), `merge(docOrUpdate)`, `exportDoc(sinceStateVector?)`, `importChanges(update)`, `heads()` (state vector), `compact()`, `reproject()`, `doc` (lazy), `saveId(placeId)`; shortcuts: `putSave`, `updateSave`, `setSaveTags`, `addSaveTag`, `removeSaveTag`, `deleteSave`, `restoreSave`, `addMedia`, `removeMedia`, `relinkSave`, `createTag`, `updateTag`, `deleteTag`, `restoreTag`, `setTagMapping`, `createList`, `updateList`, `setListFilter`, `addToList`, `removeFromList`, `deleteList`, `restoreList`, `purgeTrash` |
-| `Repository` (sqlite/repository.ts) | Reads: `queryPlaces({ bbox, within, text, source, sort, from, limit, offset })`, `mapPins(bbox, source)`, `search(text)`, `getPlace`, `getSave`, `getMySaveForPlace`, `savesForPlace`, `trash`, `getMedia`, `tags`, `tagMappings`, `lists`, `getList`, `listItems`, `listsContaining`, `evaluateList`, `saveMatchesList`, `findDuplicateSuggestions`, `countInBBox`, `dumpOwnData`. Caches: `updatePlaceOsmData`, `upsertForeignSave`, `deleteForeignSave`, `upsertPerson`, `getPerson`, `removePerson`, `pruneOrphanPlaces`. Projection only: `writeOwnSave`, `removeOwnSave`, `writeOwnTags`, `writeOwnList`, `removeOwnList`, `writeTagMappings` |
+| `Repository` (sqlite/repository.ts) | Reads: `queryPlaces({ bbox, within, text, source, sort, from, limit, offset })`, `mapPins(bbox, source)`, `search(text)`, `getPlace`, `getSave`, `getMySaveForPlace`, `savesForPlace`, `trash`, `getMedia`, `tags`, `tagMappings`, `friendTags`, `lists`, `getList`, `listItems`, `listsContaining`, `evaluateList`, `saveMatchesList`, `findDuplicateSuggestions`, `countInBBox`, `dumpOwnData`. Caches: `updatePlaceOsmData`, `upsertForeignSave`, `deleteForeignSave`, `upsertPerson`, `getPerson`, `removePerson`, `pruneOrphanPlaces`. Projection only: `writeOwnSave`, `removeOwnSave`, `writeOwnTags`, `writeOwnList`, `removeOwnList`, `writeTagMappings` |
 | Schema (sqlite/schema.ts) | `migrate`, `detectCapabilities`, `readCapabilities`, `rebuildIndexes`, `SCHEMA_VERSION` |
 | Document (crdt/doc.ts, project.ts) | `createDataDoc`, `loadDataDoc`, `baseDocUpdate`, `clientIdFor`, `DocTx` (all edits), `healDoc`, `mergeDataDocs`, `roots`, `saveEntry`, `saveEntryKeys`, `savePlaceIds`, `hasSave`, `tagIdsOf`, `listIdsOf`, `readTombstones`, `readDeletedAt`, `readSharing`, `updateText`; `trackChanges`, `projectAll`, `projectChanges`, `readSave`, `readTags`, `readList`, `readTagMappings` |
 | Pure helpers | `placeIdFromOsm`, `parseOsmPlaceId`, `newLocalPlaceId`, `saveIdFor`, `normalizeSnapshot`; `findDuplicateSuggestions`, `duplicateScore`, `nameSimilarity`, `normalizeText`, `ftsMatchQuery`; `normalizeFilter`, `evaluateListPure`, `matchesCriteria`, `isListEligible`; `haversineM`, `pointInArea`, `geometryIntersectsArea`, `representativePoint`, `geometryBBox`, `splitBBox`, `bboxAround` |
@@ -110,6 +110,14 @@ cross the antimeridian (`west > east`).
   the other place (tags and photos united, comments kept, lists re-pointed).
 - Identical OSM neighborhoods are the same `osm:relation/…` place; drawn
   zones stay distinct (`local:` ids).
+
+### Friends' tags
+
+`ForeignSaveInput.theirTags` takes names or `{ name, color, icon }` (the
+author's choice, shown until I map the tag to one of mine). Plain names are
+still stored as strings, so the `their_tags` format of existing rows is
+unchanged. `Repository.friendTags()` lists them per live foreign save;
+`parseTheirTags` reads a stored value tolerantly.
 
 ## Schema (version 1)
 

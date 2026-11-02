@@ -49,7 +49,7 @@ function ListScreen() {
     [repo, version, text, sort, from.lat, from.lon],
   );
   const now = useMemo(() => new Date(), [hits, filter]);
-  const rows = useMemo<Row[]>(() => {
+  const allRows = useMemo<Row[]>(() => {
     const ctx = { tagSet: expandTagSelection(filter.tagIds, tags), now, ...(tr.region ? { country: tr.region } : {}) };
     return hits
       .map((hit) => {
@@ -58,7 +58,9 @@ function ListScreen() {
       })
       .filter((r): r is Row => r !== null);
   }, [hits, lookup, filter, tags, now, tr.region]);
-  const summary = useMemo(() => summarize(rows.map((r) => r.facts), filter, tags, now, tr.region), [rows, filter, tags, now, tr.region]);
+  // Closed places stay out of the list unless the "Closed" status is chosen (still counted for that chip).
+  const rows = useMemo(() => allRows.filter((r) => r.match !== 'hidden'), [allRows]);
+  const summary = useMemo(() => summarize(allRows.map((r) => r.facts), filter, tags, now, tr.region), [allRows, filter, tags, now, tr.region]);
   const active = isFilterActive(filter);
 
   const open = (id: string) => {
@@ -98,6 +100,7 @@ function ListScreen() {
               statusText,
               hit.friendsCount > 0 ? t('list.friends', { count: hit.friendsCount }) : null,
               hit.mine ? null : t('list.friendsOnly'),
+              hit.status === 'maybe_closed' ? `✕ ${t('closure.badge')}` : hit.status === 'closed' ? t('placeStatus.closed') : null,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -133,7 +136,17 @@ function ListScreen() {
         />
       </View>
       <View style={{ marginTop: 10, marginHorizontal: -gutter + gutter }}>
-        <FilterBar summary={summary} filter={filter} onChange={setFilter} open={filterOpen} onOpenChange={setFilterOpen} showTheme={false} />
+        <FilterBar
+          summary={summary}
+          filter={filter}
+          onChange={setFilter}
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          showTheme={false}
+          tags={tags}
+          personName={(id) => repo.getPerson(id)?.displayName || id}
+          onManageTags={() => router.push('/tags')}
+        />
       </View>
       <FlatList
         data={rows}

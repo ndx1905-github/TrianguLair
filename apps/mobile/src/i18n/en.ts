@@ -1,4 +1,5 @@
 import type { Messages } from './core';
+import { enFiltersTags } from './filtersTags.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -327,4 +328,5 @@ export const en: Messages = {
   'import.done.undoHint': 'You can undo this import for {days} days from this screen.',
   'import.done.map': 'See them on the map',
   'import.again': 'Import another file',
+  ...enFiltersTags,
 };
