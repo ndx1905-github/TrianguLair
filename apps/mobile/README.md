@@ -15,7 +15,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
 - **Place card** (sheet on the map, side panel on wide screens, `/place/[id]` page; T-107 UI):
   category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
   reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
-  comment/sharing (saved immediately), move to trash. OSM data is refreshed when stale.
+  comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
 - **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
@@ -159,11 +159,19 @@ shows "Already in my places".
 ### Checks
 
 ```sh
-npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app)
+npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app), then e2e/
 npm test            # vitest: pins, clustering, filters, card wording, add-place logic, list query,
                     # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity),
                     # import screen logic
+npm run export:web:fixtures && npm run e2e   # end-to-end tests (Playwright, Chromium, headless)
 ```
+
+End-to-end tests (T-119, `e2e/`, `playwright.config.ts`): Playwright Test against the fixture-mode
+web export served by `scripts/serve.py` (port `E2E_PORT`, default 4319). `e2e/helpers.ts` fixes the
+clock (Friday 23 October 2026, 18:30 in Paris), answers the base map style and photos with
+placeholders, and fails a test on any uncaught page error. Each test has a fresh browser context
+(new IndexedDB, demo seed). Selectors are test ids, roles and visible text; the map is driven
+through `window.__tlMap`. First time: `npx playwright install chromium`.
 
 Screenshots in fixture mode: `python3 scripts/shots.py docs importer` (phone) or `importer_tablet`
 (the import preview uses `packages/import/test/fixtures/kml/my-maps.kml`, matched against the OSM
