@@ -8,8 +8,9 @@ user's own data, and the list filters. MPL-2.0.
 cd packages/data
 npm install --workspaces=false   # add npm_config_nodedir=… where nodejs.org is unreachable
 npm test           # unit, property-based, no-WebAssembly and performance tests
+npm run test:ci    # the same without the performance suite (what CI runs)
 npm run typecheck
-PERF_REPORT=1 npx vitest run test/perf.test.ts   # print the timing table
+npm run test:perf  # performance suite only, prints the timing table
 ```
 
 ## Design in one picture
