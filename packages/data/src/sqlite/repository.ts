@@ -128,9 +128,49 @@ export interface ForeignSaveInput {
   commentVisibility?: CommentVisibility;
   status?: SaveStatus | null;
   priceLevel?: PriceLevel | null;
-  theirTags?: string[];
+  /**
+   * The friend's tags on this save, as received: a name, or a name with the
+   * color and icon chosen by its author (shown until I map it to one of mine).
+   */
+  theirTags?: (string | ForeignTag)[];
   createdAt: number;
   updatedAt: number;
+}
+
+/** A friend's tag as received with their save. */
+export interface ForeignTag {
+  name: string;
+  color?: string | null;
+  icon?: string | null;
+}
+
+/** One friend's tag on one of their saves (`Repository.friendTags`). */
+export interface FriendTagRow {
+  personId: string;
+  saveId: string;
+  placeId: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+}
+
+/** Valid tags of a `their_tags` value (tolerant: bad entries are skipped). */
+export function parseTheirTags(value: unknown): ForeignTag[] {
+  if (!Array.isArray(value)) return [];
+  const out: ForeignTag[] = [];
+  for (const v of value) {
+    if (typeof v === 'string') {
+      if (v.trim()) out.push({ name: v.trim() });
+    } else if (v && typeof v === 'object' && typeof (v as ForeignTag).name === 'string' && (v as ForeignTag).name.trim()) {
+      const t = v as ForeignTag;
+      out.push({
+        name: t.name.trim(),
+        ...(typeof t.color === 'string' ? { color: t.color } : {}),
+        ...(typeof t.icon === 'string' ? { icon: t.icon } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 export interface OpenRepositoryOptions extends MigrateOptions {
@@ -616,7 +656,7 @@ export class Repository {
            updated_at = excluded.updated_at, deleted_at = NULL`,
         [
           input.id, input.ownerId, input.place.id, input.comment ?? '', input.commentVisibility ?? 'friends',
-          input.status ?? null, input.priceLevel ?? null, JSON.stringify(input.theirTags ?? []), input.createdAt,
+          input.status ?? null, input.priceLevel ?? null, JSON.stringify(parseTheirTags(input.theirTags ?? []).map((t) => (t.color || t.icon ? t : t.name))), input.createdAt,
           input.updatedAt,
         ],
       );
@@ -702,6 +742,32 @@ export class Repository {
         deletedAt: r.deleted_at as number | null,
         active: r.active === 1,
       }));
+  }
+
+  /**
+   * Friends' tags on their live saves (not mine), in save order then tag
+   * order. The app groups them by person and name, and maps them to my tags.
+   */
+  friendTags(): FriendTagRow[] {
+    const rows = this.db.all<{ id: string; owner_id: string; place_id: string; their_tags: string | null }>(
+      `SELECT id, owner_id, place_id, their_tags FROM saves
+       WHERE owner_id <> ? AND deleted_at IS NULL AND their_tags IS NOT NULL AND their_tags <> '[]'
+       ORDER BY owner_id, place_id`,
+      [this.meId],
+    );
+    const out: FriendTagRow[] = [];
+    for (const r of rows) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(r.their_tags!);
+      } catch {
+        continue;
+      }
+      for (const t of parseTheirTags(parsed)) {
+        out.push({ personId: r.owner_id, saveId: r.id, placeId: r.place_id, name: t.name, color: t.color ?? null, icon: t.icon ?? null });
+      }
+    }
+    return out;
   }
 
   tagMappings(): TagMappingRecord[] {
