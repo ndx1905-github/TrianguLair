@@ -519,6 +519,12 @@ export interface SaveInput {
   sharing?: Sharing;
   tagIds?: readonly string[];
   mainTagId?: string | null;
+  /**
+   * Creation date (ms) of a new save, for imports that carry the original
+   * date (Google Takeout, a TrianguLair export). Default: now. Ignored when
+   * the save already exists.
+   */
+  createdAt?: number;
 }
 
 export interface SavePatch {
@@ -660,7 +666,8 @@ export class DocTx {
       if (sharing !== 'friends') e.set(SHARING + this.me, sharing);
       if (main !== null) e.set('mainTagId', main);
       for (const id of tags) e.set(TAG + id, true);
-      e.set('createdAt', now);
+      const createdAt = input.createdAt;
+      e.set('createdAt', createdAt !== undefined && Number.isFinite(createdAt) && createdAt > 0 ? Math.round(createdAt) : now);
       return snap.id;
     }
     this.updateSave(snap.id, {

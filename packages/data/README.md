@@ -213,6 +213,8 @@ client-id orders where last-writer-wins could otherwise decide.
   wrote; `mergeDataDocs(local, remote)` merges into `local` in place.
 - `projectChanges(doc, repo, touched)` takes the `Touched` set collected by
   `trackChanges` (was the heads before the change).
+- `SaveInput.createdAt` (optional): creation date of a new save, for imports
+  that carry the original date (added by T-114, `@triangulair/import`).
 - Unchanged: every `DataStore` edit shortcut, `Repository`, the schema,
   `SaveInput`/`SavePatch`/`TagInput`/`ListInput`/`MediaInput`, `readSave`,
   `readTags`, `readList`, `readTagMappings`, `projectAll`.
