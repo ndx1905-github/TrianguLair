@@ -37,6 +37,8 @@ jobs:
             test: test
           - package: import
             test: test
+            # Imports @triangulair/data and @triangulair/osm from their sources: install their dependencies too.
+            deps: data osm
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
@@ -48,9 +50,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
+          cache-dependency-path: packages/*/package-lock.json
       # Each package has its own lockfile and installs on its own (no root workspace install).
       - run: npm ci --workspaces=false
+      - name: Install the packages this one imports from source
+        if: matrix.deps
+        env:
+          DEPS: ${{ matrix.deps }}
+        run: for d in $DEPS; do (cd "../$d" && npm ci --workspaces=false); done
       - run: npm run typecheck
       - run: npm run ${{ matrix.test }}
 
