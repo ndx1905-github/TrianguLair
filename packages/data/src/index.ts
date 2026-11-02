@@ -64,4 +64,6 @@ export {
 } from './crdt/project.ts';
 export type { Touched, ProjectedSave } from './crdt/project.ts';
 export { DataStore, DOC_FORMAT, PROJECTION_VERSION } from './store.ts';
+export { reassignOwner, databaseOwner } from './owner.ts';
+export type { ReassignOwnerResult } from './owner.ts';
 export type { OpenStoreOptions } from './store.ts';
