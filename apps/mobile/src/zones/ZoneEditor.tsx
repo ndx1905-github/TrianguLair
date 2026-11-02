@@ -465,7 +465,7 @@ export function ZoneEditor({ purpose = 'save' }: { purpose?: 'save' | 'list' }) 
               placeholder={purpose === 'list' ? t('zone.area.searchList') : t('zone.area.search')}
               placeholderTextColor={c.textMuted}
               returnKeyType="search"
-              style={[styles.input, { flex: 1, color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt }]}
+              style={[styles.input, styles.grow, { color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt }]}
               accessibilityLabel={t('zone.area.search')}
               testID="zone-area-search"
             />
@@ -660,7 +660,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     elevation: 12,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  // A text field next to a button: shrinks, and the button wraps below with large text.
+  grow: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 0 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   hint: { fontSize: 14 },
   input: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, fontSize: 16 },

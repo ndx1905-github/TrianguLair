@@ -1,6 +1,7 @@
 import { createContext, createElement, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { getSetting, setSetting } from '../data/deviceSettings';
 import { DARK, LIGHT, type UiColors } from '../theme/colors';
 import { resolveDark, type ThemeMode } from '../theme/themeMode';
 
@@ -12,15 +13,24 @@ interface ThemeState {
 
 const ThemeContext = createContext<ThemeState | null>(null);
 
-/**
- * Holds the theme preference (auto / light / dark). Phase 0: in memory only;
- * persistence comes with the settings screen (T-118).
- */
+function savedMode(): ThemeMode {
+  const v = getSetting('theme');
+  return v === 'light' || v === 'dark' ? v : 'auto';
+}
+
+/** Holds the theme preference (auto / light / dark), kept per device. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const system = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>('auto');
+  const [mode, setModeState] = useState<ThemeMode>(savedMode);
   const value = useMemo(
-    () => ({ mode, setMode, dark: resolveDark(mode, system) }),
+    () => ({
+      mode,
+      setMode: (m: ThemeMode) => {
+        setSetting('theme', m);
+        setModeState(m);
+      },
+      dark: resolveDark(mode, system),
+    }),
     [mode, system],
   );
   return createElement(ThemeContext.Provider, { value }, children);

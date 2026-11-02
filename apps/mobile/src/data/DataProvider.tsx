@@ -8,6 +8,7 @@ import type { DataStore, Repository } from '@triangulair/data';
 
 import { OSM_FIXTURES } from '../config';
 import { useI18n } from '../i18n';
+import { useIdentity } from '../identity/IdentityProvider';
 import { seedDemoData } from './demo';
 import { getSetting, setSetting } from './deviceSettings';
 import { openAppStore, type AppStore } from './openStore';
@@ -33,10 +34,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
   const tRef = useRef(t);
   tRef.current = t;
+  const identity = useIdentity().state;
+  const meId = identity.kind === 'ready' ? identity.record.owner : null;
+  const profile = identity.kind === 'ready' ? identity.profile : null;
 
+  // The store opens once my identity exists (first launch creates it), under its owner id.
   useEffect(() => {
+    if (!meId) return;
     let cancelled = false;
-    openAppStore()
+    openAppStore(meId)
       .then((app) => {
         if (cancelled) return;
         if (getSetting('demo-seeded') !== '1') {
@@ -60,9 +66,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [meId]);
 
   const app = status.kind === 'ready' ? status.app : null;
+
+  // My name and photo, as my friends will see them (people row of "me").
+  useEffect(() => {
+    if (!app || !profile) return;
+    try {
+      app.store.repo.upsertPerson({ id: app.store.meId, displayName: profile.name, avatar: profile.avatar, publicKey: app.store.meId });
+      setVersion((v) => v + 1);
+    } catch (e) {
+      console.warn('Could not save the profile', e);
+    }
+  }, [app, profile?.name, profile?.avatar]);
   const mutate = useCallback(
     <T,>(fn: (store: DataStore) => T): T => {
       if (!app) throw new Error('data store not ready');

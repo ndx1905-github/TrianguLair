@@ -18,6 +18,7 @@ import { placeInfoOf } from '../places/model';
 import { useAppState } from '../state/AppState';
 import { ClosureSection } from './ClosureSection';
 import { DirectionsSection } from './DirectionsSection';
+import { ListsSection } from './ListsSection';
 import { SaveEditor, type SaveFields } from './SaveEditor';
 import { Banner, Button, Pill, SectionTitle } from './ui';
 
@@ -274,6 +275,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
               <Button kind="secondary" label={t('closure.report')} onPress={() => resolveClosure(place, 'closed', mutate)} testID="closure-report" />
             )}
           </View>
+          {save && <ListsSection placeId={placeId} save={save} />}
           <View style={{ marginTop: 20 }}>
             {confirmDelete ? (
               <View style={{ gap: 8 }}>

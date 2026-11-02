@@ -38,7 +38,7 @@ async def setup(p, width, height, dark=False, lang='en-US'):
     return b, page, errors
 
 async def ready(page, path='/'):
-    await page.goto(BASE + path)
+    await page.goto(url(path))
     await page.wait_for_selector('[data-pin-id]', timeout=30000)
     await page.wait_for_timeout(800)
 
@@ -84,7 +84,7 @@ async def phone(p):
     await page.wait_for_timeout(300)
     await shot(page, 'phone-card-directions')
     # Tag management: the tree, then the editor of a sub-tag.
-    await page.goto(BASE + '/tags')
+    await page.goto(url('/tags'))
     await page.wait_for_selector('[data-testid="tag-row-Pizza"]', timeout=15000)
     await page.wait_for_timeout(400)
     await shot(page, 'phone-tags')
@@ -110,7 +110,7 @@ async def tablet(p):
     await page.get_by_test_id('filter-charge-20').click()
     await jump(page, 48.858, 2.345, 13.2)
     await shot(page, 'tablet-filters-expanded')
-    await page.goto(BASE + '/tags')
+    await page.goto(url('/tags'))
     await page.wait_for_selector('[data-testid="tag-new"]', timeout=15000)
     await page.get_by_test_id('tag-new').click()
     await page.get_by_test_id('tag-name').fill('Sushi bars')

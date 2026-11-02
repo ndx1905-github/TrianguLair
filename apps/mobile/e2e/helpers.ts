@@ -49,9 +49,14 @@ export const test = base.extend<{ pageErrors: string[] }>({
 
 export { expect };
 
+/** Adds `autostart=1` (fixture mode only) so tests skip the first-launch screens. */
+export function autostart(path: string): string {
+  return path + (path.includes('?') ? '&' : '?') + 'autostart=1';
+}
+
 /** Opens the map and waits for the demo pins. */
 export async function openMap(page: Page, path = '/'): Promise<void> {
-  await page.goto(path);
+  await page.goto(autostart(path));
   await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
 }
 

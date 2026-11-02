@@ -15,6 +15,10 @@ import { TrashUndo } from '../components/TrashUndo';
 import { Banner } from '../components/ui';
 import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK, OSM_FIXTURES } from '../config';
 import { useData } from '../data/DataProvider';
+import { getSetting, setSetting } from '../data/deviceSettings';
+import { useReadyIdentity } from '../identity/IdentityProvider';
+import { ProtectCard } from '../identity/ProtectCard';
+import { protectState } from '../identity/protect';
 import { useTags, useViewportFacts } from '../data/usePlaces';
 import { usePrunedFilter } from '../filters/usePrunedFilter';
 import { useLayout } from '../hooks/useLayout';
@@ -40,6 +44,16 @@ function padBBox(b: MapRegion['bbox'], f: number): BBox {
   return [Math.max(-180, w - dx), Math.max(-85, s - dy), Math.min(180, e + dx), Math.min(85, n + dy)];
 }
 
+/** Where the location step of the first launch found me (kept on the device), if anywhere. */
+function startPosition(): LatLon | null {
+  try {
+    const p = JSON.parse(getSetting('start-position') ?? 'null') as LatLon | null;
+    return p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 function MapScreen() {
   const c = useUiColors();
   const dark = useIsDark();
@@ -47,7 +61,14 @@ function MapScreen() {
   const router = useRouter();
   const { t, region: country } = useI18n();
   const { gutter, width, height, wide, sheetWidth } = useLayout();
-  const { repo, persistence } = useData();
+  const { repo, persistence, version } = useData();
+  const identity = useReadyIdentity();
+  const [snoozedAt, setSnoozedAt] = useState(() => Number(getSetting('protect-snoozed')) || null);
+  const [hintAdd, setHintAdd] = useState(() => getSetting('hint-add') !== 'seen');
+  const dismissHint = () => {
+    setSetting('hint-add', 'seen');
+    setHintAdd(false);
+  };
   const { tags, byId } = useTags();
   const { filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus } = useAppState();
   usePrunedFilter();
@@ -65,17 +86,21 @@ function MapScreen() {
     [setFilterOpen],
   );
   const [sheetCover, setSheetCover] = useState(0);
+  // The buttons sit above the attribution, which wraps with large text.
+  const [attribHeight, setAttribHeight] = useState(18);
+  const actionsBottom = Math.max(sheetCover, insets.bottom) + 6 + attribHeight + 4;
   const [camera, setCamera] = useState<CameraTarget | null>(null);
 
   // Initial camera: the last visible area, or one fitting all my places (computed once).
   const [initial] = useState(() => {
     if (region) return { center: region.center, zoom: region.zoom };
     const points = repo.queryPlaces({ source: 'mine', limit: 5000 }).map((p) => ({ lat: p.lat, lon: p.lon }));
+    const here = startPosition();
     return fitCamera(points, {
       width: Math.max(120, width - gutter * 4),
       height: Math.max(120, height - (insets.top + 200) * 2),
       maxZoom: 15,
-      fallback: { center: INITIAL_CENTER, zoom: INITIAL_ZOOM },
+      fallback: here ? { center: here, zoom: 14 } : { center: INITIAL_CENTER, zoom: INITIAL_ZOOM },
     });
   });
 
@@ -139,7 +164,17 @@ function MapScreen() {
     [router],
   );
 
+  const myPlaces = useMemo(() => repo.queryPlaces({ source: 'mine', limit: 5000 }).length, [repo, version]);
+  const protect = protectState({
+    kitSaved: !identity.kitPending,
+    myPlaces,
+    createdAt: identity.record.createdAt,
+    now: Date.now(),
+    snoozedAt,
+  });
+
   const openAdd = () => {
+    if (hintAdd) dismissHint();
     const center = region?.center ?? initial.center;
     router.push({ pathname: '/add', params: { lat: String(center.lat), lon: String(center.lon) } });
   };
@@ -174,6 +209,8 @@ function MapScreen() {
           tags={tags}
           personName={(id) => repo.getPerson(id)?.displayName || id}
           onManageTags={() => router.push('/tags')}
+          onSettings={() => router.push('/settings')}
+          settingsBadge={protect !== 'none'}
           maxHeight={Math.max(200, Math.round(height * (wide ? 0.6 : 0.5)))}
         />
         {closure.notice && (
@@ -186,6 +223,17 @@ function MapScreen() {
                 onBarOpenChange(false);
               }}
               onLater={closure.dismiss}
+            />
+          </View>
+        )}
+        {protect === 'card' && !closure.notice && (
+          <View style={{ marginHorizontal: gutter, marginTop: 8, maxWidth: wide ? 460 : undefined }}>
+            <ProtectCard
+              onLater={() => {
+                const now = Date.now();
+                setSetting('protect-snoozed', String(now));
+                setSnoozedAt(now);
+              }}
             />
           </View>
         )}
@@ -203,7 +251,7 @@ function MapScreen() {
         style={[
           styles.actions,
           {
-            bottom: Math.max(sheetCover, insets.bottom) + 28,
+            bottom: actionsBottom,
             // Wide windows: clear the zoom buttons (bottom-left) and the side panel (right).
             left: insets.left + gutter + (wide ? 52 : 0),
             right: insets.right + gutter + (wide && selectedId ? sheetWidth + gutter : 0),
@@ -236,7 +284,25 @@ function MapScreen() {
         </Pressable>
       </View>
 
-      <MapAttribution bottom={Math.max(sheetCover, insets.bottom) + 6} right={insets.right + gutter / 2} />
+      {hintAdd && !selectedId && (
+        <View
+          style={[styles.hint, { bottom: actionsBottom + 70, right: insets.right + gutter, backgroundColor: c.text, shadowColor: c.shadow }]}
+          testID="hint-add"
+          accessibilityLiveRegion="polite"
+        >
+          <Text style={{ color: c.background, fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={2}>
+            {t('hint.add')}
+          </Text>
+          <Pressable onPress={dismissHint} accessibilityRole="button" hitSlop={8} style={styles.hintButton} testID="hint-dismiss">
+            <Text style={{ color: c.background, fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' }} maxFontSizeMultiplier={2}>
+              {t('hint.dismiss')}
+            </Text>
+          </Pressable>
+          <View style={[styles.hintTip, { borderTopColor: c.text }]} />
+        </View>
+      )}
+
+      <MapAttribution bottom={Math.max(sheetCover, insets.bottom) + 6} right={insets.right + gutter / 2} onHeight={setAttribHeight} />
 
       <PlaceSheet placeId={selectedId} onClose={() => setSelectedId(null)} onCoverHeight={setSheetCover} />
     </View>
@@ -278,6 +344,31 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 6,
+  },
+  hint: {
+    position: 'absolute',
+    maxWidth: 280,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 6,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  hintButton: { alignSelf: 'flex-end', minHeight: 32, justifyContent: 'center' },
+  hintTip: {
+    position: 'absolute',
+    bottom: -8,
+    right: 21,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
   },
   fabText: { color: '#FFFFFF', fontSize: 32, fontWeight: '400', marginTop: -2 },
 });

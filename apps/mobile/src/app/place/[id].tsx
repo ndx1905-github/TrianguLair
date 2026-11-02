@@ -24,7 +24,12 @@ function PlaceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <ScreenHeader title={t('card.title')} onBack={back} />
-      <ScrollView contentContainerStyle={{ padding: gutter + 4, paddingBottom: insets.bottom + 32 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ paddingTop: gutter + 4, paddingLeft: gutter + 4 + insets.left, paddingRight: gutter + 4 + insets.right, paddingBottom: insets.bottom + 32, alignItems: 'center' }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* A readable column on tablets and unfolded foldables, not a stretched phone layout. */}
+        <View style={{ width: '100%', maxWidth: 680 }}>
         <PlaceCard placeId={String(id)} onDeleted={back} />
         <View style={{ marginTop: 12 }}>
           <Button kind="secondary" label={t('card.showOnMap')} onPress={() => {
@@ -32,6 +37,7 @@ function PlaceScreen() {
               if (router.canDismiss()) router.dismissAll();
               else router.replace('/');
             }} />
+        </View>
         </View>
       </ScrollView>
     </View>

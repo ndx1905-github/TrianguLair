@@ -194,3 +194,23 @@ export function removeByHand(d: ListDraft, placeId: string): ListDraft {
 export function clearException(d: ListDraft, placeId: string): ListDraft {
   return { ...d, include: d.include.filter((x) => x !== placeId), exclude: d.exclude.filter((x) => x !== placeId) };
 }
+
+// ------------------------------------------------------------------ place card "Lists" section
+
+/** What the place card offers for one list: add, leave out, or drop a hand-made exception. */
+export type CardListAction = 'add' | 'remove' | 'followFilter' | null;
+
+/** Saves that can never be in a list get no action (the reason says why). */
+const NEVER: readonly string[] = ['private', 'trash', 'notMine', 'closedPublic'];
+
+export function cardListAction(kind: ListKind, r: Reason): CardListAction {
+  if (!r.in && NEVER.includes(r.why)) return null;
+  if (kind === 'manual') return r.in ? 'remove' : 'add';
+  if (r.in) return r.why === 'addedByHand' ? 'followFilter' : 'remove';
+  return r.why === 'removedByHand' ? 'followFilter' : 'add';
+}
+
+/** The list's saved filter once the exception on `placeId` is dropped ("Follow the filter"). */
+export function filterWithoutException(l: ListRecord, placeId: string): ListFilter {
+  return draftToFilter(clearException(draftFromList(l), placeId));
+}

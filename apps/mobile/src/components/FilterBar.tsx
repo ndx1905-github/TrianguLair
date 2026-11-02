@@ -34,6 +34,10 @@ interface Props {
   /** Display name of a friend (their tags). */
   personName?: (personId: string) => string;
   onManageTags?: () => void;
+  /** Settings button next to the theme button (map screen). */
+  onSettings?: () => void;
+  /** Small dot on the settings button (recovery kit not saved yet). */
+  settingsBadge?: boolean;
   /** Max height of the expanded panel (it scrolls beyond). */
   maxHeight?: number;
 }
@@ -49,7 +53,7 @@ const SUB_DIMS: SubDimension[] = ['kinds', 'cuisines', 'museums', 'shops'];
  * matching places and "Clear filters". Collapses into one summary line: one
  * pill per active filter with a cross, and "Filters (n)" to expand again.
  */
-export function FilterBar({ summary, filter, onChange, open, onOpenChange, showTheme = true, tags, personName, onManageTags, maxHeight }: Props) {
+export function FilterBar({ summary, filter, onChange, open, onOpenChange, showTheme = true, tags, personName, onManageTags, onSettings, settingsBadge, maxHeight }: Props) {
   const c = useUiColors();
   const tr = useI18n();
   const { t } = tr;
@@ -140,6 +144,21 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
             <Text style={[styles.themeText, { color: c.text }]} maxFontSizeMultiplier={2}>
               {t('theme.label', { mode: t(`theme.${mode}`) })}
             </Text>
+          </Pressable>
+        )}
+        {onSettings && (
+          <Pressable
+            onPress={onSettings}
+            style={[styles.theme, { borderColor: c.border, backgroundColor: c.surfaceAlt }]}
+            accessibilityRole="button"
+            accessibilityLabel={settingsBadge ? `${t('nav.settingsA11y')}. ${t('protect.reminder')}` : t('nav.settingsA11y')}
+            hitSlop={6}
+            testID="open-settings"
+          >
+            <Text style={[styles.themeText, { color: c.text }]} maxFontSizeMultiplier={2}>
+              {t('nav.settings')}
+            </Text>
+            {settingsBadge ? <View style={[styles.badgeDot, { backgroundColor: c.warning, borderColor: c.surface }]} testID="settings-badge" /> : null}
           </Pressable>
         )}
       </View>
@@ -403,10 +422,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 8 },
-  toggle: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, paddingVertical: 6, minHeight: 44 },
+  header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 8 },
+  toggle: { flexGrow: 1, flexShrink: 1, flexBasis: 140, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, paddingVertical: 6, minHeight: 44 },
   theme: { justifyContent: 'center', paddingHorizontal: 10, minHeight: 32, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
   themeText: { fontSize: 13, fontWeight: '600' },
+  badgeDot: { position: 'absolute', top: -3, right: -3, width: 11, height: 11, borderRadius: 6, borderWidth: 2 },
   title: { fontSize: 16, fontWeight: '700' },
   count: { fontSize: 13, flexShrink: 1 },
   chevron: { fontSize: 16 },

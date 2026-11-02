@@ -1,4 +1,4 @@
-import { expect, jump, openMap, test } from './helpers';
+import { autostart, expect, jump, openMap, test } from './helpers';
 
 const NAME = 'Le Comptoir des Archives';
 
@@ -62,6 +62,6 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
 
   // Saved on this device (IndexedDB): still there after a reload.
   await page.waitForTimeout(1500); // the database file is written after a short debounce
-  await page.goto('/list');
+  await page.goto(autostart('/list'));
   await expect(page.getByTestId(`row-${NAME}`)).toContainText('Favorite');
 });

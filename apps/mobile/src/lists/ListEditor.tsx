@@ -331,7 +331,7 @@ export function ListEditor({ listId }: { listId: string | null }) {
               returnKeyType="search"
               placeholder={t('zone.area.searchList')}
               placeholderTextColor={c.textMuted}
-              style={[styles.input, { flex: 1, color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt }]}
+              style={[styles.input, { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 0, color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt }]}
               accessibilityLabel={t('listEdit.zoneByName')}
               testID="list-zone-search"
             />
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, marginTop: 6 },
   label: { fontSize: 13, marginTop: 6, marginBottom: 6 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  searchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   previewHead: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
   count: { fontSize: 20, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, borderWidth: 1 },

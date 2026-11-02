@@ -24,7 +24,7 @@ export function ScreenHeader({ title, onBack, right }: { title: string; onBack: 
           ‹ {t('common.back')}
         </Text>
       </Pressable>
-      <Text style={[styles.title, { color: c.text }]} accessibilityRole="header" numberOfLines={2} maxFontSizeMultiplier={2}>
+      <Text style={[styles.title, { color: c.text }]} accessibilityRole="header" maxFontSizeMultiplier={2}>
         {title}
       </Text>
       <View style={styles.right}>{right}</View>
@@ -33,9 +33,9 @@ export function ScreenHeader({ title, onBack, right }: { title: string; onBack: 
 }
 
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  bar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   back: { minHeight: 44, justifyContent: 'center', paddingRight: 8 },
   backText: { fontSize: 16, fontWeight: '600' },
-  title: { flex: 1, fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  right: { minWidth: 60, alignItems: 'flex-end' },
+  title: { flexGrow: 1, flexShrink: 1, flexBasis: 120, fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  right: { minWidth: 60, maxWidth: '100%', flexShrink: 1, marginLeft: 'auto', alignItems: 'flex-end' },
 });

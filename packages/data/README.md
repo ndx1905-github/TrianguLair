@@ -125,6 +125,17 @@ unchanged. `Repository.friendTags()` lists them per live foreign save;
   `manual` keeps both the saved filter and the manual selection (switching back restores them).
 - A `drawn` filter zone may carry an optional `name` (label only; the key and matching stay the shape).
 
+### Owner migration (T-205)
+
+`reassignOwner(driver, from, to)` hands a database created under a placeholder owner id (the app's
+`local-me`, before identities existed) to the real identity, before `DataStore.open({ meId: to })`. My data
+lives in the Yjs document, which holds no owner id, so it removes the owner-keyed projection of my saves,
+tags, lists (and their items, media, access rows), renames my `people` row and clears `projected_heads`;
+the next open re-projects the unchanged document under `to`. Friends' saves, the OSM cache, people and tag
+mappings stay. It does nothing on a new database or one already owned by `to`, and refuses a third owner or
+a `to` that is already a person in the database. `databaseOwner(driver)` tells who owns a database
+(`null` when new). Tests: `test/owner.test.ts`.
+
 ## Schema (version 1)
 
 Tables follow the spec's data model; names in parentheses are additions.

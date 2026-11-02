@@ -6,6 +6,7 @@ import { createContext, createElement, useContext, useMemo, useState, type React
 import { Platform } from 'react-native';
 
 import { FORCED_LOCALE } from '../config';
+import { getSetting, setSetting } from '../data/deviceSettings';
 import { pickLocale, translate, type Locale, type Messages, type Params } from './core';
 import { en } from './en';
 import { fr } from './fr';
@@ -21,6 +22,20 @@ export interface I18n {
   t: TFunction;
   has: (key: string) => boolean;
   setLocale: (l: Locale) => void;
+  /** The language chosen in the settings, or null to follow the device. */
+  chosen: Locale | null;
+  /** Choose a language (null: follow the device), kept per device. */
+  choose: (l: Locale | null) => void;
+}
+
+/** `?lang=` on web: an explicit override for testing, stronger than the saved choice. */
+function urlLocale(): string | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  try {
+    return new URLSearchParams(window.location.search).get('lang');
+  } catch {
+    return null;
+  }
 }
 
 function deviceTags(): string[] {
@@ -50,7 +65,12 @@ function deviceRegion(): string | undefined {
   return undefined;
 }
 
-export function makeI18n(locale: Locale, setLocale: (l: Locale) => void = () => {}): I18n {
+export function makeI18n(
+  locale: Locale,
+  setLocale: (l: Locale) => void = () => {},
+  chosen: Locale | null = null,
+  choose: (l: Locale | null) => void = () => {},
+): I18n {
   const dict = DICTS[locale];
   return {
     locale,
@@ -58,14 +78,30 @@ export function makeI18n(locale: Locale, setLocale: (l: Locale) => void = () => 
     t: (key, params) => translate(locale, dict, en, key, params),
     has: (key) => dict[key] !== undefined || en[key] !== undefined,
     setLocale,
+    chosen,
+    choose,
   };
+}
+
+function savedLocale(): Locale | null {
+  const v = getSetting('locale');
+  return v === 'en' || v === 'fr' ? v : null;
 }
 
 const I18nContext = createContext<I18n | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>(() => pickLocale([FORCED_LOCALE, ...deviceTags()]));
-  const value = useMemo(() => makeI18n(locale, setLocale), [locale]);
+  const [chosen, setChosen] = useState<Locale | null>(savedLocale);
+  const [locale, setLocale] = useState<Locale>(() => pickLocale([FORCED_LOCALE, urlLocale(), savedLocale(), ...deviceTags()]));
+  const value = useMemo(
+    () =>
+      makeI18n(locale, setLocale, chosen, (l) => {
+        setSetting('locale', l ?? 'auto');
+        setChosen(l);
+        setLocale(l ?? pickLocale([FORCED_LOCALE, ...deviceTags()]));
+      }),
+    [locale, chosen],
+  );
   return createElement(I18nContext.Provider, { value }, children);
 }
 

@@ -3,7 +3,7 @@
  * IndexedDB after each write (debounced), memory only when unavailable.
  */
 import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
-import { DataStore } from '@triangulair/data';
+import { databaseOwner, DataStore, reassignOwner } from '@triangulair/data';
 
 import { deviceActor, LOCAL_ME_ID, newId } from './identity';
 import type { AppStore } from './openStore.types';
@@ -12,7 +12,14 @@ import { openWebFileStore } from './webPersistence';
 
 const SAVE_DELAY_MS = 400;
 
-export async function openAppStore(): Promise<AppStore> {
+/** The saved database belongs to another identity than the one on this device. */
+export class ForeignDatabaseError extends Error {
+  constructor() {
+    super('the saved places belong to another identity');
+  }
+}
+
+export async function openAppStore(meId: string): Promise<AppStore> {
   const [SQL, files] = await Promise.all([initSqlJs(), openWebFileStore()]);
   let bytes: Uint8Array | null = null;
   try {
@@ -41,13 +48,22 @@ export async function openAppStore(): Promise<AppStore> {
 
   const open = (data: Uint8Array | null) => {
     driver = new SqlJsDriver(data ? new SQL.Database(data) : new SQL.Database(), schedule);
-    return DataStore.open({ driver, meId: LOCAL_ME_ID, actor: deviceActor(), newId });
+    const owner = databaseOwner(driver);
+    if (owner !== null && owner !== meId && owner !== LOCAL_ME_ID) {
+      // Another identity's places (keys cleared but not the data): never overwrite them.
+      persistent = false;
+      throw new ForeignDatabaseError();
+    }
+    // Data created before the identity existed (placeholder owner) moves to it once.
+    if (reassignOwner(driver, LOCAL_ME_ID, meId).migrated) schedule();
+    return DataStore.open({ driver, meId, actor: deviceActor(), newId });
   };
 
   let store: DataStore;
   try {
     store = open(bytes);
   } catch (e) {
+    if (e instanceof ForeignDatabaseError) throw e;
     // A corrupt or incompatible saved file must not brick the app: start empty.
     console.warn('Could not open the saved database, starting from an empty one', e);
     store = open(null);

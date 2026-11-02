@@ -69,6 +69,42 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   in color, others faded, count) and, for every place, why it is in or out ("Private: never in a
   list", "Does not match: tags, zones"…). Membership always comes from `Repository.evaluateList`.
   Visibility (link / public) is stored; sharing itself is phase 2 (`src/lists/`).
+- **First launch** (`/welcome/*`, T-205, local part): the spec's three entries. *Get started*: first
+  name and optional photo (cropped, 256 px) while the keys are made in the background, app lock offer,
+  location (explained before the system prompt, kept on the device to center the map), import or
+  "Later", then the map with a hint on "+". *I already have TrianguLair on another device* (QR code,
+  link + 6-word code, 12-word phrase) and *I received an invitation link* (paste the link) show their
+  screens marked "Available with sharing (phase 2)". Local-only mode; a storage is offered later.
+- **Identity** (`src/identity/`, glue in `create.ts`, tested): `@triangulair/crypto` makes the 12-word
+  phrase, the master key (owner id `ed25519:…`), this device's keys and master-signed device certificate,
+  a random sharing key with its certificate (rotation 0, no read address in local-only mode), a random
+  vault data key sealed with it to this device, and, on the **primary device** (on by default: the first
+  device keeps the master key so the next one can be added by QR code), the `TLPI` blob. Each secret is
+  its own secret-store entry (below); on start the device certificate, the sealed sharing key and the
+  primary blob are checked to belong together. The format package is unchanged.
+- **Owner migration**: databases created under the placeholder owner `local-me` move to the new
+  identity on first open (`reassignOwner` in the data package: the owner-keyed projection is dropped and
+  rebuilt from the document). A database owned by another identity is never overwritten.
+- **Recovery kit** (`/kit`): "Protect your places" card on the map after 10 places or 3 days ("Later"
+  turns it into a dot on the Settings button for 7 days). The phrase is shown on demand, exported as a
+  password-manager entry (share sheet: title, phrase as password, address as URL, key fingerprint and
+  protocol in the notes), copied field by field (clipboard cleared after one minute, also checked on
+  return to the foreground), or printed (expo-print; on web a print view in a hidden frame). Then
+  3 random words are asked; once they match, the phrase is erased from the device for good. In
+  local-only mode the kit says the phrase alone does not bring the places back and points to the export.
+- **App lock**: on by default only when the phone has no screen lock (expo-local-authentication
+  `getEnrolledLevelAsync`), then with an app code (salted hash in the secret store; 30 s doubling wait
+  after 5 wrong codes); otherwise offered with Face ID / fingerprint / phone code. Locks on start and
+  after 5 min in the background (choice: right away, 1, 5, 15 min); an opaque cover hides the app in
+  the app switcher. The screens stay mounted underneath (nothing typed is lost). "Lock or wipe after
+  N days without sync" waits for synchronization.
+- **Settings** (`/settings`, button in the filter bar): profile, kit status, storage (local only),
+  app lock, this device (date added, identity and device key fingerprints, primary device on/off:
+  turning it back on asks for the 12 words once the phrase is gone), theme and language (both kept per
+  device now).
+- **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
+  toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
+  "Leave out" or "Follow the filter" (the list's exceptions).
 - **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
   on web to force one. No UI string is hard-coded in components.
 
@@ -135,8 +171,31 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 - **Demo data**: on first launch the 15 sample places in Paris are seeded as tags, my saves (status,
   price, comments), a friend's saves ("Léa") and illustrative OSM info (opening hours, terrace,
   happy hours) so the filters have data (`src/data/demo.ts`).
-- Owner id is a placeholder (`local-me`) until identity creation exists; the document actor is a
+- Owner id: my identity's master key (`ed25519:…`, see Identity); the document actor is a
   per-device random id kept in localStorage / expo-sqlite's kv-store.
+
+### Secrets on each platform
+
+- **Native**: `expo-secure-store` (iOS Keychain, Android Keystore), `WHEN_UNLOCKED_THIS_DEVICE_ONLY`:
+  readable only while the phone is unlocked, never in backups nor restored to another device. Entries:
+  `identity` (public record), `device-keys`, `sharing-key` (TLSK sealed to this device), `primary-identity`
+  (primary device only), `pending-phrase` (only until the kit is confirmed), `lock-code`. Native also
+  needs `crypto.getRandomValues`, installed from `expo-crypto` (`src/polyfills.native.ts`).
+- **Web (test build only)**: a separate IndexedDB database, each value encrypted with AES-GCM under a
+  random **non-extractable** WebCrypto key kept in the same database (the entry name is the associated
+  data). This keeps raw key bytes out of storage exports and disk copies, but any script running on the
+  page can ask the browser to decrypt: no protection against XSS, extensions or someone using the
+  browser profile. Without WebCrypto (plain http on a LAN address) values are stored unencrypted; without
+  IndexedDB they live in memory. All three are labelled on the welcome screen and in the settings
+  ("Don't use it for your real places"). A passcode-derived key was not chosen: a prompt on every load of
+  a build that must not hold real secrets anyway.
+- **Fixture mode, web**: `?autostart=1[&name=…]` creates the identity without the first-launch screens
+  (screenshots and end-to-end tests; the other shot scripts use it).
+
+New native modules (a new development build is needed): expo-secure-store, expo-local-authentication,
+expo-clipboard, expo-print, expo-image-picker, expo-image-manipulator, expo-location, expo-crypto; their
+permission texts are in `app.json`. `libsodium-wrappers-sumo` (asm.js on Hermes, not yet timed on a device)
+and `@scure/bip39` are resolved from this app like the other packages' dependencies.
 
 ### OSM services, offline and fixture mode
 
@@ -161,6 +220,9 @@ shows "Already in my places".
 ```sh
 npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app), then e2e/
 npm test            # vitest: pins, clustering, filters, card wording, add-place logic, list query,
+npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app)
+npm test            # vitest: identity creation glue, kit export formats, lock and "protect" rules,
+                    # no hard-coded UI strings (scans every .tsx), pins, clustering, filters, card wording, add-place logic, list query,
                     # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity),
                     # import screen logic
 npm run export:web:fixtures && npm run e2e   # end-to-end tests (Playwright, Chromium, headless)
@@ -192,7 +254,9 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 ## Layout
 
 ```
-src/app/              expo-router screens: index (map), list, add, place/[id], _layout (providers)
+src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, _layout (providers)
+src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
+src/firstLaunch/      first-launch frame, profile and code fields, steps
 src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
 src/components/       FilterBar, PlaceSheet, PlaceCard, SaveEditor, ScreenHeader, DataGate, ui
 src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPersistence, demo, usePlaces
@@ -243,7 +307,7 @@ image per color/icon combination (made at build time or with Skia) and engine-si
 ## Responsiveness and accessibility
 
 - **Light/dark:** follows the system setting for both the UI and the map style. The "Theme" button in
-  the filter bar cycles Auto / Light / Dark (in memory only for now; persistence comes with T-118).
+  the filter bar cycles Auto / Light / Dark; the choice is kept per device (also in Settings).
 - **Text size:** text follows the system font size. Chips and labels cap it with
   `maxFontSizeMultiplier`, and nothing uses a fixed height.
 - **Layout:** pure size classes in `src/theme/layout.ts` (Material breakpoints: compact < 600 ≤ medium
@@ -251,7 +315,15 @@ image per color/icon combination (made at build time or with Skia) and engine-si
   landscape phones) the filter bar becomes a floating panel with wrapped chips and the place card opens
   as a side panel on the right. On compact windows (phones, outer screens, Display Zoom) the chips
   scroll sideways and the card is a bottom sheet docked full width. Layout changes never reset state.
-- **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once.
+- **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once; with no
+  place yet, the position found at the first launch's location step.
+- **T-117/T-118 pass** (`scripts/shots_first_launch.py adapt` and a matrix run of every screen at 320, 344,
+  430, 690, 834 pt wide and 844×390 landscape, text at 1.0 / 1.5 / 2.0, light and dark, checking for text
+  outside the window and cut text): headers wrap (title without a line limit, actions move to a second
+  line), buttons and pills never get wider than their container (text wraps), search fields shrink and
+  their button wraps below, fixed line heights removed (they do not grow with Dynamic Type), the place
+  page is a 680 pt column on wide windows. The first-launch, kit and settings screens are one centered
+  column (560/640 pt) with the actions after the content.
 
 ## Screenshots
 
@@ -286,6 +358,27 @@ Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHO
 | `docs/phone-friend-tags.png` | Friends' tags: author colors, color clash warning, link picker |
 | `docs/tablet-filters-expanded.png`, `docs/tablet-tag-new.png` | Tablet: Culture + "Entry ≤ €20"; new tag with suggested icon |
 | `docs/phone-fr-filters.png` | French filter bar |
+First launch, kit, settings, card lists and screen adaptation (`scripts/shots_first_launch.py`, same setup;
+font scale is mimicked by enlarging every text of the page, see the script):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-welcome.png` | Welcome: the promise, three entries, web test-build warning |
+| `docs/phone-welcome-profile.png`, `docs/phone-welcome-lock.png` | First name and photo (key made meanwhile); app lock with a code (mismatch shown) |
+| `docs/phone-welcome-location.png`, `docs/phone-welcome-import.png` | Location explained before the prompt; import or later |
+| `docs/phone-welcome-device.png`, `docs/phone-welcome-invitation.png` | The other two entries, "Available with sharing (phase 2)" |
+| `docs/phone-map-hint.png`, `docs/phone-protect-card.png` | Map with the "+" hint; "Protect your places" card and reminder dot |
+| `docs/phone-lock-screen.png` | App lock on the next launch, wrong code |
+| `docs/phone-kit.png`, `docs/phone-kit-export.png` | Recovery kit: the 12 words; export (clipboard cleared in one minute) |
+| `docs/web-kit-print.png` | Printable page (web print view) |
+| `docs/phone-kit-check.png`, `docs/phone-kit-done.png` | 3 words asked again (one wrong); kit saved, phrase erased |
+| `docs/phone-settings.png`, `docs/tablet-fr-settings.png` | Settings (phone; tablet in French) |
+| `docs/phone-card-lists.png`, `docs/tablet-dark-fr-card-lists.png` | Lists on the place card: manual tick, filter reasons and exceptions |
+| `docs/small-font2-welcome.png`, `docs/small-font2-map.png`, `docs/small-font2-settings.png` | 320 pt wide, text at 2.0 |
+| `docs/large-font15-kit.png` | Large phone, text at 1.5 |
+| `docs/fold-outer-profile.png`, `docs/fold-inner-profile.png` | Foldable: outer screen, then unfolded with the typed name kept |
+| `docs/landscape-dark-welcome.png`, `docs/landscape-dark-kit.png` | Landscape phone, dark mode |
+
 Zones and lists (`scripts/shots_zones.py`, same setup):
 
 | File | Shows |

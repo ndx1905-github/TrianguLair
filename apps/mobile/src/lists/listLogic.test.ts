@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addByHand,
+  cardListAction,
   clearException,
   draftDefinition,
   draftFromList,
   draftToFilter,
   EMPTY_DRAFT,
   explain,
+  filterWithoutException,
   hasCriteria,
   placeToFilterZone,
   removeByHand,
@@ -151,5 +153,28 @@ describe('why a place is in or out', () => {
     d = draft({ kind: 'manual', items: ['bar'] });
     expect(explain(bar, d, ctx)).toEqual({ in: true, why: 'selected' });
     expect(explain(pizzeria, d, ctx)).toEqual({ in: false, why: 'notSelected' });
+  });
+});
+
+describe('place card lists section', () => {
+  it('offers the action that changes membership, none for places that can never be in a list', () => {
+    const food = draft({ tags: ['food'] });
+    const fits = subject('p1', { tagIds: ['pizza'] });
+    const other = subject('p2', { tagIds: ['bar'] });
+    expect(cardListAction('filter', explain(fits, food, ctx))).toBe('remove');
+    expect(cardListAction('filter', explain(other, food, ctx))).toBe('add');
+    expect(cardListAction('filter', explain(other, addByHand(food, 'p2'), ctx))).toBe('followFilter');
+    expect(cardListAction('filter', explain(fits, removeByHand(food, 'p1'), ctx))).toBe('followFilter');
+    const manual = draft({ kind: 'manual', items: ['p1'] });
+    expect(cardListAction('manual', explain(fits, manual, ctx))).toBe('remove');
+    expect(cardListAction('manual', explain(other, manual, ctx))).toBe('add');
+    expect(cardListAction('filter', explain(subject('p3', { sharing: 'private', tagIds: ['food'] }), food, ctx))).toBeNull();
+    expect(cardListAction('manual', explain(subject('p3', { deletedAt: 1 }), manual, ctx))).toBeNull();
+  });
+
+  it('drops only the exception of that place', () => {
+    const l = { kind: 'filter', visibility: 'link', name: 'L', description: '', manualItems: [], filter: { tags: ['food'], include: ['p2', 'p9'], exclude: ['p1'] } };
+    expect(filterWithoutException(l as never, 'p2')).toEqual({ tags: ['food'], include: ['p9'], exclude: ['p1'] });
+    expect(filterWithoutException(l as never, 'p1')).toEqual({ tags: ['food'], include: ['p2', 'p9'] });
   });
 });
