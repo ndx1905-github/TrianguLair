@@ -8,6 +8,7 @@ import { DataGate } from '../components/DataGate';
 import { FilterBar } from '../components/FilterBar';
 import { PlaceOrZoneCard as PlaceCard } from '../zones/ZoneCard';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { TrashUndo } from '../components/TrashUndo';
 import { Segmented } from '../components/ui';
 import { INITIAL_CENTER } from '../config';
 import { useData } from '../data/DataProvider';
@@ -134,6 +135,7 @@ function ListScreen() {
           onChange={setSort}
           testID="list-sort"
         />
+        <TrashUndo />
       </View>
       <View style={{ marginTop: 10, marginHorizontal: -gutter + gutter }}>
         <FilterBar

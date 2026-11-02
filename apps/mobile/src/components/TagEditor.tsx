@@ -135,7 +135,7 @@ export function TagEditor({ tag, initialParentId = null, tags, onSave, onCancel,
               }}
               style={[styles.swatchRing, { borderColor: on ? c.text : 'transparent' }]}
               accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
+              aria-checked={on}
               accessibilityLabel={t('tags.colorA11y', { name: t(`color.${key}`) })}
               testID={`tag-color-${key}`}
             >
@@ -163,7 +163,7 @@ export function TagEditor({ tag, initialParentId = null, tags, onSave, onCancel,
                   }}
                   style={[styles.iconCell, { borderColor: on ? c.text : c.border, backgroundColor: on ? c.selectedBg : c.surface }]}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
+                  aria-checked={on}
                   accessibilityLabel={t('tags.iconA11y', { name: ic })}
                   testID={`tag-icon-${ic}`}
                 >

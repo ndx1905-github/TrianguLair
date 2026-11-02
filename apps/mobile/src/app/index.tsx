@@ -11,6 +11,7 @@ import type { CameraTarget, LatLon, MapRegion } from '../components/map/types';
 import { MapAttribution } from '../components/MapAttribution';
 import { PlaceSheet } from '../components/PlaceSheet';
 import { DataGate } from '../components/DataGate';
+import { TrashUndo } from '../components/TrashUndo';
 import { Banner } from '../components/ui';
 import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK, OSM_FIXTURES } from '../config';
 import { useData } from '../data/DataProvider';
@@ -193,6 +194,9 @@ function MapScreen() {
             {persistence === 'memory' ? <Banner tone="warning">{t('data.memoryOnly')}</Banner> : <Banner>{t('osm.fixtureShort')}</Banner>}
           </View>
         )}
+        <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }}>
+          <TrashUndo />
+        </View>
       </View>
 
       <View

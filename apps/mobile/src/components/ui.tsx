@@ -69,7 +69,7 @@ export function Pill({
       onPress={onPress}
       style={({ pressed }) => [box, pressed && styles.pressed]}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
+      aria-checked={selected}
       accessibilityLabel={accessibilityLabel ?? label}
       hitSlop={4}
       testID={testID}
@@ -101,7 +101,7 @@ export function Segmented<T extends string | number>({
             onPress={() => onChange(o.value)}
             style={[styles.segment, on && { backgroundColor: c.surface, borderColor: c.accent }]}
             accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
+            aria-checked={on}
           >
             <Text style={[styles.segmentText, { color: on ? c.text : c.textMuted, fontWeight: on ? '700' : '500' }]} maxFontSizeMultiplier={2}>
               {o.label}
@@ -153,7 +153,7 @@ export function Button({
       style={({ pressed }) => [styles.button, { backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1, borderColor: c.border }]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ disabled }}
+      aria-disabled={disabled}
       testID={testID}
     >
       <Text style={[styles.buttonText, { color: fg }]} maxFontSizeMultiplier={2}>

@@ -12,6 +12,7 @@ import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { STREET_BUFFER_M } from '../lists/listLogic';
 import { formatDistance } from '../places/card';
+import { useAppState } from '../state/AppState';
 import { bufferLines } from './raster';
 import { linesLengthM, linesOf } from './streets';
 
@@ -48,6 +49,7 @@ export function ZoneCard({ placeId, onClose, onDeleted, onOpenPlace }: Props) {
   const { t } = tr;
   const { repo, mutate, version } = useData();
   const { tags } = useTags();
+  const { setTrashed } = useAppState();
   const place = useMemo(() => repo.getPlace(placeId), [repo, placeId, version]);
   const save = useMemo(() => {
     const s = repo.getMySaveForPlace(placeId);
@@ -186,6 +188,7 @@ export function ZoneCard({ placeId, onClose, onDeleted, onOpenPlace }: Props) {
                     label={t('card.delete')}
                     onPress={() => {
                       mutate((s) => s.deleteSave(placeId));
+                      setTrashed({ placeId, name: place.name });
                       setConfirmDelete(false);
                       onDeleted?.();
                     }}

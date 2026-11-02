@@ -93,6 +93,8 @@ export const fr: Messages = {
   'card.aFriend': 'Un ami',
   'card.delete': 'Mettre à la corbeille',
   'card.confirmDelete': 'Mettre ce lieu à la corbeille ? Il peut être restauré pendant 30 jours.',
+  'card.trashed': '« {name} » est dans la corbeille.',
+  'card.undo': 'Annuler',
   'card.addToMine': 'Ajouter à mes lieux',
   'card.showOnMap': 'Voir sur la carte',
 

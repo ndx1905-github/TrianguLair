@@ -93,6 +93,8 @@ export const en: Messages = {
   'card.aFriend': 'A friend',
   'card.delete': 'Move to trash',
   'card.confirmDelete': 'Move this place to the trash? It can be restored for 30 days.',
+  'card.trashed': '“{name}” moved to the trash.',
+  'card.undo': 'Undo',
   'card.addToMine': 'Add to my places',
   'card.showOnMap': 'Show on the map',
 

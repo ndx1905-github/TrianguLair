@@ -15,6 +15,7 @@ import { osmClient } from '../osm/client';
 import { classifyOsmError } from '../osm/errors';
 import { cardInfo } from '../places/card';
 import { placeInfoOf } from '../places/model';
+import { useAppState } from '../state/AppState';
 import { ClosureSection } from './ClosureSection';
 import { DirectionsSection } from './DirectionsSection';
 import { SaveEditor, type SaveFields } from './SaveEditor';
@@ -43,6 +44,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
   const { tags } = useTags();
   const lookup = useFactsLookup();
   const router = useRouter();
+  const { setTrashed } = useAppState();
 
   const place = useMemo(() => repo.getPlace(placeId), [repo, placeId, version]);
   const save = useMemo(() => {
@@ -284,6 +286,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
                     label={t('card.delete')}
                     onPress={() => {
                       mutate((s) => s.deleteSave(placeId));
+                      setTrashed({ placeId, name: place.name });
                       setConfirmDelete(false);
                       onDeleted?.();
                     }}

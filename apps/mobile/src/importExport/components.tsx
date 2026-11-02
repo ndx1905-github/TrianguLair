@@ -141,7 +141,7 @@ export function PreviewRow({
       <Pressable
         onPress={() => setOpen((o) => !o)}
         accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        aria-expanded={open}
         style={styles.rowHead}
       >
         <View style={{ flex: 1 }}>

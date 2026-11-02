@@ -22,6 +22,9 @@ export interface AppUiState {
   /** A place the map should select and show (after adding it, "show on map"). */
   focus: { placeId: string; key: number } | null;
   focusPlace: (placeId: string) => void;
+  /** The place I last moved to the trash, offered for undo on the map and the list. */
+  trashed: { placeId: string; name: string; key: number } | null;
+  setTrashed: (t: { placeId: string; name: string } | null) => void;
 }
 
 const Ctx = createContext<AppUiState | null>(null);
@@ -43,9 +46,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
   const [focus, setFocus] = useState<AppUiState['focus']>(null);
   const focusPlace = useCallback((placeId: string) => setFocus({ placeId, key: Date.now() }), []);
+  const [trashed, setTrashedState] = useState<AppUiState['trashed']>(null);
+  const setTrashed = useCallback(
+    (t: { placeId: string; name: string } | null) => setTrashedState(t ? { ...t, key: Date.now() } : null),
+    [],
+  );
   const value = useMemo(
-    () => ({ filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus, focusPlace }),
-    [filter, setFilter, region, filterOpen, setFilterOpen, focus, focusPlace],
+    () => ({ filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed }),
+    [filter, setFilter, region, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed],
   );
   return createElement(Ctx.Provider, { value }, children);
 }

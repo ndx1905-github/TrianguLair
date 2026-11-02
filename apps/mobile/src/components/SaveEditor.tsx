@@ -52,7 +52,7 @@ export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
             onLongPress={() => onChange({ tagIds: makeMain(value.tagIds, tag.id) })}
             style={[styles.tag, { backgroundColor: tag.color, borderColor: tag.color }]}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: true }}
+            aria-checked={true}
             accessibilityLabel={i === 0 ? t('save.tagMainA11y', { name: tag.name }) : t('save.tagA11y', { name: tag.name })}
             accessibilityHint={t('save.tagHint')}
             testID={`tag-selected-${tag.name}`}
@@ -68,7 +68,7 @@ export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
             onPress={() => onChange({ tagIds: [...value.tagIds, tag.id] })}
             style={[styles.tag, { borderColor: tag.color, backgroundColor: c.surface }]}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: false }}
+            aria-checked={false}
             accessibilityLabel={t('save.tagA11y', { name: tag.name })}
             testID={`tag-option-${tag.name}`}
           >

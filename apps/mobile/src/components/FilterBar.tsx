@@ -116,7 +116,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
           onPress={() => onOpenChange(!open)}
           style={styles.toggle}
           accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
+          aria-expanded={open}
           accessibilityLabel={open ? t('filters.collapse') : t('filters.expand')}
           testID="filter-toggle"
         >
