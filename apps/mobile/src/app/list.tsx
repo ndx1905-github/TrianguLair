@@ -157,9 +157,16 @@ function ListScreen() {
         title={t('list.title')}
         onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         right={
-          <Text style={{ color: c.textMuted }} maxFontSizeMultiplier={2}>
-            {t('filters.places', { count: rows.length })}
-          </Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ color: c.textMuted }} maxFontSizeMultiplier={2}>
+              {t('filters.places', { count: rows.length })}
+            </Text>
+            <Pressable onPress={() => router.push('/import')} accessibilityRole="button" accessibilityLabel={t('import.openA11y')} hitSlop={8} testID="open-import">
+              <Text style={{ color: c.accent, fontWeight: '600' }} maxFontSizeMultiplier={2}>
+                {t('import.open')}
+              </Text>
+            </Pressable>
+          </View>
         }
       />
       {wide ? (

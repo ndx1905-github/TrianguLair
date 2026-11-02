@@ -10,7 +10,7 @@ style and photo files are answered with placeholders (no network).
 import asyncio, json, sys, datetime
 from playwright.async_api import async_playwright
 
-BASE = 'http://127.0.0.1:8765'
+BASE = __import__('os').environ.get('SHOTS_BASE', 'http://127.0.0.1:8765')
 OUT = sys.argv[1]
 # Friday 23 October 2026, 18:30 in Paris: happy hours on, some places open, some not yet.
 NOW = datetime.datetime(2026, 10, 23, 16, 30, tzinfo=datetime.timezone.utc)
@@ -143,8 +143,59 @@ async def french(p):
     print('errors', errors)
     await b.close()
 
+IMPORT_FIXTURES = __import__('os').path.join(__import__('os').path.dirname(__file__), '../../../packages/import/test/fixtures')
+
+async def pick_file(page, rel):
+    async with page.expect_file_chooser() as fc:
+        await page.get_by_test_id('import-pick').click()
+    chooser = await fc.value
+    await chooser.set_files(f'{IMPORT_FIXTURES}/{rel}')
+
+async def importer(p, width=390, height=844, prefix='phone'):
+    """Import preview (T-114) on the hand-made My Maps fixture, matched against the OSM fixtures."""
+    b, page, errors = await setup(p, width, height)
+    await ready(page)
+    await page.get_by_test_id('open-list').click()
+    await page.get_by_test_id('open-import').click()
+    await page.wait_for_selector('[data-testid="import-pick"]')
+    await page.wait_for_timeout(300)
+    await shot(page, f'{prefix}-import-home')
+    # Export (T-115): downloaded on desktop web; check it is our GeoJSON.
+    async with page.expect_download() as dl:
+        await page.get_by_test_id('export-all').click()
+    d = await dl.value
+    data = json.loads(open(await d.path()).read())
+    print('export', d.suggested_filename, data['triangulair']['format'], len(data['features']), 'features')
+    await pick_file(page, 'kml/my-maps.kml')
+    await page.wait_for_selector('[data-testid="import-preview"]', timeout=20000)
+    await page.wait_for_timeout(400)
+    await shot(page, f'{prefix}-import-preview-check')
+    await page.get_by_test_id('preview-groups').get_by_text('Found', exact=False).click()
+    await page.get_by_test_id('preview-row-Trattoria Da Lucia').get_by_role('button').first.click()
+    await page.wait_for_timeout(300)
+    await shot(page, f'{prefix}-import-preview-found')
+    await page.get_by_test_id('preview-groups').get_by_text('Manual', exact=False).click()
+    await page.wait_for_timeout(300)
+    await page.get_by_test_id('tag-row-Culture').scroll_into_view_if_needed()
+    await page.wait_for_timeout(300)
+    await shot(page, f'{prefix}-import-preview-tags')
+    await page.get_by_test_id('import-confirm').click()
+    await page.wait_for_selector('[data-testid="import-done"]', timeout=20000)
+    await page.wait_for_timeout(300)
+    await shot(page, f'{prefix}-import-done')
+    await page.get_by_text('Import another file').click()
+    await pick_file(page, 'csv/spreadsheet-fr.csv')
+    await page.wait_for_selector('[data-testid="column-mapping"]', timeout=20000)
+    await page.wait_for_timeout(300)
+    await shot(page, f'{prefix}-import-mapping')
+    print('errors', errors)
+    await b.close()
+
+async def importer_tablet(p):
+    await importer(p, 1180, 820, 'tablet')
+
 async def main():
-    which = sys.argv[2:] or ['phone', 'tablet', 'dark', 'french']
+    which = sys.argv[2:] or ['phone', 'tablet', 'dark', 'french', 'importer']
     async with async_playwright() as p:
         for w in which:
             await globals()[w](p)

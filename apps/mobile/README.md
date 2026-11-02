@@ -18,6 +18,15 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   comment/sharing (saved immediately), move to trash. OSM data is refreshed when stale.
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
+- **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
+  file (Google Takeout, KML/KMZ, GeoJSON, CSV with a column-mapping step, Mapstr and Pin Drop
+  exports, which are **unverified** and flagged as such), match to OpenStreetMap with progress and
+  cancel, preview (to check / found / manual points / no position, per-place choice among
+  candidates, manual point or leave out; what each source tag becomes), batched write with
+  progress and cancel, summary and undo for 7 days; export everything as GeoJSON (download or
+  share sheet on web, share sheet on native). Logic in `@triangulair/import` (see its README).
+  Native file access uses `expo-document-picker`, `expo-file-system` and `expo-sharing`
+  (new native modules: a new development build is needed). Screenshots: `docs/*-import-*.png`.
 - **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
   on web to force one. No UI string is hard-coded in components.
 
@@ -38,7 +47,7 @@ npm install --workspaces=false
 The workspace packages are used from their TypeScript sources (`../../packages/*/src`), with no
 build step and no change to the root `package.json`:
 
-- `metro.config.js` watches `packages/data` and `packages/osm`, maps their names to their folders
+- `metro.config.js` watches `packages/data`, `packages/osm` and `packages/import`, maps their names to their folders
   (`extraNodeModules`, package `exports` honored) and resolves their runtime dependencies
   (`yjs` and its `lib0`, `opening_hours`) from this app's `node_modules`. On web it empties
   sql.js's Node-only imports. Outside fixture mode it replaces `src/osm/fixtures.ts` by an empty
@@ -106,8 +115,13 @@ shows "Already in my places".
 ```sh
 npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app)
 npm test            # vitest: pins, clustering, filters, card wording, add-place logic, list query,
-                    # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity)
+                    # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity),
+                    # import screen logic
 ```
+
+Screenshots in fixture mode: `python3 scripts/shots.py docs importer` (phone) or `importer_tablet`
+(the import preview uses `packages/import/test/fixtures/kml/my-maps.kml`, matched against the OSM
+fixtures; `SHOTS_BASE` overrides the server address).
 
 ## Configuration
 

@@ -1,8 +1,9 @@
 // Metro configuration for the monorepo.
 //
-// The app consumes the workspace packages (@triangulair/data, @triangulair/osm)
+// The app consumes the workspace packages (@triangulair/data, @triangulair/osm,
+// @triangulair/import)
 // straight from their TypeScript sources in ../../packages. Each package keeps
-// its own lockfile, so their runtime dependencies (yjs, opening_hours) are also
+// its own lockfile, so their runtime dependencies (yjs, opening_hours, fflate) are also
 // dependencies of this app and are resolved from apps/mobile/node_modules, even when a package has no node_modules of its own.
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
@@ -15,6 +16,7 @@ const config = getDefaultConfig(appRoot);
 const workspacePackages = {
   '@triangulair/data': path.join(repoRoot, 'packages/data'),
   '@triangulair/osm': path.join(repoRoot, 'packages/osm'),
+  '@triangulair/import': path.join(repoRoot, 'packages/import'),
 };
 
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), ...Object.values(workspacePackages)])];

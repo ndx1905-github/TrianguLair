@@ -12,8 +12,10 @@ export default defineConfig({
       // Workspace packages, from their sources (same as Metro and tsconfig).
       { find: /^@triangulair\/data$/, replacement: here('../../packages/data/src/index.ts') },
       { find: /^@triangulair\/osm$/, replacement: here('../../packages/osm/src/index.ts') },
+      { find: /^@triangulair\/import$/, replacement: here('../../packages/import/src/index.ts') },
       // Their runtime dependencies come from this app's node_modules.
       { find: /^yjs$/, replacement: here('./node_modules/yjs/dist/yjs.mjs') },
+      { find: /^fflate$/, replacement: here('./node_modules/fflate/esm/browser.js') },
       { find: /^opening_hours$/, replacement: here('./node_modules/opening_hours/build/opening_hours.esm.mjs') },
     ],
   },
