@@ -4,6 +4,8 @@ import type { Map as GLMap, Marker as GLMarker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
+import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
+import { PRESSABLE_LAYERS, SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
 import { clusterBubbleSize, clusterColors } from './cluster';
 import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
 
@@ -15,7 +17,7 @@ import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
 type MapLibreModule = typeof import('maplibre-gl');
 
 function pinKey(pin: MapPin, selected: boolean): string {
-  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, selected].join('|');
+  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, pin.badge, selected].join('|');
 }
 
 function clusterKey(c: MapCluster): string {
@@ -24,21 +26,21 @@ function clusterKey(c: MapCluster): string {
 
 function makePinElement(pin: MapPin, selected: boolean, onPress: (id: string) => void): HTMLElement {
   const scale = pinScale(pin, selected);
-  const width = PIN_VIEWBOX.width * scale;
-  const height = PIN_VIEWBOX.height * scale;
+  const box = pin.badge ? BADGE_VIEWBOX : PIN_VIEWBOX;
+  const width = box.width * scale;
+  const height = box.height * scale;
   const el = document.createElement('button');
   el.type = 'button';
   el.setAttribute('aria-label', pin.label);
   el.title = pin.label;
   el.dataset.pinId = pin.id;
   if (pin.greyed) el.dataset.greyed = '1';
+  if (pin.badge) el.dataset.badge = '1';
   el.style.cssText =
     `width:${width}px;height:${height}px;padding:0;margin:0;border:0;background:none;` +
     `cursor:pointer;display:block;z-index:${selected ? 3 : pin.greyed ? 0 : 1}`;
-  el.innerHTML = pinSvg(
-    { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed },
-    { width, height },
-  );
+  const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed };
+  el.innerHTML = pin.badge ? badgeSvg(spec, { width, height }) : pinSvg(spec, { width, height });
   el.addEventListener('click', (ev) => {
     ev.stopPropagation();
     onPress(pin.id);
@@ -91,6 +93,8 @@ export default function Map({
   onMapPress,
   onRegionChange,
   onUserMoveStart,
+  shapes = [],
+  onShapePress,
   style,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -101,8 +105,10 @@ export default function Map({
   const [ready, setReady] = useState(false);
 
   // Latest callbacks, so map listeners registered once always call the current props.
-  const cb = useRef({ onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart });
-  cb.current = { onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart };
+  const cb = useRef({ onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart, onShapePress });
+  cb.current = { onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart, onShapePress };
+  const shapesRef = useRef(shapes);
+  shapesRef.current = shapes;
 
   // Create the map once.
   useEffect(() => {
@@ -126,7 +132,29 @@ export default function Map({
       if (containerRef.current.clientWidth >= 600) {
         map.addControl(new lib.NavigationControl({ showCompass: true }), 'bottom-left');
       }
-      map.on('click', (e) => cb.current.onMapPress?.({ lat: e.lngLat.lat, lon: e.lngLat.lng }));
+      map.on('click', (e) => {
+        // A pressable shape (zone, candidate neighbourhood or street) takes the tap.
+        const m = map!;
+        const layers = PRESSABLE_LAYERS.filter((id) => m.getLayer(id));
+        const hit = layers.length
+          ? m.queryRenderedFeatures(e.point, { layers }).find((f) => f.properties?.press === 1)
+          : undefined;
+        if (hit && cb.current.onShapePress) {
+          cb.current.onShapePress(String(hit.properties!.id));
+          return;
+        }
+        cb.current.onMapPress?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+      });
+      // Zones and drafts: one GeoJSON source, added again after every style change (dark mode).
+      const addShapes = () => {
+        const m = map!;
+        if (!m.getSource(SHAPES_SOURCE)) m.addSource(SHAPES_SOURCE, { type: 'geojson', data: shapesToGeoJSON(shapesRef.current) });
+        for (const layer of SHAPE_LAYERS) {
+          if (!m.getLayer(layer.id)) m.addLayer({ ...layer, source: SHAPES_SOURCE } as Parameters<GLMap['addLayer']>[0]);
+        }
+      };
+      map.on('style.load', addShapes);
+      if (map.isStyleLoaded()) addShapes();
       // Right click on desktop, long press on touch screens.
       map.on('contextmenu', (e) =>
         cb.current.onLongPress?.({ lat: e.lngLat.lat, lon: e.lngLat.lng }),
@@ -140,7 +168,10 @@ export default function Map({
       // `resize` (window, fold/unfold) changes the visible area too.
       m.on('resize', () => cb.current.onRegionChange?.(regionOf(m)));
       mapRef.current = map;
-      (window as unknown as { __tlMap?: GLMap }).__tlMap = map; // for end-to-end tests
+      // For end-to-end tests: the most recently opened map that is still mounted.
+      const w = window as unknown as { __tlMap?: GLMap; __tlMaps?: GLMap[] };
+      w.__tlMaps = [...(w.__tlMaps ?? []), map];
+      w.__tlMap = map;
       setReady(true);
       cb.current.onRegionChange?.(regionOf(map));
     })();
@@ -150,6 +181,11 @@ export default function Map({
       markersRef.current.clear();
       clusterMarkersRef.current.forEach(({ marker }) => marker.remove());
       clusterMarkersRef.current.clear();
+      if (map) {
+        const w = window as unknown as { __tlMap?: GLMap; __tlMaps?: GLMap[] };
+        w.__tlMaps = (w.__tlMaps ?? []).filter((m) => m !== map);
+        if (w.__tlMap === map) w.__tlMap = w.__tlMaps[w.__tlMaps.length - 1];
+      }
       map?.remove();
       mapRef.current = null;
     };
@@ -190,8 +226,8 @@ export default function Map({
       const height = PIN_VIEWBOX.height * pinScale(pin, selected);
       const marker = new lib.Marker({
         element: el,
-        anchor: 'bottom',
-        offset: [0, height * (1 - PIN_ANCHOR.y)],
+        anchor: pin.badge ? 'center' : 'bottom',
+        offset: pin.badge ? [0, 0] : [0, height * (1 - PIN_ANCHOR.y)],
       })
         .setLngLat([pin.lon, pin.lat])
         .addTo(map);
@@ -204,6 +240,12 @@ export default function Map({
       }
     }
   }, [ready, pins, selectedPinId]);
+
+  // Sync zone shapes.
+  useEffect(() => {
+    const src = mapRef.current?.getSource(SHAPES_SOURCE) as { setData?: (d: unknown) => void } | undefined;
+    src?.setData?.(shapesToGeoJSON(shapes));
+  }, [ready, shapes]);
 
   // Sync cluster bubbles.
   useEffect(() => {

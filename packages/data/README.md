@@ -118,6 +118,11 @@ author's choice, shown until I map the tag to one of mine). Plain names are
 still stored as strings, so the `their_tags` format of existing rows is
 unchanged. `Repository.friendTags()` lists them per live foreign save;
 `parseTheirTags` reads a stored value tolerantly.
+### Additions for the app (T-110, T-112)
+
+- `updateList(id, patch)` also takes `kind` (`ListPatch`, exported): switching between `filter` and
+  `manual` keeps both the saved filter and the manual selection (switching back restores them).
+- A `drawn` filter zone may carry an optional `name` (label only; the key and matching stay the shape).
 
 ## Schema (version 1)
 

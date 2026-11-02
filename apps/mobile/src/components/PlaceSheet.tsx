@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '../hooks/useLayout';
 import { useUiColors } from '../hooks/useUiColors';
-import { PlaceCard } from './PlaceCard';
+import { PlaceOrZoneCard as PlaceCard } from '../zones/ZoneCard';
 
 interface Props {
   placeId: string | null;

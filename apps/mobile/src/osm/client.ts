@@ -7,14 +7,16 @@ import { buildUserAgent, createOsmClient, type OsmClient } from '@triangulair/os
 
 import { APP_CONTACT_URL, APP_VERSION, OSM_FIXTURES } from '../config';
 import { createFixtureFetch } from './fixtureFetch';
+import { withZoneFixtures } from './zoneFixtureFetch';
 
 let client: OsmClient | null = null;
 
 export function osmClient(): OsmClient {
   if (client) return client;
   // Outside fixture mode Metro replaces ./fixtures by an empty module (metro.config.js).
-  const fetchImpl = OSM_FIXTURES
-    ? createFixtureFetch((require('./fixtures') as typeof import('./fixtures')).loadFixtures())
+  const fixtures = OSM_FIXTURES ? (require('./fixtures') as typeof import('./fixtures')) : null;
+  const fetchImpl = fixtures
+    ? withZoneFixtures(fixtures.loadZoneFixtures(), createFixtureFetch(fixtures.loadFixtures()))
     : undefined;
   client = createOsmClient({
     userAgent: buildUserAgent({ name: 'TrianguLair', version: APP_VERSION, contact: APP_CONTACT_URL }),

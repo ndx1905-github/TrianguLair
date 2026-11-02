@@ -136,7 +136,12 @@ export type FilterZone =
       /** Simplified boundary, kept so the filter works offline. */
       geometry: AreaGeometry;
     }
-  | { kind: 'drawn'; geometry: AreaGeometry };
+  | {
+      kind: 'drawn';
+      geometry: AreaGeometry;
+      /** Optional label (e.g. the name of the saved zone it was taken from); not used for matching. */
+      name?: string;
+    };
 
 /**
  * Saved filter of a list (spec: "The list filter is stored as JSON (tags,

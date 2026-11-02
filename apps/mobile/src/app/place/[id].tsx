@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DataGate } from '../../components/DataGate';
-import { PlaceCard } from '../../components/PlaceCard';
+import { PlaceOrZoneCard as PlaceCard } from '../../zones/ZoneCard';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Button } from '../../components/ui';
 import { useLayout } from '../../hooks/useLayout';
