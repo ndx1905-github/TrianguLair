@@ -49,8 +49,8 @@ CREATE TABLE meta (
   value TEXT NOT NULL
 ) WITHOUT ROWID;
 
--- The Automerge document of my own data, stored as a snapshot followed by
--- incremental chunks (appended in the same transaction as the projection, so
+-- The Yjs document of my own data, stored as a snapshot followed by
+-- incremental updates (appended in the same transaction as the projection, so
 -- the document and its projection never disagree after a crash).
 CREATE TABLE doc_chunks (
   seq   INTEGER PRIMARY KEY,

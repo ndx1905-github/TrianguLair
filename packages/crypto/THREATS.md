@@ -145,7 +145,7 @@ Listed so later phases can decide what to fix.
   consecutive public indexes shows which entry replaced which when one pack changes per publication (N-1). Batching
   replacements makes diffs less precise.
 - The payload type byte (V3-16) separates content, media and group-key payloads inside the AEAD. The content payload
-  format itself (Automerge, GeoJSON) is specified by the app, not here.
+  format itself (Yjs, GeoJSON) is specified by the app, not here.
 - No format-level size bound on pack ciphertext (N-2): the HTTP layer must cap downloads (the index lists each hash, not
   each size).
 - Trial decryption cost is wraps × candidate keys (X25519 each), at most 256 wraps, and only for packs listed in a

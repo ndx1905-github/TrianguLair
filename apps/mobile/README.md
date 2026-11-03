@@ -1,8 +1,112 @@
-# TrianguLair mobile app (phase 0 skeleton)
+# TrianguLair mobile app
 
 An Expo / React Native app for iOS and Android. The web build is for testing only.
-It shows a full-screen OpenStreetMap map with sample places in Paris, tag-colored pins,
-a collapsible tag filter bar and a bottom sheet for the selected place.
+Wired to the workspace packages `@triangulair/data` (local SQLite + document) and
+`@triangulair/osm` (Overpass, Photon, opening hours, photos):
+
+- **Map** (index): pins from `Repository.mapPins` for the visible area, clustering when zoomed
+  out (T-103 basic), filter bar driven by my tags and OSM criteria (open now, terrace, happy
+  hour, vegetarian), filtered display (matching pins in color, the others grey, faded, smaller).
+- **Add a place** (`/add`, T-105): nearby OSM places around the map center sorted by distance,
+  search as you type (Photon session) plus the local part (my and friends' places), long press /
+  right click on the map or "drop a point" for a manual point; each candidate says "Already in my
+  places" / "Saved by N friends"; the form sets tags (first = main), status, price, comment and its
+  visibility, sharing.
+- **Place card** (sheet on the map, side panel on wide screens, `/place/[id]` page; T-107 UI):
+  category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
+  reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
+  comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
+- **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
+  same filter bar; two panes (list + card) on wide screens.
+- **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
+  file (Google Takeout, KML/KMZ, GeoJSON, CSV with a column-mapping step, Mapstr and Pin Drop
+  exports, which are **unverified** and flagged as such), match to OpenStreetMap with progress and
+  cancel, preview (to check / found / manual points / no position, per-place choice among
+  candidates, manual point or leave out; what each source tag becomes), batched write with
+  progress and cancel, summary and undo for 7 days; export everything as GeoJSON (download or
+  share sheet on web, share sheet on native). Logic in `@triangulair/import` (see its README).
+  Native file access uses `expo-document-picker`, `expo-file-system` and `expo-sharing`
+  (new native modules: a new development build is needed). Screenshots: `docs/*-import-*.png`.
+- **Filter bar** (T-109, `components/FilterBar.tsx`, logic in `src/places/filters.ts` and `src/filters/`):
+  my tags (choosing a sub-tag of a chosen tag narrows to it), friends' unmapped tags in their
+  author's color, categories (OSM groups) then their sub-filters (type, cuisine, museum type, shop
+  type), practical criteria (open now, happy hour, terrace, takes reservations, free entry,
+  second-hand, organic, also at my friends'), diets (all chosen ones required), "entry ≤ €X", my
+  status, "maybe closed" / "closed" (closed places are hidden unless chosen), visibility (only me /
+  shared / friends' places), price level, text. Groups ANDed, values ORed; a place lacking source
+  info is "unknown" and drawn faded. Collapses to one line of removable pills; moving the map folds
+  it without changing the remembered choice. Filter and open state are kept per device (versioned
+  JSON, parsed defensively; storage falls back to memory when blocked).
+- **Tags** (`/tags`, T-108): tree of my tags with color (spec palette), icon (curated set, below),
+  places, linked OSM categories and linked friends' tags; create (color and icon suggested from the
+  name), edit, re-parent (no cycles offered), delete to the trash with undo. "My friends' tags":
+  matched by manual mapping, then by name (case, accents, plurals, en/fr synonyms), else kept in
+  their author's color, with "Link to my tag", "Adopt" and a warning when the color equals one of
+  mine. The card shows tag paths ("Restaurant › Pizza"); the first tag is the main one.
+- **Closed places** (T-113, `src/closure/`): the osm package's `ClosureChecker` and monthly schedule
+  run while the app is open only (on open, on return to the foreground at most every 6 h, aborted
+  when the app leaves the foreground), in batches of 50 never-checked-first places, and when a card
+  of mine opens with a check over a month old (every OSM refresh of my places is a check). Results go
+  to the place cache (`status`, `closedSignals`, `osmSyncedAt` = last check). A grouped notice at
+  most monthly; the card shows "Maybe closed" with reasons and date, "Confirm closed" / "Still open"
+  (answers kept per device and fed back so dismissed signals do not return); the pin gets a small
+  grey cross; "Report closed" on my places.
+- **Go there** (T-116): directions in the phone's navigation app (`geo:` on Android, Apple Maps on
+  iOS, Google Maps on web) and "open in" Apple Maps / Google Maps / OpenStreetMap (new tab on web).
+- **Zones** (`/zone/new`, T-110): from an OSM neighbourhood (Overpass `place=neighbourhood|quarter|suburb`
+  in the visible area, tap one on the map, or Nominatim search by name), from street segments (tap a
+  start and an end, the path follows the streets through intersections; "Add a segment" chains
+  contiguous or separate ones; saved as LineString / MultiLineString), or drawn by points (tap the
+  first point to close, then move a vertex or add one on an edge; self-intersections refused) or by
+  painting (three thicknesses, eraser, "move map"; strokes rasterized in metres, merged, traced,
+  Douglas–Peucker + Chaikin, saved as a "fuzzy outline" polygon). Zones are drawn with a ~20 % fill
+  and a 2.5 px outline (painted: three blurred rings; streets: thick translucent line + centre line),
+  a rounded-square badge without tip, greyed outside the filter. The zone card has the same personal
+  fields as a place plus "places inside" (`src/zones/`).
+- **Lists** (`/lists`, `/lists/[id]`, `/lists/edit`, T-112): saved filter (tags with sub-tags,
+  categories, statuses, prices, zones from my zones / by name via Nominatim / outlined on the map,
+  exceptions added or removed by hand) or manual selection; live preview (map with the zones, members
+  in color, others faded, count) and, for every place, why it is in or out ("Private: never in a
+  list", "Does not match: tags, zones"…). Membership always comes from `Repository.evaluateList`.
+  Visibility (link / public) is stored; sharing itself is phase 2 (`src/lists/`).
+- **First launch** (`/welcome/*`, T-205, local part): the spec's three entries. *Get started*: first
+  name and optional photo (cropped, 256 px) while the keys are made in the background, app lock offer,
+  location (explained before the system prompt, kept on the device to center the map), import or
+  "Later", then the map with a hint on "+". *I already have TrianguLair on another device* (QR code,
+  link + 6-word code, 12-word phrase) and *I received an invitation link* (paste the link) show their
+  screens marked "Available with sharing (phase 2)". Local-only mode; a storage is offered later.
+- **Identity** (`src/identity/`, glue in `create.ts`, tested): `@triangulair/crypto` makes the 12-word
+  phrase, the master key (owner id `ed25519:…`), this device's keys and master-signed device certificate,
+  a random sharing key with its certificate (rotation 0, no read address in local-only mode), a random
+  vault data key sealed with it to this device, and, on the **primary device** (on by default: the first
+  device keeps the master key so the next one can be added by QR code), the `TLPI` blob. Each secret is
+  its own secret-store entry (below); on start the device certificate, the sealed sharing key and the
+  primary blob are checked to belong together. The format package is unchanged.
+- **Owner migration**: databases created under the placeholder owner `local-me` move to the new
+  identity on first open (`reassignOwner` in the data package: the owner-keyed projection is dropped and
+  rebuilt from the document). A database owned by another identity is never overwritten.
+- **Recovery kit** (`/kit`): "Protect your places" card on the map after 10 places or 3 days ("Later"
+  turns it into a dot on the Settings button for 7 days). The phrase is shown on demand, exported as a
+  password-manager entry (share sheet: title, phrase as password, address as URL, key fingerprint and
+  protocol in the notes), copied field by field (clipboard cleared after one minute, also checked on
+  return to the foreground), or printed (expo-print; on web a print view in a hidden frame). Then
+  3 random words are asked; once they match, the phrase is erased from the device for good. In
+  local-only mode the kit says the phrase alone does not bring the places back and points to the export.
+- **App lock**: on by default only when the phone has no screen lock (expo-local-authentication
+  `getEnrolledLevelAsync`), then with an app code (salted hash in the secret store; 30 s doubling wait
+  after 5 wrong codes); otherwise offered with Face ID / fingerprint / phone code. Locks on start and
+  after 5 min in the background (choice: right away, 1, 5, 15 min); an opaque cover hides the app in
+  the app switcher. The screens stay mounted underneath (nothing typed is lost). "Lock or wipe after
+  N days without sync" waits for synchronization.
+- **Settings** (`/settings`, button in the filter bar): profile, kit status, storage (local only),
+  app lock, this device (date added, identity and device key fingerprints, primary device on/off:
+  turning it back on asks for the 12 words once the phrase is gone), theme and language (both kept per
+  device now).
+- **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
+  toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
+  "Leave out" or "Follow the filter" (the list's exceptions).
+- **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
+  on web to force one. No UI string is hard-coded in components.
 
 - **Expo SDK 57** (React Native 0.86, New Architecture, React 19.2), TypeScript, expo-router
 - **Map:** `@maplibre/maplibre-react-native` 11 on native and `maplibre-gl` 5 on web, behind one
@@ -17,6 +121,17 @@ Install dependencies from this folder. The app currently has its own lockfile, l
 ```sh
 npm install --workspaces=false
 ```
+
+The workspace packages are used from their TypeScript sources (`../../packages/*/src`), with no
+build step and no change to the root `package.json`:
+
+- `metro.config.js` watches `packages/data`, `packages/osm` and `packages/import`, maps their names to their folders
+  (`extraNodeModules`, package `exports` honored) and resolves their runtime dependencies
+  (`yjs` and its `lib0`, `opening_hours`) from this app's `node_modules`. On web it empties
+  sql.js's Node-only imports. Outside fixture mode it replaces `src/osm/fixtures.ts` by an empty
+  module, so the OSM fixture JSON never reaches a production bundle.
+- `tsconfig.json` maps the package names to their sources (`paths`) and allows `.ts` import
+  extensions; `vitest.config.mts` has the same aliases.
 
 ### Web (testing)
 
@@ -43,12 +158,86 @@ You can also build locally with `npx expo run:android` / `npx expo run:ios` (nee
 The bundle ID / package `org.triangulair.app` is a **placeholder** until the final identifier is chosen.
 Before the first EAS build, run `eas init` to link a project (it adds `extra.eas.projectId`).
 
+### Data on each platform
+
+- **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
+  `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
+  Type-checked, not run on a device yet (the document is Yjs, pure JavaScript, so Hermes is no
+  longer a blocker).
+- **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
+  the database file saved to IndexedDB after each write (debounced, and on page hide). When
+  IndexedDB is unavailable the data stays in memory and the map says so. sql.js has no R*Tree/FTS5:
+  the package's fallback indexes are used.
+- **Demo data**: on first launch the 15 sample places in Paris are seeded as tags, my saves (status,
+  price, comments), a friend's saves ("Léa") and illustrative OSM info (opening hours, terrace,
+  happy hours) so the filters have data (`src/data/demo.ts`).
+- Owner id: my identity's master key (`ed25519:…`, see Identity); the document actor is a
+  per-device random id kept in localStorage / expo-sqlite's kv-store.
+
+### Secrets on each platform
+
+- **Native**: `expo-secure-store` (iOS Keychain, Android Keystore), `WHEN_UNLOCKED_THIS_DEVICE_ONLY`:
+  readable only while the phone is unlocked, never in backups nor restored to another device. Entries:
+  `identity` (public record), `device-keys`, `sharing-key` (TLSK sealed to this device), `primary-identity`
+  (primary device only), `pending-phrase` (only until the kit is confirmed), `lock-code`. Native also
+  needs `crypto.getRandomValues`, installed from `expo-crypto` (`src/polyfills.native.ts`).
+- **Web (test build only)**: a separate IndexedDB database, each value encrypted with AES-GCM under a
+  random **non-extractable** WebCrypto key kept in the same database (the entry name is the associated
+  data). This keeps raw key bytes out of storage exports and disk copies, but any script running on the
+  page can ask the browser to decrypt: no protection against XSS, extensions or someone using the
+  browser profile. Without WebCrypto (plain http on a LAN address) values are stored unencrypted; without
+  IndexedDB they live in memory. All three are labelled on the welcome screen and in the settings
+  ("Don't use it for your real places"). A passcode-derived key was not chosen: a prompt on every load of
+  a build that must not hold real secrets anyway.
+- **Fixture mode, web**: `?autostart=1[&name=…]` creates the identity without the first-launch screens
+  (screenshots and end-to-end tests; the other shot scripts use it).
+
+New native modules (a new development build is needed): expo-secure-store, expo-local-authentication,
+expo-clipboard, expo-print, expo-image-picker, expo-image-manipulator, expo-location, expo-crypto; their
+permission texts are in `app.json`. `libsodium-wrappers-sumo` (asm.js on Hermes, not yet timed on a device)
+and `@scure/bip39` are resolved from this app like the other packages' dependencies.
+
+### OSM services, offline and fixture mode
+
+All OSM calls go through one `createOsmClient()` (`src/osm/client.ts`). Failures never block a
+screen: the add screen falls back to the places on this device ("Nearby, on this device") with a
+clear message, the card keeps its cached info. **Fixture mode** answers every OSM request with the
+osm package's test fixtures (synthetic places in the Marais), for offline demos:
+
+```sh
+EXPO_PUBLIC_OSM_FIXTURES=1 npx expo export --platform web
+```
+
+Zone sources have their own synthetic fixtures (`src/osm/zoneFixtures.ts`: four quarters of the
+Marais, a few streets with shared intersection nodes, "Paris" for Nominatim), routed by
+`zoneFixtureFetch.ts`. Real queries carry a `/* tl:… */` marker comment.
+
+In fixture mode the demo seed also saves "Trattoria Da Lucia" (a fixture place), so the add screen
+shows "Already in my places".
+
 ### Checks
 
 ```sh
-npm run typecheck   # tsc --noEmit
-npm test            # vitest: pin bands, SVG, filtering, layout, theme, camera
+npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app), then e2e/
+npm test            # vitest: pins, clustering, filters, card wording, add-place logic, list query,
+npm run typecheck   # tsc --noEmit (also type-checks the packages' sources used by the app)
+npm test            # vitest: identity creation glue, kit export formats, lock and "protect" rules,
+                    # no hard-coded UI strings (scans every .tsx), pins, clustering, filters, card wording, add-place logic, list query,
+                    # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity),
+                    # import screen logic
+npm run export:web:fixtures && npm run e2e   # end-to-end tests (Playwright, Chromium, headless)
 ```
+
+End-to-end tests (T-119, `e2e/`, `playwright.config.ts`): Playwright Test against the fixture-mode
+web export served by `scripts/serve.py` (port `E2E_PORT`, default 4319). `e2e/helpers.ts` fixes the
+clock (Friday 23 October 2026, 18:30 in Paris), answers the base map style and photos with
+placeholders, and fails a test on any uncaught page error. Each test has a fresh browser context
+(new IndexedDB, demo seed). Selectors are test ids, roles and visible text; the map is driven
+through `window.__tlMap`. First time: `npx playwright install chromium`.
+
+Screenshots in fixture mode: `python3 scripts/shots.py docs importer` (phone) or `importer_tablet`
+(the import preview uses `packages/import/test/fixtures/kml/my-maps.kml`, matched against the OSM
+fixtures; `SHOTS_BASE` overrides the server address).
 
 ## Configuration
 
@@ -65,19 +254,34 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 ## Layout
 
 ```
-src/app/              expo-router screens (_layout, index = map screen)
-src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts
-src/components/       FilterBar, PlaceSheet, TagChip, MapAttribution
-src/pins/             bands.ts (band computation), pinSvg.ts (pin SVG), fromPlace.ts
-src/places/           types, mockPlaces (15 places in Paris), filter.ts
-src/theme/            tags.ts (10 tag colors), icons.ts (MDI icon paths), colors.ts (light/dark UI)
-src/config.ts         map style URLs, attribution, initial camera
+src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, _layout (providers)
+src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
+src/firstLaunch/      first-launch frame, profile and code fields, steps
+src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
+src/components/       FilterBar, PlaceSheet, PlaceCard, SaveEditor, ScreenHeader, DataGate, ui
+src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPersistence, demo, usePlaces
+src/osm/              client (one OSM client), fixtureFetch + fixtures (fixture mode), errors
+src/zones/            zone geometry (raster painting/buffer, simplify, streets graph, drawing), OSM zone
+                      queries, map shapes and badges, zone editor and card
+src/lists/            list draft/filter building and "why in/out", list editor and map
+src/places/           pure logic: filters, clustering, model, card, add, list, camera
+src/pins/             bands.ts, pinSvg.ts, build.ts (pins from places and the filter)
+src/i18n/             core (plurals, placeholders), en, fr (+ filtersTags.en/fr), provider
+src/filters/          filter storage, collapsed-summary pills, labels, usePrunedFilter
+src/tags/             tag tree, friends' tags mapping, suggested color/icon, icon set, text folding
+src/closure/          closed-place glue (pure), runner, useClosureCheck, signal wording
+src/state/            AppState (filter, last map area, focus) shared by the screens
+src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
+src/config.ts         map style URLs, attribution, initial camera, fixture flag
 ```
 
 ## Pins
 
 - **Shape:** teardrop pin with an SVG `viewBox` of 40×52. The tip is the anchor point.
 - **Tag colors:** the colors are saturated and set in `src/theme/tags.ts`.
+- **Tag icons:** Material Design Icons paths (Apache-2.0, `src/theme/icons.ts`, `iconsExtra.ts`), about
+  50 curated in 8 groups (`src/tags/iconSet.ts`); not the spec's Maki/Temaki set yet.
+- **Maybe closed:** small grey disc with a white cross at the top right.
 - **Icon:** the icon of the first tag, drawn **white** with a dark halo. The halo is the same path
   drawn first with a dark stroke.
 - **Several tags:** the round body is split into up to **3 horizontal color bands** of equal height,
@@ -86,6 +290,10 @@ src/config.ts         map style URLs, attribution, initial camera
 - **Friends-only places** (`ownerIsMe: false`): the bands are drawn at 50% opacity over white, which
   gives a lighter pin, and the whole pin is slightly translucent.
 - **Selected pin:** drawn 1.3× larger.
+- **Filter active:** matching pins take the color and icon of the filtered tag; the others (and
+  places lacking the information, spec "unknown info") are grey, 40% opacity and 0.72× smaller.
+- **Clusters:** computed in JS on the viewport's pins (radius 56 px, none from zoom 15); a bubble in
+  the majority color of its matching members, grey if none matches; tapping zooms in.
 
 Both platforms use the same SVG string (`pinSvg()`):
 
@@ -94,12 +302,12 @@ Both platforms use the same SVG string (`pinSvg()`):
 
 This is simple, and native and web look the same, which is good enough for tens or a few hundred
 pins. **Later:** move native rendering to a `GeoJSONSource` + `SymbolLayer`, with one pre-rendered
-image per color/icon combination (made at build time or with Skia) and clustering.
+image per color/icon combination (made at build time or with Skia) and engine-side clustering.
 
 ## Responsiveness and accessibility
 
 - **Light/dark:** follows the system setting for both the UI and the map style. The "Theme" button in
-  the filter bar cycles Auto / Light / Dark (in memory only for now; persistence comes with T-118).
+  the filter bar cycles Auto / Light / Dark; the choice is kept per device (also in Settings).
 - **Text size:** text follows the system font size. Chips and labels cap it with
   `maxFontSizeMultiplier`, and nothing uses a fixed height.
 - **Layout:** pure size classes in `src/theme/layout.ts` (Material breakpoints: compact < 600 ≤ medium
@@ -107,11 +315,81 @@ image per color/icon combination (made at build time or with Skia) and clusterin
   landscape phones) the filter bar becomes a floating panel with wrapped chips and the place card opens
   as a side panel on the right. On compact windows (phones, outer screens, Display Zoom) the chips
   scroll sideways and the card is a bottom sheet docked full width. Layout changes never reset state.
-- **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once.
+- **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once; with no
+  place yet, the position found at the first launch's location step.
+- **T-117/T-118 pass** (`scripts/shots_first_launch.py adapt` and a matrix run of every screen at 320, 344,
+  430, 690, 834 pt wide and 844×390 landscape, text at 1.0 / 1.5 / 2.0, light and dark, checking for text
+  outside the window and cut text): headers wrap (title without a line limit, actions move to a second
+  line), buttons and pills never get wider than their container (text wraps), search fields shrink and
+  their button wraps below, fixed line heights removed (they do not grow with Dynamic Type), the place
+  page is a 680 pt column on wide windows. The first-launch, kit and settings screens are one centered
+  column (560/640 pt) with the actions after the content.
 
 ## Screenshots
 
-`docs/screenshot-web.png` (phone, place sheet open), `docs/screenshot-web-tablet.png` (tablet, side
-panel) and `docs/screenshot-web-dark.png` (phone, dark) were taken from the web export with Playwright
-(Chromium). The sandbox that produced them had no access to `tiles.openfreemap.org`, so the style
-request was answered with a background-only placeholder: the base map is blank, pins and UI are real.
+Taken from the web export in fixture mode with Playwright (Chromium), clock set to Friday
+23 October 2026, 18:30 in Paris (`scripts/shots.py`). The sandbox had no access to the tile server
+or photo hosts: the map style is answered with a background-only placeholder (blank base map) and
+photos with a placeholder image; pins, clusters, UI, data and credit lines are real.
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-map-clusters.png` | Map zoomed out: clusters in the majority tag color, multi-tag pins, friends' places faded |
+| `docs/phone-map-filters.png` | Filters Bar + Terrace: matching pins in color, the others and their clusters grey |
+| `docs/phone-place-card.png` | Card of an OSM place: opening line, address, chips, Panoramax photos with credits |
+| `docs/phone-add-nearby.png` | Add screen: nearby places by distance, "Already in my places" |
+| `docs/phone-add-search.png`, `docs/phone-add-form.png` | Search as you type, then the save form |
+| `docs/phone-list.png`, `docs/phone-list-search.png` | List (recent), text search in comments |
+| `docs/tablet-map-filter-card.png` | Tablet: "Open now" filter, card as side panel with happy hour |
+| `docs/tablet-list.png` | Tablet: list by distance and card side by side |
+| `docs/phone-dark-card.png` | Dark mode |
+| `docs/phone-fr-add.png` | French UI |
+
+Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHOTS_BASE` picks the server):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-closure-notice.png` | Monthly check on open: grouped "maybe closed" notice |
+| `docs/phone-filters-expanded.png` | Expanded bar: tag + its sub-tags, friends' tags, Eat & drink with type and cuisine, Terrace |
+| `docs/phone-filters-collapsed.png` | Collapsed summary: one removable pill per filter, matching pins in color, the rest grey |
+| `docs/phone-maybe-closed-card.png`, `docs/phone-dark-maybe-closed.png` | Card: "Maybe closed" with reason, date, confirm / still open |
+| `docs/phone-card-directions.png` | Card: directions and open in Apple Maps / Google Maps / OSM |
+| `docs/phone-tags.png`, `docs/phone-tag-editor.png` | Tag tree; editor of the sub-tag "Restaurant › Pizza" |
+| `docs/phone-friend-tags.png` | Friends' tags: author colors, color clash warning, link picker |
+| `docs/tablet-filters-expanded.png`, `docs/tablet-tag-new.png` | Tablet: Culture + "Entry ≤ €20"; new tag with suggested icon |
+| `docs/phone-fr-filters.png` | French filter bar |
+First launch, kit, settings, card lists and screen adaptation (`scripts/shots_first_launch.py`, same setup;
+font scale is mimicked by enlarging every text of the page, see the script):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-welcome.png` | Welcome: the promise, three entries, web test-build warning |
+| `docs/phone-welcome-profile.png`, `docs/phone-welcome-lock.png` | First name and photo (key made meanwhile); app lock with a code (mismatch shown) |
+| `docs/phone-welcome-location.png`, `docs/phone-welcome-import.png` | Location explained before the prompt; import or later |
+| `docs/phone-welcome-device.png`, `docs/phone-welcome-invitation.png` | The other two entries, "Available with sharing (phase 2)" |
+| `docs/phone-map-hint.png`, `docs/phone-protect-card.png` | Map with the "+" hint; "Protect your places" card and reminder dot |
+| `docs/phone-lock-screen.png` | App lock on the next launch, wrong code |
+| `docs/phone-kit.png`, `docs/phone-kit-export.png` | Recovery kit: the 12 words; export (clipboard cleared in one minute) |
+| `docs/web-kit-print.png` | Printable page (web print view) |
+| `docs/phone-kit-check.png`, `docs/phone-kit-done.png` | 3 words asked again (one wrong); kit saved, phrase erased |
+| `docs/phone-settings.png`, `docs/tablet-fr-settings.png` | Settings (phone; tablet in French) |
+| `docs/phone-card-lists.png`, `docs/tablet-dark-fr-card-lists.png` | Lists on the place card: manual tick, filter reasons and exceptions |
+| `docs/small-font2-welcome.png`, `docs/small-font2-map.png`, `docs/small-font2-settings.png` | 320 pt wide, text at 2.0 |
+| `docs/large-font15-kit.png` | Large phone, text at 1.5 |
+| `docs/fold-outer-profile.png`, `docs/fold-inner-profile.png` | Foldable: outer screen, then unfolded with the typed name kept |
+| `docs/landscape-dark-welcome.png`, `docs/landscape-dark-kit.png` | Landscape phone, dark mode |
+
+Zones and lists (`scripts/shots_zones.py`, same setup):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-zone-neighbourhood.png`, `docs/tablet-zone-neighbourhood.png` | OSM neighbourhoods to tap, one picked |
+| `docs/phone-zone-draw-points.png`, `docs/phone-dark-zone-draw.png` | Drawing by points (closed; a vertex selected to move, dark mode) |
+| `docs/phone-zone-paint.png` | Painted zone with fuzzy outline |
+| `docs/phone-zone-streets.png` | Street segment following the streets between two handles |
+| `docs/phone-zone-card.png`, `docs/tablet-map-zone-card.png` | Zone card (places inside, tags, status…) |
+| `docs/phone-map-zones.png` | Zones on the map: outlined, painted, street, badges |
+| `docs/phone-list-editor.png`, `docs/tablet-list-editor.png` | List editor: tags, statuses, zones (mine, by name), visibility |
+| `docs/phone-list-preview.png`, `docs/phone-list-reasons.png` | Preview map and count; why each place is in or out (private never) |
+| `docs/phone-list-view.png`, `docs/phone-list-view-rows.png`, `docs/tablet-list-view.png` | A list: map, rows, card |
+| `docs/phone-fr-list-editor.png` | French, manual list |

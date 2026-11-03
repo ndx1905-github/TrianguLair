@@ -1,0 +1,24 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": { "coordinates": [2.3619902, 48.8590377], "type": "Point" },
+      "properties": {
+        "date": "2024-03-02T10:15:00Z",
+        "google_maps_url": "https://www.google.com/maps/place/Caf%C3%A9+Pendule/@48.8590377,2.3619902,17z/data=!4m6!3m5!1s0x47e66e0390a6b3d1:0x5a2c8f0e2d6b7c11!8m2!3d48.8590377!4d2.3619902",
+        "location": { "name": "Café Pendule", "address": "Rue de Bretagne, 75003 Paris, France", "country_code": "FR" }
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": { "coordinates": [0, 0], "type": "Point" },
+      "properties": {
+        "date": "2024-05-20T18:00:00Z",
+        "google_maps_url": "http://maps.google.com/?cid=4242424242424242424",
+        "location": { "name": "Fromagerie Martin" },
+        "Comment": "No location information is available for this saved place"
+      },
+      "type": "Feature"
+    }
+  ]
+}

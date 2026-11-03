@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { fitCamera } from './camera';
-import { MOCK_PLACES } from './mockPlaces';
+import { DEMO_PLACES as MOCK_PLACES } from '../data/demo';
 
 const fallback = { center: { lat: 1, lon: 2 }, zoom: 3 };
 

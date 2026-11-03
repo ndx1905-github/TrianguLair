@@ -15,7 +15,7 @@ export * from './filter.ts';
 export * from './place.ts';
 export { migrate, detectCapabilities, readCapabilities, rebuildIndexes, SCHEMA_VERSION } from './sqlite/schema.ts';
 export type { Capabilities, MigrateOptions } from './sqlite/schema.ts';
-export { Repository } from './sqlite/repository.ts';
+export { Repository, parseTheirTags } from './sqlite/repository.ts';
 export type {
   PlaceQuery,
   PlaceHit,
@@ -24,19 +24,46 @@ export type {
   MySaveSummary,
   MapPin,
   ForeignSaveInput,
+  ForeignTag,
+  FriendTagRow,
   OpenRepositoryOptions,
 } from './sqlite/repository.ts';
 export {
   createDataDoc,
   loadDataDoc,
+  baseDocUpdate,
+  clientIdFor,
   healDoc,
   mergeDataDocs,
   DocTx,
   DOC_SCHEMA,
   TRASH_RETENTION_MS,
   TOMBSTONE_RETENTION_MS,
+  roots,
+  saveEntry,
+  saveEntryKeys,
+  savePlaceIds,
+  hasSave,
+  tagIdsOf,
+  listIdsOf,
+  readTombstones,
+  readDeletedAt,
+  readSharing,
+  updateText,
 } from './crdt/doc.ts';
-export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, MediaInput } from './crdt/doc.ts';
-export { projectAll, projectChanges, readSave, readTags, readList, readTagMappings } from './crdt/project.ts';
-export { DataStore } from './store.ts';
+export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, ListPatch, MediaInput, DocMedia } from './crdt/doc.ts';
+export {
+  projectAll,
+  projectChanges,
+  trackChanges,
+  emptyTouched,
+  readSave,
+  readTags,
+  readList,
+  readTagMappings,
+} from './crdt/project.ts';
+export type { Touched, ProjectedSave } from './crdt/project.ts';
+export { DataStore, DOC_FORMAT, PROJECTION_VERSION } from './store.ts';
+export { reassignOwner, databaseOwner } from './owner.ts';
+export type { ReassignOwnerResult } from './owner.ts';
 export type { OpenStoreOptions } from './store.ts';

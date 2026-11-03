@@ -6,7 +6,7 @@
  * `osm:node/123`, `osm:way/456`, `osm:relation/789`. Two people (or two of my
  * devices) saving the same OSM object therefore always talk about the same
  * place id, which is what makes a single place card possible and lets the
- * Automerge documents of two devices meet on the same key.
+ * Yjs documents of two devices meet on the same place.
  *
  * A place absent from OSM (manual point, drawn zone) gets `local:<random>`.
  */

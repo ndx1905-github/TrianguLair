@@ -24,3 +24,16 @@ export const INITIAL_ZOOM = 12.3;
 
 /** Max number of color bands drawn on a multi-tag pin. */
 export const MAX_PIN_BANDS = 3;
+
+/** Sent in the OSM services' User-Agent (their usage policies require a contact). */
+export const APP_VERSION = '0.0.1';
+export const APP_CONTACT_URL = 'https://github.com/triangulair/triangulair';
+
+/**
+ * Fixture mode: OSM requests are answered with the osm package's test fixtures
+ * (synthetic places in the Marais), for offline demos and screenshots.
+ */
+export const OSM_FIXTURES: boolean = process.env.EXPO_PUBLIC_OSM_FIXTURES === '1';
+
+/** Force the UI language ("en" or "fr"); default: the device language. */
+export const FORCED_LOCALE: string | undefined = process.env.EXPO_PUBLIC_LOCALE || undefined;

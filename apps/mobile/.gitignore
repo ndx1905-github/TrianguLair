@@ -4,3 +4,7 @@ dist/
 ios/
 android/
 expo-env.d.ts
+
+# Playwright (e2e)
+playwright-report/
+test-results/

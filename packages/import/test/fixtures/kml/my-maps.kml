@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Paris weekend</name>
+    <description/>
+    <Style id="icon-1577-E65100-normal">
+      <IconStyle><color>ff0051e6</color><scale>1</scale></IconStyle>
+    </Style>
+    <Style id="icon-1899-0288D1-nodesc-normal">
+      <IconStyle><color>ffd18802</color></IconStyle>
+    </Style>
+    <StyleMap id="icon-1577-E65100">
+      <Pair><key>normal</key><styleUrl>#icon-1577-E65100-normal</styleUrl></Pair>
+      <Pair><key>highlight</key><styleUrl>#icon-1577-E65100-highlight</styleUrl></Pair>
+    </StyleMap>
+    <Folder>
+      <name>Restaurants</name>
+      <Placemark>
+        <name>Trattoria Da Lucia</name>
+        <description><![CDATA[Fresh pasta<br>Book on weekends]]></description>
+        <styleUrl>#icon-1577-E65100</styleUrl>
+        <ExtendedData>
+          <Data name="Status"><value>Tried</value></Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            2.3621507,48.8591004,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Chez Mamie Rose</name>
+        <description>Tiny family place, cash only &amp; no sign</description>
+        <styleUrl>#icon-1577-E65100</styleUrl>
+        <Point><coordinates>2.3555,48.8648,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+    <Folder>
+      <name>Culture</name>
+      <Placemark>
+        <name>Musée des Cartes</name>
+        <styleUrl>#icon-1899-0288D1-nodesc</styleUrl>
+        <Point><coordinates>2.3639,48.8573,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>Walk along the canal</name>
+        <styleUrl>#line-1267FF-5000</styleUrl>
+        <LineString>
+          <tessellate>1</tessellate>
+          <coordinates>2.3655,48.8710,0 2.3668,48.8735,0 2.3690,48.8760,0</coordinates>
+        </LineString>
+      </Placemark>
+      <Placemark>
+        <name>Le Marais</name>
+        <styleUrl>#poly-000000-1200-77</styleUrl>
+        <Polygon>
+          <outerBoundaryIs><LinearRing><tessellate>1</tessellate>
+            <coordinates>2.355,48.853,0 2.368,48.853,0 2.368,48.864,0 2.355,48.864,0 2.355,48.853,0</coordinates>
+          </LinearRing></outerBoundaryIs>
+        </Polygon>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

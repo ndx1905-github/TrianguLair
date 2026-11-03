@@ -9,6 +9,13 @@ export interface UiColors {
   accent: string;
   scrim: string;
   shadow: string;
+  /** Background of a selected pill. */
+  selectedBg: string;
+  danger: string;
+  warning: string;
+  warningBg: string;
+  open: string;
+  closed: string;
 }
 
 export const LIGHT: UiColors = {
@@ -21,6 +28,12 @@ export const LIGHT: UiColors = {
   accent: '#2563EB',
   scrim: 'rgba(15,23,42,0.25)',
   shadow: '#000000',
+  selectedBg: '#EFF6FF',
+  danger: '#DC2626',
+  warning: '#D97706',
+  warningBg: '#FEF3C7',
+  open: '#15803D',
+  closed: '#B91C1C',
 };
 
 export const DARK: UiColors = {
@@ -33,4 +46,10 @@ export const DARK: UiColors = {
   accent: '#60A5FA',
   scrim: 'rgba(0,0,0,0.45)',
   shadow: '#000000',
+  selectedBg: '#1E3A5F',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  warningBg: '#3B2F12',
+  open: '#4ADE80',
+  closed: '#F87171',
 };

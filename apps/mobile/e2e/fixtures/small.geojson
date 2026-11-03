@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Librairie du Haut Marais", "notes": "Maps and old travel guides", "category": "Books" },
+      "geometry": { "type": "Point", "coordinates": [2.3612045, 48.8594511] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Atelier Céramique Test", "notes": "Pottery class on Thursdays", "category": "Workshops" },
+      "geometry": { "type": "Point", "coordinates": [2.3497, 48.8571] }
+    }
+  ]
+}

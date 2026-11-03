@@ -3,7 +3,9 @@
  * (https://pictogrammers.com/library/mdi/, Apache License 2.0).
  * Copied instead of importing @mdi/js so bundles only contain the icons we use.
  */
-export const ICON_PATHS = {
+import { EXTRA_ICON_PATHS } from './iconsExtra';
+
+const BASE_ICON_PATHS = {
   restaurant: "M11,9H9V2H7V9H5V2H3V9C3,11.12 4.66,12.84 6.75,12.97V22H9.25V12.97C11.34,12.84 13,11.12 13,9V2H11V9M16,6V14H18.5V22H21V2C18.24,2 16,4.24 16,6Z", // mdiSilverwareForkKnife
   cafe: "M2,21H20V19H2M20,8H18V5H20M20,3H4V13A4,4 0 0,0 8,17H14A4,4 0 0,0 18,13V10H20A2,2 0 0,0 22,8V5C22,3.89 21.1,3 20,3Z", // mdiCoffee
   bar: "M7.5,7L5.5,5H18.5L16.5,7M11,13V19H6V21H18V19H13V13L21,5V3H3V5L11,13Z", // mdiGlassCocktail
@@ -17,5 +19,7 @@ export const ICON_PATHS = {
   wine: "M15.5,21.27L14.66,21.18C13.9,21.11 13.25,20.6 13,19.87C12.47,17.91 12.47,15.83 13,13.87C15.32,13.4 17,11.37 17,9C17,7 15,2 15,2H9C9,2 7,7 7,9C7,11.38 8.67,13.42 11,13.9C11.53,15.86 11.53,17.94 11,19.9C10.76,20.62 10.12,21.13 9.37,21.21L8.5,21.3C8.5,21.3 8,21.28 8,22H16C16,21.28 15.5,21.27 15.5,21.27M9.44,7L10.44,4H13.56L14.56,7H9.44Z", // mdiGlassWine
   fallback: "M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z", // mdiMapMarker
 } as const;
+
+export const ICON_PATHS = { ...BASE_ICON_PATHS, ...EXTRA_ICON_PATHS } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

@@ -1,35 +1,70 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The Automerge document holding the user's own data: saves (places and
- * zones), tags, lists, tag mappings. It is the source of truth; SQLite is a
- * projection of it (see project.ts). Every device of the user holds a replica;
- * replicas merge without conflicts (CRDT) and converge.
+ * The Yjs document holding the user's own data: saves (places and zones),
+ * tags, lists, tag mappings. It is the source of truth; SQLite is a projection
+ * of it (see project.ts). Every device of the user holds a replica; replicas
+ * merge without conflicts (CRDT) and converge.
  *
- * Layout choices that matter for merging:
+ * Yjs is pure JavaScript (no WebAssembly), so the same code runs in Node and
+ * in React Native's Hermes engine.
  *
- * - The root maps are created by a fixed, deterministic first change (fixed
- *   actor, time 0). Every device starts from that same change, so two devices
- *   that never met still share the root maps instead of each creating its own
- *   `saves` map, one of which would hide the other after a merge.
- * - Saves are keyed by place id (one save per place and owner, spec "No
- *   duplicates"). Two devices saving the same OSM place offline both create
- *   `saves[placeId]`; Automerge keeps one object and hides the other as a
- *   conflict. `healDoc` folds the hidden one into the visible one (tags and
- *   photos united, empty fields filled) once, deterministically.
- * - Sets (tags of a save, filter criteria, exceptions, manual items) are maps
- *   of `key → true` so concurrent additions and removals of different keys
- *   all survive.
- * - The comment and descriptions are collaborative text (character merges);
- *   other strings are atomic (`ImmutableString`, last writer wins).
- * - Deletion is a tombstone (`deletedAt`): the item goes to the trash and is
- *   restorable. If one device deletes while another restores, the deletion
- *   wins (spec "Editing and deleting"): any concurrent non-null `deletedAt`
- *   counts. After 30 days, `purgeTrash` removes the item and leaves a small
- *   marker in `tombstones` (kept six months, for friends' caches).
+ * Layout (root types are named, so every replica shares them by construction):
+ *
+ *   meta        Y.Map   schema (major version), written once by a fixed base update
+ *   saves       Y.Map   `${placeId}\n${creating client}` → save entry (Y.Map)
+ *   tags        Y.Map   tag id → tag (Y.Map)
+ *   lists       Y.Map   list id → list (Y.Map)
+ *   tagMappings Y.Map   `${personId}\n${theirTag}` → my tag id
+ *   tombstones  Y.Map   `save:<placeId>` | `tag:<id>` | `list:<id>` → purge time
+ *
+ * A save entry is one flat Y.Map (the bulk of the document, so kept small):
+ * `place` (snapshot: name, category, kind, edge, geometry, a point as
+ * `[lon, lat]`; the OSM identity is the place id), `comment` (Y.Text),
+ * `commentVisibility`, `status`, `priceLevel`, `mainTagId`, `createdAt`,
+ * `updatedAt`, and keyed elements: `t:<tagId>` (tag set), `m:<mediaId>`
+ * (photo metadata), `s:<client>` (sharing register), `d:<client>` (deletion
+ * register), `a:<entryKey>` (entries folded in). Absent means the default
+ * (friends, no status, updated = created…). Tags and lists keep
+ * `d:<client>` too, and nested Y.Maps for their sets.
+ *
+ * Merge rules and how they map onto Yjs:
+ *
+ * - Shared genesis. Root types are identified by name, never created by a
+ *   write, so two devices that never met cannot hide each other's maps. The
+ *   only initial write (`meta.schema`) comes from one fixed base update
+ *   (client 0, clock 0) applied by every replica: identical ids, so it is
+ *   deduplicated instead of conflicting.
+ * - One save per place. In Yjs, two concurrent `set` of the same key keep one
+ *   value and garbage-collect the other, nested contents included. So a save
+ *   entry is keyed by place id *and* creating client: two devices saving the
+ *   same place offline create two entries, both visible after the merge.
+ *   `healDoc` (run after every merge) folds every entry into the canonical
+ *   one (smallest key) once, deterministically, and records it (`a:<key>`),
+ *   so a tag removed afterwards does not come back. Entries are never
+ *   deleted by healing: a fold may be redone into a later canonical entry
+ *   (three devices), and deleting would lose what was folded into it.
+ * - Sets (tags of a save, filter criteria, exceptions, manual items) are
+ *   keys of their own, so concurrent additions and removals of different
+ *   keys all survive.
+ * - Comments and list descriptions are Y.Text (character-level merges).
+ *   Other fields are plain values (last writer wins, ties broken by client).
+ * - Deletion wins and privacy wins need Automerge's "all concurrent values
+ *   stay visible" semantics, which Yjs's last-writer-wins map does not have.
+ *   They are observed-remove multi-value registers made of per-device slots
+ *   (`d:<client>`, `s:<client>`). A device writes its own slot (always a new
+ *   item) and deletes the slots it has seen; a concurrent write by another
+ *   device is a slot or an item that delete did not see, so it survives.
+ *   Reads apply the rule: deleted if any slot holds a date (a restore clears
+ *   the slots it saw), private if any slot says "private".
+ * - Trash: `purgeTrash` removes items 30 days after the deletion and leaves a
+ *   tombstone, itself dropped after six months.
+ * - Unknown fields (spec "Format versions"): edits only touch the keys they
+ *   know, so keys, items and root types written by a newer version are kept
+ *   as is and re-exported; folding and relinking copy them too.
  */
-import * as A from '@automerge/automerge';
+import * as Y from 'yjs';
 import { canonicalJson } from '../filter.ts';
-import { randomId, type IdGenerator } from '../ids.ts';
+import { parseOsmPlaceId, randomId, type IdGenerator } from '../ids.ts';
 import { normalizeSnapshot, type PlaceSnapshotInput } from '../place.ts';
 import type {
   AreaGeometry,
@@ -48,154 +83,255 @@ import type {
   ZoneEdge,
 } from '../types.ts';
 
-type Imm = A.ImmutableString;
-type Set_ = Record<string, true>;
-
-export interface DocPlace {
-  osmType: Imm | null;
-  osmId: number | null;
-  name: Imm;
-  category: Imm | null;
-  kind: Imm;
-  edge: Imm;
-  /** GeoJSON geometry as JSON text (atomic). */
-  geometry: Imm;
-}
-
-export interface DocMedia {
-  file: Imm;
-  blurhash: Imm | null;
-  width: number | null;
-  height: number | null;
-  createdAt: number;
-}
-
-export interface DocSave {
-  place: DocPlace;
-  comment: string;
-  commentVisibility: Imm;
-  status: Imm | null;
-  priceLevel: number | null;
-  sharing: Imm;
-  mainTagId: Imm | null;
-  tagIds: Set_;
-  media: Record<string, DocMedia>;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt: number | null;
-  /** Hidden concurrent creations already folded in (op ids), see healDoc. */
-  absorbed: Set_;
-}
-
-export interface DocTag {
-  parentId: Imm | null;
-  name: Imm;
-  color: Imm | null;
-  icon: Imm | null;
-  osmCategories: Set_;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt: number | null;
-}
-
-export interface DocFilter {
-  tags: Set_;
-  categories: Set_;
-  statuses: Set_;
-  priceLevels: Set_;
-  /** zone key → FilterZone as JSON text. */
-  zones: Record<string, Imm>;
-  include: Set_;
-  exclude: Set_;
-}
-
-export interface DocList {
-  name: Imm;
-  description: string;
-  visibility: Imm;
-  linkKey: Imm | null;
-  kind: Imm;
-  filter: DocFilter;
-  /** Manual lists: place id → time added. */
-  items: Record<string, number>;
-  createdAt: number;
-  updatedAt: number;
-  deletedAt: number | null;
-}
-
-export interface DataDoc {
-  schema: number;
-  saves: Record<string, DocSave>;
-  tags: Record<string, DocTag>;
-  lists: Record<string, DocList>;
-  /** `${personId}\n${theirTag}` → my tag id. */
-  tagMappings: Record<string, Imm>;
-  /** `save:<placeId>`, `tag:<id>`, `list:<id>` → purge time. */
-  tombstones: Record<string, number>;
-}
+/** A replica of my data: a Yjs document with the layout above. */
+export type DataDoc = Y.Doc;
+export type YMap = Y.Map<unknown>;
 
 export const DOC_SCHEMA = 1;
 export const TRASH_RETENTION_MS = 30 * 24 * 3600 * 1000;
 export const TOMBSTONE_RETENTION_MS = 183 * 24 * 3600 * 1000;
 
-const BASE_ACTOR = '00000000000000000000000000000000';
+/** Yjs client of the base update; never used by a device. */
+const BASE_CLIENT = 0;
+const SEP = '\n';
 
-let baseBytes: Uint8Array | null = null;
-function base(): Uint8Array {
-  if (!baseBytes) {
-    const doc = A.change(A.init<DataDoc>({ actor: BASE_ACTOR }), { time: 0, message: 'triangulair:data:v1' }, (d) => {
-      d.schema = DOC_SCHEMA;
-      d.saves = {};
-      d.tags = {};
-      d.lists = {};
-      d.tagMappings = {};
-      d.tombstones = {};
-    });
-    baseBytes = A.save(doc);
+/** Scalar keys and element prefixes of a save entry that this version knows (others are preserved and copied). */
+const SAVE_KEYS = new Set(['place', 'comment', 'commentVisibility', 'status', 'priceLevel', 'mainTagId', 'createdAt', 'updatedAt']);
+const TAG = 't:';
+const MEDIA = 'm:';
+const SHARING = 's:';
+const DELETED = 'd:';
+const ABSORBED = 'a:';
+const SAVE_PREFIXES = [TAG, MEDIA, SHARING, DELETED, ABSORBED];
+const isKnownSaveKey = (k: string) => SAVE_KEYS.has(k) || SAVE_PREFIXES.some((p) => k.startsWith(p));
+
+let baseUpdate: Uint8Array | null = null;
+/** The base update every replica starts from (deterministic bytes). */
+export function baseDocUpdate(): Uint8Array {
+  if (!baseUpdate) {
+    const d = new Y.Doc({ gc: true });
+    d.clientID = BASE_CLIENT;
+    d.getMap('meta').set('schema', DOC_SCHEMA);
+    baseUpdate = Y.encodeStateAsUpdate(d);
+    d.destroy();
   }
-  return baseBytes;
+  return baseUpdate;
 }
 
-/** A new empty replica. `actor`: hex, unique per device (random by default). */
-export function createDataDoc(actor?: string): A.Doc<DataDoc> {
-  return A.load<DataDoc>(base(), actor ? { actor } : undefined);
+/**
+ * Yjs client id for a device actor (any stable string, hashed to 32 bits).
+ * A Yjs client id must never be used by two replicas at once; DataStore only
+ * reuses it after loading every update it wrote (stored atomically).
+ */
+export function clientIdFor(actor: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < actor.length; i++) {
+    h ^= actor.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h === BASE_CLIENT ? 1 : h;
 }
 
-export function loadDataDoc(bytes: Uint8Array, actor?: string): A.Doc<DataDoc> {
-  const doc = A.load<DataDoc>(bytes, actor ? { actor } : undefined);
-  if (doc.schema !== DOC_SCHEMA) throw new Error(`unsupported data document schema ${String(doc.schema)}`);
+function setClient(doc: Y.Doc, actor: string | undefined): void {
+  if (actor !== undefined) doc.clientID = clientIdFor(actor);
+  else if (doc.clientID === BASE_CLIENT) doc.clientID = 1 + Math.floor(Math.random() * 0xfffffffe);
+}
+
+/** A new empty replica. `actor`: stable per device (random Yjs client by default). */
+export function createDataDoc(actor?: string): DataDoc {
+  const doc = new Y.Doc({ gc: true });
+  Y.applyUpdate(doc, baseDocUpdate());
+  setClient(doc, actor);
   return doc;
+}
+
+/**
+ * Loads a replica from Yjs updates (a snapshot and/or incremental updates, in
+ * any order). The client id is set after loading, so reusing this device's
+ * own id does not look like another client using it.
+ */
+export function loadDataDoc(updates: Uint8Array | readonly Uint8Array[], actor?: string): DataDoc {
+  const doc = new Y.Doc({ gc: true });
+  const list = updates instanceof Uint8Array ? [updates] : updates;
+  doc.transact(() => {
+    for (const u of list) Y.applyUpdate(doc, u);
+  });
+  const schema = doc.getMap('meta').get('schema');
+  if (schema !== DOC_SCHEMA) throw new Error(`unsupported data document schema ${String(schema)}`);
+  setClient(doc, actor);
+  return doc;
+}
+
+export function roots(doc: DataDoc): {
+  meta: YMap;
+  saves: Y.Map<YMap>;
+  tags: Y.Map<YMap>;
+  lists: Y.Map<YMap>;
+  tagMappings: Y.Map<string>;
+  tombstones: Y.Map<number>;
+} {
+  return {
+    meta: doc.getMap<unknown>('meta'),
+    saves: doc.getMap<YMap>('saves'),
+    tags: doc.getMap<YMap>('tags'),
+    lists: doc.getMap<YMap>('lists'),
+    tagMappings: doc.getMap<string>('tagMappings'),
+    tombstones: doc.getMap<number>('tombstones'),
+  };
+}
+
+/** This replica's key in multi-value registers and save entry keys. */
+function me(doc: DataDoc): string {
+  return doc.clientID.toString(36);
+}
+
+// ------------------------------------------------------------------ save entries index
+
+/** place id → entry keys, kept up to date by an observer (and directly by edits in a transaction). */
+const indexes = new WeakMap<DataDoc, Map<string, Set<string>>>();
+
+export function placeOfEntry(key: string): string {
+  const i = key.indexOf(SEP);
+  return i < 0 ? key : key.slice(0, i);
+}
+
+function indexAdd(idx: Map<string, Set<string>>, key: string): void {
+  const p = placeOfEntry(key);
+  let s = idx.get(p);
+  if (!s) idx.set(p, (s = new Set()));
+  s.add(key);
+}
+function indexRemove(idx: Map<string, Set<string>>, key: string): void {
+  const p = placeOfEntry(key);
+  const s = idx.get(p);
+  if (!s) return;
+  s.delete(key);
+  if (s.size === 0) idx.delete(p);
+}
+
+function saveIndex(doc: DataDoc): Map<string, Set<string>> {
+  let idx = indexes.get(doc);
+  if (!idx) {
+    const built = new Map<string, Set<string>>();
+    const saves = roots(doc).saves;
+    for (const k of saves.keys()) indexAdd(built, k);
+    saves.observe((ev) => {
+      for (const k of ev.keysChanged) {
+        if (saves.has(k)) indexAdd(built, k);
+        else indexRemove(built, k);
+      }
+    });
+    indexes.set(doc, built);
+    idx = built;
+  }
+  return idx;
+}
+
+/** Entry keys of a place, canonical first. */
+export function saveEntryKeys(doc: DataDoc, placeId: string): string[] {
+  return [...(saveIndex(doc).get(placeId) ?? [])].sort();
+}
+
+/** The canonical entry of my save on a place (the one edits go to), or null. */
+export function saveEntry(doc: DataDoc, placeId: string): YMap | null {
+  const key = saveEntryKeys(doc, placeId)[0];
+  return key === undefined ? null : (roots(doc).saves.get(key) ?? null);
+}
+
+/** Place ids of my saves (trash included), sorted. */
+export function savePlaceIds(doc: DataDoc): string[] {
+  return [...saveIndex(doc).keys()].sort();
+}
+export function hasSave(doc: DataDoc, placeId: string): boolean {
+  return saveIndex(doc).has(placeId);
+}
+export function tagIdsOf(doc: DataDoc): string[] {
+  return [...roots(doc).tags.keys()].sort();
+}
+export function listIdsOf(doc: DataDoc): string[] {
+  return [...roots(doc).lists.keys()].sort();
+}
+export function readTombstones(doc: DataDoc): Record<string, number> {
+  return Object.fromEntries([...roots(doc).tombstones.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 // ------------------------------------------------------------------ reading helpers
 
-const imm = (s: string): Imm => new A.ImmutableString(s);
-const immOrNull = (s: string | null | undefined): Imm | null => (s == null ? null : imm(s));
-
-export function str(v: unknown): string {
-  if (v == null) return '';
-  if (A.isImmutableString(v)) return (v as Imm).val;
-  return String(v);
+export function getStr(m: YMap, k: string): string {
+  const v = m.get(k);
+  return v == null ? '' : String(v);
 }
-export function strOrNull(v: unknown): string | null {
-  return v == null ? null : str(v);
+export function getStrOrNull(m: YMap, k: string): string | null {
+  const v = m.get(k);
+  return v == null ? null : String(v);
+}
+export function getNum(m: YMap, k: string): number | null {
+  const v = m.get(k);
+  return typeof v === 'number' ? v : null;
+}
+export function getMap(m: YMap, k: string): YMap | null {
+  const v = m.get(k);
+  return v instanceof Y.Map ? (v as YMap) : null;
+}
+export function getText(m: YMap, k: string): string {
+  const v = m.get(k);
+  return v instanceof Y.Text ? v.toString() : v == null ? '' : String(v);
 }
 
-/** Delete-wins read of `deletedAt` on an object (the latest concurrent deletion, if any). */
-export function readDeletedAt(parent: unknown): number | null {
-  let conflicts: Record<string, unknown> | undefined;
-  try {
-    conflicts = A.getConflicts(parent as A.Doc<unknown>, 'deletedAt') as Record<string, unknown> | undefined;
-  } catch {
-    conflicts = undefined; // a materialized (non-proxy) value
+/**
+ * A keyed collection inside a Y.Map: the keys starting with `prefix` (a set
+ * or register flattened into an item), or a whole nested map (prefix '').
+ */
+export class Slots {
+  constructor(
+    readonly map: YMap,
+    readonly prefix = '',
+  ) {}
+  keys(): string[] {
+    const out: string[] = [];
+    const n = this.prefix.length;
+    for (const k of this.map.keys()) if (k.startsWith(this.prefix)) out.push(k.slice(n));
+    return out.sort();
   }
+  entries(): [string, unknown][] {
+    return this.keys().map((k) => [k, this.map.get(this.prefix + k)]);
+  }
+  has(k: string): boolean {
+    return this.map.has(this.prefix + k);
+  }
+  get(k: string): unknown {
+    return this.map.get(this.prefix + k);
+  }
+  set(k: string, v: unknown): void {
+    this.map.set(this.prefix + k, v);
+  }
+  delete(k: string): void {
+    this.map.delete(this.prefix + k);
+  }
+}
+
+const NO_SLOTS = new Slots(new Y.Map<unknown>());
+function nested(m: YMap, k: string): Slots {
+  const v = getMap(m, k);
+  return v ? new Slots(v) : NO_SLOTS;
+}
+export function keysOf(m: YMap | null): string[] {
+  return m ? new Slots(m).keys() : [];
+}
+
+/** Tag ids of a save entry (unordered set, sorted). */
+export function saveTagIds(e: YMap): string[] {
+  return new Slots(e, TAG).keys();
+}
+export function saveMedia(e: YMap): [string, Partial<DocMedia>][] {
+  return new Slots(e, MEDIA).entries() as [string, Partial<DocMedia>][];
+}
+
+/** Delete-wins read on a save, tag or list: the latest deletion in any slot, or null when no slot is set. */
+export function readDeletedAt(item: YMap | null | undefined): number | null {
+  if (!item) return null;
   let out: number | null = null;
-  if (conflicts) {
-    for (const v of Object.values(conflicts)) if (typeof v === 'number' && (out === null || v > out)) out = v;
-  } else {
-    const v = (parent as { deletedAt?: unknown }).deletedAt;
-    if (typeof v === 'number') out = v;
-  }
+  for (const [, v] of new Slots(item, DELETED).entries()) if (typeof v === 'number' && (out === null || v > out)) out = v;
   return out;
 }
 
@@ -203,61 +339,165 @@ export function readDeletedAt(parent: unknown): number | null {
  * Privacy-wins read of `sharing`: if two devices set it concurrently and one
  * of them chose "private", the save is private until someone sets it again
  * (a private place must never leak to friends or into a list by a merge).
+ * No slot means the default, "friends".
  */
-export function readSharing(save: unknown): Sharing {
-  let conflicts: Record<string, unknown> | undefined;
-  try {
-    conflicts = A.getConflicts(save as A.Doc<unknown>, 'sharing') as Record<string, unknown> | undefined;
-  } catch {
-    conflicts = undefined;
-  }
-  const values = conflicts ? Object.values(conflicts) : [(save as { sharing?: unknown }).sharing];
-  return values.some((v) => str(v) === 'private') ? 'private' : 'friends';
+export function readSharing(save: YMap): Sharing {
+  for (const [, v] of new Slots(save, SHARING).entries()) if (v === 'private') return 'private';
+  return 'friends';
 }
 
-export function snapshotFromDoc(placeId: string, p: DocPlace): PlaceSnapshot {
+interface DocPlace {
+  name?: string;
+  category?: string | null;
+  kind?: PlaceKind;
+  edge?: ZoneEdge;
+  /** A point as `[lon, lat]`; any other geometry as GeoJSON text. */
+  geometry?: string | [number, number];
+  [unknown: string]: unknown;
+}
+
+const defaultKind = (g: { type: string }): PlaceKind => (g.type === 'Point' ? 'place' : 'zone');
+
+export function snapshotFromEntry(placeId: string, e: YMap): PlaceSnapshot {
+  const p = (e.get('place') ?? {}) as DocPlace;
+  const osm = parseOsmPlaceId(placeId);
+  const g = p.geometry;
+  const geometry: PlaceGeometry = Array.isArray(g)
+    ? { type: 'Point', coordinates: [g[0], g[1]] }
+    : (JSON.parse(g ?? 'null') as PlaceGeometry);
   return {
     id: placeId,
-    osmType: strOrNull(p.osmType) as OsmType | null,
-    osmId: p.osmId ?? null,
-    name: str(p.name),
-    category: strOrNull(p.category),
-    kind: str(p.kind) as PlaceKind,
-    edge: str(p.edge) as ZoneEdge,
-    geometry: JSON.parse(str(p.geometry)) as PlaceGeometry,
+    osmType: osm?.osmType ?? null,
+    osmId: osm?.osmId ?? null,
+    name: String(p.name ?? ''),
+    category: p.category ?? null,
+    kind: p.kind ?? defaultKind(geometry),
+    edge: p.edge ?? 'sharp',
+    geometry,
   };
 }
 
-function docPlace(s: PlaceSnapshot): DocPlace {
-  return {
-    osmType: immOrNull(s.osmType),
-    osmId: s.osmId,
-    name: imm(s.name),
-    category: immOrNull(s.category),
-    kind: imm(s.kind),
-    edge: imm(s.edge),
-    geometry: imm(JSON.stringify(s.geometry)),
-  };
+/** The stored place object: defaults and the OSM identity (in the place id) left out; unknown fields kept. */
+function docPlace(s: PlaceSnapshot, prev: DocPlace = {}): DocPlace {
+  const g = s.geometry;
+  const geometry: DocPlace['geometry'] =
+    g.type === 'Point' && g.coordinates.length === 2 ? [g.coordinates[0]!, g.coordinates[1]!] : JSON.stringify(g);
+  const out: DocPlace = { ...prev, name: s.name, geometry };
+  if (s.category !== null) out.category = s.category;
+  else delete out.category;
+  if (s.kind !== defaultKind(s.geometry)) out.kind = s.kind;
+  else delete out.kind;
+  if (s.edge !== 'sharp') out.edge = s.edge;
+  else delete out.edge;
+  return out;
 }
 
 function zoneKey(z: FilterZone): string {
   return z.kind === 'osm' ? `osm:${z.osmType}/${z.osmId}` : `drawn:${canonicalJson(z.geometry)}`;
 }
 
-export function filterFromDoc(f: DocFilter): ListFilter {
-  const keys = (m: Record<string, unknown> | undefined) => Object.keys(m ?? {}).sort();
+export function filterFromDoc(f: YMap | null): ListFilter {
   const out: ListFilter = {};
+  if (!f) return out;
+  const keys = (k: string) => keysOf(getMap(f, k));
   const set = <K extends keyof ListFilter>(k: K, v: ListFilter[K] & unknown[]) => {
     if (v.length) out[k] = v;
   };
-  set('tags', keys(f.tags));
-  set('categories', keys(f.categories));
-  set('statuses', keys(f.statuses) as SaveStatus[]);
-  set('priceLevels', keys(f.priceLevels).map(Number) as PriceLevel[]);
-  set('zones', keys(f.zones).map((k) => JSON.parse(str(f.zones[k])) as FilterZone));
-  set('include', keys(f.include));
-  set('exclude', keys(f.exclude));
+  set('tags', keys('tags'));
+  set('categories', keys('categories'));
+  set('statuses', keys('statuses') as SaveStatus[]);
+  set('priceLevels', keys('priceLevels').map(Number) as PriceLevel[]);
+  set('zones', nested(f, 'zones').entries().map(([, v]) => JSON.parse(String(v)) as FilterZone));
+  set('include', keys('include'));
+  set('exclude', keys('exclude'));
   return out;
+}
+
+// ------------------------------------------------------------------ writing helpers
+
+/** Observed-remove multi-value register: my slot takes the value, the slots I have seen go. */
+function mvSet(reg: Slots, mine: string, v: unknown): void {
+  for (const k of reg.keys()) if (k !== mine) reg.delete(k);
+  reg.set(mine, v); // always a new item, so a concurrent removal of my old slot does not erase it
+}
+function mvClear(reg: Slots): void {
+  for (const k of reg.keys()) reg.delete(k);
+}
+
+function setKeys(m: Slots, wanted: readonly string[], value: unknown = true): void {
+  const want = new Set(wanted);
+  for (const k of m.keys()) if (!want.has(k)) m.delete(k);
+  for (const k of want) if (!m.has(k)) m.set(k, value);
+}
+
+function isHigh(c: number): boolean {
+  return c >= 0xd800 && c <= 0xdbff;
+}
+function isLow(c: number): boolean {
+  return c >= 0xdc00 && c <= 0xdfff;
+}
+
+/** Minimal edit (common prefix and suffix kept) so concurrent edits merge per character. */
+export function updateText(t: Y.Text, next: string): void {
+  const cur = t.toString();
+  if (cur === next) return;
+  const max = Math.min(cur.length, next.length);
+  let p = 0;
+  while (p < max && cur.charCodeAt(p) === next.charCodeAt(p)) p++;
+  if (p > 0 && isHigh(cur.charCodeAt(p - 1))) p--;
+  let s = 0;
+  while (s < max - p && cur.charCodeAt(cur.length - 1 - s) === next.charCodeAt(next.length - 1 - s)) s++;
+  if (s > 0 && isLow(cur.charCodeAt(cur.length - s))) s--;
+  const del = cur.length - p - s;
+  if (del > 0) t.delete(p, del);
+  const ins = next.slice(p, next.length - s);
+  if (ins) t.insert(p, ins);
+}
+
+function textOf(m: YMap, k: string): Y.Text {
+  const v = m.get(k);
+  if (v instanceof Y.Text) return v;
+  const t = new Y.Text(v == null ? '' : String(v));
+  m.set(k, t);
+  return t;
+}
+
+function filterOf(l: YMap): YMap {
+  const v = getMap(l, 'filter');
+  if (v) return v;
+  const f = new Y.Map<unknown>();
+  l.set('filter', f);
+  return f;
+}
+
+/** A nested set map, created if missing (only on items created by older code or other versions). */
+function nestedOf(m: YMap, k: string): Slots {
+  const v = m.get(k);
+  if (v instanceof Y.Map) return new Slots(v as YMap);
+  const r = new Y.Map<unknown>();
+  m.set(k, r);
+  return new Slots(r);
+}
+
+/** Deep copy of a value for another place in the document (Yjs types cannot be moved). */
+function cloneValue(v: unknown): unknown {
+  if (v instanceof Y.Text) return new Y.Text(v.toString());
+  if (v instanceof Y.Map) {
+    const m = new Y.Map<unknown>();
+    for (const [k, x] of (v as YMap).entries()) m.set(k, cloneValue(x));
+    return m;
+  }
+  if (v instanceof Y.Array) {
+    const a = new Y.Array<unknown>();
+    a.push((v as Y.Array<unknown>).toArray().map(cloneValue));
+    return a;
+  }
+  if (v instanceof Y.AbstractType) return null; // other shared types (XML…) are not carried over
+  return v;
+}
+
+function copyUnknown(from: YMap, to: YMap): void {
+  for (const [k, v] of from.entries()) if (!isKnownSaveKey(k) && !to.has(k)) to.set(k, cloneValue(v));
 }
 
 // ------------------------------------------------------------------ edits
@@ -279,6 +519,12 @@ export interface SaveInput {
   sharing?: Sharing;
   tagIds?: readonly string[];
   mainTagId?: string | null;
+  /**
+   * Creation date (ms) of a new save, for imports that carry the original
+   * date (Google Takeout, a TrianguLair export). Default: now. Ignored when
+   * the save already exists.
+   */
+  createdAt?: number;
 }
 
 export interface SavePatch {
@@ -314,6 +560,15 @@ export interface ListInput {
   items?: readonly string[];
 }
 
+/** Editable fields of a list (filter and items have their own edits). */
+export interface ListPatch {
+  name?: string;
+  description?: string;
+  visibility?: ListVisibility;
+  linkKey?: string | null;
+  kind?: ListKind;
+}
+
 export interface MediaInput {
   id?: string;
   file: string;
@@ -322,10 +577,20 @@ export interface MediaInput {
   height?: number | null;
 }
 
+/** Media metadata as stored (one atomic JSON value per photo). */
+export interface DocMedia {
+  file: string;
+  blurhash: string | null;
+  width: number | null;
+  height: number | null;
+  createdAt: number;
+}
+
 const COMMENT_VIS: readonly CommentVisibility[] = ['private', 'friends', 'public'];
 const SAVE_STATUSES: readonly SaveStatus[] = ['to_try', 'tried', 'favorite'];
 const SHARINGS: readonly Sharing[] = ['private', 'friends'];
 const LIST_VIS: readonly ListVisibility[] = ['link', 'public'];
+const FILTER_GROUPS = ['tags', 'categories', 'statuses', 'priceLevels', 'zones', 'include', 'exclude'] as const;
 
 function check<T>(v: T, allowed: readonly T[], what: string): T {
   if (!allowed.includes(v)) throw new TypeError(`invalid ${what}: ${String(v)}`);
@@ -336,30 +601,53 @@ function checkPrice(p: PriceLevel | null): PriceLevel | null {
   return p;
 }
 
-function setKeys(target: Set_, wanted: readonly string[]): void {
-  const want = new Set(wanted);
-  for (const k of Object.keys(target)) if (!want.has(k)) delete target[k];
-  for (const k of want) if (!target[k]) target[k] = true;
-}
-
 /**
- * All edits of the user's own data, applied to an Automerge draft. Use through
- * `DataStore.change(tx => …)` (or `A.change(doc, d => new DocTx(d, ctx)…)`).
+ * All edits of the user's own data, applied to a Yjs document. Use through
+ * `DataStore.change(tx => …)`, or `doc.transact(() => new DocTx(doc, ctx)…)`
+ * to group operations into one Yjs transaction (one update).
+ *
+ * Each method validates its input before writing, so a refused edit writes
+ * nothing; DataStore additionally discards a replica left half-edited by an
+ * exception (Yjs has no rollback).
  */
 export class DocTx {
-  constructor(
-    private readonly d: DataDoc,
-    private readonly ctx: EditContext = defaultEditContext,
-  ) {}
+  private readonly r: ReturnType<typeof roots>;
 
-  private save(placeId: string): DocSave {
-    const s = this.d.saves[placeId];
+  constructor(
+    private readonly doc: DataDoc,
+    private readonly ctx: EditContext = defaultEditContext,
+  ) {
+    this.r = roots(doc);
+  }
+
+  private get me(): string {
+    return me(this.doc);
+  }
+
+  private save(placeId: string): YMap {
+    const s = saveEntry(this.doc, placeId);
     if (!s) throw new Error(`no save for place ${placeId}`);
     return s;
   }
 
-  private touch(s: DocSave): void {
-    s.updatedAt = this.ctx.now();
+  private touch(m: YMap): void {
+    m.set('updatedAt', this.ctx.now());
+  }
+
+  private newEntry(placeId: string): YMap {
+    const key = `${placeId}${SEP}${this.me}`;
+    const e = new Y.Map<unknown>();
+    this.r.saves.set(key, e);
+    indexAdd(saveIndex(this.doc), key);
+    return e;
+  }
+
+  private dropEntries(placeId: string): void {
+    const idx = saveIndex(this.doc);
+    for (const key of saveEntryKeys(this.doc, placeId)) {
+      this.r.saves.delete(key);
+      indexRemove(idx, key);
+    }
   }
 
   /**
@@ -369,27 +657,28 @@ export class DocTx {
   putSave(input: SaveInput): string {
     const snap = normalizeSnapshot(input.place);
     const now = this.ctx.now();
-    const existing = this.d.saves[snap.id];
+    const existing = saveEntry(this.doc, snap.id);
     if (!existing) {
-      const s: DocSave = {
-        place: docPlace(snap),
-        comment: input.comment ?? '',
-        commentVisibility: imm(check(input.commentVisibility ?? 'friends', COMMENT_VIS, 'comment visibility')),
-        status: immOrNull(input.status == null ? null : check(input.status, SAVE_STATUSES, 'status')),
-        priceLevel: checkPrice(input.priceLevel ?? null),
-        sharing: imm(check(input.sharing ?? 'friends', SHARINGS, 'sharing')),
-        mainTagId: immOrNull(input.mainTagId ?? input.tagIds?.[0] ?? null),
-        tagIds: Object.fromEntries((input.tagIds ?? []).map((t) => [t, true as const])),
-        media: {},
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-        absorbed: {},
-      };
-      this.d.saves[snap.id] = s;
+      const commentVisibility = check(input.commentVisibility ?? 'friends', COMMENT_VIS, 'comment visibility');
+      const status = input.status == null ? null : check(input.status, SAVE_STATUSES, 'status');
+      const priceLevel = checkPrice(input.priceLevel ?? null);
+      const sharing = check(input.sharing ?? 'friends', SHARINGS, 'sharing');
+      const tags = [...new Set(input.tagIds ?? [])];
+      const main = input.mainTagId ?? tags[0] ?? null;
+      if (main !== null && !tags.includes(main)) tags.push(main);
+      const e = this.newEntry(snap.id);
+      e.set('place', docPlace(snap));
+      e.set('comment', new Y.Text(input.comment ?? ''));
+      if (commentVisibility !== 'friends') e.set('commentVisibility', commentVisibility);
+      if (status !== null) e.set('status', status);
+      if (priceLevel !== null) e.set('priceLevel', priceLevel);
+      if (sharing !== 'friends') e.set(SHARING + this.me, sharing);
+      if (main !== null) e.set('mainTagId', main);
+      for (const id of tags) e.set(TAG + id, true);
+      const createdAt = input.createdAt;
+      e.set('createdAt', createdAt !== undefined && Number.isFinite(createdAt) && createdAt > 0 ? Math.round(createdAt) : now);
       return snap.id;
     }
-    if (readDeletedAt(existing) !== null) existing.deletedAt = null;
     this.updateSave(snap.id, {
       ...(input.comment !== undefined && { comment: input.comment }),
       ...(input.commentVisibility !== undefined && { commentVisibility: input.commentVisibility }),
@@ -399,103 +688,102 @@ export class DocTx {
       ...(input.mainTagId !== undefined && { mainTagId: input.mainTagId }),
     });
     if (input.tagIds) this.setSaveTags(snap.id, input.tagIds, input.mainTagId);
+    if (readDeletedAt(existing) !== null) mvClear(new Slots(existing, DELETED));
     this.touch(existing);
     return snap.id;
   }
 
   updateSave(placeId: string, patch: SavePatch): void {
     const s = this.save(placeId);
-    if (patch.comment !== undefined && patch.comment !== s.comment) {
-      // Path relative to the save object: ids contain '/', which updateText's path syntax cannot carry.
-      A.updateText(s as unknown as A.Doc<unknown>, ['comment'], patch.comment);
-    }
-    if (patch.commentVisibility !== undefined)
-      s.commentVisibility = imm(check(patch.commentVisibility, COMMENT_VIS, 'comment visibility'));
-    if (patch.status !== undefined)
-      s.status = immOrNull(patch.status === null ? null : check(patch.status, SAVE_STATUSES, 'status'));
-    if (patch.priceLevel !== undefined) s.priceLevel = checkPrice(patch.priceLevel);
-    if (patch.sharing !== undefined) s.sharing = imm(check(patch.sharing, SHARINGS, 'sharing'));
-    if (patch.mainTagId !== undefined) {
-      if (patch.mainTagId !== null && !s.tagIds[patch.mainTagId]) s.tagIds[patch.mainTagId] = true;
-      s.mainTagId = immOrNull(patch.mainTagId);
-    }
-    if (
-      patch.name !== undefined ||
-      patch.geometry !== undefined ||
-      patch.edge !== undefined ||
-      patch.category !== undefined
-    ) {
-      const cur = snapshotFromDoc(placeId, s.place);
+    // Validate everything first: a refused edit writes nothing.
+    const commentVisibility =
+      patch.commentVisibility === undefined ? undefined : check(patch.commentVisibility, COMMENT_VIS, 'comment visibility');
+    const status =
+      patch.status === undefined ? undefined : patch.status === null ? null : check(patch.status, SAVE_STATUSES, 'status');
+    const priceLevel = patch.priceLevel === undefined ? undefined : checkPrice(patch.priceLevel);
+    const sharing = patch.sharing === undefined ? undefined : check(patch.sharing, SHARINGS, 'sharing');
+    let place: PlaceSnapshot | null = null;
+    if (patch.name !== undefined || patch.geometry !== undefined || patch.edge !== undefined || patch.category !== undefined) {
+      const cur = snapshotFromEntry(placeId, s);
       if (cur.osmType !== null && (patch.geometry !== undefined || patch.name !== undefined)) {
         throw new Error('the name and geometry of an OSM place come from OSM');
       }
-      const next = normalizeSnapshot({
+      place = normalizeSnapshot({
         ...cur,
         ...(patch.name !== undefined && { name: patch.name }),
         ...(patch.geometry !== undefined && { geometry: patch.geometry }),
         ...(patch.edge !== undefined && { edge: patch.edge }),
         ...(patch.category !== undefined && { category: patch.category }),
       });
-      if (next.name !== cur.name) s.place.name = imm(next.name);
-      if (patch.geometry !== undefined) s.place.geometry = imm(JSON.stringify(next.geometry));
-      if (next.edge !== cur.edge) s.place.edge = imm(next.edge);
-      if (next.category !== cur.category) s.place.category = immOrNull(next.category);
     }
+
+    if (patch.comment !== undefined) updateText(textOf(s, 'comment'), patch.comment);
+    if (commentVisibility !== undefined) s.set('commentVisibility', commentVisibility);
+    if (status !== undefined) s.set('status', status);
+    if (priceLevel !== undefined) s.set('priceLevel', priceLevel);
+    if (sharing !== undefined) mvSet(new Slots(s, SHARING), this.me, sharing);
+    if (patch.mainTagId !== undefined) {
+      if (patch.mainTagId !== null && !s.has(TAG + patch.mainTagId)) s.set(TAG + patch.mainTagId, true);
+      s.set('mainTagId', patch.mainTagId);
+    }
+    if (place) s.set('place', docPlace(place, (s.get('place') ?? {}) as DocPlace));
     this.touch(s);
   }
 
   setSaveTags(placeId: string, tagIds: readonly string[], mainTagId?: string | null): void {
     const s = this.save(placeId);
-    setKeys(s.tagIds, tagIds);
-    const main = mainTagId !== undefined ? mainTagId : strOrNull(s.mainTagId);
-    s.mainTagId = immOrNull(main !== null && tagIds.includes(main) ? main : (tagIds[0] ?? null));
+    setKeys(new Slots(s, TAG), tagIds);
+    const main = mainTagId !== undefined ? mainTagId : getStrOrNull(s, 'mainTagId');
+    const next = main !== null && tagIds.includes(main) ? main : (tagIds[0] ?? null);
+    if (getStrOrNull(s, 'mainTagId') !== next) s.set('mainTagId', next);
     this.touch(s);
   }
 
   addSaveTag(placeId: string, tagId: string): void {
     const s = this.save(placeId);
-    if (!s.tagIds[tagId]) s.tagIds[tagId] = true;
-    if (s.mainTagId === null) s.mainTagId = imm(tagId);
+    if (!s.has(TAG + tagId)) s.set(TAG + tagId, true);
+    if (getStrOrNull(s, 'mainTagId') === null) s.set('mainTagId', tagId);
     this.touch(s);
   }
 
   removeSaveTag(placeId: string, tagId: string): void {
     const s = this.save(placeId);
-    if (s.tagIds[tagId]) delete s.tagIds[tagId];
-    if (strOrNull(s.mainTagId) === tagId) s.mainTagId = immOrNull(Object.keys(s.tagIds).sort()[0] ?? null);
+    if (s.has(TAG + tagId)) s.delete(TAG + tagId);
+    if (getStrOrNull(s, 'mainTagId') === tagId) s.set('mainTagId', saveTagIds(s)[0] ?? null);
     this.touch(s);
   }
 
   /** To the trash (restorable for 30 days). */
   deleteSave(placeId: string): void {
     const s = this.save(placeId);
-    s.deletedAt = this.ctx.now();
+    mvSet(new Slots(s, DELETED), this.me, this.ctx.now());
     this.touch(s);
   }
 
   restoreSave(placeId: string): void {
     const s = this.save(placeId);
-    s.deletedAt = null;
+    mvClear(new Slots(s, DELETED));
     this.touch(s);
   }
 
   addMedia(placeId: string, m: MediaInput): string {
     const s = this.save(placeId);
     const id = m.id ?? this.ctx.newId();
-    s.media[id] = {
-      file: imm(m.file),
-      blurhash: immOrNull(m.blurhash ?? null),
+    const media: DocMedia = {
+      file: m.file,
+      blurhash: m.blurhash ?? null,
       width: m.width ?? null,
       height: m.height ?? null,
       createdAt: this.ctx.now(),
     };
+    s.set(MEDIA + id, media);
     this.touch(s);
     return id;
   }
 
   removeMedia(placeId: string, mediaId: string): void {
     const s = this.save(placeId);
-    if (s.media[mediaId]) delete s.media[mediaId];
+    if (s.has(MEDIA + mediaId)) s.delete(MEDIA + mediaId);
     this.touch(s);
   }
 
@@ -508,222 +796,240 @@ export class DocTx {
     const from = this.save(fromPlaceId);
     const target = normalizeSnapshot(to);
     if (target.id === fromPlaceId) return fromPlaceId;
-    const fromComment = from.comment;
-    const fromTags = Object.keys(from.tagIds);
-    const fromMain = strOrNull(from.mainTagId);
-    if (!this.d.saves[target.id]) {
+    const fromComment = getText(from, 'comment');
+    const fromTags = saveTagIds(from);
+    const fromMain = getStrOrNull(from, 'mainTagId');
+    const fromStatus = getStrOrNull(from, 'status') as SaveStatus | null;
+    const fromPrice = getNum(from, 'priceLevel') as PriceLevel | null;
+    let dest = saveEntry(this.doc, target.id);
+    if (!dest) {
       this.putSave({
         place: target,
         comment: fromComment,
-        commentVisibility: str(from.commentVisibility) as CommentVisibility,
-        status: strOrNull(from.status) as SaveStatus | null,
-        priceLevel: (from.priceLevel ?? null) as PriceLevel | null,
-        sharing: str(from.sharing) as Sharing,
+        commentVisibility: (getStrOrNull(from, 'commentVisibility') ?? 'friends') as CommentVisibility,
+        status: fromStatus,
+        priceLevel: fromPrice,
+        sharing: readSharing(from),
         tagIds: fromTags,
         mainTagId: fromMain,
       });
-      this.d.saves[target.id]!.createdAt = from.createdAt;
+      dest = saveEntry(this.doc, target.id)!;
+      dest.set('createdAt', getNum(from, 'createdAt') ?? this.ctx.now());
+      this.touch(dest);
     } else {
-      const t = this.d.saves[target.id]!;
-      if (readDeletedAt(t) !== null) t.deletedAt = null;
-      for (const tag of fromTags) if (!t.tagIds[tag]) t.tagIds[tag] = true;
-      if (t.mainTagId === null && fromMain) t.mainTagId = imm(fromMain);
-      if (fromComment && fromComment !== t.comment) {
-        A.updateText(
-          t as unknown as A.Doc<unknown>,
-          ['comment'],
-          t.comment ? `${t.comment}\n\n${fromComment}` : fromComment,
-        );
-      }
-      if (t.status === null && from.status !== null) t.status = imm(str(from.status));
-      if (t.priceLevel === null && from.priceLevel !== null) t.priceLevel = from.priceLevel;
-      if (str(from.sharing) === 'private') t.sharing = imm('private');
+      const t = dest;
+      if (readDeletedAt(t) !== null) mvClear(new Slots(t, DELETED));
+      for (const tag of fromTags) if (!t.has(TAG + tag)) t.set(TAG + tag, true);
+      if (getStrOrNull(t, 'mainTagId') === null && fromMain) t.set('mainTagId', fromMain);
+      const cur = getText(t, 'comment');
+      if (fromComment && fromComment !== cur) updateText(textOf(t, 'comment'), cur ? `${cur}\n\n${fromComment}` : fromComment);
+      if (getStrOrNull(t, 'status') === null && fromStatus !== null) t.set('status', fromStatus);
+      if (getNum(t, 'priceLevel') === null && fromPrice !== null) t.set('priceLevel', fromPrice);
+      if (readSharing(from) === 'private') mvSet(new Slots(t, SHARING), this.me, 'private');
       this.touch(t);
     }
-    const dest = this.d.saves[target.id]!;
-    for (const [id, m] of Object.entries(from.media)) {
-      if (!dest.media[id]) {
-        dest.media[id] = {
-          file: imm(str(m.file)),
-          blurhash: immOrNull(strOrNull(m.blurhash)),
-          width: m.width,
-          height: m.height,
-          createdAt: m.createdAt,
-        };
-      }
-    }
-    for (const l of Object.values(this.d.lists)) {
-      for (const set of [l.filter.include, l.filter.exclude] as Set_[]) {
-        if (set[fromPlaceId]) {
-          delete set[fromPlaceId];
-          set[target.id] = true;
+    for (const [id, m] of saveMedia(from)) if (!dest.has(MEDIA + id)) dest.set(MEDIA + id, m);
+    copyUnknown(from, dest);
+    for (const l of this.r.lists.values()) {
+      const f = getMap(l, 'filter');
+      for (const set of f ? [nested(f, 'include'), nested(f, 'exclude')] : []) {
+        if (set.has(fromPlaceId)) {
+          set.delete(fromPlaceId);
+          set.set(target.id, true);
         }
       }
-      if (l.items[fromPlaceId] !== undefined) {
-        const at = l.items[fromPlaceId]!;
-        delete l.items[fromPlaceId];
-        if (l.items[target.id] === undefined) l.items[target.id] = at;
+      const items = nested(l, 'items');
+      if (items.has(fromPlaceId)) {
+        const at = items.get(fromPlaceId);
+        items.delete(fromPlaceId);
+        if (!items.has(target.id)) items.set(target.id, at);
       }
     }
-    delete this.d.saves[fromPlaceId];
-    this.d.tombstones[`save:${fromPlaceId}`] = this.ctx.now();
+    this.dropEntries(fromPlaceId);
+    this.r.tombstones.set(`save:${fromPlaceId}`, this.ctx.now());
     return target.id;
   }
 
   // ---------------------------------------------------------------- tags
 
   createTag(input: TagInput): string {
+    if (input.parentId && !this.r.tags.has(input.parentId)) throw new Error(`unknown parent tag ${input.parentId}`);
     const id = this.ctx.newId();
     const now = this.ctx.now();
-    if (input.parentId && !this.d.tags[input.parentId]) throw new Error(`unknown parent tag ${input.parentId}`);
-    this.d.tags[id] = {
-      parentId: immOrNull(input.parentId ?? null),
-      name: imm(input.name.trim()),
-      color: immOrNull(input.color ?? null),
-      icon: immOrNull(input.icon ?? null),
-      osmCategories: Object.fromEntries((input.osmCategories ?? []).map((c) => [c, true as const])),
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
+    const t = new Y.Map<unknown>();
+    this.r.tags.set(id, t);
+    if (input.parentId) t.set('parentId', input.parentId);
+    t.set('name', input.name.trim());
+    if (input.color != null) t.set('color', input.color);
+    if (input.icon != null) t.set('icon', input.icon);
+    const cats = new Y.Map<unknown>();
+    t.set('osmCategories', cats);
+    for (const c of input.osmCategories ?? []) cats.set(c, true);
+    t.set('createdAt', now);
+    t.set('updatedAt', now);
     return id;
   }
 
-  updateTag(id: string, patch: Partial<TagInput>): void {
-    const t = this.d.tags[id];
+  private tag(id: string): YMap {
+    const t = this.r.tags.get(id);
     if (!t) throw new Error(`no tag ${id}`);
+    return t;
+  }
+
+  updateTag(id: string, patch: Partial<TagInput>): void {
+    const t = this.tag(id);
     if (patch.parentId !== undefined) {
       if (patch.parentId === id) throw new Error('a tag cannot be its own parent');
       // Local cycle check; concurrent re-parenting may still create one, which the projection breaks.
-      let cur = patch.parentId;
+      let cur: string | null = patch.parentId;
       while (cur) {
         if (cur === id) throw new Error('this would create a cycle of sub-tags');
-        cur = strOrNull(this.d.tags[cur]?.parentId);
+        const p = this.r.tags.get(cur);
+        cur = p ? getStrOrNull(p, 'parentId') : null;
       }
-      t.parentId = immOrNull(patch.parentId);
+      t.set('parentId', patch.parentId);
     }
-    if (patch.name !== undefined) t.name = imm(patch.name.trim());
-    if (patch.color !== undefined) t.color = immOrNull(patch.color);
-    if (patch.icon !== undefined) t.icon = immOrNull(patch.icon);
-    if (patch.osmCategories !== undefined) setKeys(t.osmCategories, patch.osmCategories);
-    t.updatedAt = this.ctx.now();
+    if (patch.name !== undefined) t.set('name', patch.name.trim());
+    if (patch.color !== undefined) t.set('color', patch.color);
+    if (patch.icon !== undefined) t.set('icon', patch.icon);
+    if (patch.osmCategories !== undefined) setKeys(nestedOf(t, 'osmCategories'), patch.osmCategories);
+    this.touch(t);
   }
 
   /** To the trash, with its sub-tags (they become inactive until restored). */
   deleteTag(id: string): void {
-    const t = this.d.tags[id];
-    if (!t) throw new Error(`no tag ${id}`);
-    t.deletedAt = this.ctx.now();
-    t.updatedAt = this.ctx.now();
+    const t = this.tag(id);
+    mvSet(new Slots(t, DELETED), this.me, this.ctx.now());
+    this.touch(t);
   }
 
   restoreTag(id: string): void {
-    const t = this.d.tags[id];
-    if (!t) throw new Error(`no tag ${id}`);
-    t.deletedAt = null;
-    t.updatedAt = this.ctx.now();
+    const t = this.tag(id);
+    mvClear(new Slots(t, DELETED));
+    this.touch(t);
   }
 
   /** How a friend's tag is shown on my side (null removes the mapping). */
   setTagMapping(personId: string, theirTag: string, myTagId: string | null): void {
-    const key = `${personId}\n${theirTag}`;
+    const key = `${personId}${SEP}${theirTag}`;
     if (myTagId === null) {
-      if (this.d.tagMappings[key]) delete this.d.tagMappings[key];
+      if (this.r.tagMappings.has(key)) this.r.tagMappings.delete(key);
     } else {
-      this.d.tagMappings[key] = imm(myTagId);
+      this.r.tagMappings.set(key, myTagId);
     }
   }
 
   // ---------------------------------------------------------------- lists
 
   createList(input: ListInput): string {
+    const visibility = check(input.visibility ?? 'link', LIST_VIS, 'list visibility');
+    const kind = check(input.kind, ['filter', 'manual'] as const, 'list kind');
     const id = this.ctx.newId();
     const now = this.ctx.now();
-    this.d.lists[id] = {
-      name: imm(input.name.trim()),
-      description: input.description ?? '',
-      visibility: imm(check(input.visibility ?? 'link', LIST_VIS, 'list visibility')),
-      linkKey: immOrNull(input.linkKey ?? null),
-      kind: imm(check(input.kind, ['filter', 'manual'] as const, 'list kind')),
-      filter: { tags: {}, categories: {}, statuses: {}, priceLevels: {}, zones: {}, include: {}, exclude: {} },
-      items: Object.fromEntries((input.items ?? []).map((p) => [p, now])),
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    };
+    const l = new Y.Map<unknown>();
+    this.r.lists.set(id, l);
+    l.set('name', input.name.trim());
+    l.set('description', new Y.Text(input.description ?? ''));
+    l.set('visibility', visibility);
+    if (input.linkKey != null) l.set('linkKey', input.linkKey);
+    l.set('kind', kind);
+    const f = new Y.Map<unknown>();
+    l.set('filter', f);
+    for (const g of FILTER_GROUPS) f.set(g, new Y.Map());
+    const items = new Y.Map<unknown>();
+    l.set('items', items);
+    for (const p of input.items ?? []) items.set(p, now);
+    l.set('createdAt', now);
+    l.set('updatedAt', now);
     if (input.filter) this.setListFilter(id, input.filter);
     return id;
   }
 
-  private list(id: string): DocList {
-    const l = this.d.lists[id];
+  private list(id: string): YMap {
+    const l = this.r.lists.get(id);
     if (!l) throw new Error(`no list ${id}`);
     return l;
   }
 
-  updateList(id: string, patch: { name?: string; description?: string; visibility?: ListVisibility; linkKey?: string | null }): void {
+  /**
+   * Edits a list. Changing `kind` keeps both the saved filter and the manual
+   * selection, so switching back restores the previous definition.
+   */
+  updateList(id: string, patch: ListPatch): void {
     const l = this.list(id);
-    if (patch.name !== undefined) l.name = imm(patch.name.trim());
-    if (patch.description !== undefined && patch.description !== l.description) {
-      A.updateText(l as unknown as A.Doc<unknown>, ['description'], patch.description);
-    }
-    if (patch.visibility !== undefined) l.visibility = imm(check(patch.visibility, LIST_VIS, 'list visibility'));
-    if (patch.linkKey !== undefined) l.linkKey = immOrNull(patch.linkKey);
-    l.updatedAt = this.ctx.now();
+    const visibility = patch.visibility === undefined ? undefined : check(patch.visibility, LIST_VIS, 'list visibility');
+    const kind = patch.kind === undefined ? undefined : check(patch.kind, ['filter', 'manual'] as const, 'list kind');
+    if (patch.name !== undefined) l.set('name', patch.name.trim());
+    if (kind !== undefined && getStr(l, 'kind') !== kind) l.set('kind', kind);
+    if (patch.description !== undefined) updateText(textOf(l, 'description'), patch.description);
+    if (visibility !== undefined) l.set('visibility', visibility);
+    if (patch.linkKey !== undefined) l.set('linkKey', patch.linkKey);
+    this.touch(l);
   }
 
   /** Replaces the saved filter, touching only the criteria that changed (merge-friendly). */
   setListFilter(id: string, filter: ListFilter): void {
     const l = this.list(id);
-    const f = l.filter;
-    setKeys(f.tags, filter.tags ?? []);
-    setKeys(f.categories, filter.categories ?? []);
-    setKeys(f.statuses, (filter.statuses ?? []).map((s) => check(s, SAVE_STATUSES, 'status')));
-    setKeys(f.priceLevels, (filter.priceLevels ?? []).map((p) => String(checkPrice(p))));
+    const statuses = (filter.statuses ?? []).map((s) => check(s, SAVE_STATUSES, 'status'));
+    const prices = (filter.priceLevels ?? []).map((p) => String(checkPrice(p)));
+    const f = filterOf(l);
+    setKeys(nestedOf(f, 'tags'), filter.tags ?? []);
+    setKeys(nestedOf(f, 'categories'), filter.categories ?? []);
+    setKeys(nestedOf(f, 'statuses'), statuses);
+    setKeys(nestedOf(f, 'priceLevels'), prices);
     const zones = new Map((filter.zones ?? []).map((z) => [zoneKey(z), z]));
-    for (const k of Object.keys(f.zones)) if (!zones.has(k)) delete f.zones[k];
-    for (const [k, z] of zones) if (!f.zones[k]) f.zones[k] = imm(canonicalJson(z));
+    const zm = nestedOf(f, 'zones');
+    for (const k of zm.keys()) if (!zones.has(k)) zm.delete(k);
+    for (const [k, z] of zones) if (!zm.has(k)) zm.set(k, canonicalJson(z));
     const exclude = filter.exclude ?? [];
-    setKeys(f.exclude, exclude);
-    setKeys(f.include, (filter.include ?? []).filter((p) => !exclude.includes(p)));
-    l.updatedAt = this.ctx.now();
+    setKeys(nestedOf(f, 'exclude'), exclude);
+    setKeys(nestedOf(f, 'include'), (filter.include ?? []).filter((p) => !exclude.includes(p)));
+    this.touch(l);
   }
 
   /** Exception "add this place by hand" (filter list) or selection (manual list). */
   addToList(id: string, placeId: string): void {
     const l = this.list(id);
-    if (str(l.kind) === 'manual') {
-      if (l.items[placeId] === undefined) l.items[placeId] = this.ctx.now();
+    if (getStr(l, 'kind') === 'manual') {
+      const items = nestedOf(l, 'items');
+      if (!items.has(placeId)) items.set(placeId, this.ctx.now());
     } else {
-      if (l.filter.exclude[placeId]) delete l.filter.exclude[placeId];
-      if (!l.filter.include[placeId]) l.filter.include[placeId] = true;
+      const f = filterOf(l);
+      const ex = nestedOf(f, 'exclude');
+      const inc = nestedOf(f, 'include');
+      if (ex.has(placeId)) ex.delete(placeId);
+      if (!inc.has(placeId)) inc.set(placeId, true);
     }
-    l.updatedAt = this.ctx.now();
+    this.touch(l);
   }
 
   /** Exception "remove this place by hand" (filter list) or unselect (manual list). */
   removeFromList(id: string, placeId: string): void {
     const l = this.list(id);
-    if (str(l.kind) === 'manual') {
-      if (l.items[placeId] !== undefined) delete l.items[placeId];
+    if (getStr(l, 'kind') === 'manual') {
+      const items = nestedOf(l, 'items');
+      if (items.has(placeId)) items.delete(placeId);
     } else {
-      if (l.filter.include[placeId]) delete l.filter.include[placeId];
-      if (!l.filter.exclude[placeId]) l.filter.exclude[placeId] = true;
+      const f = filterOf(l);
+      const ex = nestedOf(f, 'exclude');
+      const inc = nestedOf(f, 'include');
+      if (inc.has(placeId)) inc.delete(placeId);
+      if (!ex.has(placeId)) ex.set(placeId, true);
     }
-    l.updatedAt = this.ctx.now();
+    this.touch(l);
   }
 
   /** The places remain; only the list goes (to the trash). */
   deleteList(id: string): void {
     const l = this.list(id);
-    l.deletedAt = this.ctx.now();
-    l.updatedAt = this.ctx.now();
+    mvSet(new Slots(l, DELETED), this.me, this.ctx.now());
+    this.touch(l);
   }
 
   restoreList(id: string): void {
     const l = this.list(id);
-    l.deletedAt = null;
-    l.updatedAt = this.ctx.now();
+    mvClear(new Slots(l, DELETED));
+    this.touch(l);
   }
 
   /**
@@ -732,22 +1038,29 @@ export class DocTx {
    */
   purgeTrash(): number {
     const now = this.ctx.now();
+    const old = (m: YMap | null | undefined) => {
+      const d = readDeletedAt(m);
+      return d !== null && now - d >= TRASH_RETENTION_MS;
+    };
     let n = 0;
-    const sweep = (kind: 'save' | 'tag' | 'list', m: Record<string, unknown>) => {
-      for (const id of Object.keys(m)) {
-        const deletedAt = readDeletedAt(m[id]);
-        if (deletedAt !== null && now - deletedAt >= TRASH_RETENTION_MS) {
-          delete m[id];
-          this.d.tombstones[`${kind}:${id}`] = now;
+    for (const placeId of savePlaceIds(this.doc)) {
+      if (old(saveEntry(this.doc, placeId))) {
+        this.dropEntries(placeId);
+        this.r.tombstones.set(`save:${placeId}`, now);
+        n++;
+      }
+    }
+    for (const [kind, m] of [['tag', this.r.tags], ['list', this.r.lists]] as const) {
+      for (const id of [...m.keys()].sort()) {
+        if (old(m.get(id))) {
+          m.delete(id);
+          this.r.tombstones.set(`${kind}:${id}`, now);
           n++;
         }
       }
-    };
-    sweep('save', this.d.saves);
-    sweep('tag', this.d.tags);
-    sweep('list', this.d.lists);
-    for (const [k, t] of Object.entries(this.d.tombstones)) {
-      if (now - t >= TOMBSTONE_RETENTION_MS) delete this.d.tombstones[k];
+    }
+    for (const [k, t] of [...this.r.tombstones.entries()]) {
+      if (now - t >= TOMBSTONE_RETENTION_MS) this.r.tombstones.delete(k);
     }
     return n;
   }
@@ -755,62 +1068,61 @@ export class DocTx {
 
 // ------------------------------------------------------------------ healing
 
-/**
- * Folds hidden concurrent creations of the same save into the visible one.
- * Deterministic (depends only on the document), idempotent, and each hidden
- * version is folded only once (`absorbed`), so a tag the user later removes
- * does not come back. Returns the same document when there is nothing to do.
- */
-export function healDoc(doc: A.Doc<DataDoc>): A.Doc<DataDoc> {
-  const work: { key: string; losers: [string, DocSave][] }[] = [];
-  for (const key of Object.keys(doc.saves)) {
-    const conflicts = A.getConflicts(doc.saves as unknown as A.Doc<unknown>, key);
-    if (!conflicts || Object.keys(conflicts).length < 2) continue;
-    const winner = doc.saves[key]!;
-    const winnerId = A.getObjectId(winner);
-    const losers = Object.entries(conflicts as unknown as Record<string, DocSave>)
-      .filter(([, v]) => v && typeof v === 'object' && A.getObjectId(v) !== winnerId)
-      .filter(([op]) => !winner.absorbed?.[op])
-      .sort(([a], [b]) => (a < b ? -1 : 1));
-    if (losers.length) work.push({ key, losers });
+/** Folds entry `l` (key `lk`) into the canonical entry `w`. Writes depend only on the two entries. */
+function fold(w: YMap, l: YMap, lk: string): void {
+  // Tag set, photos, sharing and deletion slots, entries folded earlier:
+  // carried over, so the privacy-wins and delete-wins reads see them too.
+  for (const [k, v] of l.entries()) if (SAVE_PREFIXES.some((p) => k.startsWith(p)) && !w.has(k)) w.set(k, v);
+  // Comments: keep both. Replaced by a new Y.Text (not appended to), so two
+  // devices healing the same entries at once do not duplicate the text.
+  const wc = getText(w, 'comment');
+  const lc = getText(l, 'comment');
+  if (lc && !wc.includes(lc)) w.set('comment', new Y.Text(wc ? `${wc}\n\n${lc}` : lc));
+  for (const k of ['status', 'priceLevel', 'mainTagId', 'commentVisibility'] as const) {
+    if (w.get(k) == null && l.get(k) != null) w.set(k, l.get(k));
   }
-  if (work.length === 0) return doc;
-  return A.change(doc, { message: 'heal' }, (d) => {
-    for (const { key, losers } of work) {
-      const w = d.saves[key]!;
-      if (!w.absorbed) w.absorbed = {};
-      for (const [op, l] of losers) {
-        for (const t of Object.keys(l.tagIds ?? {}).sort()) if (!w.tagIds[t]) w.tagIds[t] = true;
-        for (const [id, m] of Object.entries(l.media ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))) {
-          if (!w.media[id]) {
-            w.media[id] = {
-              file: imm(str(m.file)),
-              blurhash: immOrNull(strOrNull(m.blurhash)),
-              width: m.width ?? null,
-              height: m.height ?? null,
-              createdAt: m.createdAt,
-            };
-          }
-        }
-        if (w.comment === '' && l.comment) w.comment = String(l.comment);
-        if (w.status === null && l.status != null) w.status = imm(str(l.status));
-        if (w.priceLevel === null && l.priceLevel != null) w.priceLevel = l.priceLevel;
-        if (w.mainTagId === null && l.mainTagId != null) w.mainTagId = imm(str(l.mainTagId));
-        // Privacy wins: if either device made it private, it stays private.
-        if (readSharing(l) === 'private' && readSharing(w) !== 'private') w.sharing = imm('private');
-        if (l.createdAt < w.createdAt) w.createdAt = l.createdAt;
-        if (l.updatedAt > w.updatedAt) w.updatedAt = l.updatedAt;
-        const ld = readDeletedAt(l);
-        if (ld !== null && readDeletedAt(w) === null) w.deletedAt = ld;
-        w.absorbed[op] = true;
-      }
-    }
-  });
+  const lc0 = getNum(l, 'createdAt');
+  const wc0 = getNum(w, 'createdAt');
+  if (lc0 !== null && (wc0 === null || lc0 < wc0)) w.set('createdAt', lc0);
+  const lu = getNum(l, 'updatedAt') ?? lc0;
+  const wu = getNum(w, 'updatedAt') ?? wc0;
+  if (lu !== null && (wu === null || lu > wu)) w.set('updatedAt', lu);
+  copyUnknown(l, w);
+  w.set(ABSORBED + lk, true);
 }
 
-/** Merge a remote replica into a local one, then heal. */
-export function mergeDataDocs(local: A.Doc<DataDoc>, remote: A.Doc<DataDoc>): A.Doc<DataDoc> {
-  return healDoc(A.merge(local, remote));
+/**
+ * Folds concurrent creations of the same save (several entries for one
+ * place) into the canonical entry (smallest key). Deterministic (depends
+ * only on the document), idempotent, and each entry is folded only once
+ * (`absorbed`), so a tag the user later removes does not come back.
+ * Returns whether it wrote anything.
+ */
+export function healDoc(doc: DataDoc): boolean {
+  const idx = saveIndex(doc);
+  const saves = roots(doc).saves;
+  const work: [YMap, [string, YMap][]][] = [];
+  for (const placeId of [...idx.keys()].sort()) {
+    const keys = idx.get(placeId)!;
+    if (keys.size < 2) continue;
+    const [wk, ...rest] = [...keys].sort();
+    const w = saves.get(wk!)!;
+    const losers = rest.filter((k) => !w.has(ABSORBED + k)).map((k) => [k, saves.get(k)!] as [string, YMap]);
+    if (losers.length) work.push([w, losers]);
+  }
+  if (work.length === 0) return false;
+  doc.transact(() => {
+    for (const [w, losers] of work) for (const [k, l] of losers) fold(w, l, k);
+  }, 'heal');
+  return true;
+}
+
+/** Merges a remote replica into a local one (in place), then heals. Returns `local`. */
+export function mergeDataDocs(local: DataDoc, remote: DataDoc | Uint8Array): DataDoc {
+  const update = remote instanceof Uint8Array ? remote : Y.encodeStateAsUpdate(remote, Y.encodeStateVector(local));
+  Y.applyUpdate(local, update, 'merge');
+  healDoc(local);
+  return local;
 }
 
 export type { AreaGeometry };

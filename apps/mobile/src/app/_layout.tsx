@@ -1,8 +1,14 @@
+import '../polyfills';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { DataProvider } from '../data/DataProvider';
 import { ThemeProvider, useIsDark, useUiColors } from '../hooks/useUiColors';
+import { I18nProvider } from '../i18n';
+import { IdentityProvider } from '../identity/IdentityProvider';
+import { LockProvider } from '../identity/LockGate';
+import { AppStateProvider } from '../state/AppState';
 
 function ThemedStack() {
   const c = useUiColors();
@@ -23,9 +29,19 @@ function ThemedStack() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <ThemedStack />
-      </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider>
+          <IdentityProvider>
+            <DataProvider>
+              <AppStateProvider>
+                <LockProvider>
+                  <ThemedStack />
+                </LockProvider>
+              </AppStateProvider>
+            </DataProvider>
+          </IdentityProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }

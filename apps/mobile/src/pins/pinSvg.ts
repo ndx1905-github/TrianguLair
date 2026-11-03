@@ -1,5 +1,5 @@
 import { MAX_PIN_BANDS } from '../config';
-import { UNTAGGED_COLOR } from '../theme/tags';
+import { GREYED_COLOR, UNTAGGED_COLOR } from '../theme/tags';
 import { computeBands } from './bands';
 
 /**
@@ -20,6 +20,11 @@ const PIN_PATH =
 export const ICON_HALO = '#1F2937';
 const CLIP_ID ='tl-pin-clip'; // Same shape for every pin: duplicate ids are harmless on web.
 
+/** Grey disc with a white cross, top right of the head ("maybe closed"). */
+const CLOSED_BADGE =
+  `<circle cx="33" cy="6" r="5.6" fill="#6B7280" stroke="#FFFFFF" stroke-width="1.4"/>` +
+  `<path d="M30.6 3.6L35.4 8.4M35.4 3.6L30.6 8.4" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/>`;
+
 export interface PinSpec {
   /** Tag colors in order (first = primary). */
   colors: readonly string[];
@@ -27,6 +32,20 @@ export interface PinSpec {
   iconPath: string;
   /** Place known only through friends: lighter / translucent pin. */
   faded: boolean;
+  /** Outside the active filter: grey and translucent (drawn smaller by the map). */
+  greyed?: boolean;
+  /** Maybe closed: a small grey cross badge at the top right. */
+  maybeClosed?: boolean;
+}
+
+/** Pin scale factors (viewBox 40x52 = scale 1). */
+export const PIN_SCALE = { normal: 1, selected: 1.3, greyed: 0.72 } as const;
+/** Opacity of pins outside the filter (spec: about 35%). */
+export const GREYED_OPACITY = 0.4;
+
+export function pinScale(pin: { greyed?: boolean }, selected: boolean): number {
+  if (selected) return PIN_SCALE.selected;
+  return pin.greyed ? PIN_SCALE.greyed : PIN_SCALE.normal;
 }
 
 function esc(s: string): string {
@@ -34,7 +53,7 @@ function esc(s: string): string {
 }
 
 export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string {
-  const bands = computeBands(spec.colors, {
+  const bands = computeBands(spec.greyed ? [GREYED_COLOR] : spec.colors, {
     top: HEAD.cy - HEAD.r,
     bottom: HEAD.cy + HEAD.r,
     max: MAX_PIN_BANDS,
@@ -50,7 +69,7 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
     .join('');
 
   const bandOpacity = spec.faded ? 0.5 : 1;
-  const pinOpacity = spec.faded ? 0.85 : 1;
+  const pinOpacity = spec.greyed ? GREYED_OPACITY : spec.faded ? 0.85 : 1;
   // Strong dark halo (spec: #1F2937 outline) keeps the white icon legible on
   // every color, including yellow and amber.
   const halo = spec.faded ? 'rgba(31,41,55,0.6)' : ICON_HALO;
@@ -74,6 +93,7 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
     `<path d="${icon}" fill="none" stroke="${halo}" stroke-width="4" stroke-linejoin="round"/>` +
     `<path d="${icon}" fill="#FFFFFF"/>` +
     `</g>` +
+    (spec.maybeClosed ? CLOSED_BADGE : '') +
     `</g></svg>`
   );
 }

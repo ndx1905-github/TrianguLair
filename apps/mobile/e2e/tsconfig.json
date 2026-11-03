@@ -1,0 +1,9 @@
+{
+  // The end-to-end tests run in Node (Playwright Test), not in the app bundle.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"],
+  "exclude": []
+}
