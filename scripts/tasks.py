@@ -36,7 +36,7 @@ t("T-005","P0","Mockups of the main screens",["design"],
   ["Mockups published and linked from the spec"])
 t("T-006","P0","Continuous integration with GitHub Actions",["infra"],
   "Lint + typecheck + tests of all workspaces on every PR; web export; Dependabot; read-only permissions by default.",
-  ["Green CI badge on main","PR blocked when tests fail"])
+  ["Green CI badge on main","PR blocked when tests fail"],status="done")
 t("T-007","P0","Automatic deployment of the web test build",["infra","app"],
   "Deploy the web export to static hosting on every merge (GitHub Pages or similar), with a test WebDAV storage configured for CORS.",
   ["Test link published in the README"],deps=["T-004","T-006"])
@@ -53,44 +53,44 @@ t("T-010","P0","Forgejo mirror of the repository",["infra","maintainer"],
 # ---------------- Phase 1 ----------------
 t("T-101","P1","Local SQLite database with spatial index",["data"],
   "Schema from \"Data model\" (people, groups, places, saves, tags, save_tags, tag_mappings, lists, list_items, access, media), migrations, \"places in this area\" queries.",
-  ["Tests on 10,000 places within performance targets"])
+  ["Tests on 10,000 places within performance targets"],status="done")
 t("T-102","P1","Yjs model and merging across devices",["sync","data"],
   "CRDT document (Yjs: pure JavaScript, no WebAssembly, runs on Hermes) for places, tags, lists; projection to SQLite; merge rules kept explicit where Yjs's last-writer-wins differs (shared base update, one save per place with folding of concurrent creations, deletion and privacy win via per-device slots, character-level comments, unknown fields kept); property-based tests of merging.",
-  ["Two simulated devices converge after concurrent edits","No WebAssembly in the runtime dependency tree (tested)"],deps=["T-101"])
+  ["Two simulated devices converge after concurrent edits","No WebAssembly in the runtime dependency tree (tested)"],deps=["T-101"],status="done")
 t("T-103","P1","Map: clustering when zoomed out and filtered display",["map"],
-  "Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance.",
+  "Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance. Done on web with JS clusters; native needs map-engine layers for 10,000 pins.",
   ["60 fps on the reference device"],deps=["T-004","T-101"])
 t("T-104","P1","List view: sorting, text search",["app"],
-  "Sort by recent / distance / name, full-text search, \"N friends\" mention.",["Unit tests for sorting and search"],deps=["T-101"])
+  "Sort by recent / distance / name, full-text search, \"N friends\" mention.",["Unit tests for sorting and search"],deps=["T-101"],status="done")
 t("T-105","P1","Add a place: nearby places, search, long press",["app","osm"],
   "Add screen listing nearby OSM places by increasing distance, Photon/Nominatim search, long press, current location; \"already mine / saved by friends\" indicator.",
-  ["End-to-end flow on simulator"],deps=["T-106","T-101"])
+  ["End-to-end flow on simulator"],deps=["T-106","T-101"],status="done")
 t("T-106","P1","OSM client: Overpass, Photon/Nominatim",["osm"],
-  "Clients with caching, rate limits respected, identifying User-Agent, configurable URLs.",["Tests with recorded responses"])
+  "Clients with caching, rate limits respected, identifying User-Agent, configurable URLs.",["Tests with recorded responses"],status="done")
 t("T-107","P1","Enriched place card: info, opening hours, free photos",["osm","app"],
   "Opening hours (opening_hours), cuisine, diets, terrace, entrance fee; Wikimedia Commons and Panoramax photos with attribution.",
-  ["Attribution shown for every photo"],deps=["T-106"])
+  ["Attribution shown for every photo"],deps=["T-106"],status="done")
 t("T-108","P1","Personal tags, colors, icons, sub-tags",["app","design"],
-  "Create and edit tags, palette, CC0 icons, sub-tags (\"Restaurant › Pizza\").",["Tests of the palette and band rendering"],deps=["T-101"])
+  "Create and edit tags, palette, CC0 icons, sub-tags (\"Restaurant › Pizza\").",["Tests of the palette and band rendering"],deps=["T-101"],status="done")
 t("T-109","P1","Full filter bar",["app","osm"],
   "Categories, sub-filters, OSM criteria (open now, happy hour, terrace, diet, reservation, free entry, price), status, visibility, price level, text; collapsible, state remembered.",
-  ["Unit tests for each criterion"],deps=["T-107","T-108"])
+  ["Unit tests for each criterion"],deps=["T-107","T-108"],status="done")
 t("T-110","P1","Zones: neighborhoods, street segments, freehand drawing",["map","app"],
-  "Existing OSM neighborhood, one or more street segments, drawing by points or finger painting; zone icon.",["Zones stored as valid GeoJSON"],deps=["T-103"])
+  "Existing OSM neighborhood, one or more street segments, drawing by points or finger painting; zone icon.",["Zones stored as valid GeoJSON"],deps=["T-103"],status="done")
 t("T-111","P1","Comments, status, price, personal photos",["app"],
-  "Comment visibility (private / friends / public), to try / tried / favorite status, €–€€€€, personal photos.",["Visibility respected in exports"],deps=["T-101"])
+  "Comment visibility (private / friends / public), to try / tried / favorite status, €–€€€€, personal photos.",["Visibility respected in exports"],deps=["T-101"],status="done")
 t("T-112","P1","Lists from saved filters or manual selection",["app"],
-  "Dynamic lists (categories, tags, zones by name via OSM boundaries or drawn) and manual lists; a private place never enters a list.",["Property-based tests on excluding private places"],deps=["T-109","T-110"])
+  "Dynamic lists (categories, tags, zones by name via OSM boundaries or drawn) and manual lists; a private place never enters a list.",["Property-based tests on excluding private places"],deps=["T-109","T-110"],status="done")
 t("T-113","P1","Monthly detection of closed places",["osm"],
-  "Monthly check via OSM (disused:, shop=vacant, deletion), notify the user.",["Tests with recorded OSM cases"],deps=["T-106"])
+  "Monthly check via OSM (disused:, shop=vacant, deletion), notify the user.",["Tests with recorded OSM cases"],deps=["T-106"],status="done")
 t("T-114","P1","Import from Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON",["import"],
-  "Parsing, matching with OSM places, preview before import, deduplication.",["T-009 samples imported without loss"],deps=["T-009","T-106"])
-t("T-115","P1","Full GeoJSON export",["import"],"Export all places, zones, tags, comments.",["Re-import without loss"],deps=["T-101"])
-t("T-116","P1","Directions and opening in Apple Maps / Google Maps",["app"],"Deep links to navigation apps.",["Tested on iOS and Android"])
+  "Parsing, matching with OSM places, preview before import, deduplication.",["T-009 samples imported without loss"],deps=["T-009","T-106"],status="done")
+t("T-115","P1","Full GeoJSON export",["import"],"Export all places, zones, tags, comments.",["Re-import without loss"],deps=["T-101"],status="done")
+t("T-116","P1","Directions and opening in Apple Maps / Google Maps",["app"],"Deep links to navigation apps.",["Tested on iOS and Android"],status="done")
 t("T-117","P1","Screen adaptation: foldables, iPad, Mac, font sizes",["app","design"],
-  "Adaptive layout, dual screens (Galaxy Fold, iPhone Duo), iPad, Apple Silicon Mac, dynamic type, iOS display zoom.",["Automatic screenshots per form factor"])
-t("T-118","P1","Languages and dark mode",["app","i18n"],"i18n (English and French first), Weblate; complete dark mode.",["No hard-coded strings"])
-t("T-119","P1","End-to-end tests on simulators",["infra","tests"],"Maestro or Detox: first launch, add, filter, list, import.",["Run in CI"],deps=["T-006"])
+  "Adaptive layout, dual screens (Galaxy Fold, iPhone Duo), iPad, Apple Silicon Mac, dynamic type, iOS display zoom.",["Automatic screenshots per form factor"],status="done")
+t("T-118","P1","Languages and dark mode",["app","i18n"],"i18n (English and French first), Weblate; complete dark mode.",["No hard-coded strings"],status="done")
+t("T-119","P1","End-to-end tests on simulators",["infra","tests"],"Maestro or Detox: first launch, add, filter, list, import.",["Run in CI"],deps=["T-006"],status="done")
 
 # ---------------- Phase 2 ----------------
 t("T-201","P2","Final v1 encrypted format and test vectors",["crypto"],

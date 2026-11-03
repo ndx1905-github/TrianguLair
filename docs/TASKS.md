@@ -14,7 +14,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | T-003 | Storage adapters prototype (packages/storage) | storage | — | done |
 | T-004 | Expo app skeleton with map and pins (apps/mobile) | app, map | — | done |
 | T-005 | Mockups of the main screens | design | — | to do |
-| T-006 | Continuous integration with GitHub Actions | infra | — | to do |
+| T-006 | Continuous integration with GitHub Actions | infra | — | done |
 | T-007 | Automatic deployment of the web test build | infra, app | T-004, T-006 | to do |
 | T-008 | Administrative and legal checks | legal, maintainer | — | to do |
 | T-009 | Mapstr and Pin Drop export formats | import, maintainer | — | to do |
@@ -24,25 +24,25 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 
 | ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-101 | Local SQLite database with spatial index | data | — | to do |
-| T-102 | Yjs model and merging across devices | sync, data | T-101 | to do |
+| T-101 | Local SQLite database with spatial index | data | — | done |
+| T-102 | Yjs model and merging across devices | sync, data | T-101 | done |
 | T-103 | Map: clustering when zoomed out and filtered display | map | T-004, T-101 | to do |
-| T-104 | List view: sorting, text search | app | T-101 | to do |
-| T-105 | Add a place: nearby places, search, long press | app, osm | T-106, T-101 | to do |
-| T-106 | OSM client: Overpass, Photon/Nominatim | osm | — | to do |
-| T-107 | Enriched place card: info, opening hours, free photos | osm, app | T-106 | to do |
-| T-108 | Personal tags, colors, icons, sub-tags | app, design | T-101 | to do |
-| T-109 | Full filter bar | app, osm | T-107, T-108 | to do |
-| T-110 | Zones: neighborhoods, street segments, freehand drawing | map, app | T-103 | to do |
-| T-111 | Comments, status, price, personal photos | app | T-101 | to do |
-| T-112 | Lists from saved filters or manual selection | app | T-109, T-110 | to do |
-| T-113 | Monthly detection of closed places | osm | T-106 | to do |
-| T-114 | Import from Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON | import | T-009, T-106 | to do |
-| T-115 | Full GeoJSON export | import | T-101 | to do |
-| T-116 | Directions and opening in Apple Maps / Google Maps | app | — | to do |
-| T-117 | Screen adaptation: foldables, iPad, Mac, font sizes | app, design | — | to do |
-| T-118 | Languages and dark mode | app, i18n | — | to do |
-| T-119 | End-to-end tests on simulators | infra, tests | T-006 | to do |
+| T-104 | List view: sorting, text search | app | T-101 | done |
+| T-105 | Add a place: nearby places, search, long press | app, osm | T-106, T-101 | done |
+| T-106 | OSM client: Overpass, Photon/Nominatim | osm | — | done |
+| T-107 | Enriched place card: info, opening hours, free photos | osm, app | T-106 | done |
+| T-108 | Personal tags, colors, icons, sub-tags | app, design | T-101 | done |
+| T-109 | Full filter bar | app, osm | T-107, T-108 | done |
+| T-110 | Zones: neighborhoods, street segments, freehand drawing | map, app | T-103 | done |
+| T-111 | Comments, status, price, personal photos | app | T-101 | done |
+| T-112 | Lists from saved filters or manual selection | app | T-109, T-110 | done |
+| T-113 | Monthly detection of closed places | osm | T-106 | done |
+| T-114 | Import from Google Takeout, Mapstr, Pin Drop, CSV, KML, GeoJSON | import | T-009, T-106 | done |
+| T-115 | Full GeoJSON export | import | T-101 | done |
+| T-116 | Directions and opening in Apple Maps / Google Maps | app | — | done |
+| T-117 | Screen adaptation: foldables, iPad, Mac, font sizes | app, design | — | done |
+| T-118 | Languages and dark mode | app, i18n | — | done |
+| T-119 | End-to-end tests on simulators | infra, tests | T-006 | done |
 
 ## Phase 2 — sharing
 
@@ -186,7 +186,7 @@ Depends on: T-101
 
 ### T-103 — Map: clustering when zoomed out and filtered display
 
-Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance.
+Clusters, matching pins in color / others greyed and smaller, zones displayed, 10,000-place performance. Done on web with JS clusters; native needs map-engine layers for 10,000 pins.
 
 Acceptance criteria:
 
