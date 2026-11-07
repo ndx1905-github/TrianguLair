@@ -3,6 +3,7 @@ import type {
   Capabilities,
   DeleteOptions,
   FetchLike,
+  GetOptions,
   GetResult,
   HeadResult,
   ListEntry,
@@ -26,6 +27,8 @@ import {
   xmlElements,
   xmlHasElement,
   xmlText,
+  checkMaxBytes,
+  readBody,
 } from './util.ts';
 
 export type WebDavAuth = { username: string; password: string } | { bearer: string };
@@ -121,12 +124,13 @@ export class WebDavAdapter implements StorageAdapter {
     return doFetch(this.fetch, this.url(path), { ...init, method, headers: this.headers(extra) }, path);
   }
 
-  async get(path: string): Promise<GetResult | null> {
+  async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
+    const max = checkMaxBytes(opts.maxBytes);
     checkPath(path);
     const res = await this.req(path, 'GET', { cache: 'no-store' });
     if (res.status === 404) return null;
     if (!res.ok) throw httpError(res, `GET ${path}`, path);
-    const data = new Uint8Array(await res.arrayBuffer());
+    const data = await readBody(res, path, max);
     const etag = res.headers.get('etag');
     if (etag) return { data, etag: normEtag(etag) };
     const h = await this.head(path);

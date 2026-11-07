@@ -29,17 +29,19 @@ import {
   PreconditionFailed,
   ProtocolError,
   StorageError,
+  TooLarge,
 } from './errors.ts';
 import type {
   Capabilities,
   DeleteOptions,
+  GetOptions,
   GetResult,
   HeadResult,
   ListEntry,
   PutOptions,
   StorageAdapter,
 } from './types.ts';
-import { checkPath, checkPrefix, encodePath, sortEntries } from './util.ts';
+import { checkMaxBytes, checkPath, checkPrefix, encodePath, sortEntries } from './util.ts';
 
 export interface SftpOptions {
   /** ssh2 connect config: host, port, username, password / privateKey, hostVerifier... */
@@ -163,6 +165,42 @@ export class SftpAdapter implements StorageAdapter {
     }
   }
 
+  /**
+   * Reads at most `max` bytes through a file handle (32 KiB requests):
+   * refuses a file whose stat size is over the limit, and stops as soon as
+   * more than `max` bytes arrive (the file may grow between stat and read).
+   */
+  private async readLimitedOrNull(path: string, max: number): Promise<Buffer | null> {
+    const abs = this.abs(path);
+    let handle: Buffer;
+    try {
+      handle = await this.call<Buffer>(path, (s, cb) => s.open(abs, 'r', cb));
+    } catch (e) {
+      if (code(e) === NO_SUCH_FILE) return null;
+      throw this.wrap(e, path);
+    }
+    try {
+      const st = await this.call<Stats>(path, (s, cb) => s.fstat(handle, cb));
+      if (st.size > max) throw new TooLarge(path, max, { size: st.size });
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for (;;) {
+        const want = Math.min(32 * 1024, max + 1 - total);
+        const buf = Buffer.alloc(want);
+        const n = await this.call<number>(path, (s, cb) => s.read(handle, buf, 0, want, total, (err, bytes) => cb(err, bytes)));
+        if (!n) break;
+        total += n;
+        if (total > max) throw new TooLarge(path, max);
+        chunks.push(buf.subarray(0, n));
+      }
+      return Buffer.concat(chunks, total);
+    } catch (e) {
+      throw this.wrap(e, path);
+    } finally {
+      await this.call<void>(path, (s, cb) => s.close(handle, cb)).catch(() => undefined);
+    }
+  }
+
   private hashEtag(data: Uint8Array): string {
     return `"sha256-${createHash('sha256').update(data).digest('hex')}"`;
   }
@@ -180,9 +218,10 @@ export class SftpAdapter implements StorageAdapter {
     return data ? this.hashEtag(data) : null;
   }
 
-  async get(path: string): Promise<GetResult | null> {
+  async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
     checkPath(path);
-    const buf = await this.readOrNull(path);
+    const max = checkMaxBytes(opts.maxBytes);
+    const buf = max === undefined ? await this.readOrNull(path) : await this.readLimitedOrNull(path, max);
     if (!buf) return null;
     const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     if (this.opts.etagMode === 'mtime-size') {

@@ -14,6 +14,7 @@ import {
   NotFound,
   PreconditionFailed,
   ReadOnly,
+  TooLarge,
   Unsupported,
 } from '../errors.ts';
 import { INDEX_PATH, PUBLIC_LISTS_PATH, indexPath, packPath } from '../layout.ts';
@@ -94,6 +95,21 @@ export function runAdapterConformance(
       expect(g!.etag).toBeTruthy();
       const h = await a.head('packs/abc.bin');
       expect(h).toEqual({ etag: g!.etag, size: data.byteLength });
+    });
+
+    it('get with maxBytes refuses a larger object without returning it (streamed limit)', async () => {
+      const data = Uint8Array.from({ length: 200_000 }, (_, i) => (i * 7) % 256);
+      await write('packs/big.bin', data);
+      const ok = await a.get('packs/big.bin', { maxBytes: data.byteLength });
+      expect(ok?.data.byteLength).toBe(data.byteLength);
+      await expect(a.get('packs/big.bin', { maxBytes: data.byteLength - 1 })).rejects.toBeInstanceOf(TooLarge);
+      await expect(a.get('packs/big.bin', { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
+      expect(await a.get('packs/missing.bin', { maxBytes: 10 })).toBeNull();
+      await write('packs/small.bin', enc('tiny'));
+      expect((await fetchPack(a, 'small', { maxBytes: 4 })).byteLength).toBe(4);
+      await write(INDEX_PATH, data);
+      await expect(fetchSnapshot(a, null, { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
+      await expect(fetchHighestIndex(a, [], {}, { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
     });
 
     it('handles empty files and odd-but-valid names', async () => {

@@ -99,15 +99,16 @@ export type FetchSnapshotResult =
 export async function fetchSnapshot(
   adapter: StorageAdapter,
   lastEtag: ETag | null,
-  opts: { path?: string } = {},
+  opts: { path?: string; maxBytes?: number } = {},
 ): Promise<FetchSnapshotResult> {
   const path = opts.path ?? INDEX_PATH;
+  const getOpts = opts.maxBytes !== undefined ? { maxBytes: opts.maxBytes } : {};
   if (lastEtag !== null) {
     const h = await adapter.head(path);
     if (!h) throw new NotFound(path);
     if (h.etag === lastEtag) return { changed: false, etag: h.etag };
   }
-  const g = await adapter.get(path);
+  const g = await adapter.get(path, getOpts);
   if (!g) throw new NotFound(path);
   if (lastEtag !== null && g.etag === lastEtag) return { changed: false, etag: g.etag };
   return { changed: true, etag: g.etag, index: g.data };
@@ -131,7 +132,9 @@ export async function fetchHighestIndex(
   adapter: StorageAdapter,
   majors: readonly number[],
   lastEtags: Readonly<Record<string, ETag>> = {},
+  opts: { maxBytes?: number } = {},
 ): Promise<FetchIndexResult> {
+  const getOpts = opts.maxBytes !== undefined ? { maxBytes: opts.maxBytes } : {};
   for (const major of [...new Set(majors)].sort((a, b) => b - a)) {
     const path = indexPath(major);
     if (path === INDEX_PATH) continue;
@@ -141,18 +144,18 @@ export async function fetchHighestIndex(
       if (!h) continue;
       if (h.etag === last) return { changed: false, etag: h.etag, major, path };
     }
-    const g = await adapter.get(path);
+    const g = await adapter.get(path, getOpts);
     if (!g) continue;
     if (last !== null && g.etag === last) return { changed: false, etag: g.etag, major, path };
     return { changed: true, etag: g.etag, index: g.data, major, path };
   }
-  const r = await fetchSnapshot(adapter, lastEtags[INDEX_PATH] ?? null);
+  const r = await fetchSnapshot(adapter, lastEtags[INDEX_PATH] ?? null, getOpts);
   return { ...r, major: null, path: INDEX_PATH };
 }
 
-export async function fetchPack(adapter: StorageAdapter, id: string): Promise<Uint8Array> {
+export async function fetchPack(adapter: StorageAdapter, id: string, opts: { maxBytes?: number } = {}): Promise<Uint8Array> {
   const path = packPath(id);
-  const g = await adapter.get(path);
+  const g = await adapter.get(path, opts.maxBytes !== undefined ? { maxBytes: opts.maxBytes } : {});
   if (!g) throw new NotFound(path);
   return g.data;
 }

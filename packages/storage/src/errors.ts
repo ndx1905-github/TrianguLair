@@ -11,7 +11,8 @@ export type StorageErrorCode =
   | 'READ_ONLY'
   | 'UNSUPPORTED'
   | 'INVALID_PATH'
-  | 'PROTOCOL';
+  | 'PROTOCOL'
+  | 'TOO_LARGE';
 
 export class StorageError extends Error {
   readonly code: StorageErrorCode;
@@ -87,5 +88,14 @@ export class InvalidPath extends StorageError {
 export class ProtocolError extends StorageError {
   constructor(message: string, opts: { status?: number; path?: string; cause?: unknown } = {}) {
     super('PROTOCOL', message, opts);
+  }
+}
+
+/** The object is larger than the `maxBytes` the caller accepts (`get`): not read whole. */
+export class TooLarge extends StorageError {
+  readonly maxBytes: number;
+  constructor(path: string, maxBytes: number, opts: { size?: number } = {}) {
+    super('TOO_LARGE', `Too large: ${path} (${opts.size !== undefined ? `${opts.size} bytes, ` : ''}limit ${maxBytes})`, { path });
+    this.maxBytes = maxBytes;
   }
 }

@@ -2,12 +2,13 @@ import { ReadOnly, Unsupported } from './errors.ts';
 import type {
   Capabilities,
   FetchLike,
+  GetOptions,
   GetResult,
   HeadResult,
   ListEntry,
   StorageAdapter,
 } from './types.ts';
-import { checkPath, doFetch, encodePath, httpError, normEtag, resolveFetch, withSlash } from './util.ts';
+import { checkMaxBytes, checkPath, doFetch, encodePath, httpError, normEtag, readBody, resolveFetch, withSlash } from './util.ts';
 
 export interface HttpsReadOnlyOptions {
   /** Base URL of the published folder; files are fetched at `baseUrl + path`. */
@@ -54,12 +55,13 @@ export class HttpsReadOnlyAdapter implements StorageAdapter {
     return `W/"lm:${res.headers.get('last-modified') ?? ''}:${size}"`;
   }
 
-  async get(path: string): Promise<GetResult | null> {
+  async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
+    const max = checkMaxBytes(opts.maxBytes);
     const url = this.url(path);
     const res = await doFetch(this.fetch, url, { method: 'GET', headers: this.headers, cache: 'no-store' }, path);
     if (res.status === 404 || res.status === 410) return null;
     if (!res.ok) throw httpError(res, `GET ${path}`, path);
-    const data = new Uint8Array(await res.arrayBuffer());
+    const data = await readBody(res, path, max);
     return { data, etag: this.etagOf(res, data.byteLength) };
   }
 

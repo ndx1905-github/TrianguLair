@@ -4,6 +4,7 @@ import {
   NetworkError,
   PreconditionFailed,
   ProtocolError,
+  TooLarge,
   type StorageError,
 } from './errors.ts';
 import type { FetchLike } from './types.ts';
@@ -90,6 +91,59 @@ export function resolveFetch(f: FetchLike | undefined): FetchLike {
   if (f) return f;
   if (typeof globalThis.fetch !== 'function') throw new Error('No fetch available: pass `fetch` in adapter options');
   return globalThis.fetch.bind(globalThis);
+}
+
+/** Validates a `maxBytes` option (undefined = no limit). */
+export function checkMaxBytes(maxBytes: number | undefined): number | undefined {
+  if (maxBytes === undefined) return undefined;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError('maxBytes must be a non-negative integer');
+  return maxBytes;
+}
+
+/**
+ * Reads a response body, refusing more than `maxBytes`: the announced
+ * Content-Length is checked first, then the body is streamed and the read
+ * cancelled as soon as the limit is passed. Without a readable stream (some
+ * React Native fetch implementations), the whole body is read and checked
+ * after the fact (the Content-Length check still applies).
+ */
+export async function readBody(res: Response, path: string, maxBytes: number | undefined): Promise<Uint8Array<ArrayBuffer>> {
+  if (maxBytes === undefined) return new Uint8Array(await res.arrayBuffer());
+  const len = res.headers.get('content-length');
+  if (len !== null && /^\d+$/.test(len.trim()) && Number(len) > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new TooLarge(path, maxBytes, { size: Number(len) });
+  }
+  const reader = res.body?.getReader?.();
+  if (!reader) {
+    const data = new Uint8Array(await res.arrayBuffer());
+    if (data.byteLength > maxBytes) throw new TooLarge(path, maxBytes, { size: data.byteLength });
+    return data;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new TooLarge(path, maxBytes);
+      }
+      chunks.push(value);
+    }
+  } catch (e) {
+    if (e instanceof TooLarge) throw e;
+    throw new NetworkError(`Reading ${path} failed: ${(e as Error)?.message ?? e}`, { path, cause: e });
+  }
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.byteLength;
+  }
+  return out;
 }
 
 /** Run fetch, turning transport failures into NetworkError. */
