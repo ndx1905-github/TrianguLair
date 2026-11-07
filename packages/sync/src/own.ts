@@ -140,7 +140,7 @@ export class OwnSync {
   private readonly st: SyncStateStore;
   readonly book: ContactBook;
   private readonly o: OwnSyncOptions;
-  private current: { text: string; index: SignedIndex } | null = null;
+  private current: { text: string; index: SignedIndex; rolledBack?: boolean; forked?: boolean } | null = null;
   private vaultDirty = false;
 
   constructor(o: OwnSyncOptions) {
@@ -204,8 +204,11 @@ export class OwnSync {
     }
 
     let index: SignedIndex;
-    if (this.current?.text === text) index = this.current.index;
-    else {
+    if (this.current?.text === text) {
+      index = this.current.index;
+      res.rolledBack = !!this.current.rolledBack;
+      res.forked = !!this.current.forked;
+    } else {
       const anchor = this.anchor();
       const opts = { expectedOwner: this.owner, location: this.sharing.cert.location!, now: this.now(), retiredOwners: this.book.retiredOwners() };
       try {
@@ -266,7 +269,7 @@ export class OwnSync {
     }
     this.st.set('own:packs', cache);
     this.st.set('own:index', { text, etag, checkedAt: Date.now() } satisfies IndexState);
-    this.current = { text, index };
+    this.current = { text, index, rolledBack: res.rolledBack, forked: res.forked };
     if (!res.rolledBack && !res.forked) this.st.set('own:anchor', laterAnchor(this.anchor(), indexAnchor(index)));
     this.remoteSnapshot(index, cache);
     await this.pullVault();

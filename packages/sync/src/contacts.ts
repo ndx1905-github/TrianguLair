@@ -19,6 +19,7 @@ import {
   contactRecord,
   emptyVault,
   invitationFromRecord,
+  invitationRecord,
   mergeVaults,
   type IndexAnchor,
   type OwnerInvitation,
@@ -155,6 +156,16 @@ export class ContactBook {
   /** Removes a contact: they no longer see my places and I stop reading theirs (spec "Remove a friend"). */
   remove(owner: string, now = Date.now()): void {
     this.setPolicy(owner, { share: false, follow: false, removed: true }, now);
+  }
+
+  /**
+   * Records an invitation created on this device (`createInvitation`) in the
+   * vault, so that every index lists it until expiry and its key reads what I
+   * share with friends until it is accepted. Publish before sending the link.
+   */
+  addInvitation(invitation: OwnerInvitation): void {
+    const rec = invitationRecord(invitation);
+    this.r = { ...this.r, invitations: [...this.r.invitations.filter((i) => i.id !== rec.id), rec].sort((a, b) => (a.id < b.id ? -1 : 1)) };
   }
 
   /** The owner's invitations from the vault (records that do not verify are skipped). */

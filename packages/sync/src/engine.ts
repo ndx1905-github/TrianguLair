@@ -4,7 +4,7 @@
  * the vault), read the people I follow, then publish what changed. The
  * scheduler decides when to run it.
  */
-import type { DeviceSigner, KeyPair, SharingKey, SignedIndex, VaultRecords } from '@triangulair/crypto';
+import type { DeviceSigner, KeyPair, OwnerInvitation, SharingKey, SignedIndex, VaultRecords } from '@triangulair/crypto';
 import type { DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, type StorageAdapter } from '@triangulair/storage';
 import { ContactBook, type Contact, type SharePolicy } from './contacts.ts';
@@ -114,6 +114,12 @@ export class SyncEngine {
     this.book.remove(owner, this.nowMs());
     this.saveBook();
     this.reader.forget(owner);
+  }
+
+  /** Records an invitation I created (see ContactBook.addInvitation); publish before sending its link. */
+  addInvitation(invitation: OwnerInvitation): void {
+    this.book.addInvitation(invitation);
+    this.saveBook();
   }
 
   contacts(): Contact[] {
