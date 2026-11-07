@@ -40,9 +40,9 @@ export function ContactsProvider({ children }: { children: ReactNode }) {
     if (!record || !store || !secrets || storageKey === null) return;
     let cancelled = false;
     (async () => {
-      const port =
-        registeredSyncPort() ??
-        (await createLocalSyncPort({ record, secrets, store, storage: storage.access.writeAdapter(), ...(name && { author: name }) }));
+      const external = registeredSyncPort();
+      const local = external ? null : await createLocalSyncPort({ record, secrets, store, storage: storage.access.writeAdapter(), ...(name && { author: name }) });
+      const port = external ?? local!.port;
       const secretKV: SecretKV = { get: (k) => secrets.get(k), set: (k, v) => secrets.set(k, v) };
       const service = await createContactsService({
         port,
@@ -56,7 +56,13 @@ export function ContactsProvider({ children }: { children: ReactNode }) {
           }
         },
       });
-      if (!cancelled) setStatus({ kind: 'ready', service });
+      if (cancelled) return;
+      setStatus({ kind: 'ready', service });
+      // My storage's vault (invitations and answers from my other devices) once pulled.
+      void local?.pulled.then(() => {
+        service.changed();
+        mutate?.(() => undefined);
+      });
     })().catch((error: unknown) => {
       console.warn('Contacts could not be opened', error);
       if (!cancelled) setStatus({ kind: 'error', error });

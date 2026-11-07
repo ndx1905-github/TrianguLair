@@ -161,6 +161,8 @@ export interface ContactsService {
   dismissNotice(owner: string): void;
   /** Re-reads the vault for key changes (call on focus and after a sync pass). */
   refresh(): void;
+  /** The vault changed outside the service (a sync pass): re-render the screens. */
+  changed(): void;
 }
 
 export interface ContactsServiceOptions {
@@ -364,6 +366,14 @@ class Service implements ContactsService {
         });
       }
       this.emit();
+      // Spec: answers live in the recovery vault, so that every device of mine sees them.
+      if (this.port.canPublish()) {
+        try {
+          await this.port.publish();
+        } catch {
+          // Kept locally; the next sync pushes the vault.
+        }
+      }
       return { invitationId: id, responder: resp.owner };
     }
     throw new LinkProblemError(expired ? 'expired' : 'not-mine');
@@ -595,6 +605,11 @@ class Service implements ContactsService {
     this.local.update((s) => {
       s.notices = s.notices.filter((n) => n.owner !== owner);
     });
+    this.emit();
+  }
+
+  changed(): void {
+    this.refresh();
     this.emit();
   }
 

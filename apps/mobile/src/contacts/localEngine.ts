@@ -24,7 +24,7 @@ export async function createLocalSyncPort(o: {
   store: DataStore;
   storage: StorageAdapter | null;
   author?: string;
-}): Promise<SyncPort> {
+}): Promise<{ port: SyncPort; pulled: Promise<void> }> {
   const [deviceKeys, sharingKey, primaryIdentity] = await Promise.all([o.secrets.get('device-keys'), o.secrets.get('sharing-key'), o.secrets.get('primary-identity')]);
   if (!deviceKeys || !sharingKey) throw new Error('contacts: device keys are missing');
   const { sharing, device } = checkStoredIdentity(o.record, { deviceKeys, sharingKey, primaryIdentity });
@@ -40,7 +40,10 @@ export async function createLocalSyncPort(o: {
     readAdapter: defaultReadAdapter,
     ...(o.author && { author: o.author }),
   });
-  return engineSyncPort({ engine, state, sharing: () => current.cert, device: () => signer, readAdapter: defaultReadAdapter });
+  // Spec "Synchronization": on opening, my storage first (my other devices' invitations and answers
+  // are in the vault there). Bounded, and never blocking: offline, the local copy is used.
+  const pulled: Promise<void> = engine.own ? engine.own.pull().then(() => undefined, () => undefined) : Promise.resolve();
+  return { port: engineSyncPort({ engine, state, sharing: () => current.cert, device: () => signer, readAdapter: defaultReadAdapter }), pulled };
 }
 
 // ------------------------------------------------------------------ registry

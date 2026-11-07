@@ -142,6 +142,40 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     sets `republishPending`: the next sync publishes the index signed with the new certificate at the new storage and
     the same index at every redirect. Other devices and the recovery vault receive the rotated sharing key from the
     sync engine (`RotationResult.sharing`, `vaultCopy`).
+- **Invitations and access** (`/invite`, `/invite/answers`, `/invite/received`, `/invite/face`, `/contacts`,
+  `/contacts/[owner]`, deep links `/i#…` and `/r#…`; T-208, T-209; logic in `src/contacts/`, tested). Screens talk to
+  `ContactsService` (`service.ts`) only, which sits on a `SyncPort` (`port.ts`): the sync package's contact API
+  (`addContact`, `setPolicy`, `removeContact`, `addInvitation`, `contacts`) plus `records` / `updateRecords` (answers and
+  the accepted responder in the vault, a contact without storage), `publish`, `fetchIndex`, `readFriend`. `engineSyncPort`
+  is the adapter from a `SyncEngine`; the SyncProvider registers it with `registerSyncPort`, until then
+  `localEngine.ts` builds an engine of its own that only runs when these screens publish or read.
+  - *Invite a friend* needs a storage (`useStorageForSharing().ensure('invite', '/invite')`), publishes the index that
+    lists the invitation, then shows the short link (≤ 200 characters) and its QR code (`qrcode-generator`, version ≤ 10),
+    share sheet / copy; pending invitations with expiry, phase (waiting, answered, several, accepted, someone else
+    answered after acceptance, expired in the 7-day grace, cancelled by a key change) and cancel (withdrawn: not
+    listed, the packs it opened are re-sealed); a field to paste a return link.
+  - *Answers*: one card per responder with the warnings of the spec (several answers, a second one after acceptance with
+    "Remove …", opened after expiry, no storage to check them), the safety code, then what they see (everything shared
+    with friends by default, some lists, nothing), "I see their places", "I compared the code"; acceptance publishes:
+    the invitation key is no longer a recipient, packs re-sealed with new pack keys.
+  - *Received*: the link (pasted, any text holding it, or the deep link: the fragment is removed from the address bar
+    and passed in memory) is checked against the inviter's index read only at the link's address; I name the person
+    (no format carries names: names are petnames kept on this device), see the safety code, optionally share back,
+    and get the return link (`https://triangulair.app/r#<b64url>`, app-level wrapper of the frozen bytes) with QR.
+    Their places show right away with the invitation key (kept in the secret store, `invitations-received`;
+    `invitationKeysFor(owner)` gives the SyncProvider the extra keys to read with until acceptance).
+  - *First launch "I received an invitation link"*: checks the link before any identity exists (`verify.ts`), keeps it
+    in the secret store (`pending-invitation`) and opens the answer once the first launch is done.
+  - *Face to face*: the compact format is not specified (R-13), so the existing invitation link and return link are
+    exchanged as QR codes (scan with `expo-camera`, web: browser camera + BarcodeDetector when available, or paste);
+    both sides mark the other verified automatically.
+  - *Contacts*: two switches, share scope, safety code as 12 × 5 digits or QR (`tlsafe1:` payload compared with
+    `matchSafetyQr`), the "verified" mark (local, never sent), rename, remove (wraps gone, pack keys renewed), notices
+    "… changed their key" (higher rotation) and "… changed their identity" (retired owner: the mark is removed).
+  - *Follow a list by link*: placeholder until link-only lists are published by the sync package (T-212).
+  - New native module: `expo-camera` (camera permission text in `app.json`); `app.json` also declares the
+    `applinks:triangulair.app` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
+    matching `apple-app-site-association` and `assetlinks.json`).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
   toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
   "Leave out" or "Follow the filter" (the list's exceptions).
@@ -295,6 +329,8 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 
 ```
 src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, storage/*, _layout (providers)
+src/contacts/         invitation and access flows: ContactsService, SyncPort and engine adapter, links, phases and
+                      warnings, QR codes, scanner, provider, deep links
 src/storage/          storage config and URL builders, adapters, connection test and fixes, migration, certificate
                       rotation, state (secret store), provider, sharing prompt, interfaces for the sync engine
 src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card

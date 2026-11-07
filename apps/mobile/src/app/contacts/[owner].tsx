@@ -133,7 +133,8 @@ function ContactScreen() {
               onPress={() =>
                 void run(async () => {
                   await svc.removeContact(owner);
-                  router.replace('/contacts');
+                  if (router.canGoBack()) router.back();
+                  else router.replace('/contacts');
                 })
               }
               disabled={busy}

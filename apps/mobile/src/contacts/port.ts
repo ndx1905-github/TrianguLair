@@ -144,9 +144,14 @@ export function engineSyncPort(o: EngineSyncPortOptions): SyncPort {
     },
     publish: async () => {
       if (!engine.own) return;
-      const r = await engine.sync({ publish: true, readFriends: false });
-      const own = r.problems.find((p) => p.about === 'own');
-      if (own) throw new PublishError(own.problem.kind, own.problem.message);
+      // One more pass after a lost race (another device, or a server with weak ETags).
+      for (let attempt = 0; ; attempt++) {
+        const r = await engine.sync({ publish: true, readFriends: false });
+        const own = r.problems.find((p) => p.about === 'own');
+        if (!own) return;
+        if (attempt === 0 && own.problem.retryable) continue;
+        throw new PublishError(own.problem.kind, own.problem.message);
+      }
     },
     fetchIndex: (location, expectedOwner, lastSeen) => fetchVerifiedIndex(o.readAdapter, location, expectedOwner, lastSeen, o.maxIndexBytes),
     readFriend: async (target) => {

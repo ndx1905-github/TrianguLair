@@ -136,7 +136,7 @@ function InviteScreen() {
 
       <Section title={t('inviting.answerTitle')}>
         <Muted>{t('inviting.answerHelp')}</Muted>
-        <PasteField label={t('inviting.answerLabel')} value={answer} onChange={setAnswer} onSubmit={() => void openAnswer()} action={t('inviting.answerOpen')} busy={answerBusy} testID="answer" />
+        <PasteField label={t('inviting.answerLabel')} value={answer} onChange={setAnswer} onSubmit={() => void openAnswer()} action={t('inviting.answerOpen')} busy={answerBusy} disabled={!svc} testID="answer" />
         {answerProblem && <ProblemBanner problem={answerProblem} testID="answer-problem" />}
       </Section>
 

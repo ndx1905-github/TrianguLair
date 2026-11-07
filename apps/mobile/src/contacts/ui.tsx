@@ -81,6 +81,7 @@ export function PasteField({
   onSubmit,
   action,
   busy,
+  disabled,
   testID,
 }: {
   label: string;
@@ -89,6 +90,8 @@ export function PasteField({
   onSubmit: () => void;
   action: string;
   busy?: boolean;
+  /** Not ready yet (the contacts are opening). */
+  disabled?: boolean;
   testID: string;
 }) {
   const c = useUiColors();
@@ -111,7 +114,7 @@ export function PasteField({
         testID={`${testID}-input`}
       />
       <View style={styles.row}>
-        <Button label={action} onPress={onSubmit} disabled={busy || !value.trim()} testID={`${testID}-open`} />
+        <Button label={action} onPress={onSubmit} disabled={busy || disabled || !value.trim()} testID={`${testID}-open`} />
         {busy && <ActivityIndicator color={c.accent} />}
       </View>
     </View>

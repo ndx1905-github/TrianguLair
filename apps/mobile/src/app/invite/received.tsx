@@ -85,7 +85,7 @@ function ReceivedScreen() {
       {(state.step === 'idle' || state.step === 'problem' || state.step === 'checking') && (
         <Section title={t('received.paste')}>
           <Muted>{t('received.lead')}</Muted>
-          <PasteField label={t('received.linkLabel')} value={text} onChange={setText} onSubmit={() => void check(text, faceToFace)} action={t('received.open')} busy={state.step === 'checking'} testID="received" />
+          <PasteField label={t('received.linkLabel')} value={text} onChange={setText} onSubmit={() => void check(text, faceToFace)} action={t('received.open')} busy={state.step === 'checking'} disabled={!svc} testID="received" />
           {state.step === 'checking' && <Muted testID="received-checking">{t('received.checking')}</Muted>}
           {state.step === 'problem' && <ProblemBanner problem={state.problem} testID="received-problem" />}
         </Section>

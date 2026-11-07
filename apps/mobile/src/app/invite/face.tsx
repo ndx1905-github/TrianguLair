@@ -114,7 +114,7 @@ function FaceScreen() {
         <Section title={t('face.scanTitle')}>
           <Muted>{t('face.scanHelp')}</Muted>
           <Scanner onScanned={(s) => void handle(s)} testID="face-scanner" />
-          <PasteField label={t('face.pasteLabel')} value={text} onChange={setText} onSubmit={() => void handle(text)} action={t('face.pasteOpen')} busy={busy} testID="face-paste" />
+          <PasteField label={t('face.pasteLabel')} value={text} onChange={setText} onSubmit={() => void handle(text)} action={t('face.pasteOpen')} busy={busy} disabled={!svc} testID="face-paste" />
         </Section>
       )}
       {problem && <ProblemBanner problem={problem} testID="face-problem" />}
