@@ -15,6 +15,7 @@ export default defineConfig({
       { find: /^@triangulair\/import$/, replacement: here('../../packages/import/src/index.ts') },
       { find: /^@triangulair\/crypto$/, replacement: here('../../packages/crypto/src/index.ts') },
       { find: /^@triangulair\/storage$/, replacement: here('../../packages/storage/src/index.ts') },
+      { find: /^@triangulair\/sync$/, replacement: here('../../packages/sync/src/index.ts') },
       { find: /^aws4fetch$/, replacement: here('./node_modules/aws4fetch/dist/aws4fetch.esm.mjs') },
       // Their runtime dependencies come from this app's node_modules.
       { find: /^yjs$/, replacement: here('./node_modules/yjs/dist/yjs.mjs') },
