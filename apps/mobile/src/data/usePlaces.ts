@@ -9,6 +9,7 @@ import { tagsByCategory } from '../pins/build';
 import { placeFacts, toAppTag, type AppTag, type PlaceFacts } from '../places/model';
 import { buildFriendTagIndex, type FriendTagIndex } from '../tags/friendTags';
 import { foldText } from '../tags/text';
+import { isShown, useFriendsSelection } from '../sync/friendsSelection';
 import { tagPath } from '../tags/tree';
 import { useData } from './DataProvider';
 
@@ -41,11 +42,16 @@ export function useFriendTags(): FriendTagIndex {
   );
 }
 
-/** Facts of a place by id (cached for the current data version). */
+/**
+ * Facts of a place by id (cached for the current data version). Friends' saves count only for the
+ * friends shown (the friends panel: all, none or a selection); a friend's place of nobody shown is
+ * null (not displayed).
+ */
 export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceFacts | null {
   const { repo, version } = useData();
   const { tags, byId } = useTags();
   const friendTags = useFriendTags();
+  const selection = useFriendsSelection();
   return useMemo(() => {
     const cache = new Map<string, PlaceFacts | null>();
     const active = new Set(byId.keys());
@@ -56,9 +62,17 @@ export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceF
       if (place) {
         const mine = repo.getMySaveForPlace(placeId);
         const live = mine && mine.deletedAt === null ? mine : null;
-        const others = friends === false && live ? [] : repo.savesForPlace(placeId).filter((s) => s.ownerId !== repo.meId && s.sharing !== 'private');
-        const hasFriends = friends ?? others.length > 0;
+        const others =
+          friends === false && live
+            ? []
+            : repo.savesForPlace(placeId).filter((s) => s.ownerId !== repo.meId && s.sharing !== 'private' && s.deletedAt === null && isShown(selection, s.ownerId));
+        if (!live && others.length === 0) {
+          cache.set(placeId, null);
+          return null;
+        }
+        const hasFriends = others.length > 0;
         facts = placeFacts(place, live, hasFriends, active);
+        facts.friendCount = others.length;
         if (!facts.mine) {
           // A friend's place takes my tags: through their tags (mapping, name), then its OSM category
           // (spec "Others' tags"); their other tags keep their author's color.
@@ -83,7 +97,7 @@ export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceF
       return facts;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, version, tags, byId, friendTags]);
+  }, [repo, version, tags, byId, friendTags, selection]);
 }
 
 /** Places in a viewport (Repository.mapPins), with their facts. */

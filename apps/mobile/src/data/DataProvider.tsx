@@ -21,6 +21,25 @@ export interface DataState {
   persistence: AppStore['persistence'];
   /** Runs an edit and refreshes the screens. */
   mutate: <T>(fn: (store: DataStore) => T) => T;
+  /** Redraws after changes made outside `mutate` (the sync engine: friends' cache, my other devices). */
+  refresh: () => void;
+  /** Deletes the database file (remote wipe, after `store.wipe()`). */
+  erase: () => Promise<void>;
+}
+
+/** Listeners of my own edits (the sync scheduler publishes them, debounced). */
+const editListeners = new Set<() => void>();
+export function onLocalEdit(fn: () => void): () => void {
+  editListeners.add(fn);
+  return () => editListeners.delete(fn);
+}
+
+function lastChunk(store: DataStore): number {
+  try {
+    return store.repo.db.get<{ n: number | null }>(`SELECT max(rowid) AS n FROM doc_chunks`)?.n ?? 0;
+  } catch {
+    return -1;
+  }
 }
 
 type Status = { kind: 'loading' } | { kind: 'ready'; app: AppStore } | { kind: 'error'; error: unknown };
@@ -83,18 +102,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const mutate = useCallback(
     <T,>(fn: (store: DataStore) => T): T => {
       if (!app) throw new Error('data store not ready');
+      const before = lastChunk(app.store);
       try {
         return fn(app.store);
       } finally {
         setVersion((v) => v + 1);
+        // Only edits of my document (not OSM refreshes of the place cache) wait to be published.
+        if (editListeners.size && lastChunk(app.store) !== before) for (const l of editListeners) l();
       }
     },
     [app],
   );
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
   const value = useMemo<DataState | null>(
-    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, mutate } : null),
-    [app, version, mutate],
+    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, mutate, refresh, erase: () => app.erase() } : null),
+    [app, version, mutate, refresh],
   );
 
   return (

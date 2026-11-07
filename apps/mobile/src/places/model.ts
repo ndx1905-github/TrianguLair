@@ -55,6 +55,8 @@ export interface PlaceFacts {
   searchText?: string;
   /** Friends' tags on this place that map to none of mine (shown in their author's color). */
   friendTags?: FriendTagRef[];
+  /** Friends (among those shown) who saved it: "3 friends" in the list and the card. */
+  friendCount?: number;
 }
 
 /** A friend's tag not mapped to one of mine, on one place. */

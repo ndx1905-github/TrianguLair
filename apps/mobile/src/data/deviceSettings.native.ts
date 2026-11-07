@@ -22,3 +22,13 @@ export function setSetting(key: string, value: string): void {
     // Ignored: worst case, the value is forgotten at the next launch.
   }
 }
+
+/** Remote wipe: every per-device value (profile, filters, choices). */
+export function clearSettings(): void {
+  memory.clear();
+  try {
+    Storage.clearSync();
+  } catch {
+    // ignored
+  }
+}

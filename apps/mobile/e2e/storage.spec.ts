@@ -82,6 +82,24 @@ async function davPut(path: string, body: Uint8Array | string): Promise<void> {
   expect(r.status).toBeLessThan(300);
 }
 
+/** Every file under `dir` (relative paths), by PROPFIND depth 1 per folder. */
+async function davList(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (rel: string) => {
+    const r = await fetch(`${DAV}/dav/${dir}/${rel}`, { method: 'PROPFIND', headers: { authorization: AUTH, depth: '1' } });
+    const xml = await r.text();
+    for (const m of xml.matchAll(/<D:href>([^<]+)<\/D:href>/g)) {
+      const href = decodeURIComponent(m[1]!);
+      const sub = href.slice(href.indexOf(`/dav/${dir}/`) + `/dav/${dir}/`.length);
+      if (!sub || sub === rel) continue;
+      if (sub.endsWith('/')) await walk(sub);
+      else out.push(sub);
+    }
+  };
+  await walk('');
+  return out.sort();
+}
+
 async function davGet(path: string): Promise<Buffer | null> {
   const r = await fetch(`${DAV}/dav/${path}`, { headers: { authorization: AUTH } });
   return r.status === 200 ? Buffer.from(await r.arrayBuffer()) : null;
@@ -157,13 +175,13 @@ test('move to another storage: lossless copy, verified, certified, old storage k
   const b = folder();
   await connect(page, a);
 
-  // Content another device published on storage A (no sync engine yet): packs, photos, index.
+  // The sync engine publishes the (demo) places on A once connected: packs, my document, vault, index.
+  await expect.poll(async () => !!(await davGet(`${a}/index.json`)), { timeout: 30_000 }).toBe(true);
+  // A photo another device uploaded (not listed yet): copied too.
+  await davPut(`${a}/media/photo-1.bin`, new Uint8Array(200_000).map((_, j) => (j * 7) % 251));
   const files: Record<string, Uint8Array> = {};
-  for (let i = 0; i < 12; i++) files[`packs/b2b256-p${i}.bin`] = new Uint8Array(1000 + i * 37).map((_, j) => (j * (i + 3)) % 256);
-  files['media/photo-1.bin'] = new Uint8Array(200_000).map((_, j) => (j * 7) % 251);
-  files['public/lists.geojson'] = new TextEncoder().encode('{"type":"FeatureCollection","features":[]}');
-  files['index.json'] = new TextEncoder().encode('{"seq":7}');
-  for (const [p, d] of Object.entries(files)) await davPut(`${a}/${p}`, d);
+  for (const p of await davList(a)) files[p] = new Uint8Array((await davGet(`${a}/${p}`))!);
+  expect(Object.keys(files).filter((p) => p.startsWith('packs/')).length).toBeGreaterThan(0);
 
   await page.getByTestId('storage-done').click();
   await page.getByTestId('storage-change').click();
@@ -178,13 +196,26 @@ test('move to another storage: lossless copy, verified, certified, old storage k
   await expect(page.getByTestId('move-verified')).toContainText(`All ${Object.keys(files).length} files verified`, { timeout: 60_000 });
   await page.getByTestId('master-go').click();
   await expect(page.getByTestId('move-done')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId('move-republish')).toBeVisible();
+  // The sync engine published right away (no "at the next synchronization").
+  await expect(page.getByTestId('move-republish')).toHaveCount(0);
 
-  // Byte for byte on B; A untouched.
+  // A untouched except its index, which is now the signed redirect: the same bytes as B's new index
+  // (certifying B's address). Every file that index lists is on B, identical to A's copy when A had
+  // it (the engine may have rewritten my own document at B, then removed the superseded copy).
   for (const [p, d] of Object.entries(files)) {
-    expect(Buffer.compare((await davGet(`${b}/${p}`))!, Buffer.from(d)), p).toBe(0);
+    if (p === 'index.json') continue;
     expect(Buffer.compare((await davGet(`${a}/${p}`))!, Buffer.from(d)), p).toBe(0);
   }
+  const newIndex = (await davGet(`${b}/index.json`))!;
+  const idx = JSON.parse(newIndex.toString()) as { sharing_cert: { location: string }; packs: { file: string }[] };
+  expect(idx.sharing_cert.location).toBe(`${FRIENDS}/pub/${b}/`);
+  expect(Buffer.compare((await davGet(`${a}/index.json`))!, newIndex)).toBe(0);
+  for (const { file } of idx.packs) {
+    const onB = await davGet(`${b}/${file}`);
+    expect(onB, file).not.toBeNull();
+    if (files[file]) expect(Buffer.compare(onB!, Buffer.from(files[file]!)), file).toBe(0);
+  }
+  expect(Buffer.compare((await davGet(`${b}/media/photo-1.bin`))!, Buffer.from(files['media/photo-1.bin']!))).toBe(0);
 
   await page.getByTestId('move-finish').click();
   await expect(page.getByTestId('storage-read-address')).toHaveText(`${FRIENDS}/pub/${b}/`);

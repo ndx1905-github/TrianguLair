@@ -6,4 +6,6 @@ export interface AppStore {
   readonly persistence: 'sqlite' | 'indexeddb' | 'memory';
   /** Writes pending changes now (web; no-op on native). */
   flush(): Promise<void>;
+  /** Remote wipe, after `DataStore.wipe()`: deletes the database file itself (and stops saving it). */
+  erase(): Promise<void>;
 }

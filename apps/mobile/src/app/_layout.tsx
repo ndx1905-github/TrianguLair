@@ -10,6 +10,7 @@ import { IdentityProvider } from '../identity/IdentityProvider';
 import { LockProvider } from '../identity/LockGate';
 import { AppStateProvider } from '../state/AppState';
 import { StorageProvider } from '../storage/StorageProvider';
+import { SyncProvider } from '../sync/SyncProvider';
 
 function ThemedStack() {
   const c = useUiColors();
@@ -35,11 +36,13 @@ export default function RootLayout() {
           <IdentityProvider>
             <StorageProvider>
             <DataProvider>
+              <SyncProvider>
               <AppStateProvider>
                 <LockProvider>
                   <ThemedStack />
                 </LockProvider>
               </AppStateProvider>
+              </SyncProvider>
             </DataProvider>
             </StorageProvider>
           </IdentityProvider>

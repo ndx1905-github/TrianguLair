@@ -141,6 +141,8 @@ function SettingsScreen() {
               </>
             )}
             <Button kind="secondary" label={t('settings.storageOpen')} onPress={() => router.push('/storage')} testID="settings-storage" />
+            <Muted>{t('sync.settingsHelp')}</Muted>
+            <Button kind="secondary" label={t('sync.settingsRow')} onPress={() => router.push('/sync')} testID="settings-sync" />
           </Section>
 
           <Section title={t('settings.lock')}>

@@ -19,6 +19,8 @@ import {
 import type { AppTag } from '../places/model';
 import { tagPath } from '../tags/tree';
 import { nextThemeMode } from '../theme/themeMode';
+import { FriendsFilterPill, useFollowed } from '../sync/FriendsPicker';
+import { useFriendsSelection } from '../sync/friendsSelection';
 import { Pill } from './ui';
 
 interface Props {
@@ -99,6 +101,11 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
   );
 
   const pills = activePills(filter);
+  // Whose places are shown (spec: the friends panel); the pill renders nothing when I follow nobody.
+  const hasFriends = useFollowed().length > 0;
+  const friendsMode = useFriendsSelection().mode;
+  const friendsHidden = hasFriends && friendsMode !== 'all';
+  const friendsRow = hasFriends ? row('friends', t('fb.section.friends'), <FriendsFilterPill />) : null;
 
   return (
     <View
@@ -163,7 +170,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
         )}
       </View>
 
-      {!open && pills.length > 0 && (
+      {!open && (pills.length > 0 || friendsHidden) && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -172,6 +179,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
           accessibilityLabel={t('fb.summaryA11y')}
           testID="filter-summary"
         >
+          <FriendsFilterPill summary />
           {pills.map((p) => {
             const { label, color } = pillLabel(p, { tagById, friendTag: (k) => { const f = friendByKey.get(k); return f ? { ...f, personName: who(f.personId) } : undefined; } }, tr);
             return (
@@ -228,6 +236,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
                 )),
             ),
           )}
+          {friendsRow}
           {summary.friendTags.length > 0 &&
             row(
               'friendTags',

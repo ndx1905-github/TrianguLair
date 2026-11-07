@@ -25,6 +25,9 @@ export interface AppUiState {
   /** The place I last moved to the trash, offered for undo on the map and the list. */
   trashed: { placeId: string; name: string; key: number } | null;
   setTrashed: (t: { placeId: string; name: string } | null) => void;
+  /** What's new "See on the map": these places stay in color, the others are faded. */
+  highlight: { placeIds: string[]; key: number } | null;
+  setHighlight: (placeIds: string[] | null) => void;
 }
 
 const Ctx = createContext<AppUiState | null>(null);
@@ -51,9 +54,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     (t: { placeId: string; name: string } | null) => setTrashedState(t ? { ...t, key: Date.now() } : null),
     [],
   );
+  const [highlight, setHighlightState] = useState<AppUiState['highlight']>(null);
+  const setHighlight = useCallback((placeIds: string[] | null) => setHighlightState(placeIds ? { placeIds, key: Date.now() } : null), []);
   const value = useMemo(
-    () => ({ filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed }),
-    [filter, setFilter, region, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed],
+    () => ({ filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed, highlight, setHighlight }),
+    [filter, setFilter, region, filterOpen, setFilterOpen, focus, focusPlace, trashed, setTrashed, highlight, setHighlight],
   );
   return createElement(Ctx.Provider, { value }, children);
 }
