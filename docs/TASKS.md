@@ -387,8 +387,8 @@ While in use and right after closing, no periodic task; ETag, signed index, frie
 
 Acceptance criteria:
 
-- [ ] Headless multi-user simulation
-- [ ] A full sync against a real Nextcloud stays within the performance targets
+- [x] Headless multi-user simulation (packages/sync: in memory, and against Apache WebDAV, WsgiDAV, moto S3, OpenSSH)
+- [ ] A full sync against a real Nextcloud stays within the performance targets (measured on Apache WebDAV, see packages/sync/README.md)
 
 Depends on: T-102, T-201, T-202
 

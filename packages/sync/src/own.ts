@@ -143,6 +143,7 @@ export class OwnSync {
   private readonly o: OwnSyncOptions;
   private current: { text: string; index: SignedIndex; rolledBack?: boolean; forked?: boolean } | null = null;
   private vaultDirty = false;
+  private checkedFiles = false;
 
   constructor(o: OwnSyncOptions) {
     this.o = o;
@@ -240,6 +241,14 @@ export class OwnSync {
       const info = cache[p.hash];
       return !info || (info.k === 'own-doc' && !this.st.getBytes(`own:doc:${p.hash}`));
     });
+    // On a full check (and the first pull of a session), make sure the files I wrote are still there
+    // (one listing per directory): a damaged storage is healed by the next publication.
+    if ((!fresh || !this.checkedFiles) && this.storage.capabilities.list) {
+      this.checkedFiles = true;
+      const present = new Set<string>();
+      for (const dir of ['packs/', 'media/']) for (const e of await this.storage.list(dir)) present.add(e.path);
+      for (const p of listed) if (cache[p.hash] && !present.has(p.file)) res.missing.push(p.file);
+    }
     const opened = await mapLimit(unknown, this.o.concurrency ?? 6, async (p) => {
       const g = await this.storage.get(p.file);
       if (!g) return { p, info: null as PackInfo | null, update: null as Uint8Array | null };

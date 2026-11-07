@@ -415,3 +415,22 @@ describe('public lists', () => {
     expect(await alice.user.storage.head('public/lists.geojson')).toBeNull();
   });
 });
+
+describe('interrupted or damaged storage', () => {
+  it('a listed pack missing from the storage is rewritten by the owner\'s next pass', async () => {
+    const w = new World();
+    const mem = new MemoryAdapter();
+    const user = makeUser(w, 'alice', { storage: mem });
+    const a = addDevice(w, user);
+    for (let i = 1; i <= 5; i++) a.store.putSave({ place: point(i, `P${i}`) });
+    await a.engine.sync();
+    for (const p of a.engine.own!.index!.packs) await mem.delete(p.file);
+    const r = await a.engine.sync();
+    expect(r.own!.pull.missing.length).toBeGreaterThan(0);
+    expect(r.own!.published).toBe(true);
+    for (const p of a.engine.own!.index!.packs) expect(await mem.head(p.file)).not.toBeNull();
+    const b = addDevice(w, user);
+    await b.engine.sync();
+    expect(b.store.repo.dumpOwnData()).toBe(a.store.repo.dumpOwnData());
+  });
+});

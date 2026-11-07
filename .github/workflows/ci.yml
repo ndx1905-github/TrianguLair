@@ -39,6 +39,11 @@ jobs:
             test: test
             # Imports @triangulair/data and @triangulair/osm from their sources: install their dependencies too.
             deps: data osm
+          - package: sync
+            # Without the performance suite; real-server tests stay skipped (TL_REAL_SERVERS unset).
+            test: test
+            # Imports @triangulair/crypto, storage and data from their sources: install their dependencies too.
+            deps: crypto storage data
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
