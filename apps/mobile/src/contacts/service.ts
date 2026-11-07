@@ -395,7 +395,8 @@ class Service implements ContactsService {
     const contacts = new Set(this.port.contacts().map((k) => k.owner));
     for (const a of c.answers) {
       safety[a.owner] = safetyCode(this.owner, a.owner);
-      names[a.owner] = this.name(a.owner) || label?.name || '';
+      // The invitation's name fits only a single answer: with several, it would name strangers too.
+      names[a.owner] = this.name(a.owner) || (c.answers.length === 1 ? label?.name ?? '' : '');
       known[a.owner] = contacts.has(a.owner);
     }
     return { ...set, invitation: this.view(x, c.answers), safety, names, known };

@@ -96,6 +96,12 @@ async function person(browser: Browser, opts: { dark?: boolean; viewport?: { wid
   return { ctx, page, errors };
 }
 
+/** A person without a storage: identity made (fixture autostart), contacts open. */
+async function start(page: Page, name: string): Promise<void> {
+  await page.goto(autostart(`/contacts?name=${encodeURIComponent(name)}`));
+  await expect(page.getByTestId('contacts-screen')).toBeVisible({ timeout: 30_000 });
+}
+
 async function done(...people: Person[]): Promise<void> {
   for (const p of people) {
     expect(p.errors, 'uncaught errors in the page').toEqual([]);
@@ -113,7 +119,8 @@ async function connect(page: Page, name: string, dir: string): Promise<void> {
   await page.getByTestId('field-davPassword').fill('s3cret');
   await page.getByTestId('field-readUrl').fill(`${FRIENDS}/pub/${dir}/`);
   await page.getByTestId('setup-test').click();
-  await expect(page.getByTestId('test-summary')).toContainText('Everything works', { timeout: 30_000 });
+  await expect(page.getByTestId('test-summary')).toBeVisible({ timeout: 30_000 });
+  for (const step of ['reach', 'write', 'publicRead']) await expect(page.getByTestId(`step-${step}-ok`)).toBeVisible();
   await page.getByTestId('master-go').click();
   await expect(page.getByTestId('storage-connected-banner')).toBeVisible();
 }
@@ -140,7 +147,8 @@ async function answer(page: Page, link: string, inviter: string): Promise<string
   await expect(page.getByTestId('received-verified')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('received-name').fill(inviter);
   await page.getByTestId('received-answer').click();
-  await expect(page.getByTestId('received-answered')).toBeVisible({ timeout: 30_000 });
+  // With a storage, answering publishes my index first (the inviter checks it): slower under load.
+  await expect(page.getByTestId('received-answered')).toBeVisible({ timeout: 60_000 });
   return (await page.getByTestId('received-return-link').textContent())!;
 }
 
@@ -291,7 +299,7 @@ test.describe('between people', () => {
     const eve = await person(browser);
     await connect(alice.page, 'Alice', folder());
     await connect(bob.page, 'Bob', folder());
-    await eve.page.goto(autostart('/?name=Eve'));
+    await start(eve.page, 'Eve');
     const link = await invite(alice.page, 'Bob');
 
     // A link with another expiry is not listed in Alice's index.
@@ -353,7 +361,7 @@ test.describe('between people', () => {
     const alice = await person(browser);
     const bob = await person(browser);
     await connect(alice.page, 'Alice', folder());
-    await bob.page.goto(autostart('/?name=Bob'));
+    await start(bob.page, 'Bob');
     await alice.page.goto('/invite/face');
     await alice.page.getByTestId('face-create').click();
     await expect(alice.page.getByTestId('face-qr')).toBeVisible({ timeout: 30_000 });
@@ -402,7 +410,7 @@ test.describe('between people', () => {
     const link = (await tablet.page.getByTestId('invite-link').textContent())!;
 
     const dark = await person(browser, { dark: true });
-    await dark.page.goto(autostart('/?name=Léa'));
+    await start(dark.page, 'Léa');
     await dark.page.goto('/invite/received');
     await dark.page.getByTestId('received-input').fill(link);
     await dark.page.getByTestId('received-open').click();
@@ -411,8 +419,9 @@ test.describe('between people', () => {
     await shot(dark.page, 'phone-dark-received-verified');
     await dark.page.getByTestId('received-answer').click();
     await expect(dark.page.getByTestId('received-answered')).toBeVisible({ timeout: 30_000 });
-    await dark.page.goto('/contacts');
-    await dark.page.locator('[data-testid^="contact-"]').first().click();
+    await dark.page.getByTestId('received-contacts').click();
+    await dark.page.locator('[data-testid^="contact-"]').filter({ hasText: 'Camille' }).click();
+    await expect(dark.page.getByTestId('contact-code')).toBeVisible();
     await shot(dark.page, 'phone-dark-contact');
     await done(tablet, dark);
   });

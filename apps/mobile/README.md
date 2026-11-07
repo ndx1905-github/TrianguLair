@@ -489,6 +489,26 @@ Storage settings (`scripts/shots_storage.py`, against the Apache WebDAV server o
 | `docs/tablet-fr-storage-s3.png` | Tablet, French: S3 form, empty prefix warning, key policy to copy |
 | `docs/tablet-fr-list-storage-needed.png` | The "right moment": a link-only list asks for a storage |
 
+Invitations and access (`E2E_SHOTS=1 npm run e2e -- e2e/invitations.spec.ts`, same Apache setup, links exchanged
+between browser contexts):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-invite-storage-needed.png` | Invite a friend without a storage: the right-moment card |
+| `docs/phone-invite-link.png`, `docs/tablet-fr-invite-link.png` | The short link, its QR code, share / copy, pending invitation (tablet, French) |
+| `docs/phone-received-verified.png`, `docs/phone-dark-received-verified.png` | The invitee: link checked, name, safety code (dark mode) |
+| `docs/phone-received-answer.png` | The return link to send back, with its QR code |
+| `docs/phone-received-problem.png` | A forged link: "This link no longer works" |
+| `docs/phone-answer-accept.png` | Accepting an answer: what they see, follow, compared |
+| `docs/phone-answers-several.png`, `docs/phone-answers-late.png` | Two answers to one link; a second one after acceptance |
+| `docs/phone-contacts.png`, `docs/phone-contact-verified.png`, `docs/phone-contact-remove.png`, `docs/phone-dark-contact.png` | Friends: badges and switches; safety code matched by QR; removal |
+| `docs/phone-face-show.png`, `docs/phone-face-answer.png` | Face to face: invitation code, then the answer code |
+
+`e2e/invitations.spec.ts` runs the storage-less checks always and the exchanges against Apache (skipped without it): invite,
+answer through the `/i#…` deep link, accept, safety-code match by QR payload, access changes, removal; two answers to one link
+with a forged link refused; the face-to-face exchange verified on both sides. Use a free `E2E_PORT` when another export is served
+on the default one (`reuseExistingServer` would test that one).
+
 End-to-end: `e2e/storage.spec.ts` runs against the same Apache server (skipped when it is not running): wrong
 password, CORS diagnosis, private read address refused, connect, lossless move of packs, a photo, a public list and the
 index (byte for byte on the new storage, old one untouched, redirect listed), and a move onto a folder with other
