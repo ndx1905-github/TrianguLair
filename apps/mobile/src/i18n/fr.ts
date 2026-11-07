@@ -3,6 +3,7 @@ import { firstLaunchFr } from './firstLaunch.fr';
 import { frFiltersTags } from './filtersTags.fr';
 import { zonesListsFr } from './zonesLists.fr';
 import { storageFr } from './storage.fr';
+import { contactsFr } from './contacts.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -12,6 +13,7 @@ export const fr: Messages = {
   ...zonesListsFr,
   // Storage settings and moves (T-203), kept in their own file.
   ...storageFr,
+  ...contactsFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

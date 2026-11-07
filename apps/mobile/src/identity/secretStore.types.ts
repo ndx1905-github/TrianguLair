@@ -14,7 +14,11 @@ export interface SecretStore {
   remove(key: SecretKey): Promise<void>;
 }
 
-/** Every entry the app keeps in the secret store (`storage`: storage settings with their credentials, T-203). */
-export type SecretKey = 'identity' | 'device-keys' | 'sharing-key' | 'primary-identity' | 'pending-phrase' | 'lock-code' | 'storage';
+/**
+ * Every entry the app keeps in the secret store (`storage`: storage settings with their credentials, T-203;
+ * `invitations-received`: invitation links I answered, whose key reads the inviter's places until they accept;
+ * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208).
+ */
+export type SecretKey = 'identity' | 'device-keys' | 'sharing-key' | 'primary-identity' | 'pending-phrase' | 'lock-code' | 'storage' | 'invitations-received' | 'pending-invitation';
 
-export const SECRET_KEYS: readonly SecretKey[] = ['identity', 'device-keys', 'sharing-key', 'primary-identity', 'pending-phrase', 'lock-code', 'storage'];
+export const SECRET_KEYS: readonly SecretKey[] = ['identity', 'device-keys', 'sharing-key', 'primary-identity', 'pending-phrase', 'lock-code', 'storage', 'invitations-received', 'pending-invitation'];

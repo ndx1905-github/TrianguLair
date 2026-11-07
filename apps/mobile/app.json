@@ -8,11 +8,36 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "org.triangulair.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "associatedDomains": [
+        "applinks:triangulair.app"
+      ]
     },
     "android": {
       "package": "org.triangulair.app",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "triangulair.app",
+              "pathPrefix": "/i"
+            },
+            {
+              "scheme": "https",
+              "host": "triangulair.app",
+              "pathPrefix": "/r"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "output": "single",
@@ -46,6 +71,15 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "To center the map where you are. Your location stays on this device and is never sent."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TrianguLair uses the camera to scan a friend’s QR code: an invitation, an answer or a safety code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
         }
       ]
     ],
