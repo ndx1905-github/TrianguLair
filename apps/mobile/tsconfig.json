@@ -13,10 +13,12 @@
       "@triangulair/osm": ["../../packages/osm/src/index.ts"],
       "@triangulair/import": ["../../packages/import/src/index.ts"],
       "@triangulair/crypto": ["../../packages/crypto/src/index.ts"],
+      "@triangulair/storage": ["../../packages/storage/src/index.ts"],
       // The package sources' own dependencies, resolved from this app (the
       // packages may have no node_modules of their own).
       "yjs": ["./node_modules/yjs"],
       "fflate": ["./node_modules/fflate"],
+      "aws4fetch": ["./node_modules/aws4fetch"],
       "opening_hours": ["./node_modules/opening_hours"],
       "libsodium-wrappers-sumo": ["./node_modules/libsodium-wrappers-sumo"],
       "@scure/bip39": ["./node_modules/@scure/bip39"],

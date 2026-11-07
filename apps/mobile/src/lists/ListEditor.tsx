@@ -42,6 +42,7 @@ import {
   type ListDraft,
   type Reason,
 } from './listLogic';
+import { StorageNeededIfMissing } from '../storage/useStorageForSharing';
 import { ListMap } from './ListMap';
 import { useMyPlaces, type MyPlace } from './useListData';
 
@@ -379,6 +380,9 @@ export function ListEditor({ listId }: { listId: string | null }) {
       </Text>
       <View style={{ marginTop: 8 }}>
         <Banner>{t('lists.sharingLater')}</Banner>
+      </View>
+      <View style={{ marginTop: 8 }}>
+        <StorageNeededIfMissing reason={draft.visibility === 'public' ? 'public-list' : 'link-list'} />
       </View>
     </View>
   );

@@ -2,6 +2,7 @@ import type { Messages } from './core';
 import { firstLaunchEn } from './firstLaunch.en';
 import { enFiltersTags } from './filtersTags.en';
 import { zonesListsEn } from './zonesLists.en';
+import { storageEn } from './storage.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -9,6 +10,8 @@ export const en: Messages = {
   ...firstLaunchEn,
   // Zones and lists (T-110, T-112), kept in their own file.
   ...zonesListsEn,
+  // Storage settings and moves (T-203), kept in their own file.
+  ...storageEn,
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',
