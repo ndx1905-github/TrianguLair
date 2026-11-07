@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Independent review of T-204 (PR #71), docs/reviews/2026-11-07-sync-review.md.
- * Each `it.fails` states the DESIRED behaviour and fails today; it starts
- * passing (and therefore turns red) once the finding is fixed: flip it to `it`.
+ * Each test states the DESIRED behaviour. They were written as `it.fails`
+ * reproductions against b2746c9 and turned into normal tests with the fixes.
  */
 import {
   generateVaultDataKey,
@@ -23,7 +23,7 @@ import type { SyncReport } from '../src/engine.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, World } from './helpers.ts';
 
 describe('review R-01: own pull trusts the content of a rolled-back / older-rotation index', () => {
-  it.fails('a device declared lost cannot inject own-document updates through an index of the old rotation', async () => {
+  it('a device declared lost cannot inject own-document updates through an index of the old rotation', async () => {
     const w = new World();
     const mem = new MemoryAdapter();
     const user = makeUser(w, 'alice', { storage: mem });
@@ -65,7 +65,7 @@ describe('review R-01: own pull trusts the content of a rolled-back / older-rota
 });
 
 describe('review R-02: a friend\'s feature overwrites my own place record, which I then republish', () => {
-  it.fails('the name and geometry I publish for my place come from my document, not from a friend\'s cache entry', async () => {
+  it('the name and geometry I publish for my place come from my document, not from a friend\'s cache entry', async () => {
     const w = new World();
     const alice = addDevice(w, makeUser(w, 'alice'));
     const bob = addDevice(w, makeUser(w, 'bob'));
@@ -90,7 +90,7 @@ describe('review R-02: a friend\'s feature overwrites my own place record, which
 });
 
 describe('review R-03: the storage host can swap listed packs', () => {
-  it.fails('a pack served at another listed pack\'s path is rejected and the cache kept', async () => {
+  it('a pack served at another listed pack\'s path is rejected and the cache kept', async () => {
     const w = new World();
     const mem = new MemoryAdapter();
     const alice = addDevice(w, makeUser(w, 'alice', { storage: mem }), { capacity: 2, blur: false });
@@ -115,12 +115,12 @@ describe('review R-03: the storage host can swap listed packs', () => {
 
     const r = await bob.engine.sync();
     expect(r.friends[0]!.status).toBe('error');
-    expect(friendSaves(bob, alice.user.owner).size).toBe(4); // today: the 2 places of the swapped pack are erased
+    expect(friendSaves(bob, alice.user.owner).size).toBe(4); // before the fix: the 2 places of the swapped pack were erased
   });
 });
 
 describe('review R-04: reader state aliasing after an address change', () => {
-  it.fails('a failed read after an address change does not mark unprojected packs as seen', async () => {
+  it('a failed read after an address change does not mark unprojected packs as seen', async () => {
     const w = new World();
     const mem = new MemoryAdapter();
     const alice = addDevice(w, makeUser(w, 'alice', { storage: mem }), { capacity: 2, blur: false });
@@ -153,7 +153,7 @@ describe('review R-04: reader state aliasing after an address change', () => {
 });
 
 describe('review R-05: remote wipe', () => {
-  it.fails('a device that finds itself revoked does not go on reading and caching friends in the same pass', async () => {
+  it('a device that finds itself revoked does not go on reading and caching friends in the same pass', async () => {
     const w = new World();
     const user = makeUser(w, 'alice');
     const a = addDevice(w, user);
@@ -172,16 +172,16 @@ describe('review R-05: remote wipe', () => {
     await a.engine.sync();
     const r = await stolen.engine.sync();
     expect(r.problems.some((p) => p.problem.kind === 'device-revoked')).toBe(true);
-    expect(r.friends).toEqual([]); // today: Bob is read (and decrypted into the cache) after the revocation was seen
+    expect(r.friends).toEqual([]); // before the fix: Bob was read (and decrypted into the cache) after the revocation was seen
   });
 });
 
 describe('review R-06: payload size budget', () => {
-  it.fails('a places payload is bounded far below the generic 64 MiB (a 200-place pack is ~70 KB)', () => {
+  it('a places payload is bounded far below the generic 64 MiB (a 200-place pack is ~70 KB)', () => {
     const body = new Uint8Array(24 * 1024 * 1024).fill(0x20);
     const payload = encodePayload('places', body); // ~24 KB compressed
     expect(payload.length).toBeLessThan(64 * 1024);
-    expect(() => decodePayload(payload)).toThrow(); // today: 24 MiB inflated, then handed to JSON.parse
+    expect(() => decodePayload(payload)).toThrow(); // before the fix: 24 MiB inflated, then handed to JSON.parse
   });
 });
 
@@ -202,7 +202,7 @@ describe('review R-07: blocked state stops reading friends too', () => {
   }
   const report = (problems: SyncReport['problems']): SyncReport => ({ own: null, friends: [], problems, ok: problems.length === 0, startedAt: 0, durationMs: 0 });
 
-  it.fails('with my storage credentials rejected, opening the app still refreshes friends (only writes stop)', async () => {
+  it('with my storage credentials rejected, opening the app still refreshes friends (only writes stop)', async () => {
     const ft = fakeTimers();
     const runs: string[] = [];
     const s = new SyncScheduler({

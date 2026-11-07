@@ -37,3 +37,52 @@ export function randomLogicalId(): string {
   if (!c?.getRandomValues) throw new Error('crypto.getRandomValues is not available');
   return toB64Url(c.getRandomValues(new Uint8Array(16)));
 }
+
+/**
+ * A byte limit was reached: one payload (`pack`), one friend's read (`read`) or all the friends read
+ * in one sync pass (`pass`). Only `pass` is transient: the friends left over are read at the next pass.
+ */
+export class LimitError extends Error {
+  constructor(
+    readonly scope: 'pack' | 'read' | 'pass',
+    what: string,
+  ) {
+    super(`${what}: over the ${scope} byte limit`);
+    this.name = 'LimitError';
+  }
+}
+
+/** Counts bytes (downloaded or decompressed) against a limit; `parent` is charged too. */
+export class ByteBudget {
+  used = 0;
+  constructor(
+    readonly limit: number,
+    readonly scope: 'pack' | 'read' | 'pass',
+    private readonly parent?: ByteBudget,
+  ) {}
+  take(n: number, what: string): void {
+    this.parent?.take(n, what);
+    this.used += n;
+    if (this.used > this.limit) throw new LimitError(this.scope, what);
+  }
+  get remaining(): number {
+    return Math.max(0, this.limit - this.used);
+  }
+}
+
+/** At most `n` tasks at once (shared by every friend read of a pass, so 8 friends × 6 packs do not all inflate together). */
+export class Semaphore {
+  private active = 0;
+  private readonly queue: (() => void)[] = [];
+  constructor(private readonly n: number) {}
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.n) await new Promise<void>((r) => this.queue.push(r));
+    this.active++;
+    try {
+      return await fn();
+    } finally {
+      this.active--;
+      this.queue.shift()?.();
+    }
+  }
+}

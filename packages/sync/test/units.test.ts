@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { ContactBook, mergeBooks } from '../src/contacts.ts';
 import { DeviceRevokedError, NeedsKeyError, PayloadError, classifyError } from '../src/errors.ts';
 import { parsePlaces, placesCollection, zOrder, type PlaceFeature } from '../src/features.ts';
-import { decodePayload, encodePayload, utf8 } from '../src/payload.ts';
+import { PAYLOAD_PAD_FLOOR, decodePayload, encodePayload, utf8 } from '../src/payload.ts';
+import { ByteBudget, LimitError } from '../src/util.ts';
 import { planPacks, type DesiredItem, type ExistingPack } from '../src/planner.ts';
 import { SyncScheduler, type Timers } from '../src/scheduler.ts';
 import { MemoryStateStore, SqliteStateStore } from '../src/state.ts';
@@ -80,11 +81,20 @@ describe('planner', () => {
 describe('payload', () => {
   it('round-trips, compresses when it helps, and refuses what it does not know', () => {
     const body = utf8('x'.repeat(10_000));
-    const e = encodePayload('places', body);
+    const e = encodePayload('places', body, { padFloor: 0 });
     expect(e.length).toBeLessThan(200);
     expect(decodePayload(e)).toEqual({ kind: 'places', body });
     const tiny = encodePayload('manifest', utf8('{}'));
     expect(tiny[6]).toBe(0);
+    // Padded to the 4 KiB floor with zeros, which the reader checks.
+    expect(tiny.length).toBe(PAYLOAD_PAD_FLOOR);
+    expect(decodePayload(tiny).body).toEqual(utf8('{}'));
+    const dirty = tiny.slice();
+    dirty[PAYLOAD_PAD_FLOOR - 1] = 1;
+    expect(() => decodePayload(dirty)).toThrow(/padding/);
+    const truncated = tiny.slice();
+    truncated[7] = 0xff;
+    expect(() => decodePayload(truncated)).toThrow(/truncated/);
     const bad = e.slice();
     bad[4] = 2;
     expect(() => decodePayload(bad)).toThrow(PayloadError);
@@ -93,11 +103,19 @@ describe('payload', () => {
 
   it('stops decompression bombs at the limit', () => {
     const bomb = deflateSync(new Uint8Array(50 * 1024 * 1024));
-    const env = new Uint8Array(7 + bomb.length);
+    const env = new Uint8Array(11 + bomb.length);
     env.set([0x54, 0x4c, 0x53, 0x59, 1, 1, 1]);
-    env.set(bomb, 7);
+    new DataView(env.buffer).setUint32(7, bomb.length);
+    env.set(bomb, 11);
     expect(bomb.length).toBeLessThan(100_000);
     expect(() => decodePayload(env, { maxBytes: 1024 * 1024 })).toThrow(/limit/);
+    // Per kind by default: a places payload stops at 4 MiB, an own document is allowed 64 MiB.
+    expect(() => decodePayload(env)).toThrow(LimitError);
+    env[5] = 2;
+    expect(decodePayload(env).body.length).toBe(50 * 1024 * 1024);
+    // A budget (one friend's read, one pass) is charged as the output comes.
+    const budget = new ByteBudget(8 * 1024 * 1024, 'read');
+    expect(() => decodePayload(env, { budget })).toThrow(/read byte limit/);
   });
 
   it('places: strict parsing (duplicate keys, unknown fields, bad ids, versions)', () => {

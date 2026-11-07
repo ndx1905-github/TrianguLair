@@ -15,15 +15,28 @@
  *   vault.bin                   recovery vault (TLVD, vault data key), conditionally written
  *   keys/<device>.bin           the current sharing key sealed to each of my devices (TLSK), after a rotation
  *
- * Publication order: packs, public file, index (with If-Match), then the
- * index is read back: storage compare-and-swap is best effort on some
- * servers (T-202), so the publication counts only if the storage now holds
- * our exact index; otherwise we pull, merge and publish again. Unused files
- * are deleted only after a successful publication.
+ * Publication order: vault (when it changed: it decides the audiences of
+ * my other devices too), packs, public file, a content check of the index
+ * (coarse-ETag servers), the index (with If-Match), then the index is read
+ * back: storage compare-and-swap is best effort on some servers (T-202), so
+ * the publication counts only if the storage now holds our exact index;
+ * otherwise we pull (a full GET), merge and publish again. Unused files are
+ * deleted only after a successful publication.
+ *
+ * Trust in my own index (T-204 review R-01): an index of mine is imported
+ * (its own-document updates merged, its packs reused) only when it is at or
+ * after my anchor and under my current sharing certificate (not an older
+ * rotation, not signed by a device my certificate revokes). A rolled-back,
+ * forked or older-rotation index only triggers a republication from the local
+ * state; nothing it lists is fetched. The anchor is local, or, on a device
+ * that has none yet (restored from the recovery kit), the one recorded in the
+ * vault (sealed with the current vault data key, which a revoked device does
+ * not have); the certificate rule holds without any anchor.
  */
 import {
   DecryptionError,
   RollbackError,
+  SignatureError,
   indexAnchor,
   openPack,
   openSharingKey,
@@ -47,14 +60,15 @@ import {
 import { snapshotOfUpdates, type DataStore } from '@triangulair/data';
 import { INDEX_PATH, NotFound, PUBLIC_LISTS_PATH, PreconditionFailed, fetchSnapshot, type StorageAdapter } from '@triangulair/storage';
 import { audienceOf, computeAudiences, fingerprint, recipientBytes, type Audience } from './audience.ts';
-import { mergeBooks, sameRecords, type ContactBook } from './contacts.ts';
+import { OWN_ANCHOR_STEP, laterAnchor, mergeBooks, sameRecords, type ContactBook } from './contacts.ts';
 import { DeviceRevokedError, NeedsKeyError, PayloadError } from './errors.ts';
-import { featureFor, featureHash, parsePlaces, placesCollection, readOwnItems, zOrder, type PlaceFeature } from './features.ts';
+import { MAX_FEATURES_PER_PACK, featureFor, featureHash, parsePlaces, placesCollection, readOwnItems, zOrder, type PlaceFeature } from './features.ts';
+import { resolveLimits, type SyncLimits } from './limits.ts';
 import { planPacks, type DesiredItem, type ExistingPack } from './planner.ts';
 import { decodePayload, encodePayload, jsonBytes, parseJsonBody, utf8 } from './payload.ts';
 import { PUBLIC_LISTS_NAME, buildPublicLists } from './public-lists.ts';
 import type { SyncStateStore } from './state.ts';
-import { b64, bytesEqual, mapLimit, randomLogicalId, unb64 } from './util.ts';
+import { b64, bytesEqual, mapLimit, randomLogicalId, unb64, LimitError } from './util.ts';
 
 export const VAULT_PATH = 'vault.bin';
 export const keyPath = (deviceId: string): string => `keys/${deviceId.replace(/^ed25519:/, '')}.bin`;
@@ -71,6 +85,13 @@ interface IndexState {
   checkedAt: number;
 }
 
+/** A vault data key this device used before a rotation (R-10), with the revocations known then. */
+export interface PreviousVaultKey {
+  key: Uint8Array;
+  rotation: number;
+  revoked: string[];
+}
+
 export interface OwnSyncOptions {
   store: DataStore;
   storage: StorageAdapter;
@@ -78,6 +99,14 @@ export interface OwnSyncOptions {
   sharing: SharingKey;
   /** Earlier sharing key pairs (friends may still wrap to them until they read my new certificate). */
   previousSharingKeys?: KeyPair[];
+  /**
+   * Earlier vault data keys (persist `OwnSync.previousVaultKeys` with the sharing keys): a vault my
+   * other device sealed just before it adopted the new key is still merged, but only when the newer
+   * certificate revoked no device since (otherwise it may come from the revoked device).
+   */
+  previousVaultKeys?: PreviousVaultKey[];
+  /** Size limits (downloads before verification, decompression per kind). */
+  limits?: Partial<SyncLimits>;
   state: SyncStateStore;
   book: ContactBook;
   /** Persists the book after a change (the engine stores it in the state). */
@@ -102,9 +131,17 @@ export interface OwnSyncOptions {
 }
 
 export interface PullResult {
+  /** My verified current index (null before the first publication, or when the storage holds a stale one). */
   index: SignedIndex | null;
   etag: string | null;
-  /** The storage served an index older than one we had seen (republished from our anchor). */
+  /** The index text was taken from the local copy (HEAD ETag unchanged), not downloaded. */
+  cached: boolean;
+  /** Files listed by a stale index found on the storage (deleted after the next publication). */
+  staleFiles: string[];
+  /**
+   * The storage served an index older than one we had seen, of an older rotation, or signed by a
+   * device my certificate revokes: nothing it lists was imported; republished from the local state.
+   */
   rolledBack: boolean;
   /** The storage holds another index with the seq we published (lost compare-and-swap). */
   forked: boolean;
@@ -141,9 +178,13 @@ export class OwnSync {
   private readonly st: SyncStateStore;
   readonly book: ContactBook;
   private readonly o: OwnSyncOptions;
-  private current: { text: string; index: SignedIndex; rolledBack?: boolean; forked?: boolean } | null = null;
+  private current: { text: string; index: SignedIndex | null; rolledBack?: boolean; forked?: boolean } | null = null;
   private vaultDirty = false;
   private checkedFiles = false;
+  private vaultChecked = false;
+  readonly limits: SyncLimits;
+  /** Earlier vault data keys (persist them with the sharing keys). */
+  previousVaultKeys: PreviousVaultKey[];
 
   constructor(o: OwnSyncOptions) {
     this.o = o;
@@ -152,8 +193,11 @@ export class OwnSync {
     this.device = o.device;
     this.sharing = o.sharing;
     this.previousKeys = [...(o.previousSharingKeys ?? [])];
+    this.previousVaultKeys = [...(o.previousVaultKeys ?? [])];
     this.st = o.state;
     this.book = o.book;
+    this.limits = resolveLimits(o.limits);
+    if ((o.capacity ?? 200) > MAX_FEATURES_PER_PACK) throw new RangeError(`capacity must be at most ${MAX_FEATURES_PER_PACK}`);
   }
 
   get owner(): string {
@@ -161,6 +205,9 @@ export class OwnSync {
   }
   private now(): Date {
     return this.o.now?.() ?? new Date();
+  }
+  private nowMs(): number {
+    return this.now().getTime();
   }
   /** Every key pair that may open my packs (current first). */
   keys(): KeyPair[] {
@@ -172,28 +219,35 @@ export class OwnSync {
   private packs(): Record<string, PackInfo> {
     return this.st.get<Record<string, PackInfo>>('own:packs') ?? {};
   }
+  /** My anchor: the local one, or the vault's (a device restored from the recovery kit), whichever is later. */
   private anchor(): IndexAnchor | undefined {
-    return this.st.get<IndexAnchor>('own:anchor');
+    return laterAnchor(this.st.get<IndexAnchor>('own:anchor'), this.book.ownAnchor());
   }
   /** The last verified index of mine on the storage (null before the first publication). */
   get index(): SignedIndex | null {
-    return this.current?.index ?? null;
+    return this.current?.rolledBack || this.current?.forked ? null : (this.current?.index ?? null);
   }
 
   // ------------------------------------------------------------------ pull
 
-  /** Reads my index, merges my other devices' document changes, adopts a new sharing key, merges the vault. */
-  async pull(): Promise<PullResult> {
-    const res: PullResult = { index: null, etag: null, rolledBack: false, forked: false, imported: 0, missing: [], adoptedKey: false };
+  /**
+   * Reads my index, merges my other devices' document changes, adopts a new sharing key, merges the
+   * vault. `full`: download the index even if its ETag is unchanged (coarse ETags), and list the files.
+   */
+  async pull(opts: { full?: boolean } = {}): Promise<PullResult> {
+    const res: PullResult = {
+      index: null, etag: null, cached: false, staleFiles: [], rolledBack: false, forked: false, imported: 0, missing: [], adoptedKey: false,
+    };
     const prev = this.st.get<IndexState>('own:index');
-    const fresh = prev && Date.now() - prev.checkedAt < (this.o.fullCheckMs ?? 600_000);
+    const fresh = !opts.full && !!prev && this.nowMs() - prev.checkedAt < (this.o.fullCheckMs ?? 600_000);
     let text: string;
     let etag: string;
     try {
-      const f = await fetchSnapshot(this.storage, fresh && prev.etag ? prev.etag : null);
+      const f = await fetchSnapshot(this.storage, fresh && prev.etag ? prev.etag : null, { maxBytes: this.limits.indexBytes });
       if (!f.changed && prev) {
         text = prev.text;
         etag = f.etag;
+        res.cached = true;
       } else if (f.changed) {
         text = new TextDecoder().decode(f.index);
         etag = f.etag;
@@ -204,34 +258,60 @@ export class OwnSync {
       await this.pullVault();
       return res;
     }
+    // A device without a local anchor yet (restored from the recovery kit): the vault's anchor first.
+    if (!this.st.get('own:anchor') && !this.vaultChecked) await this.pullVault();
 
-    let index: SignedIndex;
+    let index: SignedIndex | null;
+    let stale: 'rolledBack' | 'forked' | null = null;
     if (this.current?.text === text) {
       index = this.current.index;
-      res.rolledBack = !!this.current.rolledBack;
-      res.forked = !!this.current.forked;
+      if (this.current.rolledBack) stale = 'rolledBack';
+      if (this.current.forked) stale = 'forked';
     } else {
       const anchor = this.anchor();
-      const opts = { expectedOwner: this.owner, location: this.sharing.cert.location!, now: this.now(), retiredOwners: this.book.retiredOwners() };
+      const vo = { expectedOwner: this.owner, location: this.sharing.cert.location!, now: this.now(), retiredOwners: this.book.retiredOwners() };
       try {
-        index = verifyIndex(text, anchor ? { ...opts, lastSeen: anchor } : opts);
+        index = verifyIndex(text, anchor ? { ...vo, lastSeen: anchor } : vo);
       } catch (e) {
-        if (!(e instanceof RollbackError)) throw e;
-        // An older index of mine (a restored backup, a stale copy) or the
-        // loser of a non-atomic compare-and-swap (same seq): publish again
-        // above our anchor. Still check it is genuinely mine.
-        index = verifyIndex(text, opts);
-        if (e.fork) res.forked = true;
-        else res.rolledBack = true;
+        if (e instanceof RollbackError) {
+          // An older index of mine (a restored backup, a stale copy, an index of an older rotation
+          // signed by a device declared lost), or the loser of a non-atomic compare-and-swap (same
+          // seq): it only tells us to publish again above our anchor. Still check it is mine.
+          stale = e.fork ? 'forked' : 'rolledBack';
+          try {
+            index = verifyIndex(text, vo);
+          } catch {
+            index = null;
+          }
+        } else if (e instanceof SignatureError && e.code === 'REVOKED') {
+          // Signed by a device my certificate (the one in that index) revokes: overwrite it.
+          stale = 'rolledBack';
+          index = null;
+        } else throw e;
+      }
+      if (index && !stale) {
+        // Independently of the anchor: never trust an index of an older rotation than my
+        // certificate, or one signed by a device my certificate revokes.
+        if (index.sharing_cert.rotation < this.rot || this.sharing.cert.revoked_devices.includes(index.device_cert.device)) stale = 'rolledBack';
       }
     }
-    if (index.revoked_devices.includes(this.device.keys.id)) throw new DeviceRevokedError();
+    // A revocation is master-signed: it counts whatever the index (a stale one cannot hold a newer one).
+    if (index?.revoked_devices.includes(this.device.keys.id)) throw new DeviceRevokedError();
+    res.etag = etag;
+    if (stale) {
+      res[stale] = true;
+      res.staleFiles = index ? index.packs.map((p) => p.file) : [];
+      this.current = { text, index, rolledBack: stale === 'rolledBack', forked: stale === 'forked' };
+      this.st.set('own:index', { text, etag, checkedAt: this.nowMs() } satisfies IndexState);
+      await this.pullVault();
+      return res;
+    }
+    index = index!;
     if (index.sharing_cert.rotation > this.rot) {
       await this.fetchNewKey(index);
       res.adoptedKey = true;
     }
     res.index = index;
-    res.etag = etag;
 
     // Packs I do not know yet (written by another device): open them with my keys.
     const cache = this.packs();
@@ -250,9 +330,10 @@ export class OwnSync {
       for (const p of listed) if (cache[p.hash] && !present.has(p.file)) res.missing.push(p.file);
     }
     const opened = await mapLimit(unknown, this.o.concurrency ?? 6, async (p) => {
-      const g = await this.storage.get(p.file);
+      const max = p.file.startsWith('media/') ? this.limits.ownFileBytes : this.limits.packBytes;
+      const g = await this.storage.get(p.file, { maxBytes: max });
       if (!g) return { p, info: null as PackInfo | null, update: null as Uint8Array | null };
-      return { p, ...this.classify(g.data, index) };
+      return { p, ...this.classify(g.data, index, p) };
     });
     const updates: Uint8Array[] = [];
     for (const { p, info, update } of opened) {
@@ -279,15 +360,21 @@ export class OwnSync {
       }
     }
     this.st.set('own:packs', cache);
-    this.st.set('own:index', { text, etag, checkedAt: Date.now() } satisfies IndexState);
-    this.current = { text, index, rolledBack: res.rolledBack, forked: res.forked };
-    if (!res.rolledBack && !res.forked) this.st.set('own:anchor', laterAnchor(this.anchor(), indexAnchor(index)));
+    this.st.set('own:index', { text, etag, checkedAt: this.nowMs() } satisfies IndexState);
+    this.current = { text, index };
+    this.st.set('own:anchor', laterAnchor(this.st.get<IndexAnchor>('own:anchor'), indexAnchor(index)));
     this.remoteSnapshot(index, cache);
     await this.pullVault();
     return res;
   }
 
-  private classify(bytes: Uint8Array, index: SignedIndex): { info: PackInfo; update: Uint8Array | null } {
+  /**
+   * What a listed file of mine holds. `info: null` = treat it as missing (rewritten by the next
+   * publication): served at the path of ANOTHER listed file (R-03). An unreadable pack (bad payload,
+   * over a limit) is `other`: `build()` rewrites or drops it (R-12); only a newer payload version stops
+   * the pull (another device of mine runs a newer app: do not overwrite what it wrote).
+   */
+  private classify(bytes: Uint8Array, index: SignedIndex, entry: IndexPackEntry): { info: PackInfo | null; update: Uint8Array | null } {
     let opened;
     try {
       opened = openPack(bytes, index, this.keys());
@@ -295,21 +382,30 @@ export class OwnSync {
       if (e instanceof DecryptionError && e.code === 'NO_MATCHING_KEY') return { info: { k: 'other' }, update: null };
       throw e;
     }
+    if (opened.file !== entry.file) return { info: null, update: null };
     // Opened with an older key: sealed before a rotation, rewrite it.
     const rot = this.sealedForCurrentKey(bytes, index) ? this.rot : -1;
-    const { kind, body } = decodePayload(opened.payload);
-    if (kind === 'places') {
-      const items: Record<string, string> = {};
-      for (const f of parsePlaces(body)) items[f.feature.id] = f.hash;
-      return { info: { k: 'places', id: opened.id, rot, items }, update: null };
+    try {
+      const { kind, body } = decodePayload(opened.payload, {
+        maxBytes: { places: this.limits.placesPayloadBytes, manifest: this.limits.manifestPayloadBytes, 'own-doc': this.limits.ownDocPayloadBytes },
+      });
+      if (kind === 'places') {
+        const items: Record<string, string> = {};
+        for (const f of parsePlaces(body)) items[f.feature.id] = f.hash;
+        return { info: { k: 'places', id: opened.id, rot, items }, update: null };
+      }
+      if (kind === 'own-doc') {
+        if (body.length < 1 || (body[0] !== 1 && body[0] !== 2)) throw new PayloadError('own-doc: bad mode');
+        return { info: { k: 'own-doc', id: opened.id, rot, mode: body[0] === 1 ? 'full' : 'delta', size: body.length - 1 }, update: body.subarray(1) };
+      }
+      const m = parseJsonBody(body) as { kind?: string; version?: number; packs?: Record<string, string> };
+      if (m?.kind !== MANIFEST || m.version !== 1 || typeof m.packs !== 'object' || m.packs === null) throw new PayloadError('manifest: malformed');
+      return { info: { k: 'manifest', id: opened.id, rot, fps: m.packs }, update: null };
+    } catch (e) {
+      if (e instanceof PayloadError && e.unsupported) throw e;
+      if (e instanceof PayloadError || e instanceof LimitError) return { info: { k: 'other' }, update: null };
+      throw e;
     }
-    if (kind === 'own-doc') {
-      if (body.length < 1 || (body[0] !== 1 && body[0] !== 2)) throw new PayloadError('own-doc: bad mode');
-      return { info: { k: 'own-doc', id: opened.id, rot, mode: body[0] === 1 ? 'full' : 'delta', size: body.length - 1 }, update: body.subarray(1) };
-    }
-    const m = parseJsonBody(body) as { kind?: string; version?: number; packs?: Record<string, string> };
-    if (m?.kind !== MANIFEST || m.version !== 1 || typeof m.packs !== 'object' || m.packs === null) throw new PayloadError('manifest: malformed');
-    return { info: { k: 'manifest', id: opened.id, rot, fps: m.packs }, update: null };
   }
 
   private sealedForCurrentKey(bytes: Uint8Array, index: SignedIndex): boolean {
@@ -337,7 +433,7 @@ export class OwnSync {
   }
 
   private async fetchNewKey(index: SignedIndex): Promise<void> {
-    const g = await this.storage.get(keyPath(this.device.keys.id));
+    const g = await this.storage.get(keyPath(this.device.keys.id), { maxBytes: 64 * 1024 });
     if (!g) throw new NeedsKeyError(index.sharing_cert.rotation);
     let k: SharingKey;
     try {
@@ -351,6 +447,10 @@ export class OwnSync {
 
   private adopt(k: SharingKey): void {
     if (k.cert.key !== this.sharing.cert.key) this.previousKeys = [this.sharing.keyPair, ...this.previousKeys].slice(0, 4);
+    if (!bytesEqual(k.vaultDataKey, this.sharing.vaultDataKey)) {
+      const old: PreviousVaultKey = { key: this.sharing.vaultDataKey, rotation: this.rot, revoked: [...this.sharing.cert.revoked_devices] };
+      this.previousVaultKeys = [old, ...this.previousVaultKeys].slice(0, 4);
+    }
     this.sharing = k;
     this.vaultDirty = true; // re-sealed with the new vault data key
     this.o.onSharingKey?.(k);
@@ -373,6 +473,7 @@ export class OwnSync {
   // ------------------------------------------------------------------ vault
 
   private async pullVault(): Promise<void> {
+    this.vaultChecked = true;
     const vs = this.st.get<{ etag: string | null; key: string }>('own:vault');
     const keyFp = fingerprint([b64(this.sharing.vaultDataKey)]);
     if (vs && vs.key !== keyFp) this.vaultDirty = true;
@@ -383,12 +484,29 @@ export class OwnSync {
       return;
     }
     if (vs?.etag === h.etag && vs.key === keyFp) return;
-    const g = await this.storage.get(VAULT_PATH);
+    const g = await this.storage.get(VAULT_PATH, { maxBytes: 16 * 1024 * 1024 });
     if (!g) return;
     let remote;
+    let current = true;
     try {
       remote = openVault(g.data, this.owner, this.sharing.vaultDataKey);
     } catch {
+      // Sealed with a vault data key I had before a rotation (R-10: another device of mine wrote it
+      // before adopting the new one): merge it, but only when no device was revoked since, otherwise
+      // it may come from the revoked device (spec "Loss and theft" step 1: start from our copy).
+      const revoked = new Set(this.sharing.cert.revoked_devices);
+      for (const pk of this.previousVaultKeys) {
+        if (revoked.size !== pk.revoked.length || pk.revoked.some((d) => !revoked.has(d))) continue;
+        try {
+          remote = openVault(g.data, this.owner, pk.key);
+          current = false;
+          break;
+        } catch {
+          // next key
+        }
+      }
+    }
+    if (!remote) {
       // Sealed with another vault data key (a device that has not adopted the
       // current one, or damaged): start from our copy (spec "Loss and theft" step 1).
       this.st.set('own:vault', { etag: g.etag, key: keyFp });
@@ -398,7 +516,7 @@ export class OwnSync {
     const merged = mergeBooks(this.book.records, remote);
     this.book.records = merged;
     this.o.saveBook?.();
-    this.vaultDirty ||= !sameRecords(merged, remote);
+    this.vaultDirty ||= !current || !sameRecords(merged, remote);
     this.st.set('own:vault', { etag: g.etag, key: keyFp });
   }
 
@@ -429,21 +547,22 @@ export class OwnSync {
 
   // ------------------------------------------------------------------ publish
 
-  /** Pulls, then publishes what changed. Retries lost races (re-read, merge, republish). */
+  /** Pulls, then publishes what changed. Retries lost races (re-read in full, merge, republish). */
   async publish(opts: { force?: boolean } = {}): Promise<PublishReport> {
     let conflicts = 0;
     const orphans = new Set<string>(this.st.get<string[]>('own:garbage') ?? []);
     for (let attempt = 1; attempt <= 5; attempt++) {
-      const pull = await this.pull();
+      // After a lost race, never trust an unchanged ETag (coarse ETags: the winner's index may have the same one).
+      const pull = await this.pull({ full: attempt > 1 });
+      // The vault first (R-09): my other devices compute their audiences from it, so a removed
+      // contact must reach it before anything else is published.
+      await this.pushVault();
       const b = this.build(pull);
       const report: PublishReport = {
         published: false, seq: pull.index?.seq ?? null, attempts: attempt, conflicts, packsWritten: b.writes.size,
         packsKept: b.kept, bytesUploaded: 0, filesDeleted: 0, ownDoc: b.ownDoc, pull,
       };
-      if (!b.changed && !opts.force && pull.index) {
-        await this.pushVault();
-        return report;
-      }
+      if (!b.changed && !opts.force && pull.index) return report;
       await mapLimit([...b.writes], this.o.concurrency ?? 6, async ([path, bytes]) => {
         report.bytesUploaded += bytes.length;
         try {
@@ -460,11 +579,19 @@ export class OwnSync {
       const bytes = utf8(text);
       let ok = true;
       try {
+        // R-08: on servers with coarse ETags (Nextcloud, WsgiDAV: mtime in seconds + size) another
+        // device's index can carry the ETag we based this attempt on, and If-Match would let us
+        // overwrite it. Compare the content right before writing.
+        const base = this.current?.text ?? null;
+        if (pull.etag) {
+          const cur = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
+          if (!cur || base === null || new TextDecoder().decode(cur.data) !== base) throw new PreconditionFailed(INDEX_PATH, { detail: 'index changed (content check)' });
+        }
         await this.storage.put(INDEX_PATH, bytes, pull.etag ? { ifMatch: pull.etag, contentType: 'application/json' } : { ifNoneMatch: '*', contentType: 'application/json' });
-        const back = await this.storage.get(INDEX_PATH);
+        const back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
         ok = !!back && bytesEqual(back.data, bytes);
         if (ok) {
-          this.st.set('own:index', { text, etag: back!.etag, checkedAt: Date.now() } satisfies IndexState);
+          this.st.set('own:index', { text, etag: back!.etag, checkedAt: this.nowMs() } satisfies IndexState);
         }
       } catch (e) {
         if (!(e instanceof PreconditionFailed)) throw e;
@@ -478,7 +605,12 @@ export class OwnSync {
       }
       // Committed.
       this.current = { text, index: b.index };
-      this.st.set('own:anchor', indexAnchor(b.index));
+      const anchor = indexAnchor(b.index);
+      this.st.set('own:anchor', anchor);
+      const inVault = this.book.ownAnchor();
+      this.book.noteOwnAnchor(anchor);
+      this.o.saveBook?.();
+      if (!inVault || inVault.sharing_cert.rotation !== anchor.sharing_cert.rotation || anchor.seq - inVault.seq >= OWN_ANCHOR_STEP) this.vaultDirty = true;
       this.st.set('own:packs', b.cache);
       for (const [h, u] of b.docBytes) this.st.setBytes(`own:doc:${h}`, u);
       if (b.snapshot) {
@@ -487,7 +619,8 @@ export class OwnSync {
       }
       const listed = new Set(b.index.packs.map((p) => p.file));
       const last = this.st.get<string[]>('own:published') ?? [];
-      const garbage = [...new Set([...b.drop, ...last, ...orphans])].filter((f) => !listed.has(f));
+      // Files of a stale index (a rolled-back copy, a fork, a revoked device's) are superseded too.
+      const garbage = [...new Set([...b.drop, ...last, ...orphans, ...pull.staleFiles])].filter((f) => !listed.has(f));
       if (!b.index.public && pull.index?.public) garbage.push(PUBLIC_LISTS_PATH);
       const left: string[] = [];
       await mapLimit(garbage, this.o.concurrency ?? 6, async (f) => {
@@ -512,7 +645,10 @@ export class OwnSync {
 
   /** Builds the next index from the local state and what the pull found (synchronous). */
   private build(pull: PullResult) {
-    const prev = pull.index;
+    // A stale index (rollback, fork, older rotation) is never built upon: everything is rewritten
+    // from the local state, above the anchor (R-01).
+    const stale = pull.rolledBack || pull.forked;
+    const prev = stale ? null : pull.index;
     const repo = this.store.repo;
     const now = this.now();
     const newId = this.o.newId ?? randomLogicalId;
@@ -635,7 +771,7 @@ export class OwnSync {
 
     entries.sort((a, b) => (a.hash < b.hash ? -1 : 1));
     const anchor = this.anchor();
-    const previous = pull.rolledBack || !prev ? anchor : prev;
+    const previous = stale || !prev ? anchor : prev;
     const seq = (previous?.seq ?? 0) + 1;
     const index = signIndex(this.device, {
       seq,
@@ -648,7 +784,7 @@ export class OwnSync {
       now,
     });
     const changed =
-      writes.size > 0 || drop.length > 0 || publicChanged || !prev || pull.rolledBack || pull.forked || missing.size > 0 ||
+      writes.size > 0 || drop.length > 0 || publicChanged || !prev || stale || missing.size > 0 ||
       prev.sharing_cert.rotation !== this.rot ||
       JSON.stringify(prev.invitations ?? []) !== JSON.stringify(index.invitations ?? []);
     return {
@@ -660,10 +796,4 @@ export class OwnSync {
 
 function emptyIndexLike(): SignedIndex {
   return { packs: [] } as unknown as SignedIndex;
-}
-
-function laterAnchor(a: IndexAnchor | undefined, b: IndexAnchor): IndexAnchor {
-  if (!a) return b;
-  if (b.sharing_cert.rotation !== a.sharing_cert.rotation) return b.sharing_cert.rotation > a.sharing_cert.rotation ? b : a;
-  return b.seq >= a.seq ? b : a;
 }

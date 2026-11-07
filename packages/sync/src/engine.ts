@@ -3,15 +3,31 @@
  * SyncEngine: one sync pass = pull my storage (my other devices' changes,
  * the vault), read the people I follow, then publish what changed. The
  * scheduler decides when to run it.
+ *
+ * Remote wipe (spec "Loss and theft"): when my own index says this device
+ * was declared lost, the pass stops right there (nothing more is read or
+ * decrypted) and the engine erases everything it can reach: the in-memory
+ * keys, its sync state, the local database (`DataStore.wipe`, or the app's
+ * `wipe.data`), and, through `wipe.secrets`, the keys in the system vault.
+ * Every later `sync()` returns at once with the same problem.
  */
 import type { DeviceSigner, KeyPair, OwnerInvitation, SharingKey, SignedIndex, VaultRecords } from '@triangulair/crypto';
 import type { DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, type StorageAdapter } from '@triangulair/storage';
 import { ContactBook, type Contact, type SharePolicy } from './contacts.ts';
-import { classifyError, type SyncProblem } from './errors.ts';
-import { OwnSync, type OwnSyncOptions, type PublishReport } from './own.ts';
+import { DeviceRevokedError, classifyError, type SyncProblem } from './errors.ts';
+import type { SyncLimits } from './limits.ts';
+import { OwnSync, type OwnSyncOptions, type PreviousVaultKey, type PublishReport } from './own.ts';
 import { FriendReader, type FriendReport } from './reader.ts';
 import type { SyncStateStore } from './state.ts';
+
+/** What the app erases on a remote wipe (both may be async). */
+export interface WipeHooks {
+  /** Erase this device's keys from the system vault: sharing keys, vault data keys, device key, storage credentials, database key. */
+  secrets?: () => void | Promise<void>;
+  /** Erase the local database (default: `DataStore.wipe()`, every row, then the store is closed). */
+  data?: () => void | Promise<void>;
+}
 
 export interface SyncEngineOptions
   extends Pick<OwnSyncOptions, 'capacity' | 'maxOwnDeltas' | 'blur' | 'author' | 'onSharingKey' | 'newId' | 'random' | 'fullCheckMs'> {
@@ -20,6 +36,12 @@ export interface SyncEngineOptions
   /** My current sharing key (friends wrap their packs to it), with its certificate and the vault data key. */
   sharing: SharingKey;
   previousSharingKeys?: KeyPair[];
+  /** Earlier vault data keys (`engine.own.previousVaultKeys`, persisted by the app with the sharing keys). */
+  previousVaultKeys?: PreviousVaultKey[];
+  /** Size limits (downloads before verification, decompression, per friend and per pass). */
+  limits?: Partial<SyncLimits>;
+  /** Remote wipe: called once this device finds itself declared lost (see the module comment). */
+  wipe?: WipeHooks;
   /** This device's keys and certificate: needed to publish. */
   device?: DeviceSigner;
   /** My storage (write access). Without it the app is local only, but can still read friends. */
@@ -40,6 +62,8 @@ export interface SyncReport {
   problems: { about: 'own' | string; problem: SyncProblem }[];
   /** Everything worked (friends' failures included). */
   ok: boolean;
+  /** This device was declared lost: the pass stopped and the local content was erased. */
+  wiped?: boolean;
   startedAt: number;
   durationMs: number;
 }
@@ -52,6 +76,7 @@ export class SyncEngine {
   readonly reader: FriendReader;
   private readonly o: SyncEngineOptions;
   private running: Promise<SyncReport> | null = null;
+  private wiped = false;
 
   constructor(o: SyncEngineOptions) {
     this.o = o;
@@ -66,10 +91,11 @@ export class SyncEngine {
             device: o.device,
             sharing: o.sharing,
             ...(o.previousSharingKeys && { previousSharingKeys: o.previousSharingKeys }),
+            ...(o.previousVaultKeys && { previousVaultKeys: o.previousVaultKeys }),
             state: o.state,
             book: this.book,
             saveBook,
-            ...pick(o, ['capacity', 'maxOwnDeltas', 'blur', 'author', 'onSharingKey', 'newId', 'random', 'fullCheckMs', 'concurrency', 'now']),
+            ...pick(o, ['capacity', 'maxOwnDeltas', 'blur', 'author', 'onSharingKey', 'newId', 'random', 'fullCheckMs', 'concurrency', 'now', 'limits']),
           })
         : null;
     this.reader = new FriendReader({
@@ -77,8 +103,41 @@ export class SyncEngine {
       state: o.state,
       keys: () => this.keys(),
       readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
-      ...pick(o, ['concurrency', 'fullCheckMs', 'now']),
+      ...pick(o, ['concurrency', 'fullCheckMs', 'now', 'limits']),
     });
+  }
+
+  /** This device was declared lost and has erased its content (see the module comment). */
+  get isWiped(): boolean {
+    return this.wiped;
+  }
+
+  /**
+   * Remote wipe: erases the in-memory keys, the sync state (anchors, caches, the local vault copy),
+   * the local database and, through the app's hook, the keys in the system vault. The engine is
+   * unusable afterwards. Called by `sync()` when this device finds itself revoked; the app may also
+   * call it itself ("lock and wipe after X days without sync").
+   */
+  async wipe(): Promise<void> {
+    this.wiped = true;
+    const errors: unknown[] = [];
+    const step = async (fn: () => void | Promise<void>) => {
+      try {
+        await fn();
+      } catch (e) {
+        errors.push(e);
+      }
+    };
+    await step(() => this.o.wipe?.secrets?.());
+    for (const k of [...this.keys(), ...(this.o.previousSharingKeys ?? [])]) k.secretKey.fill(0);
+    this.o.sharing.vaultDataKey.fill(0);
+    for (const v of this.own?.previousVaultKeys ?? []) v.key.fill(0);
+    await step(() => {
+      for (const k of this.o.state.keys('')) this.o.state.delete(k);
+    });
+    this.book.records = ContactBook.empty(this.owner).records;
+    await step(() => (this.o.wipe?.data ? this.o.wipe.data() : this.o.store.wipe()));
+    if (errors.length) throw errors[0];
   }
 
   get owner(): string {
@@ -134,6 +193,10 @@ export class SyncEngine {
 
   /** One sync pass. Concurrent calls share the pass in progress. */
   sync(opts: { publish?: boolean; readFriends?: boolean } = {}): Promise<SyncReport> {
+    if (this.wiped) {
+      const problem = classifyError(new DeviceRevokedError(), 'own');
+      return Promise.resolve({ own: null, friends: [], problems: [{ about: 'own', problem }], ok: false, wiped: true, startedAt: Date.now(), durationMs: 0 });
+    }
     if (this.running) return this.running;
     this.running = this.run(opts).finally(() => {
       this.running = null;
@@ -157,6 +220,17 @@ export class SyncEngine {
       } catch (e) {
         ownOk = false;
         fail('own', e, 'own');
+        if (e instanceof DeviceRevokedError) {
+          // Stop here: nothing more is read or decrypted on a device declared lost (R-05).
+          try {
+            await this.wipe();
+          } catch (w) {
+            fail('own', w, 'own');
+          }
+          report.wiped = true;
+          report.durationMs = Date.now() - startedAt;
+          return report;
+        }
       }
     }
     // Contacts I stopped following or removed (possibly on another device): erase their content.

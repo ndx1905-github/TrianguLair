@@ -34,7 +34,7 @@ export class World {
 export function readOnly(a: StorageAdapter): StorageAdapter {
   return {
     capabilities: { ...a.capabilities, readOnly: true, list: false },
-    get: (p) => a.get(p),
+    get: (p, o) => a.get(p, o),
     head: (p) => a.head(p),
     put: async (p) => {
       throw new ReadOnly(p);
@@ -82,10 +82,16 @@ export function addDevice(world: World, user: User, extra: Partial<SyncEngineOpt
   const driver = new NodeSqliteDriver(':memory:');
   const store = DataStore.open({ driver, meId: user.owner, actor: `actor-${user.name}-${++actorN}` });
   const state = extra.sqliteState ? new SqliteStateStore(driver) : new MemoryStateStore();
+  // Each device holds its own copy of the keys (a remote wipe zeroes this device's copy only).
+  const sharing: SharingKey = {
+    ...user.sharing,
+    keyPair: { publicKey: user.sharing.keyPair.publicKey.slice(), secretKey: user.sharing.keyPair.secretKey.slice() },
+    vaultDataKey: user.sharing.vaultDataKey.slice(),
+  };
   const engine = new SyncEngine({
     store,
     state,
-    sharing: user.sharing,
+    sharing,
     device: signer,
     storage: user.storage,
     readAdapter: world.readAdapter,
@@ -129,7 +135,7 @@ export function counting(a: StorageAdapter): StorageAdapter & { counts: Record<s
   return {
     counts,
     capabilities: a.capabilities,
-    get: (p) => (counts.get!++, a.get(p)),
+    get: (p, o) => (counts.get!++, a.get(p, o)),
     head: (p) => (counts.head!++, a.head(p)),
     put: (p, d, o) => (counts.put!++, a.put(p, d, o)),
     delete: (p, o) => (counts.delete!++, a.delete(p, o)),

@@ -11,8 +11,14 @@
  * - offline: nothing is attempted; changes wait ("Offline · 3 changes
  *   pending") and a pass runs as soon as the network is back;
  * - failures: transient ones are retried with a growing delay while the app
- *   is in use; credentials rejected (and other blocking problems) stop
- *   automatic passes until the user acts (`resume()`).
+ *   is in use; a non-retryable one (`retryable: false`: tampered or
+ *   unsupported content of mine, a bug) is shown and retried only at the next
+ *   foreground; credentials rejected (and other blocking problems) stop
+ *   automatic WRITES until the user acts (`resume()`), but friends are still
+ *   refreshed on launch, on foreground and on pull to refresh (a pass with
+ *   `publish: false`: spec "Error cases", writes stop, queue kept);
+ * - device declared lost: the engine has wiped everything; no pass ever runs
+ *   again (`state: 'wiped'`).
  *
  * Timers are injectable so the policy is tested without waiting.
  */
@@ -33,8 +39,14 @@ const realTimers: Timers = {
 
 export type SyncReason = 'launch' | 'foreground' | 'interval' | 'change' | 'pull-to-refresh' | 'background' | 'online' | 'retry';
 
+export interface RunOptions {
+  /** false while writes are blocked: only my storage's pull (read) and the friends. */
+  publish: boolean;
+}
+
 export interface SchedulerOptions {
-  run: (reason: SyncReason) => Promise<SyncReport>;
+  /** One pass, e.g. `(reason, opts) => engine.sync(opts)`. */
+  run: (reason: SyncReason, opts: RunOptions) => Promise<SyncReport>;
   /** Refresh period while the app is in use (default 5 min; the spec leaves the value open). */
   intervalMs?: number;
   /** Delay after the last local change before publishing (default 3 s). */
@@ -49,7 +61,7 @@ export interface SchedulerOptions {
 }
 
 export interface SyncStatus {
-  state: 'idle' | 'syncing' | 'offline' | 'blocked' | 'background';
+  state: 'idle' | 'syncing' | 'offline' | 'blocked' | 'background' | 'wiped';
   foreground: boolean;
   online: boolean;
   /** Local changes not yet published. */
@@ -129,6 +141,7 @@ export class SyncScheduler {
 
   /** The user fixed a blocking problem (reconnected the storage): sync again. */
   resume(): Promise<void> {
+    if (this.status.state === 'wiped') return Promise.resolve();
     this.update({ problem: null, state: 'idle' });
     this.failures = 0;
     return this.trigger('retry', true);
@@ -148,9 +161,10 @@ export class SyncScheduler {
 
   private update(p: Partial<SyncStatus>): void {
     const s = { ...this.status, ...p, foreground: this.foreground, online: this.online, pending: this.pending };
-    if (!this.online) s.state = 'offline';
+    if (this.status.state === 'wiped') s.state = 'wiped';
+    else if (!this.online) s.state = 'offline';
     else if (s.state === 'offline') s.state = 'idle';
-    if (!this.foreground && s.state !== 'syncing' && s.state !== 'blocked' && this.online) s.state = 'background';
+    if (!this.foreground && s.state !== 'syncing' && s.state !== 'blocked' && s.state !== 'wiped' && this.online) s.state = 'background';
     s.banner = s.failingSince !== null && this.t.now() - s.failingSince >= (this.o.bannerAfterMs ?? 86_400_000);
     this.status = s;
     this.o.onStatus?.(this.getStatus());
@@ -166,35 +180,51 @@ export class SyncScheduler {
   }
 
   private trigger(reason: SyncReason, manual = false): Promise<void> {
+    if (this.status.state === 'wiped') return Promise.resolve();
     if (!this.online) {
       this.update({});
       return Promise.resolve();
     }
-    if (this.status.state === 'blocked' && !manual && reason !== 'background') return Promise.resolve();
+    const blocked = this.status.state === 'blocked';
+    // Blocked writes: friends are still refreshed on opening (read-only pass); nothing else runs by itself.
+    const readOnly = blocked && !manual && reason !== 'background';
+    if (readOnly && reason !== 'launch' && reason !== 'foreground') return Promise.resolve();
     if (this.inFlight) {
       // Run once more after the pass in progress (changes made during it).
       this.again = reason;
       return this.inFlight;
     }
-    const pendingAtStart = this.pending;
+    const pendingAtStart = readOnly ? 0 : this.pending;
     this.update({ state: 'syncing' });
     this.inFlight = (async () => {
       let report: SyncReport | null = null;
       try {
-        report = await this.o.run(reason);
+        report = await this.o.run(reason, { publish: !readOnly });
       } catch {
         report = null;
       }
       this.inFlight = null;
       this.o.onReport && report && this.o.onReport(report);
       const own = report?.problems.find((p) => p.about === 'own')?.problem ?? null;
+      if (report?.wiped || own?.kind === 'device-revoked') {
+        this.clearTimers();
+        this.again = null;
+        this.status = { ...this.status, state: 'wiped', problem: own };
+        this.update({});
+        return;
+      }
       if (report && !own) {
         this.failures = 0;
         this.pending = Math.max(0, this.pending - pendingAtStart);
         this.update({ state: 'idle', lastSuccess: this.t.now(), failingSince: null, problem: null });
-        this.schedule(this.o.intervalMs ?? 300_000, 'interval');
+        if (readOnly) this.again ??= 'retry'; // no longer blocked: publish what waited
+        else this.schedule(this.o.intervalMs ?? 300_000, 'interval');
       } else if (own?.blocksWrites) {
         this.update({ state: 'blocked', problem: own });
+      } else if (own && !own.retryable) {
+        // Not transient: show it, try again at the next foreground (or pull to refresh), not in a loop.
+        this.failures = 0;
+        this.update({ state: 'idle', failingSince: this.status.failingSince ?? this.t.now(), problem: own });
       } else {
         const backoff = this.o.backoffMs ?? [30_000, 60_000, 120_000, 300_000, 900_000, 1_800_000];
         const delay = backoff[Math.min(this.failures, backoff.length - 1)]!;

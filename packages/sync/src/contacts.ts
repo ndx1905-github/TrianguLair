@@ -16,6 +16,7 @@
  */
 import {
   canonicalize,
+  verifySharingCert,
   contactRecord,
   emptyVault,
   invitationFromRecord,
@@ -52,11 +53,45 @@ export interface Contact {
 const APP_KEY = 'triangulair_sync';
 const DEFAULT_POLICY: ContactPolicy = { share: false, follow: false, at: 0 };
 
-type AppPart = { version: 1; contacts: Record<string, ContactPolicy> };
+/**
+ * `own`: the last index of mine that a device of mine accepted or published
+ * (rotation, seq, hash), so that a device restored from the recovery kit,
+ * which has no local anchor yet, does not trust whatever index the storage
+ * serves first (T-204 review R-01). Written lazily (when the rotation changes,
+ * or every OWN_ANCHOR_STEP publications) so it does not cost a vault write
+ * per publication; it is a floor, never ahead of the truth.
+ */
+type AppPart = { version: 1; contacts: Record<string, ContactPolicy>; own?: IndexAnchor };
+
+/** The vault's own anchor is rewritten after this many publications (or at a rotation). */
+export const OWN_ANCHOR_STEP = 16;
+
+const HASH_RE = /^b2b256:[A-Za-z0-9_-]{43}$/;
 
 function appPart(r: VaultRecords): AppPart {
   const a = (r.app?.[APP_KEY] ?? null) as AppPart | null;
   return a && a.version === 1 && typeof a.contacts === 'object' ? a : { version: 1, contacts: {} };
+}
+
+/** A well-formed anchor of `owner`'s index (its certificate is master-signed), or undefined. */
+function checkedOwnAnchor(a: unknown, owner: string): IndexAnchor | undefined {
+  const x = a as IndexAnchor | undefined;
+  if (!x || typeof x !== 'object' || x.type !== 'index-anchor' || x.owner !== owner) return undefined;
+  if (!Number.isSafeInteger(x.seq) || x.seq < 0 || !Number.isSafeInteger(x.version) || typeof x.hash !== 'string' || !HASH_RE.test(x.hash)) return undefined;
+  try {
+    verifySharingCert(x.sharing_cert as never, { expectedOwner: owner });
+  } catch {
+    return undefined;
+  }
+  return x;
+}
+
+/** The later of two anchors of mine: higher rotation first, then higher seq. */
+export function laterAnchor(a: IndexAnchor | undefined, b: IndexAnchor | undefined): IndexAnchor | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (b.sharing_cert.rotation !== a.sharing_cert.rotation) return b.sharing_cert.rotation > a.sharing_cert.rotation ? b : a;
+  return b.seq >= a.seq ? b : a;
 }
 
 function withApp(r: VaultRecords, part: AppPart): VaultRecords {
@@ -77,11 +112,23 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const pb = appPart(b).contacts;
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
-  return withApp(merged, { version: 1, contacts });
+  const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
+  return withApp(merged, { version: 1, contacts, ...(own && { own }) });
 }
 
-export function sameRecords(a: VaultRecords, b: VaultRecords): boolean {
-  return canonicalize(a as never) === canonicalize(b as never);
+/**
+ * Whether `local` holds nothing that `remote` (the vault on the storage)
+ * lacks. My own anchor only counts when it moved to another rotation or by
+ * OWN_ANCHOR_STEP publications (see AppPart).
+ */
+export function sameRecords(local: VaultRecords, remote: VaultRecords): boolean {
+  const lo = appPart(local).own;
+  const ro = appPart(remote).own;
+  let l = local;
+  if (lo && ro && lo.sharing_cert.rotation === ro.sharing_cert.rotation && lo.seq - ro.seq < OWN_ANCHOR_STEP && lo.seq >= ro.seq) {
+    l = withApp(local, { ...appPart(local), own: ro });
+  }
+  return canonicalize(l as never) === canonicalize(remote as never);
 }
 
 /** Mutable view over my vault records (local copy). */
@@ -184,5 +231,17 @@ export class ContactBook {
 
   retiredOwners(): string[] {
     return [...this.r.retired_owners];
+  }
+
+  /** My own anchor recorded in the vault (checked; undefined when absent or malformed). */
+  ownAnchor(): IndexAnchor | undefined {
+    return checkedOwnAnchor(appPart(this.r).own, this.r.owner);
+  }
+
+  /** Records my latest own anchor (it only moves forward). */
+  noteOwnAnchor(a: IndexAnchor): void {
+    const part = appPart(this.r);
+    const own = laterAnchor(checkedOwnAnchor(part.own, this.r.owner), a)!;
+    this.r = withApp(this.r, { ...part, own: JSON.parse(JSON.stringify(own)) as IndexAnchor });
   }
 }

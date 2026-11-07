@@ -11,10 +11,11 @@
  * addresses) mapped to the servers by the test world.
  */
 import { randomUUID } from 'node:crypto';
-import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert } from '@triangulair/crypto';
+import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert, packEntry, sealPack, serialize, signIndex } from '@triangulair/crypto';
 import { HttpsReadOnlyAdapter, S3Adapter, WebDavAdapter, type StorageAdapter } from '@triangulair/storage';
 import { SftpAdapter } from '@triangulair/storage/sftp';
 import { describe, expect, it } from 'vitest';
+import { encodePayload, utf8 } from '../src/payload.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, readOnly, World } from './helpers.ts';
 
 const ON = process.env.TL_REAL_SERVERS === '1';
@@ -156,6 +157,70 @@ if (ON) {
         const rb = await bob.engine.sync();
         expect(rb.friends[0]!.keyChanged).toBe(true);
         expect(friendSaves(bob, user.owner).size).toBe(2);
+        await s.close?.();
+      });
+
+      it('review fixes: a race under an unchanged ETag loses nothing (R-08); a declared-lost device cannot inject (R-01)', async () => {
+        const w = new World();
+        const s = await srv.make();
+        const user = makeUser(w, 'alice', { storage: s.write });
+        w.storages.set(user.location, s.read);
+        // A long full-check period: passes trust the HEAD ETag, as on a phone between two full checks.
+        const a = addDevice(w, user, { fullCheckMs: 3_600_000 });
+        const a2 = addDevice(w, user, { fullCheckMs: 3_600_000 });
+        a.store.putSave({ place: point(1, 'base') });
+        await a.engine.sync();
+        await a2.engine.sync();
+        a2.store.putSave({ place: point(2, 'from a2') });
+        expect((await a2.engine.sync()).own!.published).toBe(true);
+        a.store.putSave({ place: point(3, 'from a') });
+        expect((await a.engine.sync()).own!.published).toBe(true);
+        expect(a.store.repo.getMySaveForPlace('osm:node/2')).not.toBeNull();
+        // The other device writes while this one uploads its packs (after its pull, before its index).
+        a.store.putSave({ place: point(4, 'from a, again') });
+        a2.store.putSave({ place: point(5, 'from a2, again') });
+        const put = s.write.put.bind(s.write);
+        let once = true;
+        s.write.put = async (p, d, o) => {
+          if (once && p.startsWith('media/')) {
+            once = false;
+            await a2.engine.sync();
+          }
+          return put(p, d, o);
+        };
+        const r = await a.engine.own!.publish();
+        s.write.put = put;
+        expect(r.published).toBe(true);
+        expect(r.conflicts).toBeGreaterThanOrEqual(1);
+        await a2.engine.own!.pull({ full: true });
+        await a2.engine.sync();
+        await a.engine.own!.pull({ full: true });
+        for (const d of [a, a2]) for (const id of [1, 2, 3, 4, 5]) expect(d.store.repo.getMySaveForPlace(`osm:node/${id}`)).not.toBeNull();
+        for (const p of a.engine.own!.index!.packs) expect(await s.write.head(p.file)).not.toBeNull();
+
+        // Declaration of loss of a2; a2 (the thief) still has the storage credentials and plants an
+        // own-document update in an index of the old rotation.
+        const kp = generateX25519KeyPair();
+        await a.engine.own!.rotate({
+          keyPair: kp,
+          cert: issueSharingCert(user.identity, kp.publicKey, { rotation: 1, location: user.location, revokedDevices: [a2.signer.keys.id] }),
+          vaultDataKey: generateVaultDataKey(),
+        });
+        expect((await a.engine.sync()).own!.published).toBe(true);
+        a2.store.putSave({ place: point(666, 'INJECTED') });
+        const update = a2.store.exportDoc();
+        const body = new Uint8Array(update.length + 1);
+        body[0] = 1;
+        body.set(update, 1);
+        const pack = sealPack(user.owner, encodePayload('own-doc', body), [kp.publicKey]);
+        const e = packEntry(pack, 'media');
+        await s.write.put(e.file, pack);
+        await s.write.put('index.json', utf8(serialize(signIndex(a2.signer, { seq: 9999, sharingCert: user.sharing.cert, packs: [e], vaultDataKey: user.sharing.vaultDataKey }))));
+        const ra = await a.engine.own!.publish();
+        expect(ra.pull.rolledBack).toBe(true);
+        expect(ra.published).toBe(true);
+        expect(a.store.repo.getMySaveForPlace('osm:node/666')).toBeNull();
+        expect(await s.write.head(e.file)).toBeNull();
         await s.close?.();
       });
     });

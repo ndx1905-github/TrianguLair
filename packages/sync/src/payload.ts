@@ -8,25 +8,52 @@
  *               2 = own document (Yjs update, own devices only)
  *               3 = manifest (JSON, own devices only)
  *   6  1  codec: 0 = stored, 1 = raw DEFLATE (RFC 1951, fflate, pure JavaScript)
- *   7  …  body (compressed with the codec)
+ *   7  4  body length (u32 big-endian, as stored: compressed with the codec)
+ *  11  …  body
+ *   …  …  zero bytes up to the padding floor (PAYLOAD_PAD_FLOOR: 4 KiB)
  *
  * Compression happens BEFORE encryption (see THREATS.md: the storage sees the
- * padded size of compressed content). Decompression is bounded (`maxBytes`)
- * so that a hostile pack cannot exhaust memory.
+ * padded size of compressed content). The padding floor makes small packs and
+ * own-document deltas all look alike (Padmé alone only hides about 12 % of a
+ * size; under 4 KiB it would follow the size of each small edit). The pack
+ * format then pads the whole payload with Padmé. Readers check that the
+ * padding is zeros. Decompression is bounded (`maxBytes`, by default per
+ * kind) so that a hostile pack cannot exhaust memory.
+ *
+ * (Pre-release change, T-204 review: the length field and the padding were
+ * added before any app shipped; envelope version 1 has only ever had this
+ * layout in a release.)
  */
 import { Inflate, deflateSync } from 'fflate';
 import { PayloadError } from './errors.ts';
+import { DEFAULT_LIMITS } from './limits.ts';
+import { LimitError, type ByteBudget } from './util.ts';
 
 const MAGIC = [0x54, 0x4c, 0x53, 0x59]; // "TLSY"
 export const PAYLOAD_VERSION = 1;
 export type PayloadKind = 'places' | 'own-doc' | 'manifest';
 const KIND_BYTE: Record<PayloadKind, number> = { places: 1, 'own-doc': 2, manifest: 3 };
 const BYTE_KIND: Record<number, PayloadKind> = { 1: 'places', 2: 'own-doc', 3: 'manifest' };
+const HEADER = 11;
 
-/** Largest decompressed body accepted (64 MiB: a 10,000-place own document is about 3 MB). */
+/** Smallest payload written (header, body and zero padding): 4 KiB. */
+export const PAYLOAD_PAD_FLOOR = 4096;
+
+/** Largest decompressed body accepted for any kind (64 MiB: a 10,000-place own document is about 3.8 MB). */
 export const MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
 
-export function encodePayload(kind: PayloadKind, body: Uint8Array, opts: { compress?: boolean; level?: number } = {}): Uint8Array {
+/** Default decompressed limit for each kind (SyncLimits overrides them). */
+export const PAYLOAD_LIMITS: Readonly<Record<PayloadKind, number>> = Object.freeze({
+  places: DEFAULT_LIMITS.placesPayloadBytes,
+  manifest: DEFAULT_LIMITS.manifestPayloadBytes,
+  'own-doc': DEFAULT_LIMITS.ownDocPayloadBytes,
+});
+
+export function encodePayload(
+  kind: PayloadKind,
+  body: Uint8Array,
+  opts: { compress?: boolean; level?: number; padFloor?: number } = {},
+): Uint8Array {
   let codec = 0;
   let data = body;
   if (opts.compress !== false && body.length > 64) {
@@ -36,38 +63,53 @@ export function encodePayload(kind: PayloadKind, body: Uint8Array, opts: { compr
       data = z;
     }
   }
-  const out = new Uint8Array(7 + data.length);
+  if (data.length > 0xffffffff) throw new PayloadError('payload: too large');
+  const out = new Uint8Array(Math.max(HEADER + data.length, opts.padFloor ?? PAYLOAD_PAD_FLOOR));
   out.set(MAGIC, 0);
   out[4] = PAYLOAD_VERSION;
   out[5] = KIND_BYTE[kind];
   out[6] = codec;
-  out.set(data, 7);
+  new DataView(out.buffer, out.byteOffset).setUint32(7, data.length);
+  out.set(data, HEADER);
   return out;
 }
 
-export function decodePayload(bytes: Uint8Array, opts: { maxBytes?: number } = {}): { kind: PayloadKind; body: Uint8Array } {
-  if (bytes.length < 7 || MAGIC.some((b, i) => bytes[i] !== b)) throw new PayloadError('payload: bad magic');
+/**
+ * Decodes a payload. `maxBytes` bounds the decompressed body (default: the
+ * limit of its kind, PAYLOAD_LIMITS); `budget` is charged with the
+ * decompressed bytes as they come (a friend's or a pass's total).
+ */
+export function decodePayload(
+  bytes: Uint8Array,
+  opts: { maxBytes?: number | Partial<Record<PayloadKind, number>>; budget?: ByteBudget } = {},
+): { kind: PayloadKind; body: Uint8Array } {
+  if (bytes.length < HEADER || MAGIC.some((b, i) => bytes[i] !== b)) throw new PayloadError('payload: bad magic');
   if (bytes[4] !== PAYLOAD_VERSION) throw new PayloadError('payload: unsupported version', true);
   const kind = BYTE_KIND[bytes[5]!];
   if (!kind) throw new PayloadError('payload: unknown kind', true);
-  const max = opts.maxBytes ?? MAX_PAYLOAD_BYTES;
-  const data = bytes.subarray(7);
+  const max = typeof opts.maxBytes === 'number' ? opts.maxBytes : (opts.maxBytes?.[kind] ?? PAYLOAD_LIMITS[kind]);
+  const len = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(7);
+  if (HEADER + len > bytes.length) throw new PayloadError('payload: truncated');
+  for (let i = HEADER + len; i < bytes.length; i++) if (bytes[i] !== 0) throw new PayloadError('payload: non-zero padding');
+  const data = bytes.subarray(HEADER, HEADER + len);
   if (bytes[6] === 0) {
-    if (data.length > max) throw new PayloadError('payload: too large');
+    if (data.length > max) throw new LimitError('pack', `payload (${kind})`);
+    opts.budget?.take(data.length, `payload (${kind})`);
     return { kind, body: data };
   }
   if (bytes[6] !== 1) throw new PayloadError('payload: unknown codec', true);
-  return { kind, body: inflateBounded(data, max) };
+  return { kind, body: inflateBounded(data, max, opts.budget) };
 }
 
-/** Raw DEFLATE decompression that stops as soon as the output exceeds `max` bytes. */
-export function inflateBounded(data: Uint8Array, max: number): Uint8Array {
+/** Raw DEFLATE decompression that stops as soon as the output exceeds `max` bytes (or the budget). */
+export function inflateBounded(data: Uint8Array, max: number, budget?: ByteBudget): Uint8Array {
   const chunks: Uint8Array[] = [];
   let total = 0;
   let done = false;
   const inf = new Inflate((chunk, final) => {
     total += chunk.length;
-    if (total > max) throw new PayloadError('payload: decompressed size over the limit');
+    if (total > max) throw new LimitError('pack', 'payload: decompressed size');
+    budget?.take(chunk.length, 'payload: decompressed size');
     chunks.push(chunk);
     if (final) done = true;
   });
@@ -76,7 +118,7 @@ export function inflateBounded(data: Uint8Array, max: number): Uint8Array {
     for (let i = 0; i < data.length; i += STEP) inf.push(data.subarray(i, Math.min(data.length, i + STEP)), i + STEP >= data.length);
     if (data.length === 0) inf.push(new Uint8Array(0), true);
   } catch (e) {
-    if (e instanceof PayloadError) throw e;
+    if (e instanceof PayloadError || e instanceof LimitError) throw e;
     throw new PayloadError('payload: invalid compressed data');
   }
   if (!done) throw new PayloadError('payload: truncated compressed data');

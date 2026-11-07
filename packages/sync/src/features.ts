@@ -21,6 +21,7 @@
  */
 import {
   assertValidGeometry,
+  representativePoint,
   isLocalPlaceId,
   parseOsmPlaceId,
   saveIdFor,
@@ -30,6 +31,7 @@ import {
   type PlaceGeometry,
   type PriceLevel,
   type Repository,
+  type SavePlaceSnapshot,
   type SaveStatus,
 } from '@triangulair/data';
 import { packHash } from '@triangulair/crypto';
@@ -38,10 +40,19 @@ import { parseJsonBody, utf8 } from './payload.ts';
 
 export const PLACES_VERSION = 1;
 export const PLACES_MINOR = 0;
-/** Reader limits (checked before projecting anything). */
-export const MAX_FEATURES_PER_PACK = 5000;
+/**
+ * Reader limits (checked before projecting anything). The writer puts at
+ * most `capacity` places in a pack (default 200, never more than this).
+ */
+export const MAX_FEATURES_PER_PACK = 1000;
 const MAX_POSITIONS = 20_000;
 const MAX_TAGS = 32;
+/** Tag colors: `#RRGGBB` only (they reach the UI and uMap styles). */
+export const COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+/** Tag icons: a symbol name (lower-case letters, digits, `-` and `_`), never markup or a URL. */
+export const ICON_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+/** Dates more than this far in the future are clamped (they would pin a friend's items at the top of "recent"). */
+export const MAX_FUTURE_MS = 24 * 3600 * 1000;
 
 export interface TagOut {
   name: string;
@@ -104,8 +115,9 @@ export function readOwnItems(repo: Repository): OwnItem[] {
     const t = tags.get(id);
     if (!t) return null;
     const out: TagOut = { name: t.name };
-    if (t.color) out.color = t.color;
-    if (t.icon) out.icon = t.icon;
+    // Only what readers accept (R-13): another value would make the whole pack unreadable.
+    if (t.color && COLOR_RE.test(t.color)) out.color = t.color;
+    if (t.icon && ICON_RE.test(t.icon)) out.icon = t.icon;
     const p = t.parent_id ? tags.get(t.parent_id) : undefined;
     if (p) out.parent = p.name;
     return out;
@@ -122,39 +134,49 @@ export function readOwnItems(repo: Repository): OwnItem[] {
     if (!l) byS.set(r.save_id, (l = []));
     if (l.length < MAX_TAGS) l.push(t);
   }
+  // R-02: the place as MY document describes it (`saves.place_snapshot`), never the shared `places` row,
+  // which a friend's save may have created. Only the identity fields that came from my own OSM cache
+  // (`places.osm_fields`, written by this device's OSM fetches) take precedence, as they do in my app.
   return repo.db
     .all<{
       id: string; place_id: string; comment: string; comment_visibility: CommentVisibility; status: SaveStatus | null;
       price_level: PriceLevel | null; sharing: 'private' | 'friends'; created_at: number; updated_at: number;
-      name: string; category: string | null; kind: 'place' | 'zone'; edge: 'sharp' | 'blurred'; geom: string;
-      lat: number; lon: number; pstatus: string;
+      snap: string | null; osm_fields: string; name: string; category: string | null; kind: 'place' | 'zone';
+      edge: 'sharp' | 'blurred'; geom: string; pstatus: string;
     }>(
       `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.created_at,
-         s.updated_at, p.name, p.category, p.kind, p.edge, p.geom, p.lat, p.lon, p.status AS pstatus
+         s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus
        FROM saves s JOIN places p ON p.id = s.place_id
        WHERE s.owner_id = ? AND s.deleted_at IS NULL ORDER BY s.place_id`,
       [me],
     )
-    .map((r) => ({
-      placeId: r.place_id,
-      saveId: r.id,
-      sharing: r.sharing,
-      comment: r.comment,
-      commentVisibility: r.comment_visibility,
-      status: r.status,
-      priceLevel: r.price_level,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      name: r.name,
-      category: r.category,
-      kind: r.kind,
-      edge: r.edge,
-      geometry: JSON.parse(r.geom) as PlaceGeometry,
-      lat: r.lat,
-      lon: r.lon,
-      placeStatus: r.pstatus,
-      tags: byS.get(r.id) ?? [],
-    }));
+    .map((r) => {
+      const mine = r.snap ? (JSON.parse(r.snap) as SavePlaceSnapshot) : null;
+      if (!mine) throw new Error(`my save ${r.id} has no place snapshot (projection out of date)`);
+      const osm = new Set(r.osm_fields ? r.osm_fields.split(',') : []);
+      const geometry = osm.has('geom') ? (JSON.parse(r.geom) as PlaceGeometry) : mine.geometry;
+      const { lat, lon } = representativePoint(geometry);
+      return {
+        placeId: r.place_id,
+        saveId: r.id,
+        sharing: r.sharing,
+        comment: r.comment,
+        commentVisibility: r.comment_visibility,
+        status: r.status,
+        priceLevel: r.price_level,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        name: osm.has('name') ? r.name : mine.name,
+        category: osm.has('category') ? r.category : mine.category,
+        kind: mine.kind,
+        edge: mine.edge,
+        geometry,
+        lat,
+        lon,
+        placeStatus: r.pstatus,
+        tags: byS.get(r.id) ?? [],
+      };
+    });
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -164,21 +186,33 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * comments marked friends or public, "public" (public lists) only public ones.
  */
 export function featureFor(item: OwnItem, audience: 'friends' | 'public'): PlaceFeature {
-  const props = { name: item.name } as PlaceFeature['properties'];
-  if (item.category) props.category = item.category;
+  const props = { name: clean(item.name, 500) } as PlaceFeature['properties'];
+  if (item.category) props.category = clean(item.category, 200);
   if (item.kind === 'zone') props.kind = 'zone';
   if (item.edge === 'blurred') props.edge = 'blurred';
   const visible = audience === 'public' ? item.commentVisibility === 'public' : item.commentVisibility !== 'private';
   if (visible && item.comment) {
-    props.comment = item.comment;
+    props.comment = clean(item.comment, 20_000, true);
     props.comment_visibility = item.commentVisibility as 'friends' | 'public';
   }
   if (item.status) props.status = item.status;
   if (item.priceLevel) props.price_level = item.priceLevel;
-  if (item.tags.length) props.tags = item.tags;
+  if (item.tags.length) {
+    props.tags = item.tags.map((t) => {
+      const o: TagOut = { ...t, name: clean(t.name, 100) };
+      if (t.parent !== undefined) o.parent = clean(t.parent, 100);
+      return o;
+    });
+  }
   props.created = iso(item.createdAt);
   props.updated = iso(item.updatedAt);
   return { type: 'Feature', id: item.placeId, geometry: item.geometry, properties: props };
+}
+
+/** What readers accept in a string field (R-13): no controls or bidi overrides, bounded length. */
+function clean(v: string, max: number, multiline = false): string {
+  const out = v.replace(new RegExp(CONTROL_RE.source, 'g'), '').replace(multiline ? /(?!)/ : new RegExp(LINE_RE.source, 'g'), ' ');
+  return out.length > max ? out.slice(0, max) : out;
 }
 
 /** Short content hash of a feature (what changed between two versions of an item). */
@@ -201,8 +235,14 @@ function fail(msg: string): never {
   throw new PayloadError(`places: ${msg}`);
 }
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-function str(v: unknown, max: number, what: string): string {
+// C0 controls except tab, line feed and carriage return; DEL and C1 controls; bidi embeddings, overrides and isolates.
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
+// eslint-disable-next-line no-control-regex
+const LINE_RE = /[\t\n\r]/;
+function str(v: unknown, max: number, what: string, multiline = false): string {
   if (typeof v !== 'string' || v.length > max) fail(`${what} must be a string of at most ${max} characters`);
+  if (CONTROL_RE.test(v) || (!multiline && LINE_RE.test(v))) fail(`${what} contains control or bidirectional override characters`);
   return v;
 }
 function date(v: unknown, what: string): number {
@@ -261,7 +301,7 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
     if (p.category !== undefined) str(p.category, 200, 'category');
     if (p.kind !== undefined && p.kind !== 'zone') fail('bad kind');
     if (p.edge !== undefined && p.edge !== 'blurred') fail('bad edge');
-    if (p.comment !== undefined) str(p.comment, 20_000, 'comment');
+    if (p.comment !== undefined) str(p.comment, 20_000, 'comment', true);
     if (p.comment_visibility !== undefined && p.comment_visibility !== 'friends' && p.comment_visibility !== 'public') fail('bad comment_visibility');
     if (p.status !== undefined && !STATUSES.has(p.status as string)) fail('bad status');
     if (p.price_level !== undefined && ![1, 2, 3, 4].includes(p.price_level as number)) fail('bad price_level');
@@ -271,8 +311,8 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
         if (!isObj(t)) fail('bad tag');
         for (const k of Object.keys(t)) if (!TAG_KEYS.has(k) && !lenient) fail(`unknown tag field ${k}`);
         str(t.name, 100, 'tag name');
-        if (t.color !== undefined) str(t.color, 32, 'tag color');
-        if (t.icon !== undefined) str(t.icon, 64, 'tag icon');
+        if (t.color !== undefined && (typeof t.color !== 'string' || !COLOR_RE.test(t.color))) fail('tag color must be #RRGGBB');
+        if (t.icon !== undefined && (typeof t.icon !== 'string' || !ICON_RE.test(t.icon))) fail('tag icon must be a symbol name');
         if (t.parent !== undefined) str(t.parent, 100, 'tag parent');
       }
     }
@@ -283,8 +323,13 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
   });
 }
 
-/** A friend's feature as a foreign save for the local cache. */
-export function toForeignSave(owner: string, f: PlaceFeature): ForeignSaveInput {
+/**
+ * A friend's feature as a foreign save for the local cache. Dates later than
+ * `now` + 24 h are clamped to it (R-13).
+ */
+export function toForeignSave(owner: string, f: PlaceFeature, now: number = Date.now()): ForeignSaveInput {
+  const latest = now + MAX_FUTURE_MS;
+  const clamp = (iso: string) => Math.min(Date.parse(iso), latest);
   const osm = parseOsmPlaceId(f.id);
   const p = f.properties;
   const kind = p.kind === 'zone' ? 'zone' : 'place';
@@ -311,8 +356,8 @@ export function toForeignSave(owner: string, f: PlaceFeature): ForeignSaveInput 
     status: p.status ?? null,
     priceLevel: p.price_level ?? null,
     theirTags,
-    createdAt: Date.parse(p.created),
-    updatedAt: Date.parse(p.updated),
+    createdAt: clamp(p.created),
+    updatedAt: clamp(p.updated),
   };
 }
 

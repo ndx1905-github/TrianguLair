@@ -6,6 +6,7 @@
  */
 import { RollbackError, StorageMovedError, TLCryptoError } from '@triangulair/crypto';
 import { StorageError } from '@triangulair/storage';
+import { LimitError } from './util.ts';
 
 /** A payload inside a pack is malformed (`unsupported`: a newer version or kind). */
 export class PayloadError extends Error {
@@ -57,6 +58,7 @@ export type SyncProblemKind =
   | 'device-revoked'
   | 'needs-key'
   | 'too-many-recipients'
+  | 'too-large'
   | 'bug';
 
 export interface SyncProblem {
@@ -100,6 +102,12 @@ export function classifyError(e: unknown, about: 'own' | 'friend', online = true
   if (e instanceof TooManyRecipientsError) {
     return P('too-many-recipients', false, true, '—', 'Too many people for one shared batch.', detail);
   }
+  if (e instanceof LimitError) {
+    // A pass's total is transient (the friends left over are read next time); one file or one friend over the limit is not.
+    return e.scope === 'pass'
+      ? P('too-large', true, false, '—', friend ? 'Updated {age} ago' : '', detail)
+      : P('too-large', false, false, 'Tampered content (invalid signature)', friend ? '{name}\'s content could not be verified' : 'Sync error', detail);
+  }
   if (e instanceof PayloadError) {
     return e.unsupported
       ? P('unsupported', false, false, 'Unsupported format version', 'Update the app to see {name}\'s places', detail)
@@ -120,6 +128,8 @@ export function classifyError(e: unknown, about: 'own' | 'friend', online = true
         return P('conflict', true, false, 'Two of my devices write at the same time', '', detail);
       case 'NOT_FOUND':
         return P('not-found', true, false, friend ? 'A friend\'s storage unreachable' : 'Interrupted write', friend ? 'Updated {age} ago' : '', detail);
+      case 'TOO_LARGE':
+        return P('too-large', false, false, 'Tampered content (invalid signature)', friend ? '{name}\'s content could not be verified' : 'Sync error', detail);
       case 'PROTOCOL':
         if (e.status === 507 || e.status === 413) {
           return P('quota', true, false, 'Quota full', 'Your storage is full', detail);
