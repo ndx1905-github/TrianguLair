@@ -143,7 +143,7 @@ export function ChoiceCard({ title, help, selected, onPress, disabled, badge, te
 
 const ICON: Record<StepStatus, string> = { running: '…', ok: '✓', warn: '!', fail: '✕', skip: '–' };
 
-function CopyBlock({ text, testID }: { text: string; testID?: string }) {
+export function CopyBlock({ text, testID }: { text: string; testID?: string }) {
   const c = useUiColors();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);

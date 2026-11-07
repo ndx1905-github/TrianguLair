@@ -100,7 +100,10 @@ function MoveScreen() {
       if (e instanceof MigrationCancelled) setPhase({ kind: 'error', plan: p, error: 'cancelled' });
       else if (e instanceof MigrationConflict) setPhase({ kind: 'error', plan: p, error: 'conflict', paths: e.paths });
       else if (e instanceof SourceChanged) setPhase({ kind: 'error', plan: p, error: 'changed' });
-      else setPhase({ kind: 'error', plan: p, error: 'network' });
+      else {
+        console.warn('Storage move failed', e);
+        setPhase({ kind: 'error', plan: p, error: 'network' });
+      }
     } finally {
       abort.current = null;
     }

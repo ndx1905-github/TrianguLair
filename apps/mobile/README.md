@@ -98,10 +98,50 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   after 5 min in the background (choice: right away, 1, 5, 15 min); an opaque cover hides the app in
   the app switcher. The screens stay mounted underneath (nothing typed is lost). "Lock or wipe after
   N days without sync" waits for synchronization.
-- **Settings** (`/settings`, button in the filter bar): profile, kit status, storage (local only),
+- **Settings** (`/settings`, button in the filter bar): profile, kit status, storage (summary, link to Settings › Storage),
   app lock, this device (date added, identity and device key fingerprints, primary device on/off:
   turning it back on asks for the 12 words once the phrase is gone), theme and language (both kept per
   device now).
+- **Storage** (`/storage`, `/storage/setup`, `/storage/move`, T-203; logic in `src/storage/`, tested): Settings ›
+  Storage shows local only or the current storage (where my devices write, the certified read address for friends,
+  last test), the connection test, and the previous storages that keep a signed redirect. The wizard offers
+  Nextcloud (server + user + app password → `<server>/remote.php/dav/files/<user>/TrianguLair/`; the public share link
+  `…/s/<token>` → `…/public.php/dav/files/<token>/` as read address), generic WebDAV, S3 (endpoint, bucket, region,
+  keys, prefix, path or host style; read address suggested as `<endpoint>/<bucket>/<prefix>`), SFTP (shown, marked
+  "Desktop only": `ssh2` needs Node) and HTTPS only (published by other means). Fields are validated as typed
+  (http write URL: warning; the read address must pass the crypto package's `checkLocation`: public https, no query,
+  no credentials). Credentials live in the secret store (`storage` entry; web: the test-only store).
+  - **Test connection** (`connectionTest.ts`): reach (HEAD `index.json` with the credentials; on the web a transport
+    failure is told apart: a `no-cors` request that gets through means CORS), write/read back/delete a test file (creates
+    the folder), `probeConditionalWrites` (emulated conditions are kept in the config), an anonymous GET of a test file
+    at the read address (401/403, 404 "another folder", other bytes, CORS), ETag visible to scripts (web), certifiable
+    address, existing `index.json`. Each failure comes with fixes, some to copy: Nextcloud share-link steps, S3 bucket
+    policy (anonymous `GetObject` on the prefix only, never `ListBucket`), AWS "Block public access", S3 CORS rules,
+    Apache / nginx CORS rules for WebDAV with this app's origin, read-address CORS headers.
+  - **First storage**: after a passing test, the master key (one tap on the primary device, else the 12 words, checked
+    first) issues sharing certificate rotation r + 1 with `location` = the read address (`certify.ts`); the kit then
+    carries the address and protocol.
+  - **Move** (`migration.ts`): plan (files, size, conflicts, files already there), copy with progress and cancel (packs and
+    photos in parallel with `If-None-Match: *`, index files last; identical files already there are skipped, so a
+    cancelled move resumes; different ones are a conflict and nothing is overwritten; the source is listed again
+    and changes copied in another round, compared by content because weak/coarse ETags change on their own), verify
+    (every destination file read back, BLAKE2b compared), then certify the new address (master key) and switch: the
+    old storage becomes a redirect kept 180 days (`REDIRECT_KEEP_MS`), the invitations warning is shown and the
+    cancelled ones are listed when the sync engine provides them. HTTPS-only destination: the owner copies the folder,
+    the app verifies it at the new address. A crash between the certificate and the state write is finished on the
+    next start (`pendingMove`).
+  - **Right moment** (`useStorageForSharing.tsx`): `ensure(reason, returnTo)` for the sharing flows (opens the wizard
+    with `?reason=invite|link-list|public-list|backup&return=…` and returns false), `StorageNeeded` /
+    `StorageNeededIfMissing` cards (used in the list editor for link and public lists); the "Protect your places" card
+    now opens the wizard too.
+  - **For the sync engine** (`interfaces.ts`): `StorageAccess` (current config, write and read adapters, certified read
+    address, redirects with their adapters, `republishPending` / `markRepublished`), `SharingCertRotation`
+    (`IdentityApi.currentSharingCert` / `rotateSharingCert({ location?, revokeDevices?, newKey? }, master)`, also meant
+    for "Declare a device lost") and `StorageMoveHooks` (`publishAfterMove({ cert, to, redirects })`,
+    `openInvitations(previousCert)`), registered with `registerStorageMoveHooks`. Until hooks exist, a connect or move
+    sets `republishPending`: the next sync publishes the index signed with the new certificate at the new storage and
+    the same index at every redirect. Other devices and the recovery vault receive the rotated sharing key from the
+    sync engine (`RotationResult.sharing`, `vaultCopy`).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
   toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
   "Leave out" or "Follow the filter" (the list's exceptions).
@@ -254,7 +294,9 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 ## Layout
 
 ```
-src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, _layout (providers)
+src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, storage/*, _layout (providers)
+src/storage/          storage config and URL builders, adapters, connection test and fixes, migration, certificate
+                      rotation, state (secret store), provider, sharing prompt, interfaces for the sync engine
 src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
 src/firstLaunch/      first-launch frame, profile and code fields, steps
 src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
@@ -393,3 +435,40 @@ Zones and lists (`scripts/shots_zones.py`, same setup):
 | `docs/phone-list-preview.png`, `docs/phone-list-reasons.png` | Preview map and count; why each place is in or out (private never) |
 | `docs/phone-list-view.png`, `docs/phone-list-view-rows.png`, `docs/tablet-list-view.png` | A list: map, rows, card |
 | `docs/phone-fr-list-editor.png` | French, manual list |
+
+Storage settings (`scripts/shots_storage.py`, against the Apache WebDAV server of
+`packages/storage/scripts/real-servers.sh` through a CORS proxy started by the script; friends' read address
+`https://friends.triangulair.test/pub/…` answered from Apache's anonymous `/pub`):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-storage-local.png`, `docs/phone-storage-choose.png` | Local only; the protocols (SFTP "Desktop only") |
+| `docs/phone-storage-nextcloud-form.png` | Nextcloud helper: folder URL built from server and user, problems after "Test" |
+| `docs/phone-storage-test-cors.png`, `docs/phone-dark-storage-test-cors.png` | Web build against a server without CORS: diagnosis and rules to copy |
+| `docs/phone-storage-test-ok.png`, `docs/phone-dark-storage-test-ok.png`, `docs/phone-storage-certify.png` | Every step passed; certify with the master key |
+| `docs/phone-dark-storage-connected.png` | Connected storage, dark mode |
+| `docs/phone-storage-move-plan.png`, `docs/phone-storage-move-progress.png` | Move: plan, invitations warning; copy progress with cancel |
+| `docs/phone-storage-move-verified.png`, `docs/phone-storage-move-done.png` | All files verified; moved, redirect date, kit and access hints |
+| `docs/phone-storage-overview.png` | Settings › Storage after a move: previous storage kept as redirect |
+| `docs/tablet-fr-storage-s3.png` | Tablet, French: S3 form, empty prefix warning, key policy to copy |
+| `docs/tablet-fr-list-storage-needed.png` | The "right moment": a link-only list asks for a storage |
+
+End-to-end: `e2e/storage.spec.ts` runs against the same Apache server (skipped when it is not running): wrong
+password, CORS diagnosis, private read address refused, connect, lossless move of packs, a photo, a public list and the
+index (byte for byte on the new storage, old one untouched, redirect listed), and a move onto a folder with other
+content that overwrites nothing.
+
+Storage open questions:
+
+- **S3 on a phone**: `aws4fetch` signs with WebCrypto `crypto.subtle`, which Hermes lacks; S3 works in the web build
+  only until a SubtleCrypto polyfill (or another signer) is chosen.
+- **Nextcloud Login Flow v2** (spec: connection through the browser creating the app password, and the share link made
+  automatically through the OCS API) is not done: an app password and a pasted share link for now. The public DAV URL
+  (`public.php/dav/files/<token>/`, Nextcloud 29+) is still to be checked against a real instance; older servers need
+  another form.
+- **Back to local only** from a storage is not offered (it would need a certificate without `location`, and friends
+  would lose access): to decide.
+- **Redirect period**: 180 days chosen for "a few months"; the old storage's packs are kept as they are (nothing is
+  deleted by the app); emptying the old folder after the period is left to the user or a later task.
+- The other devices learn the move through the sync engine (new sharing certificate sealed to them, recovery vault
+  copy): T-204/T-206.

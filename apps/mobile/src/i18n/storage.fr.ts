@@ -41,6 +41,7 @@ export const storageFr: Messages = {
   'storage.setup.editTitle': 'Accès au stockage',
   'storage.setup.moveTitle': 'Choisir le nouveau stockage',
   'storage.setup.choose': 'Où garder vos lieux',
+  'storage.setup.otherChoice': 'Choisir un autre type de stockage',
   'storage.setup.fixForm': 'Certains champs sont à revoir.',
   'storage.setup.testOk': 'Tout fonctionne. Vos amis pourront lire ce stockage.',
   'storage.setup.testFailed': 'Ce stockage n’est pas encore utilisable : voyez les corrections ci-dessus, puis testez à nouveau.',

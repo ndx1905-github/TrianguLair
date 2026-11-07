@@ -377,7 +377,7 @@ Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, 
 
 Acceptance criteria:
 
-- [ ] Lossless migration tested
+- [x] Lossless migration tested (unit tests with the memory adapter, end-to-end against Apache WebDAV)
 
 Depends on: T-202
 

@@ -21,6 +21,7 @@ import {
   buildConfig,
   draftFromConfig,
   nextcloudDavUrl,
+  normalizePrefix,
   suggestedReadUrl,
   type DraftField,
   type DraftProblem,
@@ -29,7 +30,7 @@ import {
   type StorageDraft,
 } from '../../storage/config';
 import { runConnectionTest, type TestReport, type TestStep } from '../../storage/connectionTest';
-import { ChoiceCard, Field, MasterKeyPrompt, Muted, Section, StorageScreen, TestResults } from '../../storage/components';
+import { ChoiceCard, CopyBlock, Field, MasterKeyPrompt, Muted, Section, StorageScreen, TestResults } from '../../storage/components';
 import { useStorage } from '../../storage/StorageProvider';
 import { safeReturn } from '../../storage/useStorageForSharing';
 import { s3AccessKeyPolicy } from '../../storage/fixes';
@@ -141,7 +142,7 @@ function SetupScreen() {
   return (
     <StorageScreen title={editing ? t('storage.setup.editTitle') : current ? t('storage.setup.moveTitle') : t('storage.setup.title')} testID="storage-setup">
       {reason ? <Banner testID="storage-reason">{t(`storage.reason.${reason}`)}</Banner> : null}
-      {!editing && (
+      {!editing && !chosen && (
         <Section title={t('storage.setup.choose')}>
           {!current && <ChoiceCard title={t('storage.choice.local')} help={t('storage.choice.localHelp')} onPress={finish} testID="choice-local" />}
           {CHOICES.map((ch) => (
@@ -165,6 +166,11 @@ function SetupScreen() {
 
       {chosen && (
         <Section title={t(`storage.choice.${choice}`)}>
+          {!editing && (
+            <View style={{ alignSelf: 'flex-start' }}>
+              <Button kind="secondary" label={t('storage.setup.otherChoice')} onPress={() => setChosen(false)} testID="choice-other" />
+            </View>
+          )}
           {choice === 'nextcloud' && (
             <>
               <Field label={t('storage.field.ncServer')} value={draft.ncServer} onChange={(v) => set({ ncServer: v })} placeholder="https://cloud.example.org" keyboard="url" problems={problemsFor('ncServer')} testID="field-ncServer" />
@@ -200,7 +206,7 @@ function SetupScreen() {
                 testID="field-s3Style"
               />
               <Muted>{t('storage.field.s3KeyHelp')}</Muted>
-              {draft.s3Bucket.trim() !== '' && <Muted>{s3AccessKeyPolicy(draft.s3Bucket.trim(), draft.s3Prefix.trim().replace(/^\/+/, '').replace(/\/?$/, '/'))}</Muted>}
+              {draft.s3Bucket.trim() !== '' && normalizePrefix(draft.s3Prefix) !== null && <CopyBlock text={s3AccessKeyPolicy(draft.s3Bucket.trim(), normalizePrefix(draft.s3Prefix)!)} testID="s3-key-policy" />}
             </>
           )}
           {choice === 'https' && <Muted>{t('storage.field.httpsHelp')}</Muted>}

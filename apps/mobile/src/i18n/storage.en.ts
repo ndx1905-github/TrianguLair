@@ -41,6 +41,7 @@ export const storageEn: Messages = {
   'storage.setup.editTitle': 'Storage access',
   'storage.setup.moveTitle': 'Choose the new storage',
   'storage.setup.choose': 'Where to keep your places',
+  'storage.setup.otherChoice': 'Choose another kind of storage',
   'storage.setup.fixForm': 'Some fields need attention.',
   'storage.setup.testOk': 'Everything works. Your friends will be able to read this storage.',
   'storage.setup.testFailed': 'This storage cannot be used yet: see the fixes above, then test again.',
