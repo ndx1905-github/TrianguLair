@@ -4,6 +4,7 @@ import { frFiltersTags } from './filtersTags.fr';
 import { zonesListsFr } from './zonesLists.fr';
 import { storageFr } from './storage.fr';
 import { syncFr } from './sync.fr';
+import { contactsFr } from './contacts.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -15,6 +16,8 @@ export const fr: Messages = {
   ...storageFr,
   // Sync status, friends' places, What's new (T-210), kept in their own file.
   ...syncFr,
+  // Invitations, contacts and access (T-208, T-209), kept in their own file.
+  ...contactsFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

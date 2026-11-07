@@ -16,8 +16,31 @@ export interface SecretStore {
 
 /**
  * Every entry the app keeps in the secret store (`storage`: storage settings with their credentials, T-203;
- * `sync-keys`: earlier sharing key pairs and vault data keys kept by the sync engine, T-210).
+ * `sync-keys`: earlier sharing key pairs and vault data keys kept by the sync engine, T-210;
+ * `invitations-received`: invitation links I answered, whose key reads the inviter's places until they accept;
+ * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208).
  */
-export type SecretKey = 'identity' | 'device-keys' | 'sharing-key' | 'primary-identity' | 'pending-phrase' | 'lock-code' | 'storage' | 'sync-keys';
+export type SecretKey =
+  | 'identity'
+  | 'device-keys'
+  | 'sharing-key'
+  | 'primary-identity'
+  | 'pending-phrase'
+  | 'lock-code'
+  | 'storage'
+  | 'sync-keys'
+  | 'invitations-received'
+  | 'pending-invitation';
 
-export const SECRET_KEYS: readonly SecretKey[] = ['identity', 'device-keys', 'sharing-key', 'primary-identity', 'pending-phrase', 'lock-code', 'storage', 'sync-keys'];
+export const SECRET_KEYS: readonly SecretKey[] = [
+  'identity',
+  'device-keys',
+  'sharing-key',
+  'primary-identity',
+  'pending-phrase',
+  'lock-code',
+  'storage',
+  'sync-keys',
+  'invitations-received',
+  'pending-invitation',
+];

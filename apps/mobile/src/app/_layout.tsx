@@ -3,6 +3,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ContactsProvider } from '../contacts/ContactsProvider';
+import { PendingInvitation } from '../contacts/PendingInvitation';
 import { DataProvider } from '../data/DataProvider';
 import { ThemeProvider, useIsDark, useUiColors } from '../hooks/useUiColors';
 import { I18nProvider } from '../i18n';
@@ -38,9 +40,12 @@ export default function RootLayout() {
             <DataProvider>
               <SyncProvider>
               <AppStateProvider>
-                <LockProvider>
-                  <ThemedStack />
-                </LockProvider>
+                <ContactsProvider>
+                  <LockProvider>
+                    <ThemedStack />
+                    <PendingInvitation />
+                  </LockProvider>
+                </ContactsProvider>
               </AppStateProvider>
               </SyncProvider>
             </DataProvider>

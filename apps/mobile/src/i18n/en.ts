@@ -4,6 +4,7 @@ import { enFiltersTags } from './filtersTags.en';
 import { zonesListsEn } from './zonesLists.en';
 import { storageEn } from './storage.en';
 import { syncEn } from './sync.en';
+import { contactsEn } from './contacts.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -15,6 +16,8 @@ export const en: Messages = {
   ...storageEn,
   // Sync status, friends' places, What's new (T-210), kept in their own file.
   ...syncEn,
+  // Invitations, contacts and access (T-208, T-209), kept in their own file.
+  ...contactsEn,
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',

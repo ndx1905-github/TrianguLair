@@ -145,6 +145,12 @@ function SettingsScreen() {
             <Button kind="secondary" label={t('sync.settingsRow')} onPress={() => router.push('/sync')} testID="settings-sync" />
           </Section>
 
+          <Section title={t('settings.friends')}>
+            <Muted>{t('settings.friendsHelp')}</Muted>
+            <Button label={t('inviting.title')} onPress={() => router.push('/invite')} testID="settings-invite" />
+            <Button kind="secondary" label={t('contacts.open')} onPress={() => router.push('/contacts')} testID="settings-contacts" />
+          </Section>
+
           <Section title={t('settings.lock')}>
             {lock.security === 'none' && !lock.settings.enabled && <Banner tone="warning">{t('settings.lockNoScreenLock')}</Banner>}
             <ToggleRow
