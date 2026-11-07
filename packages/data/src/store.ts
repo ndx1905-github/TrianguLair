@@ -53,6 +53,23 @@ export const PROJECTION_VERSION = 1;
 /** Encoding of the chunks in `doc_chunks` (recorded in `meta.doc_format`). */
 export const DOC_FORMAT = 'yjs-update-v1';
 
+/**
+ * Encoded snapshot (`DataStore.snapshot` format) of the document that these
+ * Yjs updates make together, without touching any store: used by the sync
+ * step to know what the storage holds.
+ */
+export function snapshotOfUpdates(updates: readonly Uint8Array[]): Uint8Array {
+  const doc = new Y.Doc();
+  try {
+    doc.transact(() => {
+      for (const u of updates) Y.applyUpdate(doc, u);
+    });
+    return Y.encodeSnapshot(Y.snapshot(doc));
+  } finally {
+    doc.destroy();
+  }
+}
+
 /** Above this many touched saves, re-project everything (cheaper than row-by-row diffs). */
 const FULL_PROJECTION_SAVES = 2000;
 
@@ -232,6 +249,28 @@ export class DataStore {
   /** My state vector (what I have), to ask another device for what I miss. Replaces Automerge heads. */
   heads(): Uint8Array {
     return Y.encodeStateVector(this.doc);
+  }
+
+  /**
+   * Encoded Yjs snapshot (state vector and delete set) of the document. The
+   * sync step (T-204) compares it with the snapshot of what the storage holds
+   * (`snapshotOfUpdates`) to know whether there is anything left to publish.
+   */
+  snapshot(): Uint8Array {
+    return Y.encodeSnapshot(Y.snapshot(this.doc));
+  }
+
+  /** Whether the document is exactly at `snapshot` (same state vector, same deletions). */
+  isAt(snapshot: Uint8Array): boolean {
+    return Y.equalSnapshots(Y.snapshot(this.doc), Y.decodeSnapshot(snapshot));
+  }
+
+  /**
+   * Everything the document has beyond the state vector of `snapshot`, with
+   * the whole delete set (deletions are not covered by a state vector).
+   */
+  exportSince(snapshot: Uint8Array): Uint8Array {
+    return Y.encodeStateAsUpdate(this.doc, Y.encodeStateVector(Y.decodeSnapshot(snapshot).sv));
   }
 
   /** Replaces the stored chunks by one snapshot (`Y.encodeStateAsUpdate`). */
