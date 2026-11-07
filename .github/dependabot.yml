@@ -1,5 +1,11 @@
 # Dependabot (T-006): each package has its own lockfile, so each directory is listed.
 # Minor and patch updates are grouped into one weekly PR per directory; majors come alone.
+#
+# Expo SDK rule: expo, expo-* packages, react, react-dom, react-native and the native
+# libraries Expo pins must all match one SDK version. Mixing SDKs (e.g. expo 57 with
+# expo-location 58) breaks native builds. So Dependabot only proposes PATCH updates for
+# them (grouped in "expo-sdk"); moving to a new SDK is a deliberate task done with
+# `npx expo install --fix` in one PR.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -9,11 +15,33 @@ updates:
       - /packages/data
       - /packages/osm
       - /packages/import
+      - /packages/sync
       - /apps/mobile
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@expo/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "@maplibre/maplibre-react-native"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Pinned to the Chromium preinstalled in the agents' sandbox (see apps/mobile/README).
+      - dependency-name: "@playwright/test"
     groups:
+      expo-sdk:
+        patterns: ["expo", "expo-*", "@expo/*", "react", "react-dom", "react-native", "react-native-*", "@maplibre/maplibre-react-native"]
       minor-and-patch:
         update-types: [minor, patch]
     commit-message:
