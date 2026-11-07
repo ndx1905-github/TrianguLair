@@ -42,7 +42,7 @@ export function readOnly(a: StorageAdapter): StorageAdapter {
     delete: async (p) => {
       throw new ReadOnly(p);
     },
-    list: () => a.list(''),
+    list: (p) => a.list(p),
   };
 }
 
