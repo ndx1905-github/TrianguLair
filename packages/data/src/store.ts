@@ -48,7 +48,7 @@ export interface OpenStoreOptions {
 }
 
 /** Bump when the projection code changes in a way that needs a rebuild. */
-export const PROJECTION_VERSION = 1;
+export const PROJECTION_VERSION = 2;
 
 /** Encoding of the chunks in `doc_chunks` (recorded in `meta.doc_format`). */
 export const DOC_FORMAT = 'yjs-update-v1';
@@ -294,6 +294,41 @@ export class DataStore {
   close(): void {
     this._doc?.destroy();
     this.repo.db.close();
+  }
+
+  /**
+   * Erases every row of this database (my document, its projection, friends'
+   * cache, people, lists) and closes the store: the remote wipe of a device
+   * declared lost (spec "Loss and theft"). Best effort on the file itself
+   * (`secure_delete`, then VACUUM); the app also deletes the database key,
+   * which is what makes the file unreadable at once.
+   */
+  wipe(): void {
+    const db = this.repo.db;
+    const tables = db
+      .all<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL TABLE%'`)
+      .map((r) => r.name)
+      .filter((n) => !n.startsWith('sqlite_') && !/_(data|idx|content|docsize|config|node|parent|rowid)$/.test(n));
+    try {
+      db.exec('PRAGMA secure_delete = ON');
+    } catch {
+      // not supported by this build: VACUUM below still rewrites the file
+    }
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.transaction(() => {
+      for (const t of tables) {
+        if (t === 'meta') db.run(`DELETE FROM meta WHERE key <> 'capabilities'`);
+        else db.run(`DELETE FROM "${t.replace(/"/g, '""')}"`);
+      }
+    });
+    try {
+      db.exec('VACUUM');
+    } catch {
+      // inside an outer transaction (tests): the rows are gone anyway
+    }
+    this._doc?.destroy();
+    this._doc = null;
+    db.close();
   }
 
   // ---------------------------------------------------------------- convenience edits

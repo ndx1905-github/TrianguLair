@@ -223,6 +223,20 @@ type SaveRow = {
 
 const json = <T>(s: string | null): T | null => (s == null ? null : (JSON.parse(s) as T));
 
+/** The description a save's owner gives of its place (`saves.place_snapshot`). */
+export interface SavePlaceSnapshot {
+  name: string;
+  category: string | null;
+  kind: PlaceKind;
+  edge: ZoneEdge;
+  geometry: PlaceGeometry;
+}
+
+function snapshotJson(p: PlaceSnapshot): string {
+  const s = normalizeSnapshot(p);
+  return JSON.stringify({ name: s.name, category: s.category, kind: s.kind, edge: s.edge, geometry: s.geometry } satisfies SavePlaceSnapshot);
+}
+
 function rowToPlace(r: PlaceRow): PlaceRecord {
   return {
     id: r.id,
@@ -396,23 +410,34 @@ export class Repository {
   // ---------------------------------------------------------------- places
 
   /**
-   * Inserts or updates the identity and geometry of a place from a snapshot
-   * (my save or a friend's). Once the place has been synced from OSM
-   * (`osm_synced_at` set), OSM's name, category and geometry win.
+   * Inserts or updates the identity and geometry of a place from a snapshot.
+   * The fields that came from my own OSM cache (`osm_fields`, set by
+   * `updatePlaceOsmData`) are kept; the others take the snapshot's values.
+   *
+   * `foreignOwner` (a friend's save, T-204 review R-02): the row is only
+   * created when missing, or updated while every save on it belongs to that
+   * friend. A friend can never change a row that one of my saves, or another
+   * person's, also uses: their own description stays in their save
+   * (`saves.place_snapshot`).
    */
-  upsertPlaceSnapshot(snapshot: PlaceSnapshot): void {
+  upsertPlaceSnapshot(snapshot: PlaceSnapshot, opts: { foreignOwner?: string } = {}): void {
     const s = normalizeSnapshot(snapshot);
     const [w, so, e, n] = geometryBBox(s.geometry);
     const rp = representativePoint(s.geometry);
-    const keep = (col: string) => `${col} = CASE WHEN places.osm_synced_at IS NULL THEN excluded.${col} ELSE places.${col} END`;
+    const field: Record<string, string> = { name: 'name', name_key: 'name', category: 'category' };
+    const keep = (col: string) =>
+      `${col} = CASE WHEN instr(',' || places.osm_fields || ',', ',${field[col] ?? 'geom'},') > 0 THEN places.${col} ELSE excluded.${col} END`;
+    const foreign = opts.foreignOwner !== undefined;
     this.db.run(
       `INSERT INTO places (id, osm_type, osm_id, name, name_key, category, kind, edge, geom, lat, lon, min_lon, min_lat, max_lon, max_lat)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, edge = excluded.edge,
-         ${['name', 'name_key', 'category', 'geom', 'lat', 'lon', 'min_lon', 'min_lat', 'max_lon', 'max_lat'].map(keep).join(', ')}`,
+         ${['name', 'name_key', 'category', 'geom', 'lat', 'lon', 'min_lon', 'min_lat', 'max_lon', 'max_lat'].map(keep).join(', ')}
+       ${foreign ? 'WHERE NOT EXISTS (SELECT 1 FROM saves o WHERE o.place_id = places.id AND o.owner_id <> ?)' : ''}`,
       [
         s.id, s.osmType, s.osmId, s.name, normalizeText(s.name), s.category, s.kind, s.edge,
         JSON.stringify(s.geometry), rp.lat, rp.lon, w, so, e, n,
+        ...(foreign ? [opts.foreignOwner!] : []),
       ],
     );
   }
@@ -432,12 +457,18 @@ export class Repository {
     const rp = representativePoint(geometry);
     const name = data.name ?? cur.name;
     const pick = <K extends keyof PlaceOsmData>(k: K): PlaceOsmData[K] => (data[k] !== undefined ? data[k] : (cur as PlaceOsmData)[k]);
+    const prevFields = this.db.get<{ f: string }>(`SELECT osm_fields AS f FROM places WHERE id = ?`, [placeId])!.f;
+    const fields = new Set(prevFields ? prevFields.split(',') : []);
+    if (data.name !== undefined) fields.add('name');
+    if (data.category !== undefined) fields.add('category');
+    if (data.geometry !== undefined) fields.add('geom');
+    const osmFields = ['name', 'category', 'geom'].filter((f) => fields.has(f)).join(',');
     const statusChanged = data.status !== undefined && data.status !== cur.status;
     this.transaction(() => {
       this.db.run(
         `UPDATE places SET name = ?, name_key = ?, category = ?, geom = ?, lat = ?, lon = ?, min_lon = ?, min_lat = ?,
            max_lon = ?, max_lat = ?, address = ?, opening_hours = ?, website = ?, phone = ?, osm_tags = ?, photos = ?,
-           status = ?, closed_signals = ?, osm_synced_at = ?
+           status = ?, closed_signals = ?, osm_synced_at = ?, osm_fields = ?
          WHERE id = ?`,
         [
           name, normalizeText(name), data.category !== undefined ? data.category : cur.category,
@@ -448,6 +479,7 @@ export class Repository {
           pick('status') ?? 'open',
           pick('closedSignals') ? JSON.stringify(pick('closedSignals')) : null,
           data.osmSyncedAt !== undefined ? data.osmSyncedAt : (cur.osmSyncedAt ?? Date.now()),
+          osmFields,
           placeId,
         ],
       );
@@ -505,15 +537,15 @@ export class Repository {
     const prevPlace = this.db.get<{ place_id: string }>(`SELECT place_id FROM saves WHERE id = ?`, [save.id]);
     this.db.run(
       `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, sharing, main_tag_id,
-         their_tags, created_at, updated_at, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+         their_tags, created_at, updated_at, deleted_at, place_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET place_id = excluded.place_id, comment = excluded.comment,
          comment_visibility = excluded.comment_visibility, status = excluded.status, price_level = excluded.price_level,
          sharing = excluded.sharing, main_tag_id = excluded.main_tag_id, created_at = excluded.created_at,
-         updated_at = excluded.updated_at, deleted_at = excluded.deleted_at`,
+         updated_at = excluded.updated_at, deleted_at = excluded.deleted_at, place_snapshot = excluded.place_snapshot`,
       [
         save.id, save.ownerId, save.placeId, save.comment, save.commentVisibility, save.status, save.priceLevel,
-        save.sharing, save.mainTagId, save.createdAt, save.updatedAt, save.deletedAt,
+        save.sharing, save.mainTagId, save.createdAt, save.updatedAt, save.deletedAt, snapshotJson(place),
       ],
     );
     this.db.run(`DELETE FROM save_tags WHERE save_id = ?`, [save.id]);
@@ -645,19 +677,19 @@ export class Repository {
     if (input.ownerId === this.meId) throw new Error('my own saves come from my document');
     this.transaction(() => {
       if (!this.getPerson(input.ownerId)) this.upsertPerson({ id: input.ownerId });
-      this.upsertPlaceSnapshot(input.place);
+      this.upsertPlaceSnapshot(input.place, { foreignOwner: input.ownerId });
       this.db.run(
         `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, sharing,
-           main_tag_id, their_tags, created_at, updated_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'friends', NULL, ?, ?, ?, NULL)
+           main_tag_id, their_tags, created_at, updated_at, deleted_at, place_snapshot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'friends', NULL, ?, ?, ?, NULL, ?)
          ON CONFLICT (id) DO UPDATE SET place_id = excluded.place_id, comment = excluded.comment,
            comment_visibility = excluded.comment_visibility, status = excluded.status,
            price_level = excluded.price_level, their_tags = excluded.their_tags, created_at = excluded.created_at,
-           updated_at = excluded.updated_at, deleted_at = NULL`,
+           updated_at = excluded.updated_at, deleted_at = NULL, place_snapshot = excluded.place_snapshot`,
         [
           input.id, input.ownerId, input.place.id, input.comment ?? '', input.commentVisibility ?? 'friends',
           input.status ?? null, input.priceLevel ?? null, JSON.stringify(parseTheirTags(input.theirTags ?? []).map((t) => (t.color || t.icon ? t : t.name))), input.createdAt,
-          input.updatedAt,
+          input.updatedAt, snapshotJson(input.place),
         ],
       );
       this.refreshSearchText([input.place.id]);
@@ -682,6 +714,12 @@ export class Repository {
   getSave(id: string): SaveRecord | null {
     const r = this.db.get<SaveRow>(`SELECT ${SAVE_COLUMNS} FROM saves s WHERE s.id = ?`, [id]);
     return r ? rowToSave(r) : null;
+  }
+
+  /** The place as this save's owner describes it (my document for my saves, their pack for a friend's). */
+  savePlaceSnapshot(saveId: string): SavePlaceSnapshot | null {
+    const r = this.db.get<{ place_snapshot: string | null }>(`SELECT place_snapshot FROM saves WHERE id = ?`, [saveId]);
+    return json<SavePlaceSnapshot>(r?.place_snapshot ?? null);
   }
 
   getMySaveForPlace(placeId: string): SaveRecord | null {

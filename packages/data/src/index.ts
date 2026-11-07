@@ -25,6 +25,7 @@ export type {
   MapPin,
   ForeignSaveInput,
   ForeignTag,
+  SavePlaceSnapshot,
   FriendTagRow,
   OpenRepositoryOptions,
 } from './sqlite/repository.ts';
