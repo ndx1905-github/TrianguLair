@@ -142,6 +142,42 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     sets `republishPending`: the next sync publishes the index signed with the new certificate at the new storage and
     the same index at every redirect. Other devices and the recovery vault receive the rotated sharing key from the
     sync engine (`RotationResult.sharing`, `vaultCopy`).
+- **Sync** (T-210, `src/sync/`; logic in `controller.ts`, tested in `sync.test.ts`): `SyncProvider` builds one
+  `SyncController` per identity and database. The controller builds the `SyncEngine` from the identity's keys
+  (`device-keys`, `sharing-key`, and `sync-keys`: earlier sharing key pairs and vault data keys), the storage settings
+  (`StorageAccess`; HTTPS-only mode and local only publish nothing but still read friends) and the data store (state in
+  the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
+  launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
+  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
+  nothing after that. Network status from the browser on web (`online` / `offline`); native assumes online for now.
+  - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
+    old index at the new storage (it certifies the old address), publishes there with the new certificate, then
+    writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
+    stops it (`ForeignIndexError`). `republishPending` does the same at the next pass. `openInvitations` lists the
+    open invitations of the previous certificate (names come from T-208 through `invitationName`).
+  - **Remote wipe**: the engine's hooks erase every secret-store entry, then the database (`DataStore.wipe()`, then
+    the file itself: `AppStore.erase()`), then the device settings; the whole app is replaced by "This device was
+    removed" (`DeviceRemoved.tsx`).
+  - **Status** (`problems.ts`, `noteText.ts`, the spec's error table): a note under the map's filter bar ("Offline · 3
+    changes pending", "Your storage hasn't responded since yesterday" after 24 h, "Reconnect your storage" leading to
+    Settings › Storage, quota, missing key, content of mine that does not verify); nothing for transient problems.
+    Settings › Sync status (`/sync`): my storage (state, last success, pending, the problem with what to do), each
+    person I follow ("Updated 12 days ago", "Léa's content could not be verified", "Update the app to see Léa's
+    places"), "Sync now" (resumes after reconnecting), and the local technical log (error names and paths only).
+  - **Contacts**: `addContact({ location, owner?, name, follow, share })` reads and verifies the index at the
+    certified address, then `engine.addContact`; `setPolicy`, `removeContact`. The invitation and return link screens
+    (T-208/T-209) call these. In fixture mode on web, `window.__tlSync` exposes them for the end-to-end test.
+- **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
+  filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
+  per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
+  selection in the folded bar); "N friends" in the list rows, on the card and on the add screen. The card's friends
+  section (`FriendsSection.tsx`) opens who saved it, when, their status, comment (within its visibility) and their
+  tags in their author's color.
+- **What's new** (`/whatsnew`, `whatsNew.ts`): built from the reader's differences after each pass and kept in the sync
+  state (erased by a remote wipe): places added (someone's first places as one item), new comments, switches to
+  tried / favorite, key changes and moves; minor touch-ups are left out, and the news of a place that left their shared
+  places goes with it. Grouped by day, filtered by type and by friend, a dot on items newer than the last visit, a
+  badge on the map's What's new button; "See on the map" highlights their places (the others faded, a removable pill).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
   toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
   "Leave out" or "Follow the filter" (the list's exceptions).
@@ -297,6 +333,8 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, storage/*, _layout (providers)
 src/storage/          storage config and URL builders, adapters, connection test and fixes, migration, certificate
                       rotation, state (secret store), provider, sharing prompt, interfaces for the sync engine
+src/sync/             sync controller (engine, scheduler, move hooks, wipe), provider, What's new, friends'
+                      places (card section, friends shown), sync status wording
 src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
 src/firstLaunch/      first-launch frame, profile and code fields, steps
 src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
@@ -457,6 +495,38 @@ End-to-end: `e2e/storage.spec.ts` runs against the same Apache server (skipped w
 password, CORS diagnosis, private read address refused, connect, lossless move of packs, a photo, a public list and the
 index (byte for byte on the new storage, old one untouched, redirect listed), and a move onto a folder with other
 content that overwrites nothing.
+
+Sync and friends' places (`e2e/sync.spec.ts` with `SHOTS=1`, against the Apache WebDAV server, two browser
+contexts: Anna and Ben):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color; What's new badge |
+| `docs/phone-card-friends.png`, `docs/tablet-fr-card-friends.png` | "1 friend" on the card, opened: who, when, status, comment, their tag in their color |
+| `docs/phone-friends-picker.png` | Friends shown: all, none or a selection, with places per friend |
+| `docs/phone-whatsnew.png`, `docs/phone-fr-whatsnew.png` | What's new: a comment and a favorite (unseen dots), her first places as one item |
+| `docs/phone-sync-status.png`, `docs/phone-dark-sync-status.png` | Sync status: my storage up to date, Anna updated just now |
+| `docs/phone-sync-offline.png` | Offline · 1 change pending |
+| `docs/phone-sync-reconnect.png`, `docs/phone-sync-reconnect-status.png` | Credentials rejected: "Reconnect your storage", writes stopped |
+
+End-to-end: `e2e/sync.spec.ts` (skipped without Apache): both connect a storage and publish; Ben follows Anna and Anna
+shares with Ben through `window.__tlSync`; Ben sees her shared place and not her private one, with "1 friend" and her
+comment on the card; Anna edits the comment and marks it favorite, Ben gets both in What's new (badge, dots, "See on the
+map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
+storage", back to normal after "Sync now"); Anna stops sharing and Ben's cache drops her places.
+
+Sync open questions:
+
+- **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
+  only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
+- **Friends' names**: the protocol carries no display name; the name given when adding the contact is used (the
+  invitation flow should carry or ask for it). Contacts added on another device show "A friend" until then.
+- **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
+  without expo-updates).
+- **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task
+  (`expo-background-task` or `beginBackgroundTask`) to be sure to finish; not added.
+- Previous sharing keys are persisted only when the engine adopts a new key from another device; a local rotation
+  (storage move) keeps the same key pair.
 
 Storage open questions:
 

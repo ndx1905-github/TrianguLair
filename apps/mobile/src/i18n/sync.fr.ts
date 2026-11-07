@@ -33,6 +33,7 @@ export const syncFr: Messages = {
   'sync.friend.tampered': 'Le contenu de {name} n’a pas pu être vérifié',
   'sync.friend.unsupported': 'Mettez l’app à jour pour voir les lieux de {name}',
   'sync.friend.identityMoved': '{name} a changé d’identité : comparez à nouveau votre code de sécurité',
+  'sync.friend.notFollowed': 'Vous ne voyez pas ses lieux',
   'sync.friend.noShare': 'Ne voit pas vos lieux',
   'sync.friend.shares': 'Voit vos lieux',
 

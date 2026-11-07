@@ -163,9 +163,9 @@ describe('SyncController', () => {
     await a.ctl.refresh();
     await b.ctl.refresh();
     const news = b.ctl.whatsNew.entries().filter((e) => e.kind !== 'followed');
-    expect(news.map((e) => [e.kind, e.name]).sort()).toEqual([['added', 'Le Marais Deli'], ['comment', 'Chez Lili']]);
+    expect(news.map((e) => [e.kind, e.name]).sort()).toEqual([['added', 'Le Marais Deli'], ['comment', 'Chez Lili'], ['status', 'Chez Lili']]);
     expect(news.find((e) => e.kind === 'comment')?.comment).toBe('Best pizza in town');
-    expect(b.ctl.snapshot().unseen).toBe(2);
+    expect(b.ctl.snapshot().unseen).toBe(3);
     expect(b.data).toBeGreaterThan(0);
 
     // A stops sharing with B: B's cache drops A's places, and their news.

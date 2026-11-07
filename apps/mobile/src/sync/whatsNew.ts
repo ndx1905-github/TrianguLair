@@ -103,7 +103,7 @@ export class WhatsNewLog {
         const s = ctx.theirSave(owner, ch.placeId);
         const base = { owner, placeId: ch.placeId, ...opt('name', ctx.placeName(ch.placeId)) };
         if (ch.fields.includes('comment') && s?.comment) add({ ...base, kind: 'comment', comment: s.comment });
-        else if (ch.fields.includes('status') && s?.status && MEANINGFUL_STATUS.has(s.status)) add({ ...base, kind: 'status', status: s.status });
+        if (ch.fields.includes('status') && s?.status && MEANINGFUL_STATUS.has(s.status)) add({ ...base, kind: 'status', status: s.status });
       }
     }
     if (fresh.length === 0 && gone.size === 0) return [];

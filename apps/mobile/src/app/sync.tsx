@@ -37,6 +37,7 @@ function SyncScreen() {
   const note = status && snap ? ownNote(status, snap.publishes) : null;
   const help = note ? noteHelpKey(note) : null;
   const cfg = storage.state.current;
+  const lastOk = Math.max(status?.lastSuccess ?? 0, snap?.lastOwnSuccess ?? 0) || null;
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -63,7 +64,7 @@ function SyncScreen() {
                 {status ? t(`sync.state.${status.state === 'idle' && note ? 'idle' : status.state}`) : t('sync.state.syncing')}
               </Text>
               <Text style={[styles.muted, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID="sync-last">
-                {status?.lastSuccess ? t('sync.lastSuccess', { when: agoText(now - status.lastSuccess, t) }) : t('sync.never')}
+                {lastOk ? t('sync.lastSuccess', { when: agoText(now - lastOk, t) }) : t('sync.never')}
               </Text>
               {status && status.pending > 0 && (
                 <Text style={[styles.muted, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID="sync-pending">
@@ -103,8 +104,8 @@ function SyncScreen() {
                     <Text style={{ color: c.text, fontSize: 15, fontWeight: '700' }} maxFontSizeMultiplier={2}>
                       {name}
                     </Text>
-                    <Text style={{ color: n.tone === 'error' ? c.danger : n.tone === 'warning' ? c.warning : c.textMuted, fontSize: 13 }} maxFontSizeMultiplier={2} testID="sync-person-note">
-                      {friendNoteText(n, name, t)}
+                    <Text style={{ color: f.follow && n.tone === 'error' ? c.danger : f.follow && n.tone === 'warning' ? c.warning : c.textMuted, fontSize: 13 }} maxFontSizeMultiplier={2} testID="sync-person-note">
+                      {f.follow ? friendNoteText(n, name, t) : t('sync.friend.notFollowed')}
                     </Text>
                     <Text style={{ color: c.textMuted, fontSize: 13 }} maxFontSizeMultiplier={2}>
                       {[f.follow ? t('friends.picker.places', { count: f.places }) : null, f.share ? t('sync.friend.shares') : t('sync.friend.noShare')].filter(Boolean).join(' · ')}

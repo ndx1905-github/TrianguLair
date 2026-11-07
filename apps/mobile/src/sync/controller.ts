@@ -33,6 +33,7 @@ const INDEX = 'index.json';
 const INDEX_MAX = 4 * 1024 * 1024;
 const LOG_KEY = 'app:log';
 const LOG_MAX = 80;
+const OWN_OK_KEY = 'app:own-ok';
 
 export interface ControllerDeps {
   store: DataStore;
@@ -82,6 +83,8 @@ export interface ControllerSnapshot {
   friends: FriendLine[];
   unseen: number;
   lastPassAt: number | null;
+  /** Last pass where my storage worked (kept across launches; the scheduler's own value is per session). */
+  lastOwnSuccess: number | null;
 }
 
 export interface AddContactInput {
@@ -229,6 +232,7 @@ export class SyncController implements StorageMoveHooks {
       return;
     }
     const repo = this.d.store.repo;
+    if (engine.own && !report.problems.some((p) => p.about === 'own')) this.d.state.set(OWN_OK_KEY, report.startedAt);
     for (const f of report.friends) this.friendProblems.set(f.owner, f.problem ?? null);
     this.whatsNew.record(report.friends, {
       now: this.now(),
@@ -428,6 +432,7 @@ export class SyncController implements StorageMoveHooks {
       friends,
       unseen: this.wiped ? 0 : safe(() => this.whatsNew.unseen(), 0),
       lastPassAt: this.lastPassAt,
+      lastOwnSuccess: this.wiped ? null : safe(() => this.d.state.get<number>(OWN_OK_KEY) ?? null, null),
     };
   }
 }

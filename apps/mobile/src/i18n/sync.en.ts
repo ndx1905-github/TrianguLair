@@ -33,6 +33,7 @@ export const syncEn: Messages = {
   'sync.friend.tampered': '{name}’s content could not be verified',
   'sync.friend.unsupported': 'Update the app to see {name}’s places',
   'sync.friend.identityMoved': '{name} changed their identity: compare your safety code again',
+  'sync.friend.notFollowed': 'You don’t see their places',
   'sync.friend.noShare': 'Does not see your places',
   'sync.friend.shares': 'Sees your places',
 
