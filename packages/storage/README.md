@@ -42,7 +42,8 @@ interface StorageAdapter {
 
 | Path | Content |
 | --- | --- |
-| `index.json` | small signed index (bytes from `@triangulair/crypto`; opaque here) |
+| `index.json` | small signed index (bytes from `@triangulair/crypto`; opaque here): the oldest major format still written |
+| `index.v<N>.json` | the index in a newer major `N`, published next to `index.json` during a major format transition (`indexPath(N)`, `indexMajorOf(path)`) |
 | `packs/<id>.bin` | encrypted packs, `id` matching `[A-Za-z0-9_-]{1,128}` (`packPath(id)`) |
 | `public/lists.geojson` | public lists, plaintext GeoJSON (uMap-compatible) |
 
@@ -57,6 +58,7 @@ Friends never write to someone else's storage, so there is no inbox. They send a
 
   An interrupted publish therefore never leaves an index pointing at missing packs. If another device published in the meantime, it throws `PreconditionFailed`. The caller then fetches, merges (Yjs) and retries. Packs that were uploaded but not referenced are harmless. Pack ids must be unique or content-derived, so a pack upload never overwrites a pack referenced by the live index. Garbage collection is the caller's job, after the index commit.
 - `fetchSnapshot(adapter, lastEtag)` sends one `HEAD`. If the ETag has not changed, it returns `{ changed: false }`. Otherwise it sends a `GET` and returns `{ changed: true, etag, index }`. It throws `NotFound` when there is no index.
+- Major transitions (spec "Format versions", T-202 follow-up): `publishSnapshot(…, { newerIndexes: [{ major, index, previousEtag }] })` writes each `index.v<N>.json` with its own conditional write, after the packs and **before** `index.json` (a stale writer then fails before touching the old index). `fetchHighestIndex(adapter, majors, lastEtags?)` reads the highest major the reader understands: it tries `index.v<N>.json` from the highest of `majors` down, then falls back to `index.json` (one HEAD per path when the ETag is unchanged), and returns `{ changed, etag, index?, major, path }`. `fetchSnapshot(adapter, lastEtag, { path })` reads any one index path.
 - `fetchPack(adapter, id)` returns the bytes of a pack. It throws `NotFound` if the pack is missing.
 
 ## ETag semantics (all adapters)
