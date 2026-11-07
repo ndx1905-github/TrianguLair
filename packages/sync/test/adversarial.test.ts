@@ -377,7 +377,8 @@ describe('incremental publication', () => {
     expect(r.own!.packsWritten).toBe(3); // the pack of that place, one blurred, the own-document delta
     expect(r.own!.packsKept).toBe(3);
     const rb = await bob.engine.sync();
-    expect(rb.friends[0]!.downloaded.packs).toBe(3);
+    // Only the two places packs: the own-document delta is under media/, which friends do not fetch.
+    expect(rb.friends[0]!.downloaded.packs).toBe(2);
     expect(rb.friends[0]!.whatsNew.changed.map((c) => c.placeId)).toEqual(['osm:node/500']);
   });
 });

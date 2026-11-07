@@ -6,10 +6,11 @@
  * Storage layout (see README):
  *
  *   index.json                  signed index (crypto), written last, conditionally (ETag)
- *   packs/b2b256-<hash>.bin     content-addressed packs, never modified:
- *                               - places packs (GeoJSON) for each recipient set, my own key always included
- *                               - my own Yjs document (a full snapshot + incremental deltas), my key only
- *                               - a manifest (logical pack id → recipient-set fingerprint), my key only
+ *   packs/b2b256-<hash>.bin     places packs (GeoJSON), one or more per recipient set, my own key always
+ *                               included; content-addressed, never modified
+ *   media/b2b256-<hash>.bin     my own Yjs document (a full snapshot + incremental deltas) and a manifest
+ *                               (logical pack id → recipient-set fingerprint), my key only; under media/
+ *                               so that friends, who fetch media/ only on demand (photos), never download them
  *   public/lists.geojson        public lists in plaintext (listed in the index with its hash)
  *   vault.bin                   recovery vault (TLVD, vault data key), conditionally written
  *   keys/<device>.bin           the current sharing key sealed to each of my devices (TLSK), after a rotation
@@ -233,7 +234,8 @@ export class OwnSync {
 
     // Packs I do not know yet (written by another device): open them with my keys.
     const cache = this.packs();
-    const listed = index.packs.filter((p) => p.file.startsWith('packs/'));
+    // packs/: places packs; media/: my own document and manifest (friends never fetch media/ at sync) and photos.
+    const listed = index.packs;
     const unknown = listed.filter((p) => {
       const info = cache[p.hash];
       return !info || (info.k === 'own-doc' && !this.st.getBytes(`own:doc:${p.hash}`));
@@ -507,7 +509,7 @@ export class OwnSync {
     const newId = this.o.newId ?? randomLogicalId;
     const cache: Record<string, PackInfo> = { ...this.packs() };
     const missing = new Set(pull.missing);
-    const listed = (prev?.packs ?? []).filter((p) => p.file.startsWith('packs/') && !missing.has(p.file));
+    const listed = (prev?.packs ?? []).filter((p) => !missing.has(p.file));
     const infoOf = (p: IndexPackEntry) => cache[p.hash];
 
     // What each audience can read.
@@ -536,12 +538,17 @@ export class OwnSync {
     const fps = manifestEntry ? (infoOf(manifestEntry) as Extract<PackInfo, { k: 'manifest' }>).fps : {};
     const existing: ExistingPack[] = [];
     const drop: string[] = [];
+    const entries: IndexPackEntry[] = [];
     for (const p of listed) {
       const i = infoOf(p);
       if (i?.k === 'places') {
         if (i.rot === this.rot) existing.push({ id: i.id, fp: fps[i.id] ?? null, items: i.items, file: p.file });
         else drop.push(p.file);
-      } else if (!i || i.k === 'other') drop.push(p.file);
+      } else if (!i || i.k === 'other') {
+        // Not mine to rebuild: a photo (media/) is kept as it is; an unreadable places pack is rewritten.
+        if (p.file.startsWith('media/')) entries.push(p);
+        else drop.push(p.file);
+      }
     }
     const plan = planPacks(existing, desired, {
       capacity: this.o.capacity ?? 200,
@@ -552,11 +559,10 @@ export class OwnSync {
     drop.push(...plan.drop);
 
     const writes = new Map<string, Uint8Array>();
-    const entries: IndexPackEntry[] = [];
     const keptFiles = new Set(plan.keep.map((p) => p.file));
     for (const p of listed) if (keptFiles.has(p.file)) entries.push(p);
     const add = (bytes: Uint8Array, info: PackInfo) => {
-      const e = packEntry(bytes);
+      const e = packEntry(bytes, info.k === 'places' ? 'packs' : 'media');
       writes.set(e.file, bytes);
       entries.push(e);
       cache[e.hash] = info;
@@ -612,8 +618,6 @@ export class OwnSync {
       add(bytes, { k: 'manifest', id, rot: this.rot, fps: sortedFps });
     } else if (manifestEntry) entries.push(manifestEntry);
 
-    // Media files (photos) listed by another device are kept as they are.
-    for (const p of prev?.packs ?? []) if (p.file.startsWith('media/')) entries.push(p);
 
     // Public lists (plaintext).
     const publicFile = buildPublicLists(repo, items, { owner: this.owner, ...(this.o.author && { author: this.o.author }) });
