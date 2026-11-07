@@ -253,6 +253,25 @@ END;
 INSERT INTO places_fts (places_fts) VALUES ('rebuild');
 `;
 
+/**
+ * V2 (T-204 review R-02): the shared place row no longer carries anyone's
+ * description by default.
+ *
+ * - `saves.place_snapshot`: the place as this save's owner describes it
+ *   (name, category, kind, edge, geometry; JSON). For my saves it is the
+ *   snapshot of my document, for a friend's save the one from their pack.
+ *   What I publish comes from mine, never from the shared row.
+ * - `places.osm_fields`: which identity fields of the row come from my own
+ *   OSM cache (`updatePlaceOsmData`), comma-separated among `name`,
+ *   `category`, `geom`. Only those override snapshots. Rows synced before V2
+ *   kept all three (the old rule), so they are marked so.
+ */
+const V2 = `
+ALTER TABLE saves ADD COLUMN place_snapshot TEXT;
+ALTER TABLE places ADD COLUMN osm_fields TEXT NOT NULL DEFAULT '';
+UPDATE places SET osm_fields = 'name,category,geom' WHERE osm_synced_at IS NOT NULL;
+`;
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -261,6 +280,12 @@ const MIGRATIONS: readonly Migration[] = [
       db.exec(caps.rtree ? RTREE : NO_RTREE);
       if (caps.fts5) db.exec(FTS);
       db.run(`INSERT INTO meta (key, value) VALUES ('capabilities', ?)`, [JSON.stringify(caps)]);
+    },
+  },
+  {
+    version: 2,
+    up(db) {
+      db.exec(V2);
     },
   },
 ];

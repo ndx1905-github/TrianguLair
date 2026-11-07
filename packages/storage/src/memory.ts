@@ -1,14 +1,15 @@
-import { PreconditionFailed, ReadOnly } from './errors.ts';
+import { PreconditionFailed, ReadOnly, TooLarge } from './errors.ts';
 import type {
   Capabilities,
   DeleteOptions,
+  GetOptions,
   GetResult,
   HeadResult,
   ListEntry,
   PutOptions,
   StorageAdapter,
 } from './types.ts';
-import { checkPath, checkPrefix, copyBytes, sortEntries } from './util.ts';
+import { checkMaxBytes, checkPath, checkPrefix, copyBytes, sortEntries } from './util.ts';
 
 export interface MemoryAdapterOptions {
   readOnly?: boolean;
@@ -39,8 +40,10 @@ export class MemoryAdapter implements StorageAdapter {
     };
   }
 
-  async get(path: string): Promise<GetResult | null> {
+  async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
+    const max = checkMaxBytes(opts.maxBytes);
     const e = this.store.get(checkPath(path));
+    if (e && max !== undefined && e.data.byteLength > max) throw new TooLarge(path, max, { size: e.data.byteLength });
     return e ? { data: copyBytes(e.data), etag: e.etag } : null;
   }
 

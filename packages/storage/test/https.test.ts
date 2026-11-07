@@ -4,6 +4,7 @@ import {
   HttpsReadOnlyAdapter,
   MemoryAdapter,
   NetworkError,
+  TooLarge,
 } from '../src/index.ts';
 import { runAdapterConformance } from '../src/testing/conformance.ts';
 import { deadUrl, listen, type Running } from './support/http.ts';
@@ -66,5 +67,33 @@ describe('HTTPS read-only errors', () => {
     const g = await a.get('packs/x.bin');
     expect(calls).toEqual(['https://friend.example/tl/packs/x.bin']);
     expect(g).toEqual({ data: new Uint8Array([1, 2]), etag: '"abc"' });
+  });
+  it('maxBytes: an endless body without Content-Length is cut off after the limit (streamed)', async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const endless = () =>
+      new ReadableStream<Uint8Array>({
+        pull(c) {
+          pulled += 64 * 1024;
+          c.enqueue(new Uint8Array(64 * 1024));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+    const a = new HttpsReadOnlyAdapter({ baseUrl: 'https://friend.example/tl/', fetch: async () => new Response(endless(), { headers: { etag: 'x' } }) });
+    await expect(a.get('packs/x.bin', { maxBytes: 1024 * 1024 })).rejects.toBeInstanceOf(TooLarge);
+    expect(pulled).toBeLessThanOrEqual(1024 * 1024 + 3 * 64 * 1024);
+    expect(cancelled).toBe(true);
+  });
+  it('maxBytes: an announced Content-Length over the limit is refused before reading', async () => {
+    let read = false;
+    const body = new ReadableStream<Uint8Array>({ pull(c) { read = true; c.enqueue(new Uint8Array(10)); c.close(); } }, { highWaterMark: 0 });
+    const a = new HttpsReadOnlyAdapter({
+      baseUrl: 'https://friend.example/tl/',
+      fetch: async () => new Response(body, { headers: { etag: 'x', 'content-length': String(10 ** 12) } }),
+    });
+    await expect(a.get('index.json', { maxBytes: 1 << 20 })).rejects.toBeInstanceOf(TooLarge);
+    expect(read).toBe(false);
   });
 });

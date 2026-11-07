@@ -27,3 +27,18 @@ describe('probeConditionalWrites', () => {
     expect(await a.list('')).toEqual([]);
   });
 });
+
+describe('index paths (major transitions)', () => {
+  it('indexPath / indexMajorOf', async () => {
+    const { indexPath, indexMajorOf } = await import('../src/layout.ts');
+    expect(indexPath()).toBe('index.json');
+    expect(indexPath(5)).toBe('index.v5.json');
+    expect(indexPath(4, 4)).toBe('index.json');
+    expect(() => indexPath(0)).toThrow();
+    expect(() => indexPath(1.5)).toThrow();
+    expect(indexMajorOf('index.json')).toBeNull();
+    expect(indexMajorOf('index.v12.json')).toBe(12);
+    expect(indexMajorOf('index.v0.json')).toBeUndefined();
+    expect(indexMajorOf('packs/x.bin')).toBeUndefined();
+  });
+});

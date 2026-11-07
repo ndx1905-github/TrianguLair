@@ -30,6 +30,16 @@ export interface ListEntry {
   size: number;
 }
 
+export interface GetOptions {
+  /**
+   * Largest body accepted, in bytes. The adapter refuses a larger object
+   * without reading it whole: it checks the announced size first
+   * (Content-Length, stat) and stops reading as soon as more arrives
+   * (streamed). Throws `TooLarge`.
+   */
+  maxBytes?: number;
+}
+
 export interface PutOptions {
   /** Only write if the current object has exactly this ETag. */
   ifMatch?: ETag;
@@ -65,7 +75,7 @@ export interface Capabilities {
 export interface StorageAdapter {
   readonly capabilities: Capabilities;
   /** `null` if the object does not exist. */
-  get(path: string): Promise<GetResult | null>;
+  get(path: string, opts?: GetOptions): Promise<GetResult | null>;
   /** `null` if the object does not exist. */
   head(path: string): Promise<HeadResult | null>;
   /** Throws `PreconditionFailed` when a condition does not hold. */

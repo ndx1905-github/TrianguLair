@@ -14,10 +14,11 @@ import {
   NotFound,
   PreconditionFailed,
   ReadOnly,
+  TooLarge,
   Unsupported,
 } from '../errors.ts';
-import { INDEX_PATH, PUBLIC_LISTS_PATH, packPath } from '../layout.ts';
-import { fetchPack, fetchSnapshot, publishSnapshot } from '../snapshot.ts';
+import { INDEX_PATH, PUBLIC_LISTS_PATH, indexPath, packPath } from '../layout.ts';
+import { fetchHighestIndex, fetchPack, fetchSnapshot, publishSnapshot } from '../snapshot.ts';
 import type { StorageAdapter } from '../types.ts';
 
 export interface ConformanceFixture {
@@ -94,6 +95,21 @@ export function runAdapterConformance(
       expect(g!.etag).toBeTruthy();
       const h = await a.head('packs/abc.bin');
       expect(h).toEqual({ etag: g!.etag, size: data.byteLength });
+    });
+
+    it('get with maxBytes refuses a larger object without returning it (streamed limit)', async () => {
+      const data = Uint8Array.from({ length: 200_000 }, (_, i) => (i * 7) % 256);
+      await write('packs/big.bin', data);
+      const ok = await a.get('packs/big.bin', { maxBytes: data.byteLength });
+      expect(ok?.data.byteLength).toBe(data.byteLength);
+      await expect(a.get('packs/big.bin', { maxBytes: data.byteLength - 1 })).rejects.toBeInstanceOf(TooLarge);
+      await expect(a.get('packs/big.bin', { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
+      expect(await a.get('packs/missing.bin', { maxBytes: 10 })).toBeNull();
+      await write('packs/small.bin', enc('tiny'));
+      expect((await fetchPack(a, 'small', { maxBytes: 4 })).byteLength).toBe(4);
+      await write(INDEX_PATH, data);
+      await expect(fetchSnapshot(a, null, { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
+      await expect(fetchHighestIndex(a, [], {}, { maxBytes: 1000 })).rejects.toBeInstanceOf(TooLarge);
     });
 
     it('handles empty files and odd-but-valid names', async () => {
@@ -288,6 +304,51 @@ export function runAdapterConformance(
         expect(f2.changed).toBe(true);
         expect(f2.etag).toBe(r2.indexEtag);
         expect(f2.changed && new TextDecoder().decode(f2.index)).toBe('{"v":2}');
+      });
+
+      it('index.v<N>.json next to index.json during a major transition', async () => {
+        const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+        if (a.capabilities.readOnly) {
+          await fx.seed!(INDEX_PATH, enc('{"version":4}'));
+          const old = await fetchHighestIndex(a, [5, 4]);
+          expect(old.path).toBe(INDEX_PATH);
+          await fx.seed!(indexPath(5), enc('{"version":5}'));
+          const r = await fetchHighestIndex(a, [4, 5]);
+          expect(r.changed && dec(r.index)).toBe('{"version":5}');
+          expect(r.major).toBe(5);
+          expect(await fetchHighestIndex(a, [5], { [indexPath(5)]: r.etag })).toMatchObject({ changed: false, major: 5 });
+          return;
+        }
+        // A reader of 4 and 5, before the transition: only index.json.
+        const r1 = await publishSnapshot(a, { index: enc('{"version":4}'), packs: {}, previousIndexEtag: null });
+        const f0 = await fetchHighestIndex(a, [5, 4]);
+        expect(f0).toMatchObject({ changed: true, major: null, path: INDEX_PATH });
+        // The transition: both majors, each conditional.
+        const r2 = await publishSnapshot(a, {
+          index: enc('{"version":4,"seq":2}'),
+          packs: {},
+          previousIndexEtag: r1.indexEtag,
+          newerIndexes: [{ major: 5, index: enc('{"version":5,"seq":2}'), previousEtag: null }],
+        });
+        expect(await a.head(indexPath(5))).not.toBeNull();
+        const f5 = await fetchHighestIndex(a, [4, 5]);
+        expect(f5.changed && dec(f5.index)).toBe('{"version":5,"seq":2}');
+        expect(f5.etag).toBe(r2.newerIndexEtags[5]);
+        // An older reader (4 only) keeps reading index.json.
+        const f4 = await fetchHighestIndex(a, [4]);
+        expect(f4.changed && dec(f4.index)).toBe('{"version":4,"seq":2}');
+        // Unchanged: one HEAD, by path.
+        expect(await fetchHighestIndex(a, [5, 4], { [indexPath(5)]: f5.etag })).toMatchObject({ changed: false, major: 5 });
+        // The newer index is conditional too: a stale writer loses, and index.json is not touched.
+        await expect(
+          publishSnapshot(a, {
+            index: enc('{"version":4,"seq":3}'),
+            packs: {},
+            previousIndexEtag: r2.indexEtag,
+            newerIndexes: [{ major: 5, index: enc('{"version":5,"seq":3}'), previousEtag: null }],
+          }),
+        ).rejects.toBeInstanceOf(PreconditionFailed);
+        expect(dec((await a.get(INDEX_PATH))!.data)).toBe('{"version":4,"seq":2}');
       });
     });
   });

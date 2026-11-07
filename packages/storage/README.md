@@ -16,7 +16,7 @@ import { runAdapterConformance } from '@triangulair/storage/testing'; // needs v
 ```ts
 interface StorageAdapter {
   capabilities: { readOnly; conditionalWrites; list; publicUrl(path): string | null };
-  get(path): Promise<{ data: Uint8Array; etag } | null>;
+  get(path, { maxBytes? }): Promise<{ data: Uint8Array; etag } | null>; // TooLarge past maxBytes
   head(path): Promise<{ etag; size } | null>;
   put(path, data, { ifMatch?, ifNoneMatch?: '*', contentType? }): Promise<{ etag }>;
   delete(path, { ifMatch? }): Promise<void>;   // idempotent without ifMatch
@@ -35,6 +35,7 @@ interface StorageAdapter {
   - `Unsupported` (for example `list` over plain HTTPS)
   - `InvalidPath`
   - `ProtocolError` (a response the adapter did not expect)
+  - `TooLarge` (`get` with `maxBytes`: the announced Content-Length or stat size is checked first, then the body is streamed and the read cancelled past the limit; SFTP reads through a handle up to the limit. Without a readable body stream, as in some React Native `fetch` builds, the size is checked after reading. `fetchSnapshot`, `fetchHighestIndex` and `fetchPack` take `maxBytes` too.)
 - Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs, and S3 signing uses WebCrypto through `aws4fetch`.
 - `probeConditionalWrites(adapter)` checks at setup time whether a server really enforces `If-Match`/`If-None-Match`. It writes and then deletes a `.triangulair-probe-*` object.
 
@@ -42,7 +43,8 @@ interface StorageAdapter {
 
 | Path | Content |
 | --- | --- |
-| `index.json` | small signed index (bytes from `@triangulair/crypto`; opaque here) |
+| `index.json` | small signed index (bytes from `@triangulair/crypto`; opaque here): the oldest major format still written |
+| `index.v<N>.json` | the index in a newer major `N`, published next to `index.json` during a major format transition (`indexPath(N)`, `indexMajorOf(path)`) |
 | `packs/<id>.bin` | encrypted packs, `id` matching `[A-Za-z0-9_-]{1,128}` (`packPath(id)`) |
 | `public/lists.geojson` | public lists, plaintext GeoJSON (uMap-compatible) |
 
@@ -57,6 +59,7 @@ Friends never write to someone else's storage, so there is no inbox. They send a
 
   An interrupted publish therefore never leaves an index pointing at missing packs. If another device published in the meantime, it throws `PreconditionFailed`. The caller then fetches, merges (Yjs) and retries. Packs that were uploaded but not referenced are harmless. Pack ids must be unique or content-derived, so a pack upload never overwrites a pack referenced by the live index. Garbage collection is the caller's job, after the index commit.
 - `fetchSnapshot(adapter, lastEtag)` sends one `HEAD`. If the ETag has not changed, it returns `{ changed: false }`. Otherwise it sends a `GET` and returns `{ changed: true, etag, index }`. It throws `NotFound` when there is no index.
+- Major transitions (spec "Format versions", T-202 follow-up): `publishSnapshot(…, { newerIndexes: [{ major, index, previousEtag }] })` writes each `index.v<N>.json` with its own conditional write, after the packs and **before** `index.json` (a stale writer then fails before touching the old index). `fetchHighestIndex(adapter, majors, lastEtags?)` reads the highest major the reader understands: it tries `index.v<N>.json` from the highest of `majors` down, then falls back to `index.json` (one HEAD per path when the ETag is unchanged), and returns `{ changed, etag, index?, major, path }`. `fetchSnapshot(adapter, lastEtag, { path })` reads any one index path.
 - `fetchPack(adapter, id)` returns the bytes of a pack. It throws `NotFound` if the pack is missing.
 
 ## ETag semantics (all adapters)

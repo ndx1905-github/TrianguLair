@@ -4,6 +4,7 @@ import type {
   Capabilities,
   DeleteOptions,
   FetchLike,
+  GetOptions,
   GetResult,
   HeadResult,
   ListEntry,
@@ -23,6 +24,8 @@ import {
   toHex,
   xmlElements,
   xmlText,
+  checkMaxBytes,
+  readBody,
 } from './util.ts';
 
 export interface S3Options {
@@ -119,12 +122,13 @@ export class S3Adapter implements StorageAdapter {
     return doFetch(this.fetch, url, signed, path);
   }
 
-  async get(path: string): Promise<GetResult | null> {
+  async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
+    const max = checkMaxBytes(opts.maxBytes);
     checkPath(path);
     const res = await this.send(this.objectUrl(path), 'GET', path);
     if (res.status === 404) return null;
     if (!res.ok) throw httpError(res, `GET ${path}`, path);
-    const data = new Uint8Array(await res.arrayBuffer());
+    const data = await readBody(res, path, max);
     const etag = res.headers.get('etag');
     if (!etag) throw new ProtocolError(`GET ${path}: no ETag`, { path });
     return { data, etag: normEtag(etag) };
