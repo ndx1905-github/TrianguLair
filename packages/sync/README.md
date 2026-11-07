@@ -32,8 +32,11 @@ const engine = new SyncEngine({
   storage,                       // my write adapter (WebDAV, S3, SFTP…); absent = local only (can still read friends)
   readAdapter: (url) => new HttpsReadOnlyAdapter({ baseUrl: url }), // the default
   onSharingKey: (k) => keychain.save(k), // a new key adopted from keys/ (rotation)
+  previousVaultKeys,             // engine.own.previousVaultKeys, persisted with the sharing keys
+  wipe: { secrets: () => keychain.eraseAll() }, // remote wipe; the database is erased by DataStore.wipe()
+  // limits: { packBytes, friendReadBytes, … }  // SyncLimits, defaults below
 });
-const scheduler = new SyncScheduler({ run: () => engine.sync(), onReport, onStatus });
+const scheduler = new SyncScheduler({ run: (reason, opts) => engine.sync(opts), onReport, onStatus });
 scheduler.appForeground('launch');   // AppState "active"
 scheduler.localChange();             // after each edit (debounced publish)
 scheduler.pullToRefresh();
@@ -43,18 +46,23 @@ await scheduler.appBackground();     // AppState "background": last pass, then n
 
 | Export | Role |
 | --- | --- |
-| `SyncEngine` | `sync()` (one pass: pull my storage, read the people I follow, publish what changed; concurrent calls share the pass), `addContact(verifiedIndex, { share, follow, verified })`, `setPolicy(owner, { share, follow })`, `removeContact(owner)`, `addInvitation(invitation)`, `contacts()`, `keys()`; `own` (`OwnSync`), `reader` (`FriendReader`), `book` (`ContactBook`) |
-| `OwnSync` | `pull()` (my index, my other devices' document changes, a new sharing key from `keys/`, the vault), `publish({ force? })`, `rotate(newSharingKey, otherDeviceCerts)` (primary device), `pushVault()`, `index` |
-| `FriendReader` | `read({ owner, location, anchor?, extraKeys?, retiredOwners? })` → `FriendReport { status, whatsNew: { added, changed: [{ placeId, meaningful, fields }], removed }, index, keyChanged, movedTo, problem, downloaded }`, `readAll`, `forget(owner)`, `lastSuccess(owner)` |
-| `SyncScheduler` | `appForeground`, `appBackground`, `localChange`, `pullToRefresh`, `setOnline`, `resume`, `getStatus()` → `{ state: idle / syncing / offline / blocked / background, pending, lastSuccess, failingSince, problem, banner }` |
+| `SyncEngine` | `sync({ publish?, readFriends? })` (one pass: pull my storage, read the people I follow, publish what changed; concurrent calls share the pass; a device found revoked stops the pass and wipes, `report.wiped`), `wipe()`, `isWiped`, `addContact(verifiedIndex, { share, follow, verified })`, `setPolicy(owner, { share, follow })`, `removeContact(owner)`, `addInvitation(invitation)`, `contacts()`, `keys()`; `own` (`OwnSync`), `reader` (`FriendReader`), `book` (`ContactBook`) |
+| `OwnSync` | `pull({ full? })` (my index, my other devices' document changes, a new sharing key from `keys/`, the vault), `publish({ force? })`, `rotate(newSharingKey, otherDeviceCerts)` (primary device), `pushVault()`, `index`, `previousVaultKeys`, `limits` |
+| `FriendReader` | `read({ owner, location, anchor?, extraKeys?, retiredOwners? }, { pass? })` → `FriendReport { status, whatsNew: { added, changed: [{ placeId, meaningful, fields }], removed }, index, keyChanged, movedTo, problem, downloaded }`, `readAll` (one pass budget), `forget(owner)`, `lastSuccess(owner)` |
+| `SyncScheduler` | `run(reason, { publish })`; `appForeground`, `appBackground`, `localChange`, `pullToRefresh`, `setOnline`, `resume`, `getStatus()` → `{ state: idle / syncing / offline / blocked / background / wiped, pending, lastSuccess, failingSince, problem, banner }` |
 | `ContactBook`, `mergeBooks` | contacts and their switches in the recovery vault |
 | `classifyError(e, 'own' / 'friend', online)` | → `SyncProblem { kind, retryable, blocksWrites, situation, message, detail }` (table below) |
 | `planPacks`, `computeAudiences`, `featureFor`, `parsePlaces`, `encodePayload` / `decodePayload`, `buildPublicLists` | the pure parts, exported for tests and tools |
 | `MemoryStateStore`, `SqliteStateStore` | local state (ETags, anchors, pack caches, the local vault copy) |
+| `SyncLimits`, `DEFAULT_LIMITS`, `ByteBudget`, `LimitError`, `Semaphore` | size limits (see "Limits") |
 
 Added to `@triangulair/data` for this task: `DataStore.snapshot()`, `isAt(snapshot)`, `exportSince(snapshot)`
 and `snapshotOfUpdates(updates)` (Yjs state vector **and** delete set: a pure deletion, such as a trash purge,
-adds no struct and would be invisible to a state-vector comparison). In `@triangulair/storage` (T-202
+adds no struct and would be invisible to a state-vector comparison); after the review, schema 2
+(`saves.place_snapshot`, `places.osm_fields`, `Repository.savePlaceSnapshot(saveId)`: what I publish comes from my
+own description of each place, and a friend's save never overwrites a row someone else uses) and
+`DataStore.wipe()`. In `@triangulair/storage`: `get(path, { maxBytes })` (streamed limit, `TooLarge`) and
+`maxBytes` on `fetchSnapshot` / `fetchHighestIndex` / `fetchPack`. In `@triangulair/storage` (T-202
 follow-up): `indexPath(major)`, `indexMajorOf(path)`, `publishSnapshot({ newerIndexes })`,
 `fetchHighestIndex(adapter, majors, lastEtags)`, `fetchSnapshot(…, { path })`.
 
@@ -92,10 +100,13 @@ Packs are written first (in parallel, `If-None-Match: *`), then the public file,
 index the pass started from, `If-None-Match: *` on the first publication). The index is then **read back**:
 compare-and-swap is best effort on several servers (T-202: Apache with weak ETags, WsgiDAV, Nextcloud with coarse
 ETags, emulated conditions on SFTP), so a publication counts only if the storage now holds exactly our bytes;
-otherwise the pass pulls again (merging the other device's document), and republishes (up to 5 attempts). A lost
-race that went unnoticed (both devices read back their own index, then one overwrote the other) is healed at the
-next pass: the remote document snapshot is always recomputed from the own-document files actually listed, and the
-places packs from the actual listing. Files that a publication superseded, and the files of our lost attempts, are
+otherwise the pass pulls again (merging the other device's document), and republishes (up to 5 attempts). Right before
+the index write, the index on the storage is downloaded and compared with the one the attempt is based on (servers
+with coarse ETags, Nextcloud and WsgiDAV, can show another device's index under the same ETag), and a retry always
+downloads the index in full. A lost race that still goes unnoticed (both devices read back their own index, then
+one overwrote the other in the window after the check) shows up as a fork at the other device, which republishes
+its whole document from its local state; files superseded meanwhile can give friends a 404 until then (they keep
+their cache). Files that a publication superseded, and the files of our lost attempts, are
 deleted only after a successful publication; other unlisted files are left alone (they may be another device's
 upload in progress).
 
@@ -104,14 +115,19 @@ pack of its group; two packs below a quarter of the capacity in a group are merg
 would be replaced, one unchanged pack is rewritten too (spec: "blurs by grouping replacements"). Editing one place
 of 10,000 uploads 3 files (29 KB): its pack, one blurred pack and the document delta.
 
-Own devices: each pass imports the own-document files it has not seen (Yjs updates commute) and compares the local
+Own devices: an index of mine is trusted only at or after my anchor and under my current sharing certificate
+(not an older rotation, not signed by a device it revokes); a rolled-back, forked or older-rotation index is never
+imported: my device republishes everything from its local state above the anchor and deletes the files it listed.
+A device without a local anchor (restored from the recovery kit) takes the anchor recorded in the vault. Then each
+pass imports the own-document files it has not seen (Yjs updates commute) and compares the local
 document with the snapshot of what the storage holds (`isAt`); if it differs, it publishes a delta
 (`exportSince`) or, every 8 deltas (or when the deltas outweigh the base), a full snapshot that replaces them.
 
 ## Payloads (inside the pack encryption)
 
 ```
-"TLSY" | version u8 = 1 | kind u8 (1 places, 2 own document, 3 manifest) | codec u8 (0 stored, 1 raw DEFLATE) | body
+"TLSY" | version u8 = 1 | kind u8 (1 places, 2 own document, 3 manifest) | codec u8 (0 stored, 1 raw DEFLATE)
+       | body length u32be | body | zero padding up to 4 KiB (checked by readers)
 ```
 
 Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is a GeoJSON file):
@@ -128,13 +144,33 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
   (`kind` only for `"zone"`, `edge` only for `"blurred"`). Personal data only, never the OSM record.
 - Readers refuse duplicate keys and non-written forms (`JSON.stringify(JSON.parse(s)) === s`, the crypto rule for
   canonical JSON, which itself allows no floats), unknown fields unless `triangulair.minor` is higher than theirs,
-  ids that are not place ids, invalid or oversized geometries (20,000 positions), more than 5,000 features, 32 tags,
-  over-long strings; decompression stops at 64 MiB. Version 2 would be refused ("Update the app").
+  ids that are not place ids, invalid or oversized geometries (20,000 positions), more than 1,000 features, 32 tags,
+  over-long strings, tag colors other than `#RRGGBB`, icons other than symbol names, control characters (line
+  breaks only in comments) and bidi overrides; dates more than 24 h ahead are clamped. My own writer drops or
+  cleans what readers would refuse. Decompression stops at the limit of each kind (see "Limits"). Version 2 would
+  be refused ("Update the app").
 - Own document (kind 2): `mode u8 (1 full, 2 delta) | Yjs update v1`. Manifest (kind 3):
   `{"kind":"manifest","packs":{"<logical id>":"<recipient fingerprint>"},"version":1}`. Both only for my key.
 - Public lists file: a FeatureCollection with `attribution` (ODbL notice), `license`, `triangulair: { kind:
   "public-lists", version, owner, author?, lists: [{ id, name, description?, updated }] }`, one feature per (list,
   place) with `list`, `list_name`, `description` (the public comment) and `_umap_options.color` (main tag color).
+
+## Limits
+
+Every download is bounded before its hash is checked, decompression is bounded per kind, and friends' reads are
+bounded in total (`SyncLimits`, `limits` option of the engine; review R-06):
+
+| Limit | Default |
+| --- | --- |
+| `indexBytes` (mine or a friend's) | 4 MiB |
+| `packBytes` (a places pack) | 8 MiB |
+| `ownFileBytes` (own document, manifest under `media/`) | 96 MiB |
+| `placesPayloadBytes` / `manifestPayloadBytes` / `ownDocPayloadBytes` (decompressed) | 4 MiB / 1 MiB / 64 MiB |
+| `friendReadBytes` (downloaded + decompressed, one friend, one read) | 32 MiB (`too-large`, not retried) |
+| `passBytes` (same, every friend of one pass) | 128 MiB (`too-large`, the rest is read next pass) |
+
+Pack downloads and decryptions share `concurrency` (default 6) slots across all the friends read at once
+(`friendConcurrency`, default 8, index checks).
 
 ## Reading friends
 
@@ -142,7 +178,8 @@ One HEAD per friend when nothing changed (a full GET every 10 minutes anyway: co
 at the address it was read from, against the anchor kept in the vault (rollback, fork, jump; a master-signed
 redirect is followed once, only to the certified address; a newer rotation is accepted and reported as
 `keyChanged`, and the contact's certificate is updated so my next publication wraps to their new key). Only packs
-never seen are downloaded; packs none of my keys opens are remembered (until my keys change). The readable set is
+never seen are downloaded; packs none of my keys opens are remembered (until my keys change). A pack is accepted only at
+its own path (the host cannot serve another listed pack there). The readable set is
 the union of the packs I can open: anything no longer in it (deleted, made private, my access removed) is removed
 from the cache, with the places its data created. Everything is projected in one transaction, and only if every
 needed pack was fetched and verified: otherwise the last valid content stays. The difference feeds What's new
@@ -154,7 +191,7 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | --- | --- | --- |
 | No network | `offline` | nothing attempted, changes counted as pending, a pass when back online |
 | My storage unreachable | `unreachable` | retried with backoff (30 s … 30 min) while in use; `banner` after 24 h |
-| Credentials rejected | `auth` | `blocked`: automatic passes stop (queue kept) until `resume()` |
+| Credentials rejected | `auth` | `blocked`: writes stop (queue kept) until `resume()`; friends are still refreshed on launch, foreground and pull to refresh (`publish: false`) |
 | Quota full (507/413) | `quota` | retried; the app shows space used (photos are not synced yet) |
 | Interrupted write | — | packs first, index last; a listed pack found missing (checked by listing at the first pull and every full check) is rewritten from local state |
 | Two of my devices write at the same time | `conflict` | If-Match + read-back, pull, merge, republish |
@@ -163,7 +200,9 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | Tampered content | `tampered` / `rollback` | rejected, last valid version kept |
 | Unsupported format version | `unsupported` | content ignored, "Update the app to see Léa's places" |
 | Key missing (newer rotation, no key for me) | `needs-key` | blocks writes: request for the recovery kit |
-| Device declared lost | `device-revoked` | blocks; the app erases keys and content (remote wipe) |
+| Device declared lost | `device-revoked` | the pass stops at once; the engine erases keys (`wipe.secrets`), sync state and database; `state: 'wiped'`, nothing runs again |
+| A file over a size limit | `too-large` | refused before verification; cache kept (a pass limit is retried next pass) |
+| Any non-retryable problem of mine (`retryable: false`) | `tampered`, `unsupported`, `bug` | shown, retried at the next foreground, not in a loop |
 
 T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vault records) and the UI.
 
@@ -186,14 +225,21 @@ T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vaul
 - `units.test.ts`: planner, payload (decompression bomb), strict places parsing, vault policy merge, state
   stores, the error table, the scheduler with fake timers (launch, interval, debounce, close then no timer,
   offline queue, backoff, banner, blocked and resume).
-- `real-servers.test.ts` (`TL_REAL_SERVERS=1`): the main scenarios, rollback and rotation on **Apache mod_dav**
-  (friends over its public HTTP folder), **WsgiDAV** (coarse ETags, emulated conditions), **moto S3** and
-  **OpenSSH sftp**: 8/8 pass (2026-11-07). The storage package's conformance suite, including the new
-  `index.v<N>.json` case, passes 72/72 on the same servers.
+- `review.test.ts`: the reproductions of the independent review (R-01 to R-07), now normal tests.
+- `fixes.test.ts`: the behaviour added by the review fixes (restored device and an old-rotation index, the vault
+  anchor, OSM-synced rows, swapped and malformed own packs, the remote wipe and its hooks, size limits per file,
+  per friend and per pass, shared concurrency, coarse-ETag races, vault order and previous vault keys, scheduler
+  read-only passes and non-retryable problems, strict strings and dates, the padding floor, the injected clock).
+- `real-servers.test.ts` (`TL_REAL_SERVERS=1`): the main scenarios, rollback and rotation, and the review fixes
+  (a race under an unchanged ETag, a declared-lost device's injection) on **Apache mod_dav** (friends over its
+  public HTTP folder), **WsgiDAV** (coarse ETags, emulated conditions), **moto S3** and **OpenSSH sftp**: 12/12
+  pass (2026-11-07, after the review fixes). The storage package's conformance suite, including the
+  `index.v<N>.json` and `maxBytes` cases, passes 76/76 on the same servers.
 
 ## Measurements
 
-`npm run test:perf` with `TL_REAL_SERVERS=1`, 2 vCPU Xeon 2.1 GHz container, Node 22, 2026-11-07. Dataset like the
+(Measured before the review fixes; the 4 KiB payload floor adds at most a few KB per small file. The performance
+suite still passes after them.) `npm run test:perf` with `TL_REAL_SERVERS=1`, 2 vCPU Xeon 2.1 GHz container, Node 22, 2026-11-07. Dataset like the
 data package's (60 % in Paris, 20 tags, 30 % with a comment, 10 % private, 5 % in the trash), one friend. "Publish
 to a friend" is the publication after adding the friend (every places pack sealed for the new recipient set);
 "new own device" restores my whole document from the storage alone.

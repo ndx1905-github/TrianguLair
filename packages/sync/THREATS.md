@@ -11,14 +11,27 @@ now depends on how repetitive the content is, not only on its length.
 - **Chosen-plaintext compression attacks (CRIME/BREACH)** need an attacker who can inject text into the same
   compressed stream as a secret and observe the size, many times. Here the attacker would have to get text into
   my own packs: OSM names and categories (anyone can edit OSM, and my app copies names), imported files, or a
-  friend's tag that I adopt. Each attempt needs me to republish (a sync), and the size is padded and shared with
-  up to 200 places of the same pack. Recovering a comment this way is impractical; we accept it.
+  friend's tag that I adopt. A friend can **not** do it through their own saves: since the review fix R-02 my
+  packs are built from my own document's snapshot of each place (`saves.place_snapshot`), and a friend's data
+  never overwrites a place row that one of my saves uses; only identity fields from my own OSM cache take
+  precedence. Each attempt needs me to republish (a sync), and the size is padded (below) and usually shared with
+  many places of the same pack. Recovering a comment this way is impractical; we accept it.
+- **Padding floor**: every payload is padded with zeros to at least 4 KiB before the pack's own Padmé padding
+  (`PAYLOAD_PAD_FLOOR`). Without it, a pack of a small restricted recipient set (a handful of places) or an
+  own-document **delta** (one file per edit, private comments included) would have a padded size that follows
+  the size of each small edit. Above 4 KiB, Padmé still leaks the size within about 12 %, as before.
 - **What size still tells**: roughly how many places each recipient set has (number and size of packs), and that
   a pack changed. That was already true without compression (the spec accepts it: "the storage still sees file
   sizes and update dates").
-- **Decompression bombs**: decompression is streamed and stops at 64 MiB per payload (4 MiB per step), so a
-  hostile pack (only my own devices or a friend who holds a valid signing device can list one) cannot exhaust
-  memory. Parsing limits (features, positions, tags, string lengths) are checked before anything is projected.
+- **Decompression bombs and oversized files** (review R-06): every download is bounded **before** its hash is
+  checked (`get(path, { maxBytes })`: Content-Length first, then a streamed read cancelled past the limit; an
+  index 4 MiB, a places pack 8 MiB, a file of mine under `media/` 96 MiB). Decompression is streamed and bounded
+  per kind (places 4 MiB, manifest 1 MiB, own document 64 MiB). A friend's read is bounded in total (32 MiB
+  downloaded + decompressed) and so is a pass over all friends (128 MiB; the rest waits for the next pass), and
+  pack work shares one concurrency limit across the friends read at once. All configurable (`SyncLimits`).
+  Parsing limits (1,000 features per pack, positions, tags, string lengths) are checked before anything is
+  projected. On a React Native `fetch` without a readable body stream only the Content-Length check is done
+  before reading; the size is checked right after.
 - Trade-off: without compression, 10,000 places are ~3.5 MB of places packs and ~3.8 MB of document instead of
   ~0.23 MB and ~0.66 MB; a friend's first read would be ~15× larger on mobile networks.
 
@@ -46,15 +59,36 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   cannot open what is published after the rotation.
 - Own-document updates are trusted because the pack is listed in **my signed index** (only my non-revoked devices
   can sign one that verifies) and opens with my key; sealed boxes alone would not authenticate the sender.
+  "Non-revoked" is judged against **my current certificate**, not the one in that index (review R-01): an index
+  of an older rotation (which a device declared lost can still sign, with the storage credentials it keeps until
+  step 4 of the declaration), one older than my anchor, a fork, or one signed by a device my certificate revokes
+  is never imported. It only makes my device republish from its local state, and the files it lists are deleted.
+- **Anchor of a restored device**: a device restored from the recovery kit has my current sharing certificate
+  (from the vault's phrase-sealed copy) but no local anchor. The certificate rule above already refuses every
+  older-rotation index. For rollbacks within the current rotation, my devices record my own anchor in the vault
+  (`app.triangulair_sync.own`, at each rotation and every 16 publications, so it is a floor), and a device
+  without a local anchor reads the vault before trusting the index. The vault is sealed with the current vault
+  data key, which a revoked device does not have. Residual risk: a host that rolls back **both** the index and
+  the vault to before a declaration of loss, served to a device restored with the phrase-sealed copy of that
+  same old vault, is not detected (nothing on the storage is newer); friends still refuse it (their anchors).
+- **Remote wipe** (R-05): a device that reads its own revocation stops the pass at once (friends are not read)
+  and erases its keys (app hook `wipe.secrets`), the in-memory keys, its sync state and the database
+  (`DataStore.wipe` or `wipe.data`); every later pass returns at once.
+- **Previous vault keys** (R-10): a vault sealed with a vault data key I had before a rotation is merged only if
+  my current certificate revokes no device the older one did not; otherwise it may come from the revoked device,
+  and my copy wins (spec step 1).
 - The vault (`vault.bin`) is authenticated by the vault data key only; contact switches in its free-form part are
   as trustworthy as the vault itself (a stolen device could change them until the declaration; they are not
   security fields of the format: they decide who gets wraps, which the owner sees in the app).
 
 ## Friends' cache
 
-- Content is projected only after the index verifies and every needed pack opens; a failure keeps the last valid
-  content (no partial update from a tampered storage). A rollback or fork of a friend's index is refused against
-  the anchor kept in my vault.
+- Content is projected only after the index verifies and every needed pack opens **at its own path** (R-03: the
+  host cannot serve another listed pack in its place); a failure keeps the last valid content (no partial update
+  from a tampered storage). A rollback or fork of a friend's index is refused against the anchor kept in my vault.
+- A friend's save never changes a place row that someone else's save uses; their own name and geometry are kept
+  in their save (`saves.place_snapshot`). Colors must be `#RRGGBB`, icons symbol names; control characters and
+  bidi overrides are refused; dates more than 24 h ahead are clamped (R-13).
 - Removing a friend, or a friend removing my access, erases their content and the place records their data
   created; deliberate copies (screenshots, a modified app) are out of reach, as the spec says.
 - Coarse ETags on a friend's server can delay an update until the next full read (10 minutes while the app is open).
@@ -64,5 +98,25 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - Compare-and-swap is best effort on some servers; the read-back check and the recomputation of the remote
   snapshot from what is actually listed make a lost publication reappear at the next pass. A reader may briefly
   see two indexes with the same `seq` (fork), which it reports and then moves past.
+- Coarse ETags (R-08): before writing the index, the index on the storage is downloaded and compared with the one
+  this attempt is based on, and a retry after a lost race always downloads the index in full. What is left is the
+  window between that check and the write; a loss there shows up as a fork at the other device, which republishes
+  its document (nothing is lost; friends may see a 404 on a superseded pack until then).
 - Superseded files are deleted right after a successful publication. A friend reading at that moment may get a 404
   for a pack of the previous index: it keeps its cache and reads again at the next pass.
+
+## Known limits (review notes not fixed in this round)
+
+- **N-1 Public file content**: the public lists file carries every `featureFor(…, 'public')` property, including
+  my tag names, status, price level and dates. To narrow, or to show exactly in the "make public" preview (T-212).
+- **N-2** Removing a contact or `share: false` takes effect at the next publication the app triggers
+  (`localChange()`); the engine does not schedule one by itself.
+- **N-3** A friend whose index disappears keeps their cache (no signed "content deleted" marker yet, T-213).
+- **N-4** `keys/<device>.bin` are never deleted; they reveal my device ids (already in the index) and the time of
+  each rotation.
+- **N-5** Files uploaded by a device that crashed before its index commit stay until that device runs again.
+- **N-6** Concurrent `sync()` calls share the pass in progress even with different options.
+- **N-7** Clock skew near an invitation's expiry can make two of my devices re-seal packs for each other until the
+  skew window passes (bounded).
+- Own packs are still opened with every key I hold (current and previous) once their index is trusted; the index
+  rule above is what keeps a revoked device's content out.

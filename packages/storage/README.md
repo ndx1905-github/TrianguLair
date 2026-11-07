@@ -16,7 +16,7 @@ import { runAdapterConformance } from '@triangulair/storage/testing'; // needs v
 ```ts
 interface StorageAdapter {
   capabilities: { readOnly; conditionalWrites; list; publicUrl(path): string | null };
-  get(path): Promise<{ data: Uint8Array; etag } | null>;
+  get(path, { maxBytes? }): Promise<{ data: Uint8Array; etag } | null>; // TooLarge past maxBytes
   head(path): Promise<{ etag; size } | null>;
   put(path, data, { ifMatch?, ifNoneMatch?: '*', contentType? }): Promise<{ etag }>;
   delete(path, { ifMatch? }): Promise<void>;   // idempotent without ifMatch
@@ -35,6 +35,7 @@ interface StorageAdapter {
   - `Unsupported` (for example `list` over plain HTTPS)
   - `InvalidPath`
   - `ProtocolError` (a response the adapter did not expect)
+  - `TooLarge` (`get` with `maxBytes`: the announced Content-Length or stat size is checked first, then the body is streamed and the read cancelled past the limit; SFTP reads through a handle up to the limit. Without a readable body stream, as in some React Native `fetch` builds, the size is checked after reading. `fetchSnapshot`, `fetchHighestIndex` and `fetchPack` take `maxBytes` too.)
 - Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs, and S3 signing uses WebCrypto through `aws4fetch`.
 - `probeConditionalWrites(adapter)` checks at setup time whether a server really enforces `If-Match`/`If-None-Match`. It writes and then deletes a `.triangulair-probe-*` object.
 
