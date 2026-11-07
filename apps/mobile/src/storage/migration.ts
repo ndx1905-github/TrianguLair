@@ -13,9 +13,9 @@
  *   points to complete packs, spec "Interrupted write").
  * - A file is written with `If-None-Match: *`. When it is already there, the bytes are compared:
  *   identical (an earlier interrupted run) → skipped; different → conflict, nothing overwritten.
- *   Index files we wrote earlier in the same run may be replaced by a newer source index.
+ *   A file this run copied earlier may be replaced by a newer source version (the index).
  * - After copying, the source is listed again: anything another device published meanwhile is
- *   copied in another round (at most `MAX_ROUNDS`).
+ *   copied in another round (at most `MAX_ROUNDS` rounds that copy something).
  * - Verify reads every destination file back and compares its BLAKE2b hash with the source's.
  * - Cancel stops between files; what was copied stays (content-addressed packs are harmless) and
  *   a later run resumes. The current storage is untouched until the switch.
@@ -164,16 +164,17 @@ export async function copyAll(plan: MigrationPlan, from: StorageAdapter, to: Sto
   const hash = opts.hash ?? packHash;
   const n = opts.concurrency ?? 4;
   const hashes = new Map<string, string>();
-  const written = new Map<string, string>(); // index files written by this run
   let copied = 0;
   let skipped = 0;
   let files = plan.files;
   let seen = new Map(plan.files.map((f) => [f.path, f.etag]));
   let round = 0;
+  let busyRounds = 0; // rounds that copied something
 
   while (files.length) {
     round++;
-    if (round > MAX_ROUNDS) throw new SourceChanged(files[0]!.path);
+    if (busyRounds >= MAX_ROUNDS || round > MAX_ROUNDS * 3) throw new SourceChanged(files[0]!.path);
+    const copiedBefore = copied + skipped;
     const total = files.length;
     const bytesTotal = files.reduce((s, f) => s + f.size, 0);
     let done = 0;
@@ -190,14 +191,21 @@ export async function copyAll(plan: MigrationPlan, from: StorageAdapter, to: Sto
       if (!src) throw new SourceChanged(f.path);
       const h = hash(src.data);
       const index = isIndexPath(f.path);
+      const ours = hashes.get(f.path);
+      const contentType = index ? { contentType: 'application/json' } : {};
+      if (ours === h) {
+        // Listed again only because its ETag changed (weak or coarse ETags settling): same bytes.
+        tick(f);
+        return;
+      }
       try {
-        if (index && written.has(f.path)) {
-          // Our own earlier copy of the index: replace it with the newer one, guarded by its ETag.
+        if (ours !== undefined) {
+          // We copied an older version earlier in this run (a newer index): replace our own copy only.
           const cur = await to.get(f.path);
-          if (cur && hash(cur.data) !== written.get(f.path) && hash(cur.data) !== h) throw new MigrationConflict([f.path]);
-          await to.put(f.path, src.data, cur ? { ifMatch: cur.etag, contentType: 'application/json' } : { ifNoneMatch: '*', contentType: 'application/json' });
+          if (cur && hash(cur.data) !== ours && hash(cur.data) !== h) throw new MigrationConflict([f.path]);
+          await to.put(f.path, src.data, cur ? { ifMatch: cur.etag, ...contentType } : { ifNoneMatch: '*', ...contentType });
         } else {
-          await to.put(f.path, src.data, { ifNoneMatch: '*', ...(index ? { contentType: 'application/json' } : {}) });
+          await to.put(f.path, src.data, { ifNoneMatch: '*', ...contentType });
         }
         copied++;
       } catch (e) {
@@ -207,7 +215,6 @@ export async function copyAll(plan: MigrationPlan, from: StorageAdapter, to: Sto
         skipped++;
       }
       hashes.set(f.path, h);
-      if (index) written.set(f.path, h);
       tick(f);
     };
 
@@ -219,12 +226,13 @@ export async function copyAll(plan: MigrationPlan, from: StorageAdapter, to: Sto
       await copyOne(f);
     }
 
+    if (copied + skipped > copiedBefore) busyRounds++;
     // Anything published meanwhile (another of my devices)?
     const now = await listFiles(from);
     const changed = order(now.filter((e) => seen.get(e.path) !== e.etag));
     seen = new Map(now.map((e) => [e.path, e.etag]));
-    // A changed pack is impossible (content-addressed, never modified); a changed index is copied again.
-    for (const e of changed) if (!isIndexPath(e.path) && hashes.has(e.path)) throw new SourceChanged(e.path);
+    // Changed ETags are re-read and compared by content: weak or coarse ETags (Apache, Nextcloud) can
+    // change without the bytes changing; a really newer file (the index) replaces our own copy.
     files = changed;
   }
   return { copied, skipped, hashes, rounds: round };

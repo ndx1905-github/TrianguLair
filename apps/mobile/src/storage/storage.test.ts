@@ -340,6 +340,25 @@ describe('migration', () => {
     expect((await verifyCopy(res.hashes, to)).ok).toBe(true);
   });
 
+  it('an ETag that changes without new content (weak or coarse ETags settling) is not a change', async () => {
+    const from = seeded();
+    const to = new MemoryAdapter();
+    const plan = await planMigration(from, to);
+    let once = false;
+    const res = await copyAll(plan, from, to, {
+      concurrency: 1,
+      onProgress: (p) => {
+        if (!once && p.done === 4) {
+          once = true;
+          // Same bytes, new ETag (the memory adapter gives every write a new one).
+          for (const f of plan.files.slice(0, 3)) from.putUnchecked(f.path, from.store.get(f.path)!.data);
+        }
+      },
+    });
+    expect(res.copied).toBe(plan.files.length);
+    await sameContent(from, to);
+  });
+
   it('verify finds missing and altered files', async () => {
     const from = seeded();
     const to = new MemoryAdapter();

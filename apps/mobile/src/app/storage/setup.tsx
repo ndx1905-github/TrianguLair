@@ -72,7 +72,7 @@ function SetupScreen() {
   const finish = () => {
     if (returnTo) router.replace(returnTo as Href);
     else if (router.canGoBack()) router.back();
-    else router.replace('/storage');
+    else router.dismissTo('/storage');
   };
 
   const test = async () => {

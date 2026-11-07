@@ -122,7 +122,7 @@ function MoveScreen() {
     return (
       <StorageScreen title={t('storage.move.title')} testID="move-screen">
         <Muted>{t('storage.move.nothing')}</Muted>
-        <Button label={t('storage.title')} onPress={() => router.replace('/storage')} />
+        <Button label={t('storage.title')} onPress={() => router.dismissTo('/storage')} />
       </StorageScreen>
     );
   }
@@ -214,7 +214,7 @@ function MoveScreen() {
           {!phase.result.published && <Muted testID="move-republish">{t('storage.republishPending')}</Muted>}
           <Muted>{t('storage.move.kitHint')}</Muted>
           <Muted>{t('storage.move.revokeHint')}</Muted>
-          <Button label={t('storage.setup.done')} onPress={() => router.replace('/storage')} testID="move-finish" />
+          <Button label={t('storage.setup.done')} onPress={() => router.dismissTo('/storage')} testID="move-finish" />
         </Section>
       )}
 
@@ -231,7 +231,7 @@ function MoveScreen() {
             {(phase.error === 'phrase' || phase.error === 'certify') && phase.plan && (
               <Button label={t('storage.move.retry')} onPress={() => setPhase({ kind: 'verified', plan: phase.plan!, result: { ok: true, checked: 0, missing: [], mismatched: [] }, copied: 0, skipped: 0 })} testID="move-retry-certify" />
             )}
-            <Button kind="secondary" label={t('storage.move.keepCurrent')} onPress={() => router.replace('/storage')} testID="move-abandon" />
+            <Button kind="secondary" label={t('storage.move.keepCurrent')} onPress={() => router.dismissTo('/storage')} testID="move-abandon" />
           </View>
           <Muted>{t('storage.move.currentSafe')}</Muted>
         </Section>
