@@ -210,7 +210,7 @@ describe('attacks on the storage', () => {
     // Swap the bytes of every pack the index lists.
     for (const p of alice.engine.own!.index!.packs) {
       const d = (await mem.get(p.file))!.data;
-      d[d.length - 1] ^= 1;
+      d[d.length - 1] = d[d.length - 1]! ^ 1;
       mem.putUnchecked(p.file, d);
     }
     const r = await bob.engine.sync();
