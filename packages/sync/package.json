@@ -1,0 +1,31 @@
+{
+  "name": "@triangulair/sync",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MPL-2.0",
+  "description": "TrianguLair sync: publishing and reading encrypted packs, own multi-device sync through the storage, friends' cache, scheduler",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --exclude test/perf.test.ts",
+    "test:perf": "PERF_REPORT=1 vitest run test/perf.test.ts",
+    "test:real": "TL_REAL_SERVERS=1 vitest run test/real-servers.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@triangulair/crypto": "file:../crypto",
+    "@triangulair/data": "file:../data",
+    "@triangulair/storage": "file:../storage",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
