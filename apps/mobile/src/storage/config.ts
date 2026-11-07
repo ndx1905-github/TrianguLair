@@ -17,6 +17,8 @@
 import { checkLocation } from '@triangulair/crypto';
 
 export const STORAGE_CONFIG_VERSION = 1;
+/** Region used when none is typed (most S3-compatible providers accept it). */
+export const DEFAULT_S3_REGION = 'us-east-1';
 
 export type StorageKind = 'webdav' | 's3' | 'https';
 /** What the wizard offers; `sftp` is shown as desktop only, `local` means no storage. */
@@ -307,7 +309,7 @@ export function buildConfig(d: StorageDraft): { config: StorageConfig | null; pr
         kind: 's3',
         endpoint: `${ep.protocol}//${ep.host}${ep.pathname.replace(/\/+$/, '')}`,
         bucket,
-        region: d.s3Region.trim() || 'us-east-1',
+        region: d.s3Region.trim() || DEFAULT_S3_REGION,
         accessKeyId: d.s3AccessKey.trim(),
         secretAccessKey: d.s3SecretKey.trim(),
         prefix: prefix ?? '',

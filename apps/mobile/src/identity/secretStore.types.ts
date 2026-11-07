@@ -14,7 +14,7 @@ export interface SecretStore {
   remove(key: SecretKey): Promise<void>;
 }
 
-/** Every entry the app keeps in the secret store. */
-export type SecretKey = 'identity' | 'device-keys' | 'sharing-key' | 'primary-identity' | 'pending-phrase' | 'lock-code';
+/** Every entry the app keeps in the secret store (`storage`: storage settings with their credentials, T-203). */
+export type SecretKey = 'identity' | 'device-keys' | 'sharing-key' | 'primary-identity' | 'pending-phrase' | 'lock-code' | 'storage';
 
-export const SECRET_KEYS: readonly SecretKey[] = ['identity', 'device-keys', 'sharing-key', 'primary-identity', 'pending-phrase', 'lock-code'];
+export const SECRET_KEYS: readonly SecretKey[] = ['identity', 'device-keys', 'sharing-key', 'primary-identity', 'pending-phrase', 'lock-code', 'storage'];

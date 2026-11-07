@@ -2,6 +2,7 @@ import type { Messages } from './core';
 import { firstLaunchFr } from './firstLaunch.fr';
 import { frFiltersTags } from './filtersTags.fr';
 import { zonesListsFr } from './zonesLists.fr';
+import { storageFr } from './storage.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -9,6 +10,8 @@ export const fr: Messages = {
   ...firstLaunchFr,
   // Zones and lists (T-110, T-112), kept in their own file.
   ...zonesListsFr,
+  // Storage settings and moves (T-203), kept in their own file.
+  ...storageFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

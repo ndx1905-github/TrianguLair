@@ -17,6 +17,8 @@ import { copySecret, onClipboardCleared } from '../identity/clipboard';
 import { useIdentity } from '../identity/IdentityProvider';
 import { checkWords, clipboardFields, kitEntry, passwordManagerText, phraseWords, pickCheckIndexes, printableKitHtml, type KitInput } from '../identity/kit';
 import { printHtml } from '../identity/print';
+import { protocolOf } from '../storage/config';
+import { useStorage } from '../storage/StorageProvider';
 
 type Phase = 'show' | 'check' | 'done';
 
@@ -26,6 +28,7 @@ export default function KitScreen() {
   const { t, locale } = tr;
   const c = useUiColors();
   const router = useRouter();
+  const storage = useStorage();
   const { fontScale, width } = useLayout();
   const [phrase, setPhrase] = useState<string | null | undefined>(undefined);
   const [shown, setShown] = useState(false);
@@ -67,7 +70,8 @@ export default function KitScreen() {
     );
   }
 
-  const input: KitInput = { phrase, owner: state.record.owner, readAddress: null, protocol: null, name: state.profile.name, date: new Date() };
+  const cur = storage.state.current;
+  const input: KitInput = { phrase, owner: state.record.owner, readAddress: cur?.readUrl ?? null, protocol: cur ? t(`storage.protocol.${protocolOf(cur)}`) : null, name: state.profile.name, date: new Date() };
   const entry = kitEntry(input, t);
   const words = phraseWords(phrase);
 
@@ -156,7 +160,7 @@ export default function KitScreen() {
       }
       actions={<Button label={t('kit.next')} onPress={() => setPhase('check')} disabled={!shown} testID="kit-next" />}
     >
-      <Banner tone="warning">{t('kit.localOnlyNote')}</Banner>
+      {!cur && <Banner tone="warning">{t('kit.localOnlyNote')}</Banner>}
       <SectionTitle>{t('kit.phraseLabel')}</SectionTitle>
       {shown ? (
         <>

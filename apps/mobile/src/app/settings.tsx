@@ -1,5 +1,5 @@
 /**
- * Settings: profile, recovery kit, storage (local only for now), app lock,
+ * Settings: profile, recovery kit, storage (summary; Settings › Storage at /storage), app lock,
  * this device (primary device option) and appearance (theme, language).
  */
 import { useEffect, useState } from 'react';
@@ -11,7 +11,6 @@ import { DataGate } from '../components/DataGate';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Banner, Button, SectionTitle, Segmented } from '../components/ui';
 import { CodeFields, codeProblem, type CodeDraft } from '../firstLaunch/CodeFields';
-import { Phase2Badge } from '../firstLaunch/Frame';
 import { ProfileFields } from '../firstLaunch/ProfileFields';
 import { ToggleRow } from '../firstLaunch/ToggleRow';
 import { useLayout } from '../hooks/useLayout';
@@ -22,6 +21,8 @@ import { useIdentity, useReadyIdentity, type Profile } from '../identity/Identit
 import { useAppLock } from '../identity/LockGate';
 import { keyFingerprint } from '../identity/kit';
 import { LOCK_DELAYS_MS } from '../identity/lock';
+import { protocolOf } from '../storage/config';
+import { useStorage } from '../storage/StorageProvider';
 import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -53,6 +54,7 @@ function SettingsScreen() {
   const { updateProfile, setPrimary } = useIdentity();
   const lock = useAppLock();
   const theme = useThemeMode();
+  const storage = useStorage();
 
   const [profile, setProfile] = useState<Profile>(identity.profile);
   useEffect(() => setProfile(identity.profile), [identity.profile]);
@@ -127,10 +129,18 @@ function SettingsScreen() {
           </Section>
 
           <Section title={t('settings.storage')}>
-            <Muted>{t('settings.storageLocal')}</Muted>
-            <Muted>{t('kit.localOnlyNote')}</Muted>
-            <Button kind="secondary" label={t('protect.storage')} onPress={() => {}} disabled />
-            <Phase2Badge />
+            {storage.state.current ? (
+              <>
+                <Muted testID="settings-storage-current">{t('settings.storageConnected', { protocol: t(`storage.protocol.${protocolOf(storage.state.current)}`) })}</Muted>
+                <Muted>{storage.state.current.readUrl}</Muted>
+              </>
+            ) : (
+              <>
+                <Muted>{t('settings.storageLocal')}</Muted>
+                <Muted>{t('kit.localOnlyNote')}</Muted>
+              </>
+            )}
+            <Button kind="secondary" label={t('settings.storageOpen')} onPress={() => router.push('/storage')} testID="settings-storage" />
           </Section>
 
           <Section title={t('settings.lock')}>

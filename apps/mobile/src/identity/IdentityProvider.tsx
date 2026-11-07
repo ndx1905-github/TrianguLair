@@ -6,11 +6,12 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { ready } from '@triangulair/crypto';
+import { fromB64Url, openSharingKey, ready, type SharingCert } from '@triangulair/crypto';
 
 import { OSM_FIXTURES } from '../config';
 import { getSetting, setSetting } from '../data/deviceSettings';
-import { checkStoredIdentity, createIdentity, parseIdentityRecord, primaryFromPhrase, type CreatedIdentity, type IdentityRecord } from './create';
+import { rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
+import { checkStoredIdentity, createIdentity, parseDeviceKeys, parseIdentityRecord, primaryFromPhrase, type CreatedIdentity, type IdentityRecord } from './create';
 import { openSecretStore, type SecretStore } from './secretStore';
 
 export interface Profile {
@@ -35,7 +36,7 @@ export type IdentityState =
       onboarding: OnboardingStep;
     };
 
-export interface IdentityApi {
+export interface IdentityApi extends SharingCertRotation {
   state: IdentityState;
   /** Starts creating the keys in the background (profile screen). Idempotent; resolves when they are ready. */
   prepare(): Promise<void>;
@@ -50,6 +51,8 @@ export interface IdentityApi {
   /** Primary device on/off. Turning it on needs the phrase (pending one, or typed). Throws "phrase-mismatch". */
   setPrimary(on: boolean, typedPhrase?: string): Promise<void>;
   secrets: SecretStore | null;
+  /** Checks typed words against my identity (master key prompts). */
+  checkPhrase(phrase: string): Promise<boolean>;
 }
 
 const IdentityContext = createContext<IdentityApi | null>(null);
@@ -228,6 +231,33 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         await ready();
         await secrets.set('primary-identity', primaryFromPhrase(phrase, state.record.owner));
         await updateRecord({ primary: true });
+      },
+      async currentSharingCert(): Promise<SharingCert> {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const [deviceKeys, sharingKey] = await Promise.all([secrets.get('device-keys'), secrets.get('sharing-key')]);
+        if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+        await ready();
+        return openSharingKey(fromB64Url(sharingKey, 'sharingKey'), parseDeviceKeys(deviceKeys), { expectedOwner: state.record.owner }).cert;
+      },
+      async rotateSharingCert(change: CertChange, master: MasterKeySource): Promise<RotationResult> {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const [deviceKeys, sharingKey, primaryIdentity] = await Promise.all([secrets.get('device-keys'), secrets.get('sharing-key'), secrets.get('primary-identity')]);
+        if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+        await ready();
+        const result = rotateStoredSharingKey(state.record, { deviceKeys, sharingKey, primaryIdentity }, change, master);
+        // Other devices and the recovery vault get the new key from the sync engine (T-204/T-206).
+        await secrets.set('sharing-key', result.sealedForThisDevice);
+        return result;
+      },
+      async checkPhrase(phrase: string): Promise<boolean> {
+        if (state.kind !== 'ready') return false;
+        await ready();
+        try {
+          primaryFromPhrase(phrase.trim().toLowerCase().split(/\s+/).join(' '), state.record.owner);
+          return true;
+        } catch {
+          return false;
+        }
       },
     }),
     [state, secrets, prepare, create, updateRecord],
