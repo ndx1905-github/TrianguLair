@@ -56,7 +56,7 @@ interface User {
 }
 
 let actor = 0;
-async function user(w: World, name: string, opts: { storage?: boolean; clock?: { now: number } } = {}): Promise<User> {
+async function user(w: World, name: string, opts: { storage?: boolean; clock?: { now: number }; friendKeys?: boolean } = {}): Promise<User> {
   const identity = identityFromPhrase(generateRecoveryPhrase());
   const keys = generateDeviceKeys();
   const signer: DeviceSigner = { keys, cert: issueDeviceCert(identity, devicePublicKeys(keys)) };
@@ -74,10 +74,13 @@ async function user(w: World, name: string, opts: { storage?: boolean; clock?: {
   const store = DataStore.open({ driver, meId: identity.owner, actor: (++actor).toString(16).padStart(32, '0') });
   const state = new MemoryStateStore();
   const clock = opts.clock ?? { now: Date.parse('2026-10-23T16:30:00Z') };
-  const engine = new SyncEngine({ store, state, sharing, device: signer, ...(storage && { storage }), readAdapter: w.readAdapter, fullCheckMs: 0, now: () => new Date(clock.now) });
+  // As the SyncProvider does: every pass reads a friend with the invitation keys of links I answered.
+  let svc: ContactsService | null = null;
+  const friendKeys = opts.friendKeys === false ? undefined : (owner: string) => svc?.invitationKeysFor(owner) ?? [];
+  const engine = new SyncEngine({ store, state, sharing, device: signer, ...(storage && { storage }), readAdapter: w.readAdapter, fullCheckMs: 0, now: () => new Date(clock.now), ...(friendKeys && { friendKeys }) });
   const port = engineSyncPort({ engine, state, sharing: () => sharing.cert, device: () => signer, readAdapter: w.readAdapter });
-  const svc = await createContactsService({ port, local: memoryKV(), secrets: memorySecrets(), now: () => clock.now });
-  return { name, identity, owner: identity.owner, signer, sharing, store, engine, svc, clock };
+  svc = await createContactsService({ port, local: memoryKV(), secrets: memorySecrets(), now: () => clock.now });
+  return { name, identity, owner: identity.owner, signer, sharing, store, engine, svc: svc!, clock };
 }
 
 function point(id: number, name: string) {
@@ -102,6 +105,30 @@ beforeAll(async () => {
 });
 
 describe('invitation by link and return link', () => {
+  it('regular passes keep reading with the invitation key until the answer is accepted', async () => {
+    const w = new World();
+    const alice = await user(w, 'alice');
+    const bob = await user(w, 'bob');
+    const carol = await user(w, 'carol', { friendKeys: false });
+    alice.store.putSave({ place: point(1, 'Shared') });
+    await alice.engine.sync();
+    for (const who of [bob, carol]) {
+      const inv = await alice.svc.createInvitation({ name: who.name });
+      const opened = await who.svc.openInvitation(inv.link);
+      await who.svc.answerInvitation(opened.token, { name: 'Alice', shareBack: false });
+      expect(friendPlaces(who, alice.owner)).toEqual(['osm:node/1']);
+    }
+    // Alice saves another place; regular passes (launch, foreground, edit) on both sides.
+    alice.store.putSave({ place: point(3, 'Another') });
+    await alice.engine.sync();
+    await bob.engine.sync();
+    await bob.engine.sync();
+    expect(friendPlaces(bob, alice.owner)).toEqual(['osm:node/1', 'osm:node/3']);
+    // Without the hook (what the app did before the wiring), the pass erases what the invitation showed.
+    await carol.engine.sync();
+    expect(friendPlaces(carol, alice.owner)).toEqual([]);
+  });
+
   it('invite, see the places right away, answer, accept with re-encryption, then remove', async () => {
     const w = new World();
     const alice = await user(w, 'alice');

@@ -31,6 +31,12 @@ function SyncScreen() {
   const storage = useStorage();
   const pull = usePullToRefresh();
   const [showLog, setShowLog] = useState(false);
+  // "Sync now" waits for its pass (and the one queued after it, if any) before it can be pressed again.
+  const [running, setRunning] = useState(false);
+  const syncNow = () => {
+    setRunning(true);
+    void (status?.state === 'blocked' ? sync.resume() : sync.refresh()).finally(() => setRunning(false));
+  };
   const snap = sync.snapshot;
   const now = Date.now();
   const status = snap?.status;
@@ -84,7 +90,7 @@ function SyncScreen() {
             </View>
           )}
           <View style={styles.actions}>
-            <Button label={t('sync.now')} onPress={() => void (status?.state === 'blocked' ? sync.resume() : sync.refresh())} testID="sync-now" />
+            <Button label={running ? t('sync.state.syncing') : t('sync.now')} onPress={syncNow} disabled={running} testID="sync-now" />
             <Button kind={note?.action === 'storage' ? 'primary' : 'secondary'} label={t('sync.openStorage')} onPress={() => router.push('/storage')} testID="sync-storage" />
           </View>
 

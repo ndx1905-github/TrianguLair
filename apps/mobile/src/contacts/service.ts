@@ -145,6 +145,8 @@ export interface ContactsService {
   answerInvitation(token: string, choice: AnswerChoice): Promise<{ link: string }>;
   /** Invitation keys that still read `owner`'s places (until my answer is accepted or the link expires). */
   invitationKeysFor(owner: string): KeyPair[];
+  /** The name I gave an invitation of mine (for the sync's "Your pending invitations were cancelled"). */
+  invitationName(id: string): string | undefined;
 
   // Contacts.
   contacts(): ContactView[];
@@ -179,6 +181,24 @@ export async function createContactsService(o: ContactsServiceOptions): Promise<
   const now = o.now ?? (() => Date.now());
   const received = parseReceived(await o.secrets.get('invitations-received'), now());
   return new Service(o, received, now);
+}
+
+/**
+ * The invitation keys of links I answered that still read `owner`'s places (not expired). Also used
+ * by the SyncProvider straight from the secret store (`invitations-received`), so that every pass
+ * reads with them, even before this service exists.
+ */
+export function receivedKeysFor(received: readonly ReceivedInvitation[], owner: string, now: number): KeyPair[] {
+  const out: KeyPair[] = [];
+  for (const r of received) {
+    if (r.owner !== owner || r.expires <= now) continue;
+    try {
+      out.push(parseInvitationLink(r.link, { now: new Date(now) }).keyPair);
+    } catch {
+      // Expired or damaged: dropped at the next save.
+    }
+  }
+  return out;
 }
 
 /** Opened invitations waiting for an answer (memory only: the confirmed object is needed). */
@@ -498,16 +518,11 @@ class Service implements ContactsService {
   }
 
   invitationKeysFor(owner: string): KeyPair[] {
-    const out: KeyPair[] = [];
-    for (const r of this.received) {
-      if (r.owner !== owner || r.expires <= this.now()) continue;
-      try {
-        out.push(parseInvitationLink(r.link, { now: this.date() }).keyPair);
-      } catch {
-        // Expired or damaged: dropped at the next save.
-      }
-    }
-    return out;
+    return receivedKeysFor(this.received, owner, this.now());
+  }
+
+  invitationName(id: string): string | undefined {
+    return this.local.state.labels[id]?.name || undefined;
   }
 
   // ------------------------------------------------------------------ contacts

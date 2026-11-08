@@ -154,7 +154,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     old index at the new storage (it certifies the old address), publishes there with the new certificate, then
     writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
     stops it (`ForeignIndexError`). `republishPending` does the same at the next pass. `openInvitations` lists the
-    open invitations of the previous certificate (names come from T-208 through `invitationName`).
+    open invitations of the previous certificate (named through `invitationName`, from the ContactsService).
   - **Remote wipe**: the engine's hooks erase every secret-store entry, then the database (`DataStore.wipe()`, then
     the file itself: `AppStore.erase()`), then the device settings; the whole app is replaced by "This device was
     removed" (`DeviceRemoved.tsx`).
@@ -164,9 +164,16 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     Settings › Sync status (`/sync`): my storage (state, last success, pending, the problem with what to do), each
     person I follow ("Updated 12 days ago", "Léa's content could not be verified", "Update the app to see Léa's
     places"), "Sync now" (resumes after reconnecting), and the local technical log (error names and paths only).
-  - **Contacts**: `addContact({ location, owner?, name, follow, share })` reads and verifies the index at the
-    certified address, then `engine.addContact`; `setPolicy`, `removeContact`. The invitation and return link screens
-    (T-208/T-209) call these. In fixture mode on web, `window.__tlSync` exposes them for the end-to-end test.
+  - **Contacts** (T-208/T-209 wiring): `controller.port()` is the contacts screens' `SyncPort` over the controller's
+    own engine (`engineSyncPort`); the SyncProvider registers it with `registerSyncPort` (`src/contacts/registry.ts`),
+    again after each new engine (storage connected or moved), so there is one engine and one publisher per database.
+    The port's `publish` and `readFriend` run inside the controller's lock, between passes. At every pass a friend
+    whose invitation link I answered is also read with that invitation key (engine option `friendKeys`, loaded from
+    the secret store's `invitations-received` before each pass), until they accept my answer: otherwise a regular pass
+    would erase what the invitation showed. Names given in the flows (the name typed when inviting, when answering,
+    a rename) go to the person row (`nameContact`, and `contactName` fills a row without one), so places, What's new
+    and the sync status show them rather than "A friend". `addContact({ location, owner?, … })` remains for the unit
+    tests.
 - **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
   filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
   per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
@@ -183,8 +190,9 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   `ContactsService` (`service.ts`) only, which sits on a `SyncPort` (`port.ts`): the sync package's contact API
   (`addContact`, `setPolicy`, `removeContact`, `addInvitation`, `contacts`) plus `records` / `updateRecords` (answers and
   the accepted responder in the vault, a contact without storage), `publish`, `fetchIndex`, `readFriend`. `engineSyncPort`
-  is the adapter from a `SyncEngine`; the SyncProvider registers it with `registerSyncPort`, until then
-  `localEngine.ts` builds an engine of its own that only runs when these screens publish or read.
+  is the adapter from a `SyncEngine`; the SyncProvider registers the one over its own engine with `registerSyncPort`
+  (the screens show "loading" until then), and the ContactsProvider registers the service back
+  (`registerContactsService`) for names and invitation keys.
   - *Invite a friend* needs a storage (`useStorageForSharing().ensure('invite', '/invite')`), publishes the index that
     lists the invitation, then shows the short link (≤ 200 characters) and its QR code (`qrcode-generator`, version ≤ 10),
     share sheet / copy; pending invitations with expiry, phase (waiting, answered, several, accepted, someone else
@@ -544,8 +552,8 @@ between browser contexts):
 
 `e2e/invitations.spec.ts` runs the storage-less checks always and the exchanges against Apache (skipped without it): invite,
 answer through the `/i#…` deep link, accept, safety-code match by QR payload, access changes, removal; two answers to one link
-with a forged link refused; the face-to-face exchange verified on both sides. Use a free `E2E_PORT` when another export is served
-on the default one (`reuseExistingServer` would test that one).
+with a forged link refused; the face-to-face exchange verified on both sides. Each run serves `dist/` on a free port of its
+own (never another worktree's server); `E2E_PORT` picks a fixed one.
 
 End-to-end: `e2e/storage.spec.ts` runs against the same Apache server (skipped when it is not running): wrong
 password, CORS diagnosis, private read address refused, connect, lossless move of packs, a photo, a public list and the
@@ -565,18 +573,20 @@ contexts: Anna and Ben):
 | `docs/phone-sync-offline.png` | Offline · 1 change pending |
 | `docs/phone-sync-reconnect.png`, `docs/phone-sync-reconnect-status.png` | Credentials rejected: "Reconnect your storage", writes stopped |
 
-End-to-end: `e2e/sync.spec.ts` (skipped without Apache): both connect a storage and publish; Ben follows Anna and Anna
-shares with Ben through `window.__tlSync`; Ben sees her shared place and not her private one, with "1 friend" and her
+End-to-end: `e2e/sync.spec.ts` (skipped without Apache): both connect a storage and publish; Anna invites Ben from the
+invitation screen, Ben opens the link in his browser context, names her and answers, Anna pastes his return link and
+accepts (the name she typed when inviting is his contact name); Ben sees her shared place and not her private one, with "1 friend" and her
 comment on the card; Anna edits the comment and marks it favorite, Ben gets both in What's new (badge, dots, "See on the
 map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
-storage", back to normal after "Sync now"); Anna stops sharing and Ben's cache drops her places.
+storage", back to normal after "Sync now"); Anna sets "They see my places" to nothing on Ben's contact and Ben's cache
+drops her places. Passes are triggered with "Sync now" on the sync status screen (no test hook).
 
 Sync open questions:
 
 - **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
   only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
-- **Friends' names**: the protocol carries no display name; the name given when adding the contact is used (the
-  invitation flow should carry or ask for it). Contacts added on another device show "A friend" until then.
+- **Friends' names**: the protocol carries no display name; the name typed in the invitation flow is kept on this
+  device. Contacts added on another device (through the vault) show "A friend" until renamed here.
 - **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
   without expo-updates).
 - **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task

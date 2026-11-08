@@ -5,21 +5,25 @@
  * shows "This device was removed" after a remote wipe, and gives the screens the status, the people
  * I follow and What's new.
  *
- * Fixture mode on the web (test builds only) exposes `window.__tlSync` for the end-to-end tests:
- * adding a contact from a read address stands in for the invitation flow (T-208/T-209).
+ * The invitation and contacts screens (T-208/T-209) use this controller's engine: the provider
+ * registers `controller.port()` with `registerSyncPort` (and again after each new engine), reads
+ * every friend with the invitation keys of links I answered (`invitations-received`, until they
+ * accept), and names contacts and invitations from the ContactsService.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { SqliteStateStore } from '@triangulair/sync';
 
-import { OSM_FIXTURES } from '../config';
 import { onLocalEdit, useMaybeData } from '../data/DataProvider';
 import { clearSettings } from '../data/deviceSettings';
 import { useIdentity } from '../identity/IdentityProvider';
 import { SECRET_KEYS } from '../identity/secretStore.types';
+import { parseReceived } from '../contacts/local';
+import { registerSyncPort, registeredContactsService } from '../contacts/registry';
+import { receivedKeysFor } from '../contacts/service';
 import { registerStorageMoveHooks } from '../storage/interfaces';
 import { useStorage } from '../storage/StorageProvider';
-import { SyncController, type AddContactInput, type ControllerSnapshot } from './controller';
+import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
 import type { WhatsNewEntry } from './whatsNew';
@@ -34,9 +38,8 @@ export interface SyncApi {
   lastVisit(): number;
   markVisited(): void;
   log(): string[];
-  addContact(input: AddContactInput): Promise<string>;
-  setPolicy(owner: string, patch: { share?: boolean; follow?: boolean }): Promise<void>;
-  removeContact(owner: string): Promise<void>;
+  /** A name given on the contacts screens: their person row. */
+  nameContact(owner: string, name: string): void;
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
@@ -102,6 +105,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (s.wiped) setWiped(true);
       },
       author: () => nameRef.current || undefined,
+      invitationName: (id) => registeredContactsService()?.invitationName(id),
+      contactName: (owner) => registeredContactsService()?.contact(owner)?.name,
+      friendKeys: async () => {
+        const now = Date.now();
+        const received = parseReceived(await secrets.get('invitations-received'), now);
+        return (owner) => receivedKeysFor(received, owner, now);
+      },
+      onEngine: () => {
+        if (alive) registerSyncPort(c.port());
+      },
     });
     ctl.current = c;
     registerStorageMoveHooks(c);
@@ -128,6 +141,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('offline', net);
       }
       registerStorageMoveHooks(null);
+      registerSyncPort(null);
       c.stop();
       if (ctl.current === c) ctl.current = null;
     };
@@ -151,6 +165,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [storageKey, snapshot?.ready]);
 
   const refresh = useCallback(async () => ctl.current?.refresh(), []);
+  const nameContact = useCallback((owner: string, name: string) => ctl.current?.nameContact(owner, name), []);
   const api = useMemo<SyncApi>(
     () => ({
       snapshot,
@@ -165,30 +180,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setSnapshot(c.snapshot());
       },
       log: () => ctl.current?.log() ?? [],
-      addContact: async (input) => {
-        if (!ctl.current) throw new Error('sync not ready');
-        return ctl.current.addContact(input);
-      },
-      setPolicy: async (owner, patch) => ctl.current?.setPolicy(owner, patch),
-      removeContact: async (owner) => ctl.current?.removeContact(owner),
+      nameContact,
     }),
-    [snapshot, refresh],
+    [snapshot, refresh, nameContact],
   );
 
-  // End-to-end tests (fixture mode, web only): stand-in for the invitation screens.
   useEffect(() => {
-    if (!OSM_FIXTURES || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const w = window as unknown as { __tlSync?: unknown };
-    w.__tlSync = {
-      owner: () => ctl.current?.owner() ?? null,
-      addContact: (input: AddContactInput) => api.addContact(input),
-      setPolicy: (owner: string, patch: { share?: boolean; follow?: boolean }) => api.setPolicy(owner, patch),
-      removeContact: (owner: string) => api.removeContact(owner),
-      sync: () => api.refresh(),
-      snapshot: () => ctl.current?.snapshot() ?? null,
-      whatsNew: () => api.whatsNew(),
-    };
-  }, [api]);
+    if (wiped) registerSyncPort(null);
+  }, [wiped]);
 
   if (wiped) return <DeviceRemoved />;
   return <SyncContext.Provider value={api}>{children}</SyncContext.Provider>;

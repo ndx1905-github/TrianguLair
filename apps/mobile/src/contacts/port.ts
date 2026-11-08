@@ -1,7 +1,7 @@
 /**
  * `SyncPort`: everything the contacts service needs from the sync engine, and nothing more. The
- * app's SyncProvider (T-210 wiring) hands one over with `engineSyncPort(engine, …)`; until it
- * does, `localEngine.ts` builds a small engine of its own (see ContactsProvider).
+ * app's SyncProvider hands one over (`SyncController.port()`, built with `engineSyncPort` over the
+ * controller's own engine, registered with `registerSyncPort`); the screens wait until it does.
  *
  * The first block is the sync package's contact API as it is (`addContact`, `setPolicy`,
  * `removeContact`, `addInvitation`, `contacts`). The second block covers what that API does not

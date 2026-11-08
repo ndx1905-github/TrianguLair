@@ -21,7 +21,9 @@ import { createIdentity, type CreatedIdentity } from '../identity/create';
 import { rotateStoredSharingKey } from '../storage/certify';
 import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
-import { ForeignIndexError, SyncController, clearStaleIndex } from './controller';
+import { memoryKV, memorySecrets } from '../contacts/local';
+import { createContactsService, type ContactsService } from '../contacts/service';
+import { ForeignIndexError, SyncController, clearStaleIndex, type ControllerDeps } from './controller';
 import { ALL_FRIENDS, isShown, parseSelection, serializeSelection, toggleFriend } from './friendsSelection';
 import { openSyncKeys, parseSyncKeys, serializeSyncKeys } from './keys';
 import { ageParts, friendNote, ownNote, sinceParts } from './problems';
@@ -65,7 +67,7 @@ function cfg(location: string): StorageConfig {
   return { kind: 'webdav', flavor: 'generic', url: `${location}dav/`, username: 'u', password: 'p', readUrl: location, conditionalWrites: true } as StorageConfig;
 }
 
-function makeUser(name: string): User {
+function makeUser(name: string, extra: Partial<ControllerDeps> = {}): User {
   const created = createIdentity({ primary: true });
   const location = `https://${name}.example/tl/`;
   // Connecting a storage certifies its read address (rotation 1).
@@ -104,6 +106,7 @@ function makeUser(name: string): User {
     onData: () => void u.data++,
     onChange: () => {},
     author: () => name,
+    ...extra,
   });
   return u;
 }
@@ -132,6 +135,58 @@ async function friends(a: User, b: User) {
 }
 
 describe('SyncController', () => {
+  it('gives the contacts screens a port over its own engine: invitation, names, invitation keys at every pass', async () => {
+    const services = new Map<string, ContactsService>();
+    const engines: string[] = [];
+    const hooks = (who: string): Partial<ControllerDeps> => ({
+      contactName: (owner) => services.get(who)?.contact(owner)?.name,
+      invitationName: (id) => services.get(who)?.invitationName(id),
+      friendKeys: async () => (owner) => services.get(who)?.invitationKeysFor(owner) ?? [],
+      onEngine: () => engines.push(who),
+    });
+    const a = makeUser('ines', hooks('ines'));
+    const b = makeUser('jules', hooks('jules'));
+    expect(a.ctl.port()).toBeNull();
+    a.store.putSave({ place: place(41, 'Chez Ines'), comment: 'shared' });
+    await a.ctl.refresh();
+    await b.ctl.refresh();
+    expect(engines).toEqual(['ines', 'jules']);
+    for (const u of [a, b]) {
+      const port = u.ctl.port()!;
+      expect(port.owner).toBe(u.created.record.owner);
+      expect(u.ctl.port()).toBe(port);
+      // onName goes to the controller, as the ContactsProvider wires it.
+      services.set(u.name, await createContactsService({ port, local: memoryKV(), secrets: memorySecrets(), onName: (o, n) => u.ctl.nameContact(o, n) }));
+    }
+    const ines = services.get('ines')!;
+    const jules = services.get('jules')!;
+    const inv = await ines.createInvitation({ name: 'Jules' });
+    expect(await a.ctl.openInvitations(a.ctl.port()!.sharingCert())).toEqual([{ name: 'Jules', createdAt: expect.any(Number) }]);
+    const opened = await jules.openInvitation(inv.link);
+    const { link } = await jules.answerInvitation(opened.token, { name: 'Inès', shareBack: true });
+    expect(theirPlaces(b, a.created.record.owner)).toEqual([{ name: 'Chez Ines', comment: 'shared' }]);
+    // Regular passes before Inès accepts: still read with the invitation key.
+    a.store.putSave({ place: place(42, 'Second') });
+    await a.ctl.refresh();
+    await b.ctl.refresh();
+    expect(theirPlaces(b, a.created.record.owner).map((p) => p.name)).toEqual(['Chez Ines', 'Second']);
+    expect(b.ctl.snapshot().friends).toMatchObject([{ name: 'Inès', follow: true, places: 2 }]);
+    // Her first place, read right after answering (not in a pass), is in What's new too.
+    expect(b.ctl.whatsNew.entries().map((e) => [e.kind, e.name])).toEqual(expect.arrayContaining([['added', 'Chez Ines'], ['added', 'Second']]));
+
+    await ines.receiveAnswer(link);
+    const answer = ines.answers(inv.id)!;
+    await ines.acceptAnswer(inv.id, b.created.record.owner, { name: answer.names[b.created.record.owner]!, share: { kind: 'all' }, follow: true });
+    await a.ctl.refresh();
+    await b.ctl.refresh();
+    // The name typed when inviting is the contact's name (not "A friend").
+    expect(a.ctl.snapshot().friends).toMatchObject([{ name: 'Jules', follow: true, share: true }]);
+    expect(theirPlaces(b, a.created.record.owner)).toHaveLength(2);
+    // Her storage holds one index, published by her one engine.
+    const idx = verifyIndex((await a.storage.get('index.json'))!.data, { expectedOwner: a.created.record.owner });
+    expect(idx.sharing_cert.location).toBe(a.location);
+  });
+
   it('publishes, a friend reads the shared places only, edits reach What\'s new, revocation drops them', async () => {
     const a = makeUser('anna');
     const b = makeUser('ben');

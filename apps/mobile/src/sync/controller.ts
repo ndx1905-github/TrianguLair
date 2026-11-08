@@ -6,10 +6,16 @@
  * storage and leave the signed redirect at the old ones) and `republishPending`; records What's
  * new; and carries the remote wipe to the app's hooks (secrets, then the database).
  *
+ * It also hands the invitation and contacts screens (T-208/T-209) a `SyncPort` over this same
+ * engine (`port()`, registered by the SyncProvider): their publications and reads run inside the
+ * controller's lock, so exactly one engine publishes from this database. At every pass, a friend
+ * whose invitation link I answered is read with that invitation key too (`friendKeys`), until they
+ * accept my answer.
+ *
  * `SyncProvider.tsx` is the React side (AppState, network status, screens). Unit-tested with
  * in-memory storages (`sync.test.ts`).
  */
-import { ready, verifyIndex, type SharingCert, type SharingKey, type SignedIndex } from '@triangulair/crypto';
+import { ready, verifyIndex, type DeviceSigner, type KeyPair, type SharingCert, type SharingKey, type SignedIndex } from '@triangulair/crypto';
 import type { DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, type StorageAdapter } from '@triangulair/storage';
 import {
@@ -21,9 +27,11 @@ import {
   type SyncReport,
   type SyncStateStore,
   type SyncStatus,
+  type FriendReport,
   type Timers,
 } from '@triangulair/sync';
 
+import { engineSyncPort, type SyncPort } from '../contacts/port';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
 import { logLine } from './problems';
@@ -55,6 +63,15 @@ export interface ControllerDeps {
   author?(): string | undefined;
   /** Name the owner gave an invitation (T-208), for "Your pending invitations were cancelled". */
   invitationName?(id: string): string | undefined;
+  /** Name I gave a contact (T-208, kept on this device), for their person row when it has none. */
+  contactName?(owner: string): string | undefined;
+  /**
+   * Extra keys per friend, loaded before every pass (T-208: the invitation keys of links I
+   * answered, `invitations-received`, until my answer is accepted).
+   */
+  friendKeys?(): Promise<(owner: string) => KeyPair[]>;
+  /** A new engine was built (launch, storage change, move): the contacts screens' port changes too. */
+  onEngine?(): void;
   timers?: Timers;
   now?: () => number;
   intervalMs?: number;
@@ -118,6 +135,10 @@ export class SyncController implements StorageMoveHooks {
   private wiped = false;
   private lastPassAt: number | null = null;
   private readonly friendProblems = new Map<string, SyncProblem | null>();
+  private keysFor: (owner: string) => KeyPair[] = () => [];
+  private portCache: { engine: SyncEngine; port: SyncPort } | null = null;
+  /** The keys each engine was built with (the port signs with this device and states my certificate). */
+  private readonly built = new WeakMap<SyncEngine, { sharing: SharingKey; device: DeviceSigner }>();
 
   constructor(private readonly d: ControllerDeps) {
     this.whatsNew = new WhatsNewLog(d.state);
@@ -166,6 +187,7 @@ export class SyncController implements StorageMoveHooks {
       ...(write && { storage: write }),
       readAdapter: (loc) => this.readAdapter(loc),
       online: () => this.online,
+      friendKeys: (owner) => this.keysFor(owner),
       ...(author && { author }),
       onSharingKey: (nk) => {
         void this.d
@@ -174,13 +196,30 @@ export class SyncController implements StorageMoveHooks {
       },
       wipe: { secrets: () => this.d.wipe.secrets(), data: () => this.d.wipe.data() },
     });
+    this.built.set(engine, { sharing: k.sharing, device: k.device });
     return engine;
+  }
+
+  private setEngine(e: SyncEngine): void {
+    const changed = this.engine !== e;
+    this.engine = e;
+    if (changed) this.d.onEngine?.();
+  }
+
+  /** Reloads the per-friend extra keys (a broken source reads with my keys only). */
+  private async loadFriendKeys(): Promise<void> {
+    if (!this.d.friendKeys) return;
+    try {
+      this.keysFor = await this.d.friendKeys();
+    } catch (e) {
+      console.warn('Could not load the invitation keys', e);
+    }
   }
 
   private engineReady(): Promise<SyncEngine> {
     if (this.engine) return Promise.resolve(this.engine);
     this.building ??= this.build().then((e) => {
-      this.engine = e;
+      this.setEngine(e);
       this.building = null;
       this.d.onChange();
       return e;
@@ -195,7 +234,7 @@ export class SyncController implements StorageMoveHooks {
   rebuild(): Promise<void> {
     return this.exclusive(async () => {
       if (this.wiped) return;
-      this.engine = await this.build();
+      this.setEngine(await this.build());
       this.d.onChange();
     });
   }
@@ -213,11 +252,9 @@ export class SyncController implements StorageMoveHooks {
           await this.d.access.markRepublished();
         }
       }
+      await this.loadFriendKeys();
       // People with nothing in my cache yet: their first places are one grouped entry.
-      const repo = this.d.store.repo;
-      const firstRead = new Set(
-        engine.book.following().map((c) => c.owner).filter((o) => !repo.db.get(`SELECT 1 AS x FROM saves WHERE owner_id = ? LIMIT 1`, [o])),
-      );
+      const firstRead = this.unread(engine.book.following().map((c) => c.owner));
       const report = await engine.sync({ publish: opts.publish });
       this.afterPass(engine, report, firstRead);
       return report;
@@ -231,10 +268,28 @@ export class SyncController implements StorageMoveHooks {
       this.d.onChange();
       return;
     }
-    const repo = this.d.store.repo;
     if (engine.own && !report.problems.some((p) => p.about === 'own')) this.d.state.set(OWN_OK_KEY, report.startedAt);
     for (const f of report.friends) this.friendProblems.set(f.owner, f.problem ?? null);
-    this.whatsNew.record(report.friends, {
+    this.recordNews(report.friends, firstRead);
+    this.syncPeople(engine);
+    if (report.problems.length) {
+      const log = this.d.state.get<string[]>(LOG_KEY) ?? [];
+      this.d.state.set(LOG_KEY, [...report.problems.map((p) => logLine(p.about, p.problem, report.startedAt)), ...log].slice(0, LOG_MAX));
+    }
+    const changed = report.friends.some((f) => f.status === 'updated') || (report.own?.pull.imported ?? 0) > 0;
+    if (changed) this.d.onData();
+    this.d.onChange();
+  }
+
+  /** Of these owners, those with nothing in my cache yet. */
+  private unread(owners: readonly string[]): Set<string> {
+    const db = this.d.store.repo.db;
+    return new Set(owners.filter((o) => !db.get(`SELECT 1 AS x FROM saves WHERE owner_id = ? LIMIT 1`, [o])));
+  }
+
+  private recordNews(friends: FriendReport[], firstRead: ReadonlySet<string>): void {
+    const repo = this.d.store.repo;
+    this.whatsNew.record(friends, {
       now: this.now(),
       firstRead,
       placeName: (id) => repo.getPlace(id)?.name,
@@ -243,17 +298,29 @@ export class SyncController implements StorageMoveHooks {
         return s ? { comment: s.commentVisibility === 'private' ? '' : s.comment, status: s.status } : undefined;
       },
     });
-    // Contacts added on my other devices (through the vault) get a person row.
+  }
+
+  /**
+   * Every contact gets a person row (contacts added on my other devices come through the vault)
+   * with the name I gave them on this device when the row has none, so that their places, What's
+   * new and the sync status show it rather than "A friend".
+   */
+  private syncPeople(engine: SyncEngine): void {
+    const repo = this.d.store.repo;
     for (const c of engine.contacts()) {
       const p = repo.getPerson(c.owner);
-      if (!p || p.iFollow !== c.policy.follow) repo.upsertPerson({ id: c.owner, publicKey: c.owner, readUrl: c.sharingCert.location ?? null, iFollow: c.policy.follow });
+      const name = p?.displayName ? undefined : this.d.contactName?.(c.owner) || undefined;
+      if (!p || p.iFollow !== c.policy.follow || name) {
+        repo.upsertPerson({ id: c.owner, publicKey: c.owner, readUrl: c.sharingCert.location ?? null, iFollow: c.policy.follow, ...(name && { displayName: name }) });
+      }
     }
-    if (report.problems.length) {
-      const log = this.d.state.get<string[]>(LOG_KEY) ?? [];
-      this.d.state.set(LOG_KEY, [...report.problems.map((p) => logLine(p.about, p.problem, report.startedAt)), ...log].slice(0, LOG_MAX));
-    }
-    const changed = report.friends.some((f) => f.status === 'updated') || (report.own?.pull.imported ?? 0) > 0;
-    if (changed) this.d.onData();
+  }
+
+  /** A name given on the contacts screens (invitation, answer, rename): their person row. */
+  nameContact(owner: string, name: string): void {
+    if (this.wiped || !name) return;
+    this.d.store.repo.upsertPerson({ id: owner, displayName: name, publicKey: owner });
+    this.d.onData();
     this.d.onChange();
   }
 
@@ -278,7 +345,7 @@ export class SyncController implements StorageMoveHooks {
     const g = await to.get(INDEX, { maxBytes: INDEX_MAX });
     if (!g) throw new Error('sync: the new index is missing');
     for (const r of redirects) await r.put(INDEX, g.data, { contentType: 'application/json' });
-    this.engine = engine;
+    this.setEngine(engine);
     return engine;
   }
 
@@ -334,8 +401,9 @@ export class SyncController implements StorageMoveHooks {
   // ------------------------------------------------------------------ contacts
 
   /**
-   * Adds someone from their verified index, read at their certified address (what the invitation
-   * and return link flows do once accepted, T-208/T-209; the e2e test hook calls it directly).
+   * Adds someone from their verified index, read at their certified address. The app's screens go
+   * through the invitation and return link flows instead (ContactsService on `port()`, which
+   * checks the link against the index); this direct path is kept for the unit tests and tools.
    * Returns their owner id.
    */
   addContact(input: AddContactInput): Promise<string> {
@@ -393,10 +461,90 @@ export class SyncController implements StorageMoveHooks {
     }).then(() => this.localChange());
   }
 
-  /** My owner id (test hook, contact screens). */
+  /** My owner id. */
   owner(): string | null {
     return this.engine?.owner ?? null;
   }
+
+  // ------------------------------------------------------------------ port for the contacts screens
+
+  /**
+   * The contacts service's `SyncPort` over the current engine (null until it is built, and after
+   * a wipe). A new engine (storage change, move) gives a new port (`onEngine`). Its publications
+   * and friend reads run inside the controller's lock, and every change redraws the screens.
+   */
+  port(): SyncPort | null {
+    const engine = this.engine;
+    if (!engine || this.wiped) return null;
+    if (this.portCache?.engine === engine) return this.portCache.port;
+    const keys = this.built.get(engine);
+    if (!keys) return null;
+    const base = engineSyncPort({
+      engine,
+      state: this.d.state,
+      // A rotation adopted by the engine (made on another device) shows in `own.sharing`.
+      sharing: () => engine.own?.sharing.cert ?? keys.sharing.cert,
+      device: () => engine.own?.device ?? keys.device,
+      readAdapter: (loc) => this.readAdapter(loc),
+    });
+    const changed = (data: boolean) => {
+      this.syncPeople(engine);
+      if (data) this.d.onData();
+      this.d.onChange();
+    };
+    const port: SyncPort = {
+      owner: engine.owner,
+      sharingCert: base.sharingCert,
+      device: base.device,
+      canPublish: base.canPublish,
+      addContact: (index, policy) => {
+        base.addContact(index, policy);
+        changed(false);
+      },
+      setPolicy: (owner, patch) => {
+        base.setPolicy(owner, patch);
+        if (patch.follow === false) {
+          this.whatsNew.forget(owner);
+          this.friendProblems.delete(owner);
+        }
+        changed(true);
+      },
+      removeContact: (owner) => {
+        base.removeContact(owner);
+        this.whatsNew.forget(owner);
+        this.friendProblems.delete(owner);
+        this.d.store.repo.upsertPerson({ id: owner, iFollow: false });
+        changed(true);
+      },
+      addInvitation: base.addInvitation,
+      contacts: base.contacts,
+      records: base.records,
+      updateRecords: base.updateRecords,
+      publish: () =>
+        this.exclusive(async () => {
+          if (this.engine !== engine) throw new Error('sync: the engine changed, try again');
+          await this.loadFriendKeys();
+          await base.publish();
+          if (engine.own) this.d.state.set(OWN_OK_KEY, this.now());
+          changed(false);
+        }),
+      fetchIndex: base.fetchIndex,
+      readFriend: (target) =>
+        this.exclusive(async () => {
+          const firstRead = this.unread([target.owner]);
+          const r = await base.readFriend(target);
+          this.friendProblems.set(target.owner, r.problem ?? null);
+          // Read right after answering an invitation: their first places are in What's new too.
+          if (engine.book.contact(target.owner)?.policy.follow) this.recordNews([r], firstRead);
+          changed(true);
+          return r;
+        }),
+      lastSuccess: base.lastSuccess,
+    };
+    this.portCache = { engine, port };
+    return port;
+  }
+
 
   // ------------------------------------------------------------------ state for the screens
 

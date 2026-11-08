@@ -64,8 +64,13 @@ test('a filter list never includes a private place', async ({ page }) => {
   await openPin(page, demo(12), 48.8628, 2.3618);
   const card = page.getByTestId('place-card');
   await expect(card).toBeVisible();
-  await card.getByTestId('sharing').getByRole('radio', { name: 'Private' }).click();
-  await expect(card.getByTestId('sharing').getByRole('radio', { name: 'Private' })).toBeChecked();
+  // A banner appearing meanwhile (monthly closure check) can move the card under the pointer and
+  // cancel the press: press again until it holds.
+  const priv = card.getByTestId('sharing').getByRole('radio', { name: 'Private' });
+  await expect(async () => {
+    if ((await priv.getAttribute('aria-checked')) !== 'true') await priv.click();
+    await expect(priv).toBeChecked({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await page.getByTestId('card-close').click();
 
   await page.getByTestId('open-lists').click();

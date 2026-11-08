@@ -1,17 +1,18 @@
 /**
  * Makes the ContactsService available to the invitation and contacts screens, once my identity,
- * the local database and the storage settings are loaded. The sync engine comes from the app's
- * SyncProvider when it registered one (`registerSyncPort`), otherwise from `localEngine.ts`.
- * Rebuilt when the storage changes (a new sharing certificate, a new write adapter).
+ * the local database and the SyncProvider's engine are ready. The service sits on the `SyncPort`
+ * the SyncProvider registers over its own engine (`registerSyncPort`, registry.ts): there is no
+ * other engine, so exactly one publishes from this database. Rebuilt when that port changes (a
+ * new engine: storage connected, moved, new certificate).
  */
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { useMaybeData } from '../data/DataProvider';
 import { getSetting, setSetting } from '../data/deviceSettings';
 import { useIdentity } from '../identity/IdentityProvider';
-import { useStorage } from '../storage/StorageProvider';
-import { createLocalSyncPort, onSyncPortChange, registeredSyncPort } from './localEngine';
+import { useMaybeSync } from '../sync/SyncProvider';
 import type { SecretKV } from './local';
+import { onSyncPortChange, registerContactsService, registeredSyncPort } from './registry';
 import { createContactsService, type ContactsService } from './service';
 
 type Status = { kind: 'loading' } | { kind: 'ready'; service: ContactsService } | { kind: 'error'; error: unknown };
@@ -22,57 +23,56 @@ const settingsKV = { get: getSetting, set: setSetting };
 
 export function ContactsProvider({ children }: { children: ReactNode }) {
   const identity = useIdentity();
-  const storage = useStorage();
   const data = useMaybeData();
+  const sync = useMaybeSync();
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
-  const [portVersion, setPortVersion] = useState(0);
-  useEffect(() => onSyncPortChange(() => setPortVersion((v) => v + 1)), []);
+  const [port, setPort] = useState(registeredSyncPort);
+  useEffect(() => {
+    setPort(registeredSyncPort());
+    return onSyncPortChange(() => setPort(registeredSyncPort()));
+  }, []);
 
-  const ready = identity.state.kind === 'ready' ? identity.state : null;
-  const record = ready?.record ?? null;
-  const name = ready?.profile.name ?? '';
+  const ready = identity.state.kind === 'ready';
   const store = data?.store ?? null;
-  const mutate = data?.mutate ?? null;
   const secrets = identity.secrets;
-  const storageKey = storage.loaded ? JSON.stringify({ cur: storage.state.current?.readUrl ?? null, w: storage.state.current ? JSON.stringify(storage.state.current) : null }) : null;
+  const nameContact = sync?.nameContact;
 
   useEffect(() => {
-    if (!record || !store || !secrets || storageKey === null) return;
+    if (!ready || !store || !secrets || !port) {
+      setStatus({ kind: 'loading' });
+      return;
+    }
     let cancelled = false;
     (async () => {
-      const external = registeredSyncPort();
-      const local = external ? null : await createLocalSyncPort({ record, secrets, store, storage: storage.access.writeAdapter(), ...(name && { author: name }) });
-      const port = external ?? local!.port;
       const secretKV: SecretKV = { get: (k) => secrets.get(k), set: (k, v) => secrets.set(k, v) };
       const service = await createContactsService({
         port,
         local: settingsKV,
         secrets: secretKV,
-        onName: (owner, n) => {
-          try {
-            mutate?.((s) => s.repo.upsertPerson({ id: owner, displayName: n, publicKey: owner }));
-          } catch {
-            // The name stays in the contacts list.
-          }
-        },
+        // The name typed in the invitation flow goes to their person row (places, What's new, sync status).
+        onName: (owner, n) => nameContact?.(owner, n),
       });
       if (cancelled) return;
+      registerContactsService(service);
       setStatus({ kind: 'ready', service });
-      // My storage's vault (invitations and answers from my other devices) once pulled.
-      void local?.pulled.then(() => {
-        service.changed();
-        mutate?.(() => undefined);
-      });
     })().catch((error: unknown) => {
       console.warn('Contacts could not be opened', error);
       if (!cancelled) setStatus({ kind: 'error', error });
     });
     return () => {
       cancelled = true;
+      registerContactsService(null);
     };
-    // storage.access is stable per storage state; storageKey tracks the state itself.
+    // nameContact is stable (SyncProvider callback).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record, store, secrets, storageKey, portVersion]);
+  }, [ready, store, secrets, port]);
+
+  // A sync pass may have changed the vault (my other devices' invitations and answers, key changes).
+  const service = status.kind === 'ready' ? status.service : null;
+  const lastPass = sync?.snapshot?.lastPassAt ?? null;
+  useEffect(() => {
+    if (service && lastPass !== null) service.changed();
+  }, [service, lastPass]);
 
   return <Ctx.Provider value={status}>{children}</Ctx.Provider>;
 }

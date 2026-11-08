@@ -46,7 +46,10 @@ test.beforeAll(async () => {
       return;
     }
     const up = http.request({ host: '127.0.0.1', port: 8081, path: req.url, method: req.method, headers: { ...req.headers, host: '127.0.0.1:8081' } }, (r) => {
-      res.writeHead(r.statusCode ?? 502, { ...r.headers, ...cors });
+      // Apache's redirects (a folder without its trailing slash) name itself: keep them on the proxy,
+      // or the browser leaves it and fails on CORS.
+      const location = typeof r.headers.location === 'string' ? r.headers.location.replace(DAV, proxyUrl) : undefined;
+      res.writeHead(r.statusCode ?? 502, { ...r.headers, ...cors, ...(location && { location }) });
       r.pipe(res);
     });
     up.on('error', () => {
