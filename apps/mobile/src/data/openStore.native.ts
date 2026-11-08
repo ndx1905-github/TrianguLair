@@ -4,7 +4,7 @@
  *
  * Not run yet on a device (needs a development build).
  */
-import { openDatabaseSync } from 'expo-sqlite';
+import { deleteDatabaseSync, openDatabaseSync } from 'expo-sqlite';
 import { DataStore, reassignOwner } from '@triangulair/data';
 import { ExpoSqliteDriver } from '@triangulair/data/expo';
 
@@ -16,5 +16,17 @@ export async function openAppStore(meId: string): Promise<AppStore> {
   // Data created before the identity existed (placeholder owner) moves to it once.
   reassignOwner(driver, LOCAL_ME_ID, meId);
   const store = DataStore.open({ driver, meId, actor: deviceActor(), newId });
-  return { store, persistence: 'sqlite', flush: async () => {} };
+  return {
+    store,
+    persistence: 'sqlite',
+    flush: async () => {},
+    async erase() {
+      // DataStore.wipe() already emptied and closed it; the file goes too.
+      try {
+        deleteDatabaseSync('triangulair.db');
+      } catch (e) {
+        console.warn('Could not delete the database file', e);
+      }
+    },
+  };
 }

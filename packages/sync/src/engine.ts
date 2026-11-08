@@ -54,6 +54,12 @@ export interface SyncEngineOptions
   now?: () => Date;
   /** Whether the device has network (from the app's network status); used to classify failures. */
   online?: () => boolean;
+  /**
+   * Extra keys to read one friend with at every pass (`FriendTarget.extraKeys`): the invitation key
+   * pair of a link I answered, until my answer is accepted. Without it a regular pass reads that
+   * friend with my keys only, finds nothing wrapped to me yet and erases what the invitation showed.
+   */
+  friendKeys?: (owner: string) => KeyPair[];
 }
 
 export interface SyncReport {
@@ -105,6 +111,11 @@ export class SyncEngine {
       readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
       ...pick(o, ['concurrency', 'fullCheckMs', 'now', 'limits']),
     });
+  }
+
+  private friendKeys(owner: string): { extraKeys?: KeyPair[] } {
+    const k = this.o.friendKeys?.(owner) ?? [];
+    return k.length ? { extraKeys: k } : {};
   }
 
   /** This device was declared lost and has erased its content (see the module comment). */
@@ -243,7 +254,7 @@ export class SyncEngine {
     if (opts.readFriends !== false) {
       const targets = this.book.following().flatMap((c) =>
         c.sharingCert.location
-          ? [{ owner: c.owner, location: c.sharingCert.location, anchor: c.anchor, retiredOwners: this.book.retiredOwners() }]
+          ? [{ owner: c.owner, location: c.sharingCert.location, anchor: c.anchor, retiredOwners: this.book.retiredOwners(), ...this.friendKeys(c.owner) }]
           : [],
       );
       report.friends = await this.reader.readAll(targets, this.o.friendConcurrency ?? 8);

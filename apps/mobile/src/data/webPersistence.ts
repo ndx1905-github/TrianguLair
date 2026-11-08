@@ -31,12 +31,14 @@ export interface WebFileStore {
   persistent: boolean;
   load(): Promise<Uint8Array | null>;
   save(bytes: Uint8Array): Promise<boolean>;
+  /** Deletes the saved file (remote wipe). */
+  remove(): Promise<void>;
 }
 
 export async function openWebFileStore(): Promise<WebFileStore> {
   const db = await openIdb();
   if (!db) {
-    return { persistent: false, load: async () => null, save: async () => false };
+    return { persistent: false, load: async () => null, save: async () => false, remove: async () => {} };
   }
   const tx = <T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | null> =>
     new Promise((resolve) => {
@@ -57,6 +59,9 @@ export async function openWebFileStore(): Promise<WebFileStore> {
     async save(bytes) {
       const r = await tx('readwrite', (s) => s.put(bytes, KEY));
       return r !== null;
+    },
+    async remove() {
+      await tx('readwrite', (s) => s.delete(KEY));
     },
   };
 }

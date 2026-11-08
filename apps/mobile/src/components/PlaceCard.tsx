@@ -20,6 +20,7 @@ import { ClosureSection } from './ClosureSection';
 import { DirectionsSection } from './DirectionsSection';
 import { ListsSection } from './ListsSection';
 import { SaveEditor, type SaveFields } from './SaveEditor';
+import { FriendsSection } from '../sync/FriendsSection';
 import { Banner, Button, Pill, SectionTitle } from './ui';
 
 /** Refresh the OSM data of a place at most this often when its card opens. */
@@ -52,10 +53,6 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
     const s = repo.getMySaveForPlace(placeId);
     return s && s.deletedAt === null ? s : null;
   }, [repo, placeId, version]);
-  const friendSaves = useMemo(
-    () => repo.savesForPlace(placeId).filter((s) => s.ownerId !== repo.meId && s.deletedAt === null && s.sharing !== 'private'),
-    [repo, placeId, version],
-  );
   const info = useMemo(() => (place ? placeInfoOf(place) : null), [place]);
   const now = new Date();
   const card = place ? cardInfo(place, info, now, tr, tr.region) : null;
@@ -153,7 +150,6 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
     mutate((s) => s.putSave({ place, tagIds: facts?.tagIds ?? [], mainTagId: facts?.tagIds[0] ?? null }));
   };
 
-  const friendNames = friendSaves.map((s) => repo.getPerson(s.ownerId)?.displayName || t('card.aFriend'));
   const toneColor = card.opening?.tone === 'open' ? c.open : card.opening?.tone === 'closed' ? c.closed : c.textMuted;
 
   return (
@@ -254,21 +250,14 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
         </Text>
       )}
 
-      {friendSaves.length > 0 && (
-        <>
-          <SectionTitle>{t('card.friends', { count: friendSaves.length })}</SectionTitle>
-          {friendSaves.map((s, i) => (
-            <Text key={s.id} style={[styles.line, { color: c.text }]} maxFontSizeMultiplier={2}>
-              {friendNames[i]}
-              {s.comment && s.commentVisibility !== 'private' ? ` — “${s.comment}”` : ''}
-            </Text>
-          ))}
-        </>
-      )}
+      <FriendsSection placeId={placeId} />
 
       {fields ? (
         <>
-          <SaveEditor value={fields} tags={tags} onChange={apply} onCommentCommit={(text) => apply({ comment: text })} />
+          <SaveEditor value={fields} tags={tags} onChange={apply} onCommentCommit={(text) => {
+            // Typing only updates the field; the comment is saved when the field is left.
+            if (save && text !== save.comment) mutate((st) => st.updateSave(placeId, { comment: text }));
+          }} />
           <View style={[styles.wrap, { marginTop: 8 }]}>
             <Button kind="secondary" label={t('fb.manageTags')} onPress={() => router.push('/tags')} testID="card-manage-tags" />
             {place.status === 'open' && (

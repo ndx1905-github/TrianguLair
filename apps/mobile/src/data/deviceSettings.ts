@@ -26,3 +26,20 @@ export function setSetting(key: string, value: string): void {
     // Storage blocked or full: the value lives for this session only.
   }
 }
+
+/** Remote wipe: every per-device value (profile, filters, choices). */
+export function clearSettings(): void {
+  memory.clear();
+  try {
+    const ls = globalThis.localStorage;
+    if (!ls) return;
+    const keys: string[] = [];
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i);
+      if (k?.startsWith('triangulair:')) keys.push(k);
+    }
+    for (const k of keys) ls.removeItem(k);
+  } catch {
+    // blocked storage: nothing was kept there
+  }
+}

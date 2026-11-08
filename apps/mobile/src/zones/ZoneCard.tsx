@@ -175,7 +175,10 @@ export function ZoneCard({ placeId, onClose, onDeleted, onOpenPlace }: Props) {
 
       {fields ? (
         <>
-          <SaveEditor value={fields} tags={tags} onChange={apply} onCommentCommit={(text) => apply({ comment: text })} />
+          <SaveEditor value={fields} tags={tags} onChange={apply} onCommentCommit={(text) => {
+            // Typing only updates the field; the comment is saved when the field is left.
+            if (save && text !== save.comment) mutate((st) => st.updateSave(placeId, { comment: text }));
+          }} />
           <View style={{ marginTop: 20 }}>
             {confirmDelete ? (
               <View style={{ gap: 8 }}>

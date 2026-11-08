@@ -48,11 +48,15 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
   await expect(page2.getByTestId('status').getByRole('radio', { name: 'Favorite' })).toBeChecked();
   await page.getByTestId('back').filter({ visible: true }).click();
   await expect(row).toContainText('Favorite');
+  // The card's screen is gone (its closing transition can still be mounted under load).
+  await expect(page.getByTestId('place-card')).toHaveCount(0);
 
   // Move to trash, then undo.
   await row.click();
-  await page.getByTestId('delete').click();
-  await page.getByTestId('confirm-delete').click();
+  const card2 = page.getByTestId('place-card').filter({ visible: true });
+  await expect(card2).toHaveCount(1);
+  await card2.getByTestId('delete').click();
+  await card2.getByTestId('confirm-delete').click();
   await expect(page.getByTestId('place-list')).toBeVisible();
   await expect(row).toHaveCount(0);
   await expect(page.getByTestId('trash-notice').filter({ visible: true })).toContainText(NAME);

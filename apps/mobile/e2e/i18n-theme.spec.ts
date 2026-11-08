@@ -12,9 +12,12 @@ test('switch to French', async ({ page }) => {
   await openMap(page, '/?lang=fr');
   await expect(page.getByTestId('filter-toggle')).toContainText('Filtres');
   await expect(page.getByTestId('filter-count')).toHaveText(/\d+ lieux/);
-  await page.getByTestId('open-add').click();
-  await expect(page.getByText('Ajouter un lieu')).toBeVisible();
-  await expect(page.getByTestId('candidates')).toBeVisible();
+  // The press can be cancelled by a banner moving the map's buttons (closure check): retry it.
+  await expect(async () => {
+    if (!(await page.getByTestId('candidates').isVisible())) await page.getByTestId('open-add').click();
+    await expect(page.getByTestId('candidates')).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Ajouter un lieu' })).toBeVisible();
   await expect(page.getByText('Déjà dans mes lieux').first()).toBeVisible();
 });
 

@@ -1,7 +1,7 @@
 // Metro configuration for the monorepo.
 //
 // The app consumes the workspace packages (@triangulair/data, @triangulair/osm,
-// @triangulair/import, @triangulair/crypto, @triangulair/storage)
+// @triangulair/import, @triangulair/crypto, @triangulair/storage, @triangulair/sync)
 // straight from their TypeScript sources in ../../packages. Each package keeps
 // its own lockfile, so their runtime dependencies (yjs, opening_hours, fflate, libsodium-wrappers-sumo, @scure/bip39, aws4fetch) are also
 // dependencies of this app and are resolved from apps/mobile/node_modules, even when a package has no node_modules of its own.
@@ -19,6 +19,7 @@ const workspacePackages = {
   '@triangulair/import': path.join(repoRoot, 'packages/import'),
   '@triangulair/crypto': path.join(repoRoot, 'packages/crypto'),
   '@triangulair/storage': path.join(repoRoot, 'packages/storage'),
+  '@triangulair/sync': path.join(repoRoot, 'packages/sync'),
 };
 
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), ...Object.values(workspacePackages)])];

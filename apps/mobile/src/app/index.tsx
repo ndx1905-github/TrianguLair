@@ -33,6 +33,7 @@ import { useAppState } from '../state/AppState';
 import { MapShortcuts } from '../zones/MapShortcuts';
 import { useZonePlaces } from '../zones/useZonePlaces';
 import { zoneShapes } from '../zones/zoneLayer';
+import { SyncBar } from '../sync/SyncBar';
 
 /** Places are loaded for the visible area plus this margin on each side. */
 const VIEWPORT_MARGIN = 0.25;
@@ -70,7 +71,7 @@ function MapScreen() {
     setHintAdd(false);
   };
   const { tags, byId } = useTags();
-  const { filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus } = useAppState();
+  const { filter, setFilter, region, setRegion, filterOpen, setFilterOpen, focus, highlight } = useAppState();
   usePrunedFilter();
   const closure = useClosureCheck();
 
@@ -117,14 +118,17 @@ function MapScreen() {
   const bbox = useMemo(() => (region ? padBBox(region.bbox, VIEWPORT_MARGIN) : null), [region]);
   const facts = useViewportFacts(bbox);
   const zones = useZonePlaces(useMemo(() => facts.map((f) => f.id), [facts]));
-  const filterActive = isFilterActive(filter);
+  // What's new "See on the map": those places in color, the others faded (like a filter).
+  const highlighted = useMemo(() => (highlight ? new Set(highlight.placeIds) : null), [highlight]);
+  const filterActive = isFilterActive(filter) || !!highlighted;
   const now = useMemo(() => new Date(), [facts, filter]); // re-evaluated with the data or the filter
   const summary = useMemo(() => summarize(facts, filter, tags, now, country), [facts, filter, tags, now, country]);
 
   const { pins, clusters, shapes } = useMemo(() => {
     const ctx = { tagSet: expandTagSelection(filter.tagIds, tags), now, ...(country ? { country } : {}) };
     const all = facts.flatMap((f) => {
-      const match = matchPlace(f, filter, ctx);
+      const m = matchPlace(f, filter, ctx);
+      const match = highlighted && m === 'match' && !highlighted.has(f.id) ? 'nomatch' : m;
       // Closed places stay in my places but leave the map (unless the "Closed" status is chosen).
       if (match === 'hidden') return [];
       return [{
@@ -142,7 +146,7 @@ function MapScreen() {
       clusters: res.clusters,
       shapes: zoneShapes([...zones.values()], new globalThis.Map(all.map((p) => [p.id, p])), selectedId),
     };
-  }, [facts, zones, filter, tags, byId, filterActive, selectedId, region?.zoom, initial.zoom, now, country]);
+  }, [facts, zones, filter, tags, byId, filterActive, highlighted, selectedId, region?.zoom, initial.zoom, now, country]);
 
   const mapClusters = useMemo(
     () => clusters.map((cl) => toMapCluster(cl, t('map.cluster', { count: cl.count }))),
@@ -242,6 +246,9 @@ function MapScreen() {
             {persistence === 'memory' ? <Banner tone="warning">{t('data.memoryOnly')}</Banner> : <Banner>{t('osm.fixtureShort')}</Banner>}
           </View>
         )}
+        <View style={{ marginHorizontal: gutter, marginTop: 8 }} pointerEvents="box-none">
+          <SyncBar />
+        </View>
         <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }}>
           <TrashUndo />
         </View>

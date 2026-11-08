@@ -5,10 +5,24 @@
  *
  *   EXPO_PUBLIC_OSM_FIXTURES=1 npx expo export --platform web --output-dir dist
  *   npm run e2e
+ *
+ * Each run serves this worktree's dist/ on a free port of its own (`E2E_PORT` fixes one), and
+ * never reuses a server already listening there: it could be another worktree's build.
  */
+import { execFileSync } from 'node:child_process';
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = Number(process.env['E2E_PORT'] ?? 4319);
+/** A free port, chosen once by the runner; the workers inherit it through the environment. */
+function freePort(): number {
+  const out = execFileSync(process.execPath, [
+    '-e',
+    "const s=require('net').createServer();s.listen(0,'127.0.0.1',()=>{process.stdout.write(String(s.address().port));s.close();});",
+  ]);
+  return Number(out.toString());
+}
+
+process.env['E2E_PORT'] ??= String(freePort());
+const PORT = Number(process.env['E2E_PORT']);
 const CI = !!process.env['CI'];
 
 export default defineConfig({
@@ -34,7 +48,8 @@ export default defineConfig({
   webServer: {
     command: `python3 scripts/serve.py dist ${PORT}`,
     url: `http://127.0.0.1:${PORT}/`,
-    reuseExistingServer: !CI,
+    // Never test a build served by someone else (another worktree on the same port).
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 });

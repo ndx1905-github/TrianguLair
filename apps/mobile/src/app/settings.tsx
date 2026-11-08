@@ -141,6 +141,14 @@ function SettingsScreen() {
               </>
             )}
             <Button kind="secondary" label={t('settings.storageOpen')} onPress={() => router.push('/storage')} testID="settings-storage" />
+            <Muted>{t('sync.settingsHelp')}</Muted>
+            <Button kind="secondary" label={t('sync.settingsRow')} onPress={() => router.push('/sync')} testID="settings-sync" />
+          </Section>
+
+          <Section title={t('settings.friends')}>
+            <Muted>{t('settings.friendsHelp')}</Muted>
+            <Button label={t('inviting.title')} onPress={() => router.push('/invite')} testID="settings-invite" />
+            <Button kind="secondary" label={t('contacts.open')} onPress={() => router.push('/contacts')} testID="settings-contacts" />
           </Section>
 
           <Section title={t('settings.lock')}>

@@ -142,6 +142,84 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     sets `republishPending`: the next sync publishes the index signed with the new certificate at the new storage and
     the same index at every redirect. Other devices and the recovery vault receive the rotated sharing key from the
     sync engine (`RotationResult.sharing`, `vaultCopy`).
+- **Sync** (T-210, `src/sync/`; logic in `controller.ts`, tested in `sync.test.ts`): `SyncProvider` builds one
+  `SyncController` per identity and database. The controller builds the `SyncEngine` from the identity's keys
+  (`device-keys`, `sharing-key`, and `sync-keys`: earlier sharing key pairs and vault data keys), the storage settings
+  (`StorageAccess`; HTTPS-only mode and local only publish nothing but still read friends) and the data store (state in
+  the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
+  launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
+  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
+  nothing after that. Network status from the browser on web (`online` / `offline`); native assumes online for now.
+  - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
+    old index at the new storage (it certifies the old address), publishes there with the new certificate, then
+    writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
+    stops it (`ForeignIndexError`). `republishPending` does the same at the next pass. `openInvitations` lists the
+    open invitations of the previous certificate (named through `invitationName`, from the ContactsService).
+  - **Remote wipe**: the engine's hooks erase every secret-store entry, then the database (`DataStore.wipe()`, then
+    the file itself: `AppStore.erase()`), then the device settings; the whole app is replaced by "This device was
+    removed" (`DeviceRemoved.tsx`).
+  - **Status** (`problems.ts`, `noteText.ts`, the spec's error table): a note under the map's filter bar ("Offline · 3
+    changes pending", "Your storage hasn't responded since yesterday" after 24 h, "Reconnect your storage" leading to
+    Settings › Storage, quota, missing key, content of mine that does not verify); nothing for transient problems.
+    Settings › Sync status (`/sync`): my storage (state, last success, pending, the problem with what to do), each
+    person I follow ("Updated 12 days ago", "Léa's content could not be verified", "Update the app to see Léa's
+    places"), "Sync now" (resumes after reconnecting), and the local technical log (error names and paths only).
+  - **Contacts** (T-208/T-209 wiring): `controller.port()` is the contacts screens' `SyncPort` over the controller's
+    own engine (`engineSyncPort`); the SyncProvider registers it with `registerSyncPort` (`src/contacts/registry.ts`),
+    again after each new engine (storage connected or moved), so there is one engine and one publisher per database.
+    The port's `publish` and `readFriend` run inside the controller's lock, between passes. At every pass a friend
+    whose invitation link I answered is also read with that invitation key (engine option `friendKeys`, loaded from
+    the secret store's `invitations-received` before each pass), until they accept my answer: otherwise a regular pass
+    would erase what the invitation showed. Names given in the flows (the name typed when inviting, when answering,
+    a rename) go to the person row (`nameContact`, and `contactName` fills a row without one), so places, What's new
+    and the sync status show them rather than "A friend". `addContact({ location, owner?, … })` remains for the unit
+    tests.
+- **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
+  filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
+  per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
+  selection in the folded bar); "N friends" in the list rows, on the card and on the add screen. The card's friends
+  section (`FriendsSection.tsx`) opens who saved it, when, their status, comment (within its visibility) and their
+  tags in their author's color.
+- **What's new** (`/whatsnew`, `whatsNew.ts`): built from the reader's differences after each pass and kept in the sync
+  state (erased by a remote wipe): places added (someone's first places as one item), new comments, switches to
+  tried / favorite, key changes and moves; minor touch-ups are left out, and the news of a place that left their shared
+  places goes with it. Grouped by day, filtered by type and by friend, a dot on items newer than the last visit, a
+  badge on the map's What's new button; "See on the map" highlights their places (the others faded, a removable pill).
+- **Invitations and access** (`/invite`, `/invite/answers`, `/invite/received`, `/invite/face`, `/contacts`,
+  `/contacts/[owner]`, deep links `/i#…` and `/r#…`; T-208, T-209; logic in `src/contacts/`, tested). Screens talk to
+  `ContactsService` (`service.ts`) only, which sits on a `SyncPort` (`port.ts`): the sync package's contact API
+  (`addContact`, `setPolicy`, `removeContact`, `addInvitation`, `contacts`) plus `records` / `updateRecords` (answers and
+  the accepted responder in the vault, a contact without storage), `publish`, `fetchIndex`, `readFriend`. `engineSyncPort`
+  is the adapter from a `SyncEngine`; the SyncProvider registers the one over its own engine with `registerSyncPort`
+  (the screens show "loading" until then), and the ContactsProvider registers the service back
+  (`registerContactsService`) for names and invitation keys.
+  - *Invite a friend* needs a storage (`useStorageForSharing().ensure('invite', '/invite')`), publishes the index that
+    lists the invitation, then shows the short link (≤ 200 characters) and its QR code (`qrcode-generator`, version ≤ 10),
+    share sheet / copy; pending invitations with expiry, phase (waiting, answered, several, accepted, someone else
+    answered after acceptance, expired in the 7-day grace, cancelled by a key change) and cancel (withdrawn: not
+    listed, the packs it opened are re-sealed); a field to paste a return link.
+  - *Answers*: one card per responder with the warnings of the spec (several answers, a second one after acceptance with
+    "Remove …", opened after expiry, no storage to check them), the safety code, then what they see (everything shared
+    with friends by default, some lists, nothing), "I see their places", "I compared the code"; acceptance publishes:
+    the invitation key is no longer a recipient, packs re-sealed with new pack keys.
+  - *Received*: the link (pasted, any text holding it, or the deep link: the fragment is removed from the address bar
+    and passed in memory) is checked against the inviter's index read only at the link's address; I name the person
+    (no format carries names: names are petnames kept on this device), see the safety code, optionally share back,
+    and get the return link (`https://triangulair.app/r#<b64url>`, app-level wrapper of the frozen bytes) with QR.
+    Their places show right away with the invitation key (kept in the secret store, `invitations-received`;
+    `invitationKeysFor(owner)` gives the SyncProvider the extra keys to read with until acceptance).
+  - *First launch "I received an invitation link"*: checks the link before any identity exists (`verify.ts`), keeps it
+    in the secret store (`pending-invitation`) and opens the answer once the first launch is done.
+  - *Face to face*: the compact format is not specified (R-13), so the existing invitation link and return link are
+    exchanged as QR codes (scan with `expo-camera`, web: browser camera + BarcodeDetector when available, or paste);
+    both sides mark the other verified automatically.
+  - *Contacts*: two switches, share scope, safety code as 12 × 5 digits or QR (`tlsafe1:` payload compared with
+    `matchSafetyQr`), the "verified" mark (local, never sent), rename, remove (wraps gone, pack keys renewed), notices
+    "… changed their key" (higher rotation) and "… changed their identity" (retired owner: the mark is removed).
+  - *Follow a list by link*: placeholder until link-only lists are published by the sync package (T-212).
+  - New native module: `expo-camera` (camera permission text in `app.json`); `app.json` also declares the
+    `applinks:triangulair.app` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
+    matching `apple-app-site-association` and `assetlinks.json`).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
   toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",
   "Leave out" or "Follow the filter" (the list's exceptions).
@@ -295,8 +373,12 @@ The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own
 
 ```
 src/app/              expo-router screens: index (map), list, add, place/[id], welcome/*, kit, settings, storage/*, _layout (providers)
+src/contacts/         invitation and access flows: ContactsService, SyncPort and engine adapter, links, phases and
+                      warnings, QR codes, scanner, provider, deep links
 src/storage/          storage config and URL builders, adapters, connection test and fixes, migration, certificate
                       rotation, state (secret store), provider, sharing prompt, interfaces for the sync engine
+src/sync/             sync controller (engine, scheduler, move hooks, wipe), provider, What's new, friends'
+                      places (card section, friends shown), sync status wording
 src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
 src/firstLaunch/      first-launch frame, profile and code fields, steps
 src/components/map/   Map.native.tsx, Map.web.tsx, Map.tsx (type fallback), types.ts, cluster.ts
@@ -453,10 +535,64 @@ Storage settings (`scripts/shots_storage.py`, against the Apache WebDAV server o
 | `docs/tablet-fr-storage-s3.png` | Tablet, French: S3 form, empty prefix warning, key policy to copy |
 | `docs/tablet-fr-list-storage-needed.png` | The "right moment": a link-only list asks for a storage |
 
+Invitations and access (`E2E_SHOTS=1 npm run e2e -- e2e/invitations.spec.ts`, same Apache setup, links exchanged
+between browser contexts):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-invite-storage-needed.png` | Invite a friend without a storage: the right-moment card |
+| `docs/phone-invite-link.png`, `docs/tablet-fr-invite-link.png` | The short link, its QR code, share / copy, pending invitation (tablet, French) |
+| `docs/phone-received-verified.png`, `docs/phone-dark-received-verified.png` | The invitee: link checked, name, safety code (dark mode) |
+| `docs/phone-received-answer.png` | The return link to send back, with its QR code |
+| `docs/phone-received-problem.png` | A forged link: "This link no longer works" |
+| `docs/phone-answer-accept.png` | Accepting an answer: what they see, follow, compared |
+| `docs/phone-answers-several.png`, `docs/phone-answers-late.png` | Two answers to one link; a second one after acceptance |
+| `docs/phone-contacts.png`, `docs/phone-contact-verified.png`, `docs/phone-contact-remove.png`, `docs/phone-dark-contact.png` | Friends: badges and switches; safety code matched by QR; removal |
+| `docs/phone-face-show.png`, `docs/phone-face-answer.png` | Face to face: invitation code, then the answer code |
+
+`e2e/invitations.spec.ts` runs the storage-less checks always and the exchanges against Apache (skipped without it): invite,
+answer through the `/i#…` deep link, accept, safety-code match by QR payload, access changes, removal; two answers to one link
+with a forged link refused; the face-to-face exchange verified on both sides. Each run serves `dist/` on a free port of its
+own (never another worktree's server); `E2E_PORT` picks a fixed one.
+
 End-to-end: `e2e/storage.spec.ts` runs against the same Apache server (skipped when it is not running): wrong
 password, CORS diagnosis, private read address refused, connect, lossless move of packs, a photo, a public list and the
 index (byte for byte on the new storage, old one untouched, redirect listed), and a move onto a folder with other
 content that overwrites nothing.
+
+Sync and friends' places (`e2e/sync.spec.ts` with `SHOTS=1`, against the Apache WebDAV server, two browser
+contexts: Anna and Ben):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color; What's new badge |
+| `docs/phone-card-friends.png`, `docs/tablet-fr-card-friends.png` | "1 friend" on the card, opened: who, when, status, comment, their tag in their color |
+| `docs/phone-friends-picker.png` | Friends shown: all, none or a selection, with places per friend |
+| `docs/phone-whatsnew.png`, `docs/phone-fr-whatsnew.png` | What's new: a comment and a favorite (unseen dots), her first places as one item |
+| `docs/phone-sync-status.png`, `docs/phone-dark-sync-status.png` | Sync status: my storage up to date, Anna updated just now |
+| `docs/phone-sync-offline.png` | Offline · 1 change pending |
+| `docs/phone-sync-reconnect.png`, `docs/phone-sync-reconnect-status.png` | Credentials rejected: "Reconnect your storage", writes stopped |
+
+End-to-end: `e2e/sync.spec.ts` (skipped without Apache): both connect a storage and publish; Anna invites Ben from the
+invitation screen, Ben opens the link in his browser context, names her and answers, Anna pastes his return link and
+accepts (the name she typed when inviting is his contact name); Ben sees her shared place and not her private one, with "1 friend" and her
+comment on the card; Anna edits the comment and marks it favorite, Ben gets both in What's new (badge, dots, "See on the
+map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
+storage", back to normal after "Sync now"); Anna sets "They see my places" to nothing on Ben's contact and Ben's cache
+drops her places. Passes are triggered with "Sync now" on the sync status screen (no test hook).
+
+Sync open questions:
+
+- **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
+  only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
+- **Friends' names**: the protocol carries no display name; the name typed in the invitation flow is kept on this
+  device. Contacts added on another device (through the vault) show "A friend" until renamed here.
+- **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
+  without expo-updates).
+- **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task
+  (`expo-background-task` or `beginBackgroundTask`) to be sure to finish; not added.
+- Previous sharing keys are persisted only when the engine adopts a new key from another device; a local rotation
+  (storage move) keeps the same key pair.
 
 Storage open questions:
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PlaceHit } from '@triangulair/data';
@@ -21,6 +21,7 @@ import { expandTagSelection, isFilterActive, matchPlace, summarize, type Match }
 import { listQuery, type ListSort } from '../places/list';
 import type { PlaceFacts } from '../places/model';
 import { useAppState } from '../state/AppState';
+import { usePullToRefresh } from '../sync/usePullToRefresh';
 
 interface Row {
   hit: PlaceHit;
@@ -42,6 +43,7 @@ function ListScreen() {
   const [text, setText] = useState('');
   const [sort, setSort] = useState<ListSort>('recent');
   const [selected, setSelected] = useState<string | null>(null);
+  const pull = usePullToRefresh();
 
   const from = region?.center ?? INITIAL_CENTER;
   const hits = useMemo(
@@ -99,7 +101,7 @@ function ListScreen() {
             {[
               rowTags.map((x) => x!.name).join(', ') || categoryLabel(facts.info?.category, tr),
               statusText,
-              hit.friendsCount > 0 ? t('list.friends', { count: hit.friendsCount }) : null,
+              facts.friendCount ? t('list.friends', { count: facts.friendCount }) : null,
               hit.mine ? null : t('list.friendsOnly'),
               hit.status === 'maybe_closed' ? `✕ ${t('closure.badge')}` : hit.status === 'closed' ? t('placeStatus.closed') : null,
             ]
@@ -161,6 +163,7 @@ function ListScreen() {
           </Text>
         }
         keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.accent} />}
         testID="place-list"
       />
     </View>

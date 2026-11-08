@@ -80,9 +80,18 @@ export async function openAppStore(meId: string): Promise<AppStore> {
     });
   }
 
+  let erased = false;
   return {
     store,
+    async erase() {
+      erased = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      persistent = false;
+      await files.remove();
+    },
     get persistence() {
+      if (erased) return 'memory' as const;
       return persistent ? ('indexeddb' as const) : ('memory' as const);
     },
     flush,
