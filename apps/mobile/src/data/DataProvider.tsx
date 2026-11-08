@@ -9,6 +9,7 @@ import type { DataStore, Repository } from '@triangulair/data';
 import { OSM_FIXTURES } from '../config';
 import { useI18n } from '../i18n';
 import { useIdentity } from '../identity/IdentityProvider';
+import { movedFrom } from '../devices/local';
 import { seedDemoData } from './demo';
 import { getSetting, setSetting } from './deviceSettings';
 import { openAppStore, type AppStore } from './openStore';
@@ -61,7 +62,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!meId) return;
     let cancelled = false;
-    openAppStore(meId)
+    openAppStore(meId, movedFrom())
       .then((app) => {
         if (cancelled) return;
         if (getSetting('demo-seeded') !== '1') {

@@ -5,16 +5,18 @@
  * Not run yet on a device (needs a development build).
  */
 import { deleteDatabaseSync, openDatabaseSync } from 'expo-sqlite';
-import { DataStore, reassignOwner } from '@triangulair/data';
+import { databaseOwner, DataStore, reassignOwner } from '@triangulair/data';
 import { ExpoSqliteDriver } from '@triangulair/data/expo';
 
 import { deviceActor, LOCAL_ME_ID, newId } from './identity';
 import type { AppStore } from './openStore.types';
 
-export async function openAppStore(meId: string): Promise<AppStore> {
+/** `movedFrom`: identities this device left (theft of the primary device): their database moves to `meId`. */
+export async function openAppStore(meId: string, movedFrom: readonly string[] = []): Promise<AppStore> {
   const driver = new ExpoSqliteDriver(openDatabaseSync('triangulair.db'));
   // Data created before the identity existed (placeholder owner) moves to it once.
   reassignOwner(driver, LOCAL_ME_ID, meId);
+  for (const old of movedFrom) if (databaseOwner(driver) === old) reassignOwner(driver, old, meId);
   const store = DataStore.open({ driver, meId, actor: deviceActor(), newId });
   return {
     store,

@@ -12,7 +12,8 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
-import { SqliteStateStore } from '@triangulair/sync';
+import type { DeviceCert, SharingCert, SharingKey } from '@triangulair/crypto';
+import { SqliteStateStore, type DeviceEntry } from '@triangulair/sync';
 
 import { onLocalEdit, useMaybeData } from '../data/DataProvider';
 import { clearSettings } from '../data/deviceSettings';
@@ -23,6 +24,12 @@ import { registerSyncPort, registeredContactsService } from '../contacts/registr
 import { receivedKeysFor } from '../contacts/service';
 import { registerStorageMoveHooks } from '../storage/interfaces';
 import { useStorage } from '../storage/StorageProvider';
+import { parseConfig } from '../storage/config';
+import type { OpenInvitationSummary } from '../storage/interfaces';
+import type { JournalEntry } from '../devices/journal';
+import { deviceName, staleSync } from '../devices/local';
+import { staleSyncAction } from '../identity/lock';
+import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
@@ -40,6 +47,19 @@ export interface SyncApi {
   log(): string[];
   /** A name given on the contacts screens: their person row. */
   nameContact(owner: string, name: string): void;
+  /** Settings › Devices (T-206): my devices listed in the vault. */
+  devices(): DeviceEntry[];
+  addDevice(cert: DeviceCert, name: string): Promise<void>;
+  renameDevice(id: string, name: string): Promise<void>;
+  /** A transfer slot (adding a device) whose files are deleted at expiry. */
+  trackSlot(slot: string, expiresAt: number): void;
+  /** T-207: after the master key issued the new certificate. */
+  declareLost(r: { sharing: SharingKey; vaultCopy: Uint8Array; previous: SharingCert }, opts: { cancelInvitations: boolean }): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[] }>;
+  /** What my other devices changed in my places (changes since a theft). */
+  journal(): JournalEntry[];
+  revert(entryAt: number, placeId: string): void;
+  /** Before switching to a new identity (theft of the primary device). */
+  prepareIdentityMove(next: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void>;
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
@@ -59,6 +79,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   dataRef.current = data;
   const accessRef = useRef(storage.access);
   accessRef.current = storage.access;
+  const storageRef = useRef(storage);
+  storageRef.current = storage;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
   const profileName = identity.state.kind === 'ready' ? identity.state.profile.name : '';
   const nameRef = useRef(profileName);
   nameRef.current = profileName;
@@ -114,6 +138,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       },
       onEngine: () => {
         if (alive) registerSyncPort(c.port());
+      },
+      device: () => ({ name: deviceName(), added: record.createdAt, primary: identityRef.current.state.kind === 'ready' && identityRef.current.state.record.primary }),
+      recoveryCopy: () => secrets.get('recovery-copy'),
+      onStorageValue: async (v) => {
+        await storageRef.current.updateCurrent(parseConfig(v));
       },
     });
     ctl.current = c;
@@ -181,16 +210,53 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       },
       log: () => ctl.current?.log() ?? [],
       nameContact,
+      devices: () => ctl.current?.devices() ?? [],
+      addDevice: async (cert, name) => {
+        if (!ctl.current) throw new Error('sync not ready');
+        await ctl.current.addDevice(cert, name);
+      },
+      renameDevice: async (id, name) => ctl.current?.renameDevice(id, name),
+      trackSlot: (slot, expiresAt) => ctl.current?.trackSlot(slot, expiresAt),
+      declareLost: async (r, opts) => {
+        if (!ctl.current) throw new Error('sync not ready');
+        return ctl.current.declareLost(r, opts);
+      },
+      journal: () => ctl.current?.journal() ?? [],
+      revert: (at, placeId) => ctl.current?.revert(at, placeId),
+      prepareIdentityMove: async (next) => {
+        if (!ctl.current) throw new Error('sync not ready');
+        await ctl.current.prepareIdentityMove(next);
+      },
     }),
     [snapshot, refresh, nameContact],
   );
+
+  // "Lock, or even wipe, if no successful sync for N days" (spec "Protections on the device").
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const stale = useMemo(
+    () => staleSyncAction(staleSync(), snapshot?.lastOwnSuccess ?? null, Date.now(), !!snapshot?.publishes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [snapshot, tick],
+  );
+  useEffect(() => {
+    if (stale === 'wipe') void ctl.current?.wipeNow().catch((e: unknown) => console.warn('Could not wipe this device', e));
+  }, [stale]);
 
   useEffect(() => {
     if (wiped) registerSyncPort(null);
   }, [wiped]);
 
   if (wiped) return <DeviceRemoved />;
-  return <SyncContext.Provider value={api}>{children}</SyncContext.Provider>;
+  return (
+    <SyncContext.Provider value={api}>
+      {children}
+      {stale === 'lock' && <StaleSyncLock days={staleSync()?.days ?? 0} onSync={refresh} />}
+    </SyncContext.Provider>
+  );
 }
 
 export function useSync(): SyncApi {

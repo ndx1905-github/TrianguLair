@@ -36,6 +36,7 @@ import {
   type DeviceCert,
   type DeviceKeys,
   type Identity,
+  type IdentityMove,
   type SharingKey,
 } from '@triangulair/crypto';
 
@@ -56,6 +57,11 @@ export interface IdentityRecord {
   primary: boolean;
   /** When the recovery kit was confirmed (the phrase was then forgotten); null until then. */
   kitSavedAt: number | null;
+  /**
+   * After "Declare the primary device lost" (T-207): the move from my previous identity, written in
+   * every index I publish (friends who were offline need it, crypto rule R-11).
+   */
+  move?: IdentityMove;
 }
 
 /** Secret parts, each kept as its own entry in the system's secure vault. */

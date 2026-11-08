@@ -29,7 +29,7 @@ import { ContactBook, type Contact, type SharePolicy } from './contacts.ts';
 import type { DeviceEntry } from './devices.ts';
 import { DeviceRevokedError, classifyError, type SyncProblem } from './errors.ts';
 import type { SyncLimits } from './limits.ts';
-import { OwnSync, keyPath, type OwnSyncOptions, type PreviousVaultKey, type PublishReport } from './own.ts';
+import { OwnSync, keyPath, type OwnSyncOptions, type PreviousVaultKey, type PublishReport, type PullResult } from './own.ts';
 import { FriendReader, READ_MAJORS, type FriendReport } from './reader.ts';
 import type { SyncStateStore } from './state.ts';
 
@@ -76,6 +76,8 @@ export interface SyncEngineOptions
 
 export interface SyncReport {
   own: PublishReport | null;
+  /** The pull that starts the pass (my other devices' changes are imported there). */
+  pulled?: PullResult;
   friends: FriendReport[];
   problems: { about: 'own' | string; problem: SyncProblem }[];
   /** Everything worked (friends' failures included). */
@@ -360,7 +362,7 @@ export class SyncEngine {
     let ownOk = true;
     if (this.own) {
       try {
-        await this.own.pull();
+        report.pulled = await this.own.pull();
       } catch (e) {
         ownOk = false;
         fail('own', e, 'own');

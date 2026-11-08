@@ -4,8 +4,10 @@
  * lock; automatic lock after a few minutes in the background. Pure rules,
  * unit-tested; the gate is `LockGate.tsx`.
  *
- * "Lock (or wipe) when there has been no successful sync for N days" needs
- * synchronization (phase 2) and is not offered yet.
+ * "Lock, or even wipe, if there has been no successful sync for a chosen number of days"
+ * (`staleSyncAction`): a phone kept away from the network never reads its revocation, so after
+ * N days without reaching my storage the app locks until a sync succeeds (which wipes it if it
+ * was declared lost meanwhile), or erases itself when the wipe option is on. Off by default.
  */
 import _sodium from 'libsodium-wrappers-sumo';
 import { fromB64Url, ready, toB64Url } from '@triangulair/crypto';
@@ -87,4 +89,44 @@ export async function verifyCode(code: string, stored: string | null): Promise<b
   } catch {
     return false;
   }
+}
+
+/** "Lock if no sync for N days" (spec "Protections on the device"). */
+export interface StaleSyncSettings {
+  days: number;
+  /** Erase the device instead of locking it. */
+  wipe: boolean;
+  /** When the option was turned on (ms): the count starts there if nothing synced since. */
+  since: number;
+}
+
+export const STALE_SYNC_DAYS = [3, 7, 14, 30] as const;
+const DAY_MS = 86_400_000;
+
+export function parseStaleSync(s: string | null): StaleSyncSettings | null {
+  if (!s) return null;
+  try {
+    const o = JSON.parse(s) as Partial<StaleSyncSettings>;
+    if (typeof o.days !== 'number' || !Number.isInteger(o.days) || o.days < 1 || o.days > 365 || typeof o.since !== 'number') return null;
+    return { days: o.days, wipe: o.wipe === true, since: o.since };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the app must do now. `lastSuccess`: the last pass where my storage worked (null: never).
+ * Only for a device that syncs with a storage (`syncs`); a local-only device has nothing to wait for.
+ */
+export function staleSyncAction(s: StaleSyncSettings | null, lastSuccess: number | null, now: number, syncs: boolean): 'none' | 'lock' | 'wipe' {
+  if (!s || !syncs) return 'none';
+  const from = Math.max(lastSuccess ?? 0, s.since);
+  if (now - from < s.days * DAY_MS) return 'none';
+  return s.wipe ? 'wipe' : 'lock';
+}
+
+/** Days left before the lock (for the settings line), at least 0. */
+export function staleDaysLeft(s: StaleSyncSettings, lastSuccess: number | null, now: number): number {
+  const from = Math.max(lastSuccess ?? 0, s.since);
+  return Math.max(0, Math.ceil((from + s.days * DAY_MS - now) / DAY_MS));
 }

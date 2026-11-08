@@ -19,7 +19,8 @@ export class ForeignDatabaseError extends Error {
   }
 }
 
-export async function openAppStore(meId: string): Promise<AppStore> {
+/** `movedFrom`: identities this device left (theft of the primary device): their database moves to `meId`. */
+export async function openAppStore(meId: string, movedFrom: readonly string[] = []): Promise<AppStore> {
   const [SQL, files] = await Promise.all([initSqlJs(), openWebFileStore()]);
   let bytes: Uint8Array | null = null;
   try {
@@ -49,13 +50,14 @@ export async function openAppStore(meId: string): Promise<AppStore> {
   const open = (data: Uint8Array | null) => {
     driver = new SqlJsDriver(data ? new SQL.Database(data) : new SQL.Database(), schedule);
     const owner = databaseOwner(driver);
-    if (owner !== null && owner !== meId && owner !== LOCAL_ME_ID) {
+    if (owner !== null && owner !== meId && owner !== LOCAL_ME_ID && !movedFrom.includes(owner)) {
       // Another identity's places (keys cleared but not the data): never overwrite them.
       persistent = false;
       throw new ForeignDatabaseError();
     }
     // Data created before the identity existed (placeholder owner) moves to it once.
     if (reassignOwner(driver, LOCAL_ME_ID, meId).migrated) schedule();
+    for (const old of movedFrom) if (databaseOwner(driver) === old && reassignOwner(driver, old, meId).migrated) schedule();
     return DataStore.open({ driver, meId, actor: deviceActor(), newId });
   };
 

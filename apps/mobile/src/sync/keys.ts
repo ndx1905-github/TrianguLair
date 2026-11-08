@@ -4,7 +4,7 @@
  * wrap to them until they read my new certificate) and earlier vault data keys
  * (`OwnSync.previousVaultKeys`). Pure (no React, no secret store); unit-tested.
  */
-import { fromB64Url, openSharingKey, sealSharingKey, toB64Url, type DeviceSigner, type KeyPair, type SharingKey } from '@triangulair/crypto';
+import { fromB64Url, openSharingKey, sealSharingKey, toB64Url, type DeviceSigner, type IdentityMove, type KeyPair, type SharingKey } from '@triangulair/crypto';
 import type { PreviousVaultKey } from '@triangulair/sync';
 
 import { parseDeviceKeys, type IdentityRecord } from '../identity/create';
@@ -14,6 +14,8 @@ export interface SyncKeys {
   device: DeviceSigner;
   previousSharingKeys: KeyPair[];
   previousVaultKeys: PreviousVaultKey[];
+  /** After an identity change: the move, written in every index (IdentityRecord.move). */
+  move?: IdentityMove;
 }
 
 export interface StoredSyncSecrets {
@@ -56,7 +58,7 @@ export function parseSyncKeys(s: string | null): Pick<SyncKeys, 'previousSharing
 export function openSyncKeys(record: IdentityRecord, s: StoredSyncSecrets): SyncKeys {
   const keys = parseDeviceKeys(s.deviceKeys);
   const sharing = openSharingKey(fromB64Url(s.sharingKey, 'sharingKey'), keys, { expectedOwner: record.owner });
-  return { sharing, device: { keys, cert: record.deviceCert }, ...parseSyncKeys(s.syncKeys) };
+  return { sharing, device: { keys, cert: record.deviceCert }, ...parseSyncKeys(s.syncKeys), ...(record.move && { move: record.move }) };
 }
 
 /** A sharing key adopted by the engine (rotation from another device) → the `sharing-key` entry. */

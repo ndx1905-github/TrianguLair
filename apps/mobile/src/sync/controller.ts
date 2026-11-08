@@ -15,12 +15,32 @@
  * `SyncProvider.tsx` is the React side (AppState, network status, screens). Unit-tested with
  * in-memory storages (`sync.test.ts`).
  */
-import { ready, verifyIndex, type DeviceSigner, type KeyPair, type SharingCert, type SharingKey, type SignedIndex } from '@triangulair/crypto';
+import {
+  canonicalize,
+  emptyVault,
+  fromB64Url,
+  openVault,
+  packHash,
+  ready,
+  verifyIndex,
+  type DeviceCert,
+  type DeviceSigner,
+  type KeyPair,
+  type SharingCert,
+  type SharingKey,
+  type SignedIndex,
+  type VaultRecords,
+} from '@triangulair/crypto';
 import type { DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, type StorageAdapter } from '@triangulair/storage';
 import {
+  ContactBook,
+  DEVICES_KEY,
   SyncEngine,
   SyncScheduler,
+  VAULT_PATH,
+  keyPath,
+  type DeviceEntry,
   type SharePolicy,
   type SyncProblem,
   type SyncReason,
@@ -32,6 +52,9 @@ import {
 } from '@triangulair/sync';
 
 import { engineSyncPort, type SyncPort } from '../contacts/port';
+import { slotFiles } from '../devices/channel';
+import { JOURNAL_KEY, addEntry, diffSaves, markReverted, ownSaves, revertChange, type JournalEntry, type SaveMap } from '../devices/journal';
+import { VALUE_PROFILE, VALUE_STORAGE } from '../devices/sessions';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
 import { logLine } from './problems';
@@ -42,6 +65,11 @@ const INDEX_MAX = 4 * 1024 * 1024;
 const LOG_KEY = 'app:log';
 const LOG_MAX = 80;
 const OWN_OK_KEY = 'app:own-ok';
+const SLOTS_KEY = 'app:transfer-slots';
+const WRITTEN_KEY = 'app:vault-written';
+const RECOVERY_KEY = 'app:recovery-copy';
+/** The sync package's own key for my vault records (SyncEngine BOOK_KEY), reset by an identity change. */
+const BOOK_KEY = 'vault:records';
 
 export interface ControllerDeps {
   store: DataStore;
@@ -72,6 +100,15 @@ export interface ControllerDeps {
   friendKeys?(): Promise<(owner: string) => KeyPair[]>;
   /** A new engine was built (launch, storage change, move): the contacts screens' port changes too. */
   onEngine?(): void;
+  /** This device as listed in Settings › Devices (T-206): its name, when it was added, whether it keeps the master key. */
+  device?(): { name: string; added: number; primary: boolean };
+  /** My sharing key sealed with the phrase-derived key (b64url TLSK mode 2), kept at keys/<owner>.bin for a restore. */
+  recoveryCopy?(): Promise<string | null>;
+  /**
+   * The vault holds newer settings for my current storage (same read address: the credentials were
+   * changed on another device after a declaration of loss). The app stores them and rebuilds.
+   */
+  onStorageValue?(config: unknown): Promise<void>;
   timers?: Timers;
   now?: () => number;
   intervalMs?: number;
@@ -133,6 +170,8 @@ export class SyncController implements StorageMoveHooks {
   private lock: Promise<unknown> = Promise.resolve();
   private online = true;
   private wiped = false;
+  /** An identity change is under way: this controller (old identity) no longer runs. */
+  private moving = false;
   private lastPassAt: number | null = null;
   private readonly friendProblems = new Map<string, SyncProblem | null>();
   private keysFor: (owner: string) => KeyPair[] = () => [];
@@ -189,6 +228,7 @@ export class SyncController implements StorageMoveHooks {
       online: () => this.online,
       friendKeys: (owner) => this.keysFor(owner),
       ...(author && { author }),
+      ...(k.move && { move: k.move }),
       onSharingKey: (nk) => {
         void this.d
           .saveKeys({ sharing: nk, previousSharingKeys: engine.own?.previousKeys ?? [], previousVaultKeys: engine.own?.previousVaultKeys ?? [] })
@@ -243,6 +283,7 @@ export class SyncController implements StorageMoveHooks {
 
   private pass(_reason: SyncReason, opts: { publish: boolean }): Promise<SyncReport> {
     return this.exclusive(async () => {
+      if (this.moving) throw new Error('sync: the identity is changing');
       let engine = await this.engineReady();
       if (opts.publish && engine.own && this.d.access.republishPending()) {
         const to = this.d.access.writeAdapter();
@@ -253,13 +294,281 @@ export class SyncController implements StorageMoveHooks {
         }
       }
       await this.loadFriendKeys();
+      if (opts.publish && engine.own) await this.beforePublish(engine);
       // People with nothing in my cache yet: their first places are one grouped entry.
       const firstRead = this.unread(engine.book.following().map((c) => c.owner));
+      const before = this.journalBase(engine);
       const report = await engine.sync({ publish: opts.publish });
+      this.recordJournal(before, report);
       this.afterPass(engine, report, firstRead);
+      await this.afterOwn(engine, report);
       return report;
     });
   }
+
+  // ------------------------------------------------------------------ my devices (T-206, T-207)
+
+  /**
+   * Before a publication: list this device in the vault (Settings › Devices on every device), keep
+   * the storage settings and my first name there for a new device, the phrase-protected copy of my
+   * sharing key at keys/<owner>.bin, and delete the files of transfers that expired.
+   */
+  private async beforePublish(engine: SyncEngine): Promise<void> {
+    const own = engine.own!;
+    const me = this.d.device?.();
+    if (me) {
+      const cur = engine.devices().find((d) => d.cert.device === own.device.keys.id);
+      if (!cur) engine.putDevice(own.device.cert, { name: me.name, added: me.added, primary: me.primary });
+      else if (!!cur.primary !== me.primary && cur.removed === undefined) engine.updateDevice(cur.cert.device, { primary: me.primary });
+    }
+    const written = this.d.state.get<Record<string, string>>(WRITTEN_KEY) ?? {};
+    const put = (key: string, value: unknown) => {
+      const c = canonicalize(value as never);
+      if (written[key] === c) return; // unchanged here since I wrote it: a newer value in the vault wins
+      engine.setValue(key, value);
+      written[key] = c;
+    };
+    const cfg = this.d.access.config();
+    if (cfg) put(VALUE_STORAGE, cfg);
+    const name = this.d.author?.();
+    if (name) put(VALUE_PROFILE, { name });
+    this.d.state.set(WRITTEN_KEY, written);
+    try {
+      const rc = await this.d.recoveryCopy?.();
+      if (rc) {
+        const bytes = fromB64Url(rc, 'recovery copy');
+        const h = packHash(bytes);
+        if (this.d.state.get<string>(RECOVERY_KEY) !== h) {
+          await own.storage.put(keyPath(engine.owner), bytes, { contentType: 'application/octet-stream' });
+          this.d.state.set(RECOVERY_KEY, h);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not keep the recovery copy of the sharing key', e);
+    }
+    const slots = this.d.state.get<{ slot: string; expiresAt: number }[]>(SLOTS_KEY) ?? [];
+    const now = this.now();
+    const left: typeof slots = [];
+    for (const s of slots) {
+      if (s.expiresAt > now) {
+        left.push(s);
+        continue;
+      }
+      for (const p of Object.values(slotFiles(s.slot))) await own.storage.delete(p).catch(() => {});
+    }
+    if (left.length !== slots.length) this.d.state.set(SLOTS_KEY, left);
+  }
+
+  /**
+   * After a pass: newer storage settings in the vault (changed on another device) are taken here.
+   * When my storage refuses my credentials, the vault is read at the read address (anonymous), so
+   * a device whose password was changed elsewhere picks the new one up by itself.
+   */
+  private async afterOwn(engine: SyncEngine, report: SyncReport): Promise<void> {
+    const own = engine.own;
+    const cfg = this.d.access.config();
+    if (!own || !cfg || !this.d.onStorageValue || report.wiped) return;
+    let value: unknown;
+    const auth = report.problems.some((p) => p.about === 'own' && p.problem.kind === 'auth');
+    if (auth) {
+      try {
+        const g = await this.d.access.readAdapter()?.get(VAULT_PATH, { maxBytes: 16 * 1024 * 1024 });
+        if (!g) return;
+        value = new ContactBook(openVault(g.data, engine.owner, own.sharing.vaultDataKey)).value(VALUE_STORAGE)?.value;
+      } catch {
+        return;
+      }
+    } else value = engine.value(VALUE_STORAGE)?.value;
+    if (!value || typeof value !== 'object') return;
+    const v = value as { readUrl?: unknown };
+    if (v.readUrl !== cfg.readUrl || canonicalize(value as never) === canonicalize(cfg as never)) return;
+    const written = this.d.state.get<Record<string, string>>(WRITTEN_KEY) ?? {};
+    if (!auth && written[VALUE_STORAGE] !== canonicalize(cfg as never)) return; // my own change, not written yet
+    try {
+      await this.d.onStorageValue(value);
+      this.d.state.set(WRITTEN_KEY, { ...written, [VALUE_STORAGE]: canonicalize(value as never) });
+    } catch (e) {
+      console.warn('Could not take the storage settings from the vault', e);
+    }
+  }
+
+  /** My saves before the pass, when another device of mine can change them (for the changes since a theft). */
+  private journalBase(engine: SyncEngine): SaveMap | null {
+    if (!engine.own) return null;
+    try {
+      return engine.devices().length > 1 ? ownSaves(this.d.store) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private recordJournal(before: SaveMap | null, report: SyncReport): void {
+    if (!before || report.wiped) return;
+    const imported = (report.pulled?.imported ?? 0) + (report.own?.pull.imported ?? 0);
+    if (!imported) return;
+    try {
+      const changes = diffSaves(before, ownSaves(this.d.store));
+      if (!changes.length) return;
+      const device = report.pulled?.importedFrom ?? report.own?.pull.importedFrom ?? null;
+      this.d.state.set(JOURNAL_KEY, addEntry(this.journal(), { at: this.now(), device, changes }, this.now()));
+    } catch (e) {
+      console.warn('Could not record the changes from my other devices', e);
+    }
+  }
+
+  /** What my other devices changed in my places (newest first), for "changes since the theft". */
+  journal(): JournalEntry[] {
+    const v = this.d.state.get<JournalEntry[]>(JOURNAL_KEY);
+    return Array.isArray(v) ? v : [];
+  }
+
+  /** Puts one change back from the local copy (a new edit, published like any other). */
+  revert(entryAt: number, placeId: string): void {
+    const e = this.journal().find((x) => x.at === entryAt);
+    const c = e?.changes.find((x) => x.placeId === placeId);
+    if (!c) throw new Error('unknown change');
+    revertChange(this.d.store, c);
+    this.d.state.set(JOURNAL_KEY, markReverted(this.journal(), entryAt, placeId));
+    this.d.onData();
+    this.d.onChange();
+    this.localChange();
+  }
+
+  /** My devices listed in the vault (empty until the engine is built or without a storage). */
+  devices(): DeviceEntry[] {
+    if (!this.engine || this.wiped) return [];
+    try {
+      return this.engine.devices();
+    } catch {
+      return [];
+    }
+  }
+
+  /** A transfer slot to clean up at expiry, even if its screen was closed. */
+  trackSlot(slot: string, expiresAt: number): void {
+    const slots = this.d.state.get<{ slot: string; expiresAt: number }[]>(SLOTS_KEY) ?? [];
+    this.d.state.set(SLOTS_KEY, [...slots.filter((s) => s.slot !== slot), { slot, expiresAt }]);
+  }
+
+  /** A new device of mine, certified by the master key: listed in the vault, which is published now. */
+  addDevice(cert: DeviceCert, name: string): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      if (!engine.own) throw new Error('sync: no storage to publish to');
+      engine.putDevice(cert, { name, added: this.now() });
+      const report = await engine.sync({ readFriends: false });
+      this.afterPass(engine, report, new Set());
+      const own = report.problems.find((p) => p.about === 'own');
+      if (own) throw new Error(`sync: ${own.problem.kind}`);
+    });
+  }
+
+  renameDevice(id: string, name: string): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      engine.updateDevice(id, { name });
+      this.d.onChange();
+    }).then(() => this.localChange());
+  }
+
+  /**
+   * "Declare a device lost" / remove a device (T-207), after the master key issued the new
+   * certificate (new sharing key and vault data key, the device revoked): every open invitation is
+   * cancelled (declaration of loss), the key goes to my remaining devices, everything is
+   * re-encrypted and the index published with the new certificate (the lost device reads its
+   * revocation there and erases itself). Returns the people invited who had not answered.
+   */
+  declareLost(
+    r: { sharing: SharingKey; vaultCopy: Uint8Array; previous: SharingCert },
+    opts: { cancelInvitations: boolean },
+  ): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[] }> {
+    return this.exclusive(async () => {
+      await ready();
+      const engine = await this.engineReady();
+      if (!engine.own) throw new Error('sync: no storage to publish to');
+      const open = this.openNow(engine, r.previous);
+      const res = await engine.rotateKey(r.sharing, { cancelInvitations: opts.cancelInvitations, recoveryCopy: r.vaultCopy });
+      this.d.state.set(RECOVERY_KEY, packHash(r.vaultCopy));
+      const report = await engine.sync({ readFriends: false });
+      this.afterPass(engine, report, new Set());
+      const own = report.problems.find((p) => p.about === 'own');
+      if (own) throw new Error(`sync: ${own.problem.kind}`);
+      return { cancelled: open, delivered: res.delivered };
+    });
+  }
+
+  private openNow(engine: SyncEngine, previous: SharingCert): OpenInvitationSummary[] {
+    const now = this.now();
+    return engine.book
+      .invitations()
+      .filter((i) => i.accepted === undefined && i.invitation.rotation === previous.rotation && Date.parse(i.invitation.expires) > now)
+      .map((i) => ({ name: this.d.invitationName?.(i.invitation.id) ?? '', createdAt: Date.parse(i.invitation.created) }));
+  }
+
+  /** "Lock or wipe after N days without sync", wipe chosen: erase this device now. */
+  wipeNow(): Promise<void> {
+    return this.exclusive(async () => {
+      if (this.wiped) return;
+      const engine = await this.engineReady().catch(() => null);
+      this.wiped = true;
+      this.scheduler.stop();
+      if (engine) await engine.wipe();
+      else {
+        await this.d.wipe.secrets();
+        await this.d.wipe.data();
+      }
+      this.d.onChange();
+    });
+  }
+
+  /**
+   * "Declare the primary device lost" (T-207), before this device switches to the new identity:
+   * the vault records continue under the new owner (friends, their switches, app values; no
+   * invitation: the identity change cancels them all; only this device listed, re-certified), the
+   * old identity's index and files are removed from my storage (the new identity publishes there
+   * with the move at its first pass), and this controller stops: the app builds a new one for the
+   * new identity.
+   */
+  prepareIdentityMove(next: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void> {
+    return this.exclusive(async () => {
+      await ready();
+      const engine = await this.engineReady();
+      const own = engine.own;
+      if (!own) throw new Error('sync: no storage to publish to');
+      const old = engine.book.records;
+      const app = { ...(old.app ?? {}) } as Record<string, unknown>;
+      delete app[DEVICES_KEY];
+      const part = app['triangulair_sync'] as Record<string, unknown> | undefined;
+      if (part && typeof part === 'object') {
+        const rest = { ...part };
+        delete rest['own'];
+        app['triangulair_sync'] = rest;
+      }
+      const records = JSON.parse(JSON.stringify({ ...emptyVault(next.owner), contacts: old.contacts, retired_owners: old.retired_owners, app })) as VaultRecords;
+      const book = new ContactBook(records);
+      book.putDevice(next.deviceCert, { name: next.deviceName, added: next.added, primary: true }, this.now());
+      // The old identity's index and the files it lists.
+      const g = await own.storage.get(INDEX, { maxBytes: INDEX_MAX }).catch(() => null);
+      let files: string[] = [];
+      if (g) {
+        try {
+          files = verifyIndex(g.data, { expectedOwner: engine.owner }).packs.map((p) => p.file);
+        } catch {
+          files = [];
+        }
+        await own.storage.delete(INDEX);
+      }
+      for (const f of files) await own.storage.delete(f).catch(() => {});
+      await own.storage.delete(keyPath(engine.owner)).catch(() => {});
+      for (const k of this.d.state.keys('own:')) this.d.state.delete(k);
+      for (const k of [RECOVERY_KEY, WRITTEN_KEY]) this.d.state.delete(k);
+      this.d.state.set(BOOK_KEY, book.records);
+      this.scheduler.stop();
+      this.engine = null;
+      this.moving = true;
+    });
+  }
+
 
   private afterPass(engine: SyncEngine, report: SyncReport, firstRead: ReadonlySet<string>): void {
     this.lastPassAt = this.now();
@@ -270,6 +579,13 @@ export class SyncController implements StorageMoveHooks {
     }
     if (engine.own && !report.problems.some((p) => p.about === 'own')) this.d.state.set(OWN_OK_KEY, report.startedAt);
     for (const f of report.friends) this.friendProblems.set(f.owner, f.problem ?? null);
+    // A friend who changed identity keeps the name I gave them.
+    for (const f of report.friends) {
+      const m = f.identityMove;
+      if (!m?.followed) continue;
+      const before = this.d.store.repo.getPerson(m.from);
+      if (before?.displayName && !this.d.store.repo.getPerson(m.to)?.displayName) this.d.store.repo.upsertPerson({ id: m.to, publicKey: m.to, displayName: before.displayName });
+    }
     this.recordNews(report.friends, firstRead);
     this.syncPeople(engine);
     if (report.problems.length) {

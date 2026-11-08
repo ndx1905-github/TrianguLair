@@ -6,11 +6,16 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { fromB64Url, openSharingKey, ready, type SharingCert } from '@triangulair/crypto';
+import { fromB64Url, issueDeviceCert, openSharingKey, ready, toB64Url, type DeviceCert, type SharingCert, type SharingKey } from '@triangulair/crypto';
 
 import { OSM_FIXTURES } from '../config';
 import { getSetting, setSetting } from '../data/deviceSettings';
-import { rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
+import { joinedIdentity, type MovedIdentity } from '../devices/identity';
+import { DEVICE_NAME_KEY, MOVED_FROM_KEY, movedFrom } from '../devices/local';
+import type { Joined } from '../devices/sessions';
+import { masterIdentity, rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
+import { LOCAL_ONLY, serializeStorageState } from '../storage/state';
+import { parseSyncKeys, serializeSyncKeys } from '../sync/keys';
 import { checkStoredIdentity, createIdentity, parseDeviceKeys, parseIdentityRecord, primaryFromPhrase, type CreatedIdentity, type IdentityRecord } from './create';
 import { openSecretStore, type SecretStore } from './secretStore';
 
@@ -53,6 +58,14 @@ export interface IdentityApi extends SharingCertRotation {
   secrets: SecretStore | null;
   /** Checks typed words against my identity (master key prompts). */
   checkPhrase(phrase: string): Promise<boolean>;
+  /** My current sharing key (to export it to a new device, T-206). */
+  currentSharingKey(): Promise<SharingKey>;
+  /** Master-signed certificate for a new device of mine (primary device or the 12 words). */
+  certifyDevice(pub: { device: string; box: string }, master: MasterKeySource): Promise<DeviceCert>;
+  /** First launch on a new device: store what the other device (or the phrase) gave, then open the app. */
+  adoptJoined(joined: Joined, opts: { deviceName: string; profileName: string }): Promise<void>;
+  /** "Declare the primary device lost": switch this device to the new identity (the new kit is pending). */
+  adoptMovedIdentity(moved: MovedIdentity): Promise<void>;
 }
 
 const IdentityContext = createContext<IdentityApi | null>(null);
@@ -88,6 +101,7 @@ function autostartName(): string | null {
 async function persist(store: SecretStore, created: CreatedIdentity): Promise<void> {
   await store.set('device-keys', created.secrets.deviceKeys);
   await store.set('sharing-key', created.secrets.sharingKey);
+  await store.set('recovery-copy', toB64Url(created.vaultCopy));
   if (created.secrets.primaryIdentity) await store.set('primary-identity', created.secrets.primaryIdentity);
   await store.set('pending-phrase', created.phrase);
   // Written last: an interrupted first launch leaves no half identity behind.
@@ -245,9 +259,76 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
         await ready();
         const result = rotateStoredSharingKey(state.record, { deviceKeys, sharingKey, primaryIdentity }, change, master);
-        // Other devices and the recovery vault get the new key from the sync engine (T-204/T-206).
+        // Other devices get the new key from the sync engine (keys/<device>.bin, T-206/T-207); the
+        // phrase-protected copy goes to keys/<owner>.bin at the next pass.
+        if (change.newKey) {
+          // The old key pair stays readable: friends may still wrap to it until they read the new certificate.
+          const prev = parseSyncKeys(await secrets.get('sync-keys'));
+          const old = openSharingKey(fromB64Url(sharingKey, 'sharingKey'), parseDeviceKeys(deviceKeys), { expectedOwner: state.record.owner });
+          await secrets.set('sync-keys', serializeSyncKeys({
+            previousSharingKeys: [old.keyPair, ...prev.previousSharingKeys],
+            previousVaultKeys: [{ key: old.vaultDataKey, rotation: old.cert.rotation, revoked: [...old.cert.revoked_devices] }, ...prev.previousVaultKeys],
+          }));
+        }
         await secrets.set('sharing-key', result.sealedForThisDevice);
+        await secrets.set('recovery-copy', toB64Url(result.vaultCopy));
         return result;
+      },
+      async currentSharingKey(): Promise<SharingKey> {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const [deviceKeys, sharingKey] = await Promise.all([secrets.get('device-keys'), secrets.get('sharing-key')]);
+        if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+        await ready();
+        return openSharingKey(fromB64Url(sharingKey, 'sharingKey'), parseDeviceKeys(deviceKeys), { expectedOwner: state.record.owner });
+      },
+      async certifyDevice(pub, master): Promise<DeviceCert> {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const [deviceKeys, sharingKey, primaryIdentity] = await Promise.all([secrets.get('device-keys'), secrets.get('sharing-key'), secrets.get('primary-identity')]);
+        if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+        await ready();
+        const id = masterIdentity(state.record, { deviceKeys, sharingKey, primaryIdentity }, master);
+        try {
+          return issueDeviceCert(id, pub);
+        } finally {
+          id.master.secretKey.fill(0);
+          id.vaultKey.fill(0);
+        }
+      },
+      async adoptJoined(joined, opts) {
+        if (!secrets) throw new Error('identity: secret store not open');
+        const now = Date.now();
+        const { record, secrets: s } = joinedIdentity(joined, now);
+        await secrets.set('device-keys', s.deviceKeys);
+        await secrets.set('sharing-key', s.sharingKey);
+        if (s.primaryIdentity) await secrets.set('primary-identity', s.primaryIdentity);
+        if (joined.vaultCopy) await secrets.set('recovery-copy', toB64Url(joined.vaultCopy));
+        await secrets.set('storage', serializeStorageState({ ...LOCAL_ONLY, current: joined.storage, connectedAt: joined.storage ? now : null }));
+        const profile: Profile = { name: opts.profileName, avatar: null };
+        setSetting(PROFILE_KEY, JSON.stringify(profile));
+        setSetting(ONBOARDING_KEY, 'done');
+        setSetting(DEVICE_NAME_KEY, opts.deviceName);
+        // My places come from my storage: no demo seed on this device.
+        setSetting('demo-seeded', '1');
+        setSetting('hint-add', 'seen');
+        setSetting('protect-snoozed', String(now));
+        // Written last: an interrupted join leaves no half identity behind.
+        await secrets.set('identity', JSON.stringify(record));
+        setState({ kind: 'ready', record, profile, secretStore: secrets.kind, kitPending: false, onboarding: 'done' });
+      },
+      async adoptMovedIdentity(moved) {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const previous = state.record.owner;
+        const prev = parseSyncKeys(await secrets.get('sync-keys'));
+        await secrets.set('sync-keys', serializeSyncKeys({ previousSharingKeys: [moved.previousSharing, ...prev.previousSharingKeys], previousVaultKeys: [] }));
+        await secrets.set('device-keys', moved.secrets.deviceKeys);
+        await secrets.set('sharing-key', moved.secrets.sharingKey);
+        await secrets.set('primary-identity', moved.secrets.primaryIdentity);
+        await secrets.set('recovery-copy', toB64Url(moved.vaultCopy));
+        await secrets.set('pending-phrase', moved.phrase);
+        // The local database moves to the new owner id when it is opened again (DataProvider).
+        setSetting(MOVED_FROM_KEY, JSON.stringify([...new Set([...movedFrom(), previous])]));
+        await secrets.set('identity', JSON.stringify(moved.record));
+        setState((cur) => (cur.kind === 'ready' ? { ...cur, record: moved.record, kitPending: true } : cur));
       },
       async checkPhrase(phrase: string): Promise<boolean> {
         if (state.kind !== 'ready') return false;

@@ -92,6 +92,7 @@ export const syncFr: Messages = {
   'wn.followed': { one: '{name} partage {count} lieu avec vous', other: '{name} partage {count} lieux avec vous' },
   'wn.key': '{name} a changé de clé',
   'wn.moved': '{name} a déplacé son contenu',
+  'wn.identity': '{name} a changé d’identité : comparez de nouveau le code de sécurité',
   'wn.placeGone': 'un lieu',
   'wn.seeOnMap': 'Voir sur la carte',
   'wn.new': 'Nouveau',

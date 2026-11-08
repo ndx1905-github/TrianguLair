@@ -18,7 +18,9 @@ export interface SecretStore {
  * Every entry the app keeps in the secret store (`storage`: storage settings with their credentials, T-203;
  * `sync-keys`: earlier sharing key pairs and vault data keys kept by the sync engine, T-210;
  * `invitations-received`: invitation links I answered, whose key reads the inviter's places until they accept;
- * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208).
+ * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208;
+ * `recovery-copy`: my current sharing key sealed with the phrase-derived key (TLSK mode 2), uploaded by the sync
+ * controller to `keys/<owner>.bin` for a restore with the 12 words; T-206).
  */
 export type SecretKey =
   | 'identity'
@@ -30,7 +32,8 @@ export type SecretKey =
   | 'storage'
   | 'sync-keys'
   | 'invitations-received'
-  | 'pending-invitation';
+  | 'pending-invitation'
+  | 'recovery-copy';
 
 export const SECRET_KEYS: readonly SecretKey[] = [
   'identity',
@@ -43,4 +46,5 @@ export const SECRET_KEYS: readonly SecretKey[] = [
   'sync-keys',
   'invitations-received',
   'pending-invitation',
+  'recovery-copy',
 ];

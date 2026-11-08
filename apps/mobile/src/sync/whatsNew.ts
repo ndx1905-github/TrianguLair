@@ -9,7 +9,7 @@
  */
 import type { FriendReport, SyncStateStore } from '@triangulair/sync';
 
-export type WhatsNewKind = 'added' | 'comment' | 'status' | 'followed' | 'key' | 'moved';
+export type WhatsNewKind = 'added' | 'comment' | 'status' | 'followed' | 'key' | 'moved' | 'identity';
 
 export interface WhatsNewEntry {
   id: string;
@@ -77,6 +77,8 @@ export class WhatsNewLog {
     let n = 0;
     const add = (e: Omit<WhatsNewEntry, 'id' | 'at'>) => fresh.push({ ...e, at: ctx.now, id: `${ctx.now.toString(36)}-${(n++).toString(36)}-${e.kind}` });
     for (const r of reports) {
+      // A friend changed identity (theft of their primary device), followed by the engine.
+      if (r.identityMove?.followed) add({ owner: r.identityMove.to, kind: 'identity' });
       if (r.status === 'error') continue;
       const owner = r.owner;
       if (r.keyChanged) add({ owner, kind: 'key' });
@@ -134,7 +136,7 @@ export function matchesType(e: WhatsNewEntry, type: WhatsNewType): boolean {
     case 'statuses':
       return e.kind === 'status';
     case 'people':
-      return e.kind === 'key' || e.kind === 'moved';
+      return e.kind === 'key' || e.kind === 'moved' || e.kind === 'identity';
   }
 }
 
