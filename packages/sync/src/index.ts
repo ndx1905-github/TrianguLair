@@ -9,6 +9,16 @@ export { OwnSync, VAULT_PATH, keyPath, type OwnSyncOptions, type PublishReport, 
 export { FriendReader, READ_MAJORS, type ReaderOptions, type FriendTarget, type FriendReport, type WhatsNew, type ChangedItem } from './reader.ts';
 export { SyncScheduler, type SchedulerOptions, type SyncStatus, type SyncReason, type Timers, type RunOptions } from './scheduler.ts';
 export { ContactBook, mergeBooks, laterAnchor, OWN_ANCHOR_STEP, type Contact, type ContactPolicy, type SharePolicy } from './contacts.ts';
+export {
+  DEVICES_KEY,
+  VALUES_KEY,
+  MAX_DEVICE_NAME,
+  MAX_DEVICES,
+  cleanName,
+  devicesOf,
+  mergeDeviceParts,
+  type DeviceEntry,
+} from './devices.ts';
 export { DEFAULT_LIMITS, resolveLimits, type SyncLimits } from './limits.ts';
 export { ByteBudget, LimitError, Semaphore } from './util.ts';
 export { computeAudiences, audienceOf, fingerprint, type Audience } from './audience.ts';

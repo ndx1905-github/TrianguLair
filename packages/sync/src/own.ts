@@ -52,6 +52,7 @@ import {
   type DeviceCert,
   type DeviceSigner,
   type IndexAnchor,
+  type IdentityMove,
   type IndexPackEntry,
   type KeyPair,
   type SharingKey,
@@ -126,6 +127,11 @@ export interface OwnSyncOptions {
   author?: string;
   /** Called when this device adopts a new sharing key (persist it in the system vault). */
   onSharingKey?: (key: SharingKey) => void;
+  /**
+   * After an identity change (theft of the primary device): the move from my old identity, signed
+   * by both masters. Written in every index I publish (app rule R-11: friends who were offline need it).
+   */
+  move?: IdentityMove;
   newId?: () => string;
   random?: () => number;
 }
@@ -151,6 +157,8 @@ export interface PullResult {
   missing: string[];
   /** A new sharing key was adopted from `keys/`. */
   adoptedKey: boolean;
+  /** Device id that signed the index whose own-document updates were imported (when `imported > 0`). */
+  importedFrom?: string;
 }
 
 export interface PublishReport {
@@ -350,6 +358,7 @@ export class OwnSync {
     // Merge my other devices' changes (Yjs updates commute; duplicates are no-ops).
     for (const u of updates) this.store.importChanges(u);
     res.imported = updates.length;
+    if (updates.length) res.importedFrom = index.device_cert.device;
 
     // Forget packs that are no longer listed.
     const listedHashes = new Set(listed.map((p) => p.hash));
@@ -779,6 +788,7 @@ export class OwnSync {
       packs: entries,
       vaultDataKey: this.sharing.vaultDataKey,
       invitations: this.book.invitations().map((i) => i.invitation),
+      ...(this.o.move && { move: this.o.move }),
       ...(pub && { public: pub }),
       ...(previous && { previous }),
       now,

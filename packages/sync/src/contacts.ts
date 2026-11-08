@@ -27,7 +27,9 @@ import {
   type SharingCert,
   type SignedIndex,
   type VaultRecords,
+  type DeviceCert,
 } from '@triangulair/crypto';
+import { devicesOf, markDevicesRemoved, mergeDeviceParts, putDevice, setValue, updateDevice, valueOf, type DeviceEntry } from './devices.ts';
 
 /** What a contact may read: everything I share with friends, nothing, or only the places of some of my lists. */
 export type SharePolicy = boolean | { lists: string[] };
@@ -113,7 +115,7 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
   const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
-  return withApp(merged, { version: 1, contacts, ...(own && { own }) });
+  return mergeDeviceParts(withApp(merged, { version: 1, contacts, ...(own && { own }) }), a, b);
 }
 
 /**
@@ -231,6 +233,47 @@ export class ContactBook {
 
   retiredOwners(): string[] {
     return [...this.r.retired_owners];
+  }
+
+  /**
+   * A friend moved to a new identity (spec "Loss and theft", theft of the primary device): `index`
+   * is the new identity's index, verified with `expectedOwner = to` and `from` retired. `from` is
+   * retired for good (everything it signs later is refused), the contact continues under `to` with
+   * the same switches, and is no longer verified (the safety code must be compared again).
+   */
+  followMove(from: string, index: SignedIndex, now = Date.now()): void {
+    if (index.owner === from) throw new Error('followMove: same identity');
+    const old = this.policy(from);
+    this.r = { ...this.r, retired_owners: [...new Set([...this.r.retired_owners, from])].sort() };
+    this.addContact(index, { share: old.removed ? false : old.share, follow: old.removed ? false : old.follow, verified: false }, now);
+    this.remove(from, now);
+  }
+
+  // ------------------------------------------------------------------ my devices (devices.ts)
+
+  /** My devices whose certificate verifies (removed ones included, with `removed`). */
+  devices(): DeviceEntry[] {
+    return devicesOf(this.r);
+  }
+
+  putDevice(cert: DeviceCert, info: { name: string; added?: number; primary?: boolean }, now = Date.now()): void {
+    this.r = putDevice(this.r, cert, info, now);
+  }
+
+  updateDevice(id: string, patch: { name?: string; primary?: boolean }, now = Date.now()): void {
+    this.r = updateDevice(this.r, id, patch, now);
+  }
+
+  markDevicesRemoved(ids: readonly string[], now = Date.now()): void {
+    this.r = markDevicesRemoved(this.r, ids, now);
+  }
+
+  value<T>(key: string): { value: T; at: number } | undefined {
+    return valueOf<T>(this.r, key);
+  }
+
+  setValue(key: string, value: unknown, now = Date.now()): void {
+    this.r = setValue(this.r, key, value, now);
   }
 
   /** My own anchor recorded in the vault (checked; undefined when absent or malformed). */
