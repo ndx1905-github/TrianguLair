@@ -38,8 +38,33 @@ export interface ContactPolicy {
   /** "I see their places". */
   follow: boolean;
   removed?: boolean;
+  /**
+   * Lists whose definition (name, description, membership) this contact also receives, besides
+   * those of a `share: { lists }` restriction (which always come with it): the "pick who" of a
+   * list's share sheet, for a contact who sees everything I share with friends. Ignored when
+   * `share` is false.
+   */
+  lists?: string[];
   /** Time of the last change (ms), for the merge. */
   at: number;
+}
+
+/** The lists a contact sees the definition of (restriction lists, then the picked ones). */
+export function listsSeenBy(p: ContactPolicy): string[] {
+  if (p.removed || p.share === false) return [];
+  return [...new Set([...(p.share === true ? [] : p.share.lists), ...(p.lists ?? [])])].sort();
+}
+
+/**
+ * A list followed by its link (spec "Following a list without following the person"), kept in the
+ * vault so that all my devices follow it: the link fragment (it holds the list key of a link-only
+ * list) and the time of the change; an unfollowed list keeps a `removed` entry so that a merge
+ * never brings it back.
+ */
+export interface FollowedListEntry {
+  link: string;
+  at: number;
+  removed?: boolean;
 }
 
 export interface Contact {
@@ -61,7 +86,7 @@ const DEFAULT_POLICY: ContactPolicy = { share: false, follow: false, at: 0 };
  * or every OWN_ANCHOR_STEP publications) so it does not cost a vault write
  * per publication; it is a floor, never ahead of the truth.
  */
-type AppPart = { version: 1; contacts: Record<string, ContactPolicy>; own?: IndexAnchor };
+type AppPart = { version: 1; contacts: Record<string, ContactPolicy>; own?: IndexAnchor; lists?: Record<string, FollowedListEntry> };
 
 /** The vault's own anchor is rewritten after this many publications (or at a rotation). */
 export const OWN_ANCHOR_STEP = 16;
@@ -98,6 +123,13 @@ function withApp(r: VaultRecords, part: AppPart): VaultRecords {
   return { ...r, app: { ...(r.app ?? {}), [APP_KEY]: part } };
 }
 
+function laterEntry<T extends { at: number }>(a: T | undefined, b: T | undefined): T | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  return canonicalize(a as never) >= canonicalize(b as never) ? a : b;
+}
+
 function laterPolicy(a: ContactPolicy | undefined, b: ContactPolicy | undefined): ContactPolicy | undefined {
   if (!a) return b;
   if (!b) return a;
@@ -113,7 +145,11 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
   const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
-  return withApp(merged, { version: 1, contacts, ...(own && { own }) });
+  const la = appPart(a).lists ?? {};
+  const lb = appPart(b).lists ?? {};
+  const lists: Record<string, FollowedListEntry> = {};
+  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = laterEntry(la[k], lb[k])!;
+  return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }) });
 }
 
 /**
@@ -197,7 +233,60 @@ export class ContactBook {
     const cur = part.contacts[owner] ?? DEFAULT_POLICY;
     const next: ContactPolicy = { share: patch.share ?? cur.share, follow: patch.follow ?? cur.follow, at: Math.max(now, cur.at + 1) };
     if (patch.removed ?? cur.removed) next.removed = true;
-    this.r = withApp(this.r, { version: 1, contacts: { ...part.contacts, [owner]: next } });
+    const lists = [...new Set(patch.lists ?? cur.lists ?? [])].sort();
+    if (lists.length && !next.removed) next.lists = lists;
+    this.r = withApp(this.r, { ...part, contacts: { ...part.contacts, [owner]: next } });
+  }
+
+  /** Owners of the live contacts who receive the definition of `listId`. */
+  listViewers(listId: string): string[] {
+    return this.contacts().filter((c) => listsSeenBy(c.policy).includes(listId)).map((c) => c.owner);
+  }
+
+  /**
+   * Gives or takes a contact's access to one list ("pick who" in the list's share sheet):
+   * a contact who sees nothing gets `share: { lists: [id] }` (the list's places and definition); a
+   * contact restricted to some lists gets it added or removed (none left = nothing); a contact who
+   * sees everything keeps that and receives or stops receiving the list's definition.
+   */
+  setListAccess(owner: string, listId: string, on: boolean, now = Date.now()): void {
+    const p = this.policy(owner);
+    if (p.removed) return;
+    if (p.share === true) {
+      const lists = new Set(p.lists ?? []);
+      if (on) lists.add(listId);
+      else lists.delete(listId);
+      this.setPolicy(owner, { lists: [...lists] }, now);
+      return;
+    }
+    const cur = new Set(p.share === false ? [] : p.share.lists);
+    if (on) cur.add(listId);
+    else cur.delete(listId);
+    const extra = (p.lists ?? []).filter((l) => l !== listId);
+    this.setPolicy(owner, { share: cur.size ? { lists: [...cur].sort() } : false, lists: on ? p.lists ?? [] : extra }, now);
+  }
+
+  // ---------------------------------------------------------------- followed lists
+
+  /** Lists I follow by link (not unfollowed), by followed-list id. */
+  followedLists(): { id: string; link: string; at: number }[] {
+    const l = appPart(this.r).lists ?? {};
+    return Object.entries(l)
+      .filter(([, e]) => !e.removed)
+      .map(([id, e]) => ({ id, link: e.link, at: e.at }));
+  }
+
+  followList(id: string, link: string, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = part.lists?.[id];
+    this.r = withApp(this.r, { ...part, lists: { ...(part.lists ?? {}), [id]: { link, at: Math.max(now, (cur?.at ?? 0) + 1) } } });
+  }
+
+  unfollowList(id: string, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = part.lists?.[id];
+    if (!cur) return;
+    this.r = withApp(this.r, { ...part, lists: { ...(part.lists ?? {}), [id]: { link: cur.link, at: Math.max(now, cur.at + 1), removed: true } } });
   }
 
   /** Removes a contact: they no longer see my places and I stop reading theirs (spec "Remove a friend"). */

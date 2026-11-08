@@ -7,7 +7,9 @@
  *
  *   index.json                  signed index (crypto), written last, conditionally (ETag)
  *   packs/b2b256-<hash>.bin     places packs (GeoJSON), one or more per recipient set, my own key always
- *                               included; content-addressed, never modified
+ *                               included; content-addressed, never modified; and lists packs (lists.ts:
+ *                               list definitions for friends with access, link-only lists sealed to
+ *                               their list key, tombstones of deleted link-only lists)
  *   media/b2b256-<hash>.bin     my own Yjs document (a full snapshot + incremental deltas) and a manifest
  *                               (logical pack id → recipient-set fingerprint), my key only; under media/
  *                               so that friends, who fetch media/ only on demand (photos), never download them
@@ -58,6 +60,7 @@ import {
   type SignedIndex,
 } from '@triangulair/crypto';
 import { snapshotOfUpdates, type DataStore } from '@triangulair/data';
+import { packHash } from '@triangulair/crypto';
 import { INDEX_PATH, NotFound, PUBLIC_LISTS_PATH, PreconditionFailed, fetchSnapshot, type StorageAdapter } from '@triangulair/storage';
 import { audienceOf, computeAudiences, fingerprint, recipientBytes, type Audience } from './audience.ts';
 import { OWN_ANCHOR_STEP, laterAnchor, mergeBooks, sameRecords, type ContactBook } from './contacts.ts';
@@ -66,6 +69,8 @@ import { MAX_FEATURES_PER_PACK, featureFor, featureHash, parsePlaces, placesColl
 import { resolveLimits, type SyncLimits } from './limits.ts';
 import { planPacks, type DesiredItem, type ExistingPack } from './planner.ts';
 import { decodePayload, encodePayload, jsonBytes, parseJsonBody, utf8 } from './payload.ts';
+import { desiredListPacks, type DesiredListPack } from './list-packs.ts';
+import { isTombstone, listsReady, parseLists } from './lists.ts';
 import { PUBLIC_LISTS_NAME, buildPublicLists } from './public-lists.ts';
 import type { SyncStateStore } from './state.ts';
 import { b64, bytesEqual, mapLimit, randomLogicalId, unb64, LimitError } from './util.ts';
@@ -77,6 +82,8 @@ type PackInfo =
   | { k: 'places'; id: string; rot: number; items: Record<string, string> }
   | { k: 'own-doc'; id: string; rot: number; mode: 'full' | 'delta'; size: number }
   | { k: 'manifest'; id: string; rot: number; fps: Record<string, string> }
+  /** A lists pack (lists.ts): `h` = hash of its body; a tombstone is kept until `until`. */
+  | { k: 'lists'; id: string; rot: number; h: string; tomb?: { list: string; until: number } }
   | { k: 'other' };
 
 interface IndexState {
@@ -387,8 +394,13 @@ export class OwnSync {
     const rot = this.sealedForCurrentKey(bytes, index) ? this.rot : -1;
     try {
       const { kind, body } = decodePayload(opened.payload, {
-        maxBytes: { places: this.limits.placesPayloadBytes, manifest: this.limits.manifestPayloadBytes, 'own-doc': this.limits.ownDocPayloadBytes },
+        maxBytes: { places: this.limits.placesPayloadBytes, lists: this.limits.placesPayloadBytes, manifest: this.limits.manifestPayloadBytes, 'own-doc': this.limits.ownDocPayloadBytes },
       });
+      if (kind === 'lists') {
+        const l = parseLists(body);
+        const t = l.lists.length === 1 && isTombstone(l.lists[0]!) ? l.lists[0] : null;
+        return { info: { k: 'lists', id: opened.id, rot, h: packHash(body), ...(t && isTombstone(t) && { tomb: { list: t.id, until: Date.parse(t.until) } }) }, update: null };
+      }
       if (kind === 'places') {
         const items: Record<string, string> = {};
         for (const f of parsePlaces(body)) items[f.feature.id] = f.hash;
@@ -549,6 +561,7 @@ export class OwnSync {
 
   /** Pulls, then publishes what changed. Retries lost races (re-read in full, merge, republish). */
   async publish(opts: { force?: boolean } = {}): Promise<PublishReport> {
+    await listsReady();
     let conflicts = 0;
     const orphans = new Set<string>(this.st.get<string[]>('own:garbage') ?? []);
     for (let attempt = 1; attempt <= 5; attempt++) {
@@ -707,7 +720,7 @@ export class OwnSync {
     const keptFiles = new Set(plan.keep.map((p) => p.file));
     for (const p of listed) if (keptFiles.has(p.file)) entries.push(p);
     const add = (bytes: Uint8Array, info: PackInfo) => {
-      const e = packEntry(bytes, info.k === 'places' ? 'packs' : 'media');
+      const e = packEntry(bytes, info.k === 'places' || info.k === 'lists' ? 'packs' : 'media');
       writes.set(e.file, bytes);
       entries.push(e);
       cache[e.hash] = info;
@@ -723,6 +736,32 @@ export class OwnSync {
       for (const id of w.itemIds) itemsMap[id] = desired.get(id)!.hash;
       add(bytes, { k: 'places', id: w.id, rot: this.rot, items: itemsMap });
       newFps[w.id] = w.fp;
+    }
+
+    // Lists packs (lists.ts): kept when their recipient set and body are unchanged.
+    const want = new Map<string, DesiredListPack>();
+    for (const d of desiredListPacks({ repo, items, myCert: this.sharing.cert, contacts: this.book.contacts(), now, ...(this.o.author && { author: this.o.author }) })) {
+      want.set(`${d.audience.fp}|${d.h}`, d);
+    }
+    const liveLists = new Set(repo.lists().map((l) => l.id));
+    for (const p of listed) {
+      const i = infoOf(p);
+      if (i?.k !== 'lists') continue;
+      const fp = i.rot === this.rot ? fps[i.id] : undefined;
+      if (fp && want.delete(`${fp}|${i.h}`)) {
+        entries.push(p);
+        newFps[i.id] = fp;
+      } else if (fp && i.tomb && i.tomb.until > now.getTime() && !liveLists.has(i.tomb.list)) {
+        // The tombstone of a list purged from my trash (or deleted on another device): kept until it expires.
+        entries.push(p);
+        newFps[i.id] = fp;
+      } else drop.push(p.file);
+    }
+    for (const d of want.values()) {
+      const id = newId();
+      const bytes = sealPack(this.owner, encodePayload('lists', d.body), recipientBytes(d.audience), { id });
+      add(bytes, { k: 'lists', id, rot: this.rot, h: d.h, ...(d.until !== undefined && { tomb: { list: d.lists[0]!, until: d.until } }) });
+      newFps[id] = d.audience.fp;
     }
 
     // My own document.

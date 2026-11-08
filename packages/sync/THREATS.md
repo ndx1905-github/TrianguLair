@@ -93,6 +93,27 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   created; deliberate copies (screenshots, a modified app) are out of reach, as the spec says.
 - Coarse ETags on a friend's server can delay an update until the next full read (10 minutes while the app is open).
 
+## Shared lists (T-211, T-212)
+
+- **Holder of a list link** (spec threat model): the link holds the list's X25519 secret; anyone it is forwarded to
+  reads the list until a new link is made. "New link" re-seals the list pack to a new key (new batch key, new file)
+  and deletes the old file: an old holder keeps only what they already copied. The list key is a direct recipient
+  of the list pack only (never a group member, never wrapped inside any other pack), so it opens nothing else of
+  mine; link packs carry only public comments and never a private place.
+- **What a link holder learns** besides the list: my master key and read address (they can read my public index
+  like anyone), the number and sizes of my packs, and when I publish. They cannot tell which other packs exist for
+  whom (wraps are anonymous); they download each `packs/` file once to find theirs.
+- **Forged links**: a link naming my key with someone else's address is refused (the index must be signed for the
+  master key in the link and certify the address it was read from); a list pack re-listed in another index does not
+  open (owner bound in the AEAD). After the first read, an older index is refused (anchor per followed list).
+- **Malicious public list or link-only list author**: their places land in my cache like a friend's (same strict
+  payload checks, sizes bounded, under their own `list:` owner, never merged into another cache); a public list may
+  expose someone's private address: the app warns the author before publishing (spec), and the reader only sees it.
+- **Friends' lists**: a lists pack is sealed only to the contacts given access to those lists; a friend who sees
+  everything does not learn my list names unless picked. Membership never names a place they cannot read.
+- **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must not read
+  `location.hash`, the web app removes it from the address bar, links are never logged.
+
 ## Concurrency
 
 - Compare-and-swap is best effort on some servers; the read-back check and the recomputation of the remote

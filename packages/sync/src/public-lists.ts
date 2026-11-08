@@ -13,9 +13,16 @@
  *   attributions and licenses"; the legal analysis is still to be confirmed).
  * - One feature per (list, place), with `list` / `list_name`, so a uMap
  *   layer can be filtered by list; the author's color goes to
- *   `_umap_options.color` (uMap's per-feature style).
+ *   `_umap_options` (uMap's per-feature style: `color`, the "Drop" marker for
+ *   points, a light fill and a thin outline for zones, a thicker line for
+ *   streets), `description` is the public comment (uMap's default popup shows
+ *   `name` and `description`), and `url` links an OSM place to its page on
+ *   openstreetmap.org.
+ * - The file names its author's identity (`triangulair.owner`), so a reader
+ *   that follows a public list by link (followed.ts) checks it against the
+ *   verified index, like everything else.
  */
-import type { Repository } from '@triangulair/data';
+import { parseOsmPlaceId, type Repository } from '@triangulair/data';
 import { featureFor, type OwnItem } from './features.ts';
 import { utf8 } from './payload.ts';
 
@@ -29,27 +36,43 @@ export interface PublicListsOptions {
   author?: string;
 }
 
+/** Default color of a place without a colored tag (the app's accent). */
+export const DEFAULT_UMAP_COLOR = '#2563EB';
+
+/** uMap's per-feature style (`_umap_options`) of a place: its main tag's color, a marker, or a zone's fill and outline. */
+export function umapStyle(it: Pick<OwnItem, 'tags' | 'kind' | 'geometry'>): Record<string, unknown> {
+  const color = it.tags.find((t) => t.color)?.color ?? DEFAULT_UMAP_COLOR;
+  const g = it.geometry.type;
+  if (g === 'Point') return { color, iconClass: 'Drop' };
+  if (g === 'LineString' || g === 'MultiLineString') return { color, weight: 5, opacity: 0.8 };
+  return { color, weight: 2, fill: true, fillColor: color, fillOpacity: 0.2 };
+}
+
 /** The public GeoJSON, or `null` when I have no public list. Deterministic (no timestamp) so it only changes with its content. */
 export function buildPublicLists(repo: Repository, items: readonly OwnItem[], opts: PublicListsOptions): Uint8Array | null {
   const lists = repo.lists().filter((l) => l.visibility === 'public');
   if (lists.length === 0) return null;
   const bySave = new Map(items.map((i) => [i.saveId, i]));
   const features: unknown[] = [];
-  const meta: { id: string; name: string; description?: string; updated: string }[] = [];
+  const meta: { id: string; name: string; description?: string; updated: string; count?: number }[] = [];
   for (const l of lists) {
     const m: (typeof meta)[number] = { id: l.id, name: l.name, updated: new Date(l.updatedAt).toISOString() };
     if (l.description) m.description = l.description;
     meta.push(m);
+    let count = 0;
     for (const saveId of repo.listItems(l.id)) {
       const it = bySave.get(saveId);
       if (!it || it.sharing === 'private' || it.placeStatus === 'closed') continue;
       const f = featureFor(it, 'public');
       const props: Record<string, unknown> = { ...f.properties, list: l.id, list_name: l.name };
       if (f.properties.comment) props.description = f.properties.comment;
-      const color = it.tags[0]?.color;
-      if (color) props._umap_options = { color };
+      const osm = parseOsmPlaceId(it.placeId);
+      if (osm) props.url = `https://www.openstreetmap.org/${osm.osmType}/${osm.osmId}`;
+      props._umap_options = umapStyle(it);
       features.push({ type: 'Feature', id: `${l.id}/${it.placeId}`, geometry: f.geometry, properties: props });
+      count++;
     }
+    m.count = count;
   }
   const doc: Record<string, unknown> = {
     type: 'FeatureCollection',

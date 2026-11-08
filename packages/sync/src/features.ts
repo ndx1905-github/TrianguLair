@@ -280,8 +280,16 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
   const lenient = minor > PLACES_MINOR;
   for (const k of Object.keys(doc)) if (!['type', 'triangulair', 'features'].includes(k) && !lenient) fail(`unknown field ${k}`);
   for (const k of Object.keys(meta)) if (!['kind', 'version', 'minor'].includes(k) && !lenient) fail(`unknown field triangulair.${k}`);
-  if (!Array.isArray(doc.features) || doc.features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
-  return doc.features.map((f: unknown) => {
+  return parseFeatureArray(doc.features, lenient);
+}
+
+/**
+ * Validates the `features` of a places (or lists) payload: the same strict rules (see the module
+ * comment). `lenient`: the document declares a higher minor than this reader's (unknown fields ignored).
+ */
+export function parseFeatureArray(features: unknown, lenient: boolean): ParsedFeature[] {
+  if (!Array.isArray(features) || features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
+  return features.map((f: unknown) => {
     if (!isObj(f) || f.type !== 'Feature') fail('feature expected');
     for (const k of Object.keys(f)) if (!['type', 'id', 'geometry', 'properties'].includes(k) && !lenient) fail(`unknown feature field ${k}`);
     const id = str(f.id, 100, 'id');
