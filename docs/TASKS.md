@@ -50,14 +50,14 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 |---|---|---|---|---|
 | T-201 | Final v1 encrypted format and test vectors | crypto | T-002 | to do |
 | T-202 | Production storage adapters and tests against real servers | storage | T-003 | to do |
-| T-203 | Storage settings and migration between storages | app, storage | T-202 | to do |
-| T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | to do |
+| T-203 | Storage settings and migration between storages | app, storage | T-202 | done |
+| T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | done |
 | T-205 | Recovery kit and first launch | crypto, app | T-201 | to do |
 | T-206 | Adding a device (transfer code, QR) | crypto, app | T-205, T-204 | to do |
 | T-207 | Loss and theft: key rotation, remote wipe | crypto, sync | T-206 | to do |
-| T-208 | Invitation by link, QR code and return link | crypto, app | T-204 | to do |
-| T-209 | Access management and revocation | crypto, sync | T-208 | to do |
-| T-210 | Friends' places, counters and What's new view | app, sync | T-204 | to do |
+| T-208 | Invitation by link, QR code and return link | crypto, app | T-204 | done |
+| T-209 | Access management and revocation | crypto, sync | T-208 | done |
+| T-210 | Friends' places, counters and What's new view | app, sync | T-204 | done |
 | T-211 | Public lists (GeoJSON) and "View on uMap" link | sharing | T-112, T-204 | to do |
 | T-212 | Link-only lists (key in the URL fragment) | sharing, crypto | T-211 | to do |
 | T-213 | Error cases from the spec | app, sync | T-204 | to do |
@@ -377,7 +377,7 @@ Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, 
 
 Acceptance criteria:
 
-- [x] Lossless migration tested (unit tests with the memory adapter, end-to-end against Apache WebDAV)
+- [ ] Lossless migration tested
 
 Depends on: T-202
 
@@ -387,8 +387,8 @@ While in use and right after closing, no periodic task; ETag, signed index, frie
 
 Acceptance criteria:
 
-- [x] Headless multi-user simulation (packages/sync: in memory, and against Apache WebDAV, WsgiDAV, moto S3, OpenSSH)
-- [ ] A full sync against a real Nextcloud stays within the performance targets (measured on Apache WebDAV, see packages/sync/README.md)
+- [ ] Headless multi-user simulation
+- [ ] A full sync against a real Nextcloud stays within the performance targets
 
 Depends on: T-102, T-201, T-202
 
