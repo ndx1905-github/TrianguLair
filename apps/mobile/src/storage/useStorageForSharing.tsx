@@ -17,7 +17,7 @@ import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { useStorage } from './StorageProvider';
 
-export type SharingReason = 'invite' | 'link-list' | 'public-list' | 'backup';
+export type SharingReason = 'invite' | 'link-list' | 'public-list' | 'backup' | 'devices';
 
 /** The wizard's address for a reason and a screen to come back to. */
 export function setupHref(reason: SharingReason, returnTo?: string): string {

@@ -10,7 +10,7 @@ import { fromB64Url, issueDeviceCert, openSharingKey, ready, toB64Url, type Devi
 
 import { OSM_FIXTURES } from '../config';
 import { getSetting, setSetting } from '../data/deviceSettings';
-import { joinedIdentity, type MovedIdentity } from '../devices/identity';
+import { joinedIdentity, moveIdentity, type MovedIdentity } from '../devices/identity';
 import { DEVICE_NAME_KEY, MOVED_FROM_KEY, movedFrom } from '../devices/local';
 import type { Joined } from '../devices/sessions';
 import { masterIdentity, rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
@@ -64,7 +64,9 @@ export interface IdentityApi extends SharingCertRotation {
   certifyDevice(pub: { device: string; box: string }, master: MasterKeySource): Promise<DeviceCert>;
   /** First launch on a new device: store what the other device (or the phrase) gave, then open the app. */
   adoptJoined(joined: Joined, opts: { deviceName: string; profileName: string }): Promise<void>;
-  /** "Declare the primary device lost": switch this device to the new identity (the new kit is pending). */
+  /** "Declare the primary device lost": the 12 words of my identity → the new identity (nothing stored yet). Throws "phrase-mismatch". */
+  prepareMove(phrase: string): Promise<MovedIdentity>;
+  /** Then switch this device to it (the new kit is pending). */
   adoptMovedIdentity(moved: MovedIdentity): Promise<void>;
 }
 
@@ -314,6 +316,15 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // Written last: an interrupted join leaves no half identity behind.
         await secrets.set('identity', JSON.stringify(record));
         setState({ kind: 'ready', record, profile, secretStore: secrets.kind, kitPending: false, onboarding: 'done' });
+      },
+      async prepareMove(phrase) {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        const [deviceKeys, sharingKey] = await Promise.all([secrets.get('device-keys'), secrets.get('sharing-key')]);
+        if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+        await ready();
+        const device = parseDeviceKeys(deviceKeys);
+        const current = openSharingKey(fromB64Url(sharingKey, 'sharingKey'), device, { expectedOwner: state.record.owner });
+        return moveIdentity(phrase, state.record, device, current, Date.now());
       },
       async adoptMovedIdentity(moved) {
         if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
