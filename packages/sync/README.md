@@ -94,7 +94,8 @@ tombstones), so every device publishes the same audiences.
 | `media/b2b256-<hash>.bin` | **my Yjs document** (one full snapshot + up to 8 deltas, then a new snapshot) and a **manifest** (logical pack id → recipient-set fingerprint), sealed to my key only; photos later | my devices; friends fetch `media/` only on demand (photos), so never these |
 | `public/lists.geojson` | public lists in plaintext, ODbL attribution, listed in the index with its hash | anyone, uMap |
 | `vault.bin` | recovery vault (`TLVD`), written with `If-Match`, merged on conflict | my devices |
-| `keys/<device id>.bin` | the current sharing key sealed to each of my other devices (`TLSK`), written by `rotate` | that device |
+| `keys/<device id>.bin` | the current sharing key sealed to each of my other devices (`TLSK`), written by `rotate` and before each publication | that device |
+| `keys/<owner id>.bin` | the current sharing key sealed with the phrase-derived key (`TLSK` mode 2), written by `rotateKey` and by the app | a device restored with the 12 words |
 
 Packs are written first (in parallel, `If-None-Match: *`), then the public file, then the index (`If-Match` of the
 index the pass started from, `If-None-Match: *` on the first publication). The index is then **read back**:
@@ -184,6 +185,32 @@ the union of the packs I can open: anything no longer in it (deleted, made priva
 from the cache, with the places its data created. Everything is projected in one transaction, and only if every
 needed pack was fetched and verified: otherwise the last valid content stays. The difference feeds What's new
 (`meaningful`: a new comment, or a switch to tried / favorite; the rest is a minor touch-up).
+
+## My devices, declaration of loss, identity moves (T-206, T-207)
+
+- **Device list** (`devices.ts`): the vault's `app.triangulair_devices` holds one entry per device of mine: its full
+  master-signed device certificate, a name, the date added, a primary mark and a removal date; merged per device by
+  `mergeBooks` (latest change wins, removal sticky). An entry counts only if its certificate verifies for my owner id
+  (a stolen device cannot add one); revocation is the sharing certificate's `revoked_devices`, never the `removed`
+  mark, which is display only. `app.triangulair_values` holds small named values, latest wins per key (the app keeps
+  its storage settings and my first name there for a new device). Engine: `devices()`, `putDevice`, `updateDevice`,
+  `value`, `setValue`.
+- **Key delivery**: before each publication the engine seals the current sharing key to every listed device that does
+  not have it yet (`keys/<device>.bin`, marker per device in the state).
+- **`rotateKey(newKey, { cancelInvitations, recoveryCopy })`**: adopts a rotation made on this device with the master
+  key (declaration of loss, a removed device), cancels every open invitation (`cancelAllInvitations`, V4-02), seals the
+  key to the remaining listed devices, deletes the lost device's `keys/` file, marks it removed, and writes the
+  phrase-protected copy (TLSK mode 2) at `keys/<owner id>.bin` (restore with the 12 words). Then `sync()` re-encrypts
+  and publishes; the lost device finds itself in `revoked_devices` at its next pass and wipes (existing remote wipe).
+- **Identity move**: engine option `move` (written in every index, R-11). A friend whose index carries a valid move from
+  the identity I follow (`FriendReport.identityMove`) is followed: the old identity is retired, the contact continues
+  under the new one with the same switches and `verified: false`, their cache is read again (`followed: true`).
+- `SyncReport.pulled` (the pull that starts the pass) and `PullResult.importedFrom` (the device that signed the index
+  whose own-document changes were imported), for the app's "changes since the theft".
+- Storage layout additions: `keys/<owner id>.bin` (recovery copy), and the app's `transfer/<slot>.*` files (adding a
+  device, at most 15 minutes, see the app README).
+- Tests: `test/devices.test.ts` (list merge and forged entries, values, declaration with invitations cancelled, key
+  delivered, lost device wiped, friend told; delivery to a device added later; following an identity move).
 
 ## Error cases (spec table) → `SyncProblem`
 

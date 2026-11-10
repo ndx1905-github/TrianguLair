@@ -53,8 +53,8 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | T-203 | Storage settings and migration between storages | app, storage | T-202 | done |
 | T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | done |
 | T-205 | Recovery kit and first launch | crypto, app | T-201 | to do |
-| T-206 | Adding a device (transfer code, QR) | crypto, app | T-205, T-204 | to do |
-| T-207 | Loss and theft: key rotation, remote wipe | crypto, sync | T-206 | to do |
+| T-206 | Adding a device (transfer code, QR) | crypto, app | T-205, T-204 | done |
+| T-207 | Loss and theft: key rotation, remote wipe | crypto, sync | T-206 | done |
 | T-208 | Invitation by link, QR code and return link | crypto, app | T-204 | done |
 | T-209 | Access management and revocation | crypto, sync | T-208 | done |
 | T-210 | Friends' places, counters and What's new view | app, sync | T-204 | done |
@@ -408,7 +408,7 @@ Argon2id code and QR code.
 
 Acceptance criteria:
 
-- [ ] Two devices in sync
+- [x] Two devices in sync (unit: `apps/mobile/src/devices/*.test.ts`; end to end: `apps/mobile/e2e/devices.spec.ts` on Apache WebDAV)
 
 Depends on: T-205, T-204
 
@@ -418,7 +418,8 @@ Sharing key rotation, re-encryption, key deletion at sync on the removed device.
 
 Acceptance criteria:
 
-- [ ] "Stolen device" scenario simulated
+- [x] "Stolen device" scenario simulated (`packages/sync/test/devices.test.ts`, `apps/mobile/src/devices/flow.test.ts`,
+  `apps/mobile/e2e/devices.spec.ts`: the lost device is wiped at its next sync, a friend follows the new key)
 
 Depends on: T-206
 

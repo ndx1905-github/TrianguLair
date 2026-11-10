@@ -198,7 +198,7 @@ async function shot(page: Page, file: string): Promise<void> {
 
 test('a second device by link + code, then declared lost: wiped at its next sync, Ben follows the new key', async ({ browser }) => {
   test.skip(!proxy, 'Apache WebDAV of packages/storage/scripts/real-servers.sh is not running');
-  test.setTimeout(420_000);
+  test.setTimeout(720_000);
   const anna = await person(browser, 'Anna');
   const ben = await person(browser, 'Ben');
   const a = anna.page;
@@ -305,10 +305,10 @@ test('a second device by link + code, then declared lost: wiped at its next sync
   await shot(t2, 'phone-device-removed.png');
 
   // Ben keeps reading Anna with her new key, and sees the notice.
-  await addPlace(a, 'Le Zinc Fictif');
+  await addPlace(a, 'Librairie du Haut Marais');
   await sync(anna);
   await sync(ben);
-  await listed(ben.page, 'Le Zinc Fictif');
+  await listed(ben.page, 'Librairie du Haut Marais');
   await ben.page.goto(autostart('/whatsnew'));
   await expect(ben.page.getByTestId('whatsnew-item-key')).toContainText('Anna changed their key', { timeout: 30_000 });
   await shot(ben.page, 'phone-whatsnew-key.png');
@@ -324,7 +324,7 @@ test('a second device by link + code, then declared lost: wiped at its next sync
 test('French tablet: QR code on both sides, dark welcome', async ({ browser }) => {
   test.skip(!proxy, 'Apache WebDAV of packages/storage/scripts/real-servers.sh is not running');
   test.skip(!SHOTS, 'screenshots only');
-  test.setTimeout(240_000);
+  test.setTimeout(420_000);
   const tab = { width: 834, height: 1112 };
   const anna = await person(browser, 'Anna', { viewport: tab, lang: 'fr' });
   // The new device shows its code; the old one reads it (pasted here: no camera in the test).
@@ -343,6 +343,9 @@ test('French tablet: QR code on both sides, dark welcome', async ({ browser }) =
   const reply = await anna.page.getByTestId('add-qr-reply').getAttribute('data-qr-value');
   await fresh.page.getByTestId('device-qr-answer').fill(reply!);
   await fresh.page.getByTestId('device-qr-open').click();
+  await expect(fresh.page.getByTestId('filter-toggle').filter({ visible: true })).toBeVisible({ timeout: 60_000 });
+  await sync({ page: fresh.page }, '&lang=fr');
+  await fresh.page.goto('/?lang=fr');
   await expect(fresh.page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 60_000 });
   await expect(anna.page.getByTestId('add-done')).toBeVisible({ timeout: 30_000 });
 

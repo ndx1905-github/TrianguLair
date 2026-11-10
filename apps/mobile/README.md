@@ -72,9 +72,8 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
 - **First launch** (`/welcome/*`, T-205, local part): the spec's three entries. *Get started*: first
   name and optional photo (cropped, 256 px) while the keys are made in the background, app lock offer,
   location (explained before the system prompt, kept on the device to center the map), import or
-  "Later", then the map with a hint on "+". *I already have TrianguLair on another device* (QR code,
-  link + 6-word code, 12-word phrase) and *I received an invitation link* (paste the link) show their
-  screens marked "Available with sharing (phase 2)". Local-only mode; a storage is offered later.
+  "Later", then the map with a hint on "+". *I already have TrianguLair on another device*: see Devices below.
+  Local-only mode; a storage is offered later.
 - **Identity** (`src/identity/`, glue in `create.ts`, tested): `@triangulair/crypto` makes the 12-word
   phrase, the master key (owner id `ed25519:…`), this device's keys and master-signed device certificate,
   a random sharing key with its certificate (rotation 0, no read address in local-only mode), a random
@@ -97,7 +96,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   after 5 wrong codes); otherwise offered with Face ID / fingerprint / phone code. Locks on start and
   after 5 min in the background (choice: right away, 1, 5, 15 min); an opaque cover hides the app in
   the app switcher. The screens stay mounted underneath (nothing typed is lost). "Lock or wipe after
-  N days without sync" waits for synchronization.
+  N days without sync": see Devices below.
 - **Settings** (`/settings`, button in the filter bar): profile, kit status, storage (summary, link to Settings › Storage),
   app lock, this device (date added, identity and device key fingerprints, primary device on/off:
   turning it back on asks for the 12 words once the phrase is gone), theme and language (both kept per
@@ -174,6 +173,46 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     a rename) go to the person row (`nameContact`, and `contactName` fills a row without one), so places, What's new
     and the sync status show them rather than "A friend". `addContact({ location, owner?, … })` remains for the unit
     tests.
+- **Devices** (T-206, T-207; logic in `src/devices/`, tested in `devices.test.ts` and `flow.test.ts`):
+  - *First launch "I already have TrianguLair on another device"* (`/welcome/device`): the device name, then QR code,
+    link + 6-word code, or the 12 words with the storage read address (`restoreWithPhrase`: the phrase copy of the
+    sharing key at `keys/<owner>.bin`, then the vault). The new device makes its own keys; its master-signed device
+    certificate comes from the other device (primary: one tap; else the 12 words) or from the words typed here; the
+    sharing key, vault data key, storage access and first name come with it (storage settings from the vault value
+    `storage`); no demo seed; then it syncs.
+  - *Settings › Devices* (`/devices`): every device listed in the vault (name, date added, "This device", "Primary",
+    removed ones struck through), rename, remove, declare lost, add, changes since a date, primary device lost.
+  - *Add a device* (`/devices/add`): QR (default) or link + code; the request shows the new device's name and a 12-digit
+    number that both screens show; approval with the master key; the transfer is cancelled when the screen closes,
+    and its files are deleted at expiry by the controller anyway.
+  - *App-level wrappers* (`channel.ts`, not crypto formats; the crypto package is unchanged): the device link
+    `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>`; `transfer/<slot>.bin` = the frozen TLTX blob of
+    `encodeKeyExport` (Argon2id from the 6 words, 15-minute authenticated expiry), fetched anonymously at the read
+    address and deleted by the new device right after opening (single use); `transfer/<slot>.req` (the new device's
+    public keys and name) and `transfer/<slot>.ok` (the device certificate), both XChaCha20-Poly1305 under
+    BLAKE2b(key = sharing secret key, kind | slot). QR: the new device shows `TLDA1:<b64url(sign pk | box pk | ephemeral
+    X25519 pk | name)>`, the old one answers `TLDB1:<b64url(slot | ephemeral pk | read address)>` and drops
+    `transfer/<slot>.qr` = {device cert, TLSK sealed to the new device} under BLAKE2b(X25519(ephemerals) | both pks |
+    slot): the shared temporary key of the spec.
+  - *Declare a device lost / remove it* (`/devices/lost`): master key (`rotateSharingCert({ revokeDevices, newKey })`:
+    new random sharing key and vault data key, rotation + 1), then `SyncController.declareLost` (`rotateKey`: every open
+    invitation cancelled for a declaration, key delivered to the remaining devices, recovery copy, re-encryption,
+    publication). The result lists the people invited who had not answered, guides the storage access change per
+    protocol for the current storage and every previous one still redirecting (`guide.ts`: Nextcloud Devices & sessions
+    link, AWS access keys link, steps for WebDAV and HTTPS-only, "Type the new credentials"), and links to the changes.
+    New credentials typed on one device reach the others through the vault value; a device whose credentials are
+    refused reads the vault anonymously at the read address and takes them.
+  - *Changes since a date* (`/devices/changes`, `journal.ts`): at each pass that imports my other devices' changes,
+    the controller records my saves before and after, with the device that signed them (120 days, 400 changes);
+    filtered by date and by the lost device; "Revert" puts back the values kept here (trash / restore, comment, status,
+    price, sharing, tags) as a new edit; a place purged for good cannot be brought back here.
+  - *Declare the primary device lost* (`/devices/identity`): the 12 words → new phrase and master key, move signed by
+    both (`issueIdentityMove`), this device re-certified and primary, new sharing key, same read address; the old
+    index and files are removed, the vault records continue under the new owner (no invitation, only this device), the
+    database is reassigned (`identity-moved-from`), every index carries the move, and the new kit is shown. Friends
+    follow the move ("… changed their identity" in What's new and contacts, verified mark removed).
+  - *Lock if no sync for N days* (Settings › App lock: off, 3, 7, 14, 30 days, optional erase): after N days without
+    reaching my storage the app is covered until a sync succeeds (which wipes it if it was declared lost), or erased.
 - **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
   filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
   per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
@@ -490,7 +529,7 @@ font scale is mimicked by enlarging every text of the page, see the script):
 | `docs/phone-welcome.png` | Welcome: the promise, three entries, web test-build warning |
 | `docs/phone-welcome-profile.png`, `docs/phone-welcome-lock.png` | First name and photo (key made meanwhile); app lock with a code (mismatch shown) |
 | `docs/phone-welcome-location.png`, `docs/phone-welcome-import.png` | Location explained before the prompt; import or later |
-| `docs/phone-welcome-device.png`, `docs/phone-welcome-invitation.png` | The other two entries, "Available with sharing (phase 2)" |
+| `docs/phone-welcome-invitation.png` | The invitation entry |
 | `docs/phone-map-hint.png`, `docs/phone-protect-card.png` | Map with the "+" hint; "Protect your places" card and reminder dot |
 | `docs/phone-lock-screen.png` | App lock on the next launch, wrong code |
 | `docs/phone-kit.png`, `docs/phone-kit-export.png` | Recovery kit: the 12 words; export (clipboard cleared in one minute) |
@@ -580,6 +619,40 @@ comment on the card; Anna edits the comment and marks it favorite, Ben gets both
 map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
 storage", back to normal after "Sync now"); Anna sets "They see my places" to nothing on Ben's contact and Ben's cache
 drops her places. Passes are triggered with "Sync now" on the sync status screen (no test hook).
+
+Devices, loss and theft (`SHOTS=1 npm run e2e -- devices.spec.ts --workers=1`, same Apache setup, three browser
+contexts: Anna, Ben and Anna's new device):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-welcome-device.png`, `docs/phone-dark-welcome-device.png` | "Already on another device": the three ways (dark mode) |
+| `docs/phone-add-link.png`, `docs/phone-add-confirm.png` | Link + 6-word code on the old device; the new device's request with the number to compare |
+| `docs/phone-device-waiting.png` | The new device waiting for approval, the same number |
+| `docs/phone-devices.png` | Settings › Devices: this device (primary) and the tablet |
+| `docs/phone-dark-lost-confirm.png`, `docs/phone-lost-done.png` | Declare a device lost (dark mode); done, with the storage access guide |
+| `docs/phone-changes.png` | Changes since a date, from the lost device, with Revert |
+| `docs/phone-device-removed.png` | The lost device after its next sync |
+| `docs/phone-whatsnew-key.png` | Ben: "Anna changed their key" |
+| `docs/tablet-fr-device-qr.png`, `docs/tablet-fr-add-qr.png` | French tablet: the new device's QR code; the old device's answer code |
+
+End-to-end: `e2e/devices.spec.ts` (skipped without Apache): Anna and Ben become friends; Anna adds a device by link +
+code (a wrong code first), both list the same places and an edit on the tablet reaches the phone, both list the two
+devices; Anna declares the tablet lost from her phone: the tablet is wiped at its next sync, Ben keeps reading Anna (a
+place added after the declaration) and sees "Anna changed their key". With `SHOTS=1`, a second test adds a device by QR
+codes (French tablet).
+
+Devices open questions:
+
+- **Other devices after an identity change** are not carried over: they stop at the move (their index check fails) and
+  must be added again; the declaring device becomes the only, primary device.
+- **Storage moves with several devices**: other devices get the new certificate through `keys/`, but they keep reading
+  the old storage (the redirect) until their settings follow; the move of the storage settings through the vault is
+  not automatic yet.
+- **Request authentication** (link + code): the request is sealed under the sharing key, which a stolen but not yet
+  declared device also holds; the number compared on both screens is what authenticates the new device.
+- **Revert** covers my saves (fields, trash, tags); lists, zones and tags edited by the lost device are only listed by
+  the storage's own version history.
+- The QR flow needs both devices to scan (two codes); on the web build without camera the codes are pasted.
 
 Sync open questions:
 

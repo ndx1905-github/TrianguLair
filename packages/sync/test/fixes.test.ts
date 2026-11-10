@@ -574,7 +574,8 @@ describe('R-14: the injected clock', () => {
     const w = new World();
     const mem = new MemoryAdapter();
     const alice = addDevice(w, makeUser(w, 'alice', { storage: coarse(mem) }));
-    let t = Date.parse('2026-11-07T10:00:00.000Z');
+    // Close to the wall clock: alice (real clock) signs indexes that must not be more than 24 h ahead of bob's `now`.
+    let t = Date.now();
     const bob = addDevice(w, makeUser(w, 'bob'), { fullCheckMs: 600_000, now: () => new Date(t) });
     alice.store.putSave({ place: point(1, 'P1'), status: 'tried' });
     await alice.engine.sync();
