@@ -106,8 +106,7 @@ export const contactsFr: Messages = {
   'face.note': 'Le face à face utilise la même invitation et la même réponse que les liens, affichées en QR codes. Un format dédié le fera en une étape.',
 
   'follow.title': 'Suivre une liste par lien',
-  'follow.lead': 'Une liste « par lien » se suit sans suivre son auteur : le lien suffit.',
-  'follow.coming': 'Arrive avec les listes par lien : les listes ne sont pas encore partagées.',
+  'follow.lead': 'Une liste se suit sans suivre son auteur : son lien suffit. Ni demande ni compte.',
   'follow.link': 'Lien de la liste',
 
   'contacts.title': 'Amis',

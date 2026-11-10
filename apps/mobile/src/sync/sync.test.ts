@@ -455,3 +455,67 @@ describe('friends shown and stored keys', () => {
     expect(parseSyncKeys('nope')).toEqual({ previousSharingKeys: [], previousVaultKeys: [] });
   });
 });
+
+describe('SyncController: shared lists (T-211, T-212)', () => {
+  it('Anna makes a link; Ben, not her contact, previews and follows it; a new link cuts him off', async () => {
+    const anna = makeUser('anna-lists');
+    const ben = makeUser('ben-lists');
+    anna.store.putSave({ place: place(1, 'Chez Lili'), comment: 'Public', commentVisibility: 'public' });
+    anna.store.putSave({ place: place(2, 'Bistro'), comment: 'Friends only' });
+    anna.store.putSave({ place: place(3, 'Home'), sharing: 'private' });
+    const list = anna.store.createList({ name: 'Brunch', kind: 'manual', visibility: 'link', items: ['osm:node/1', 'osm:node/2', 'osm:node/3'] });
+    await anna.ctl.refresh();
+    await ben.ctl.refresh();
+    expect(anna.ctl.listLink(list)).toBeNull(); // no link before "Create the link"
+    const fragment = await anna.ctl.newListLink(list);
+    expect(anna.ctl.listLink(list)).toBe(fragment);
+
+    const p = await ben.ctl.previewList(fragment);
+    expect(p).toMatchObject({ name: 'Brunch', author: 'anna-lists', count: 2 });
+    const r = await ben.ctl.followList(fragment);
+    expect(r.status).toBe('updated');
+    expect(ben.ctl.snapshot().friends).toEqual([]); // not a contact
+    expect(theirPlaces(ben, r.id)).toEqual([{ name: 'Bistro', comment: '' }, { name: 'Chez Lili', comment: 'Public' }]);
+    expect(ben.ctl.followedLists()).toMatchObject([{ id: r.id, name: 'Brunch', count: 2, gone: null }]);
+    // Its first places are one What's new entry, named after the list.
+    expect(ben.ctl.whatsNew.entries()).toMatchObject([{ owner: r.id, kind: 'followed', count: 2 }]);
+    expect(ben.store.repo.getPerson(r.id)?.displayName).toBe('Brunch');
+
+    // New link: Ben's next pass says the link no longer works, and the places leave.
+    const fresh = await anna.ctl.newListLink(list);
+    expect(fresh).not.toBe(fragment);
+    await ben.ctl.refresh();
+    expect(ben.ctl.followedLists()[0]).toMatchObject({ gone: 'link-dead', count: 0 });
+    expect(theirPlaces(ben, r.id)).toEqual([]);
+    await expect(ben.ctl.previewList(fragment)).rejects.toMatchObject({ gone: 'link-dead' });
+    expect((await ben.ctl.previewList(fresh)).count).toBe(2);
+
+    await ben.ctl.unfollowList(r.id);
+    expect(ben.ctl.followedLists()).toEqual([]);
+  });
+
+  it('public: the file address and uMap; friends picked for a list see it', async () => {
+    const anna = makeUser('anna-pub');
+    const ben = makeUser('ben-pub');
+    anna.store.putSave({ place: place(1, 'Open') });
+    const list = anna.store.createList({ name: 'Weekend', kind: 'manual', visibility: 'link', items: ['osm:node/1'] });
+    await friends(anna, ben);
+    // Ben already sees everything Anna shares with friends; picking him gives him the list's name.
+    expect(anna.ctl.listViewers(list)).toEqual([]);
+    await anna.ctl.setListAccess(list, ben.created.record.owner, true);
+    expect(anna.ctl.listViewers(list)).toEqual([ben.created.record.owner]);
+    await ben.ctl.refresh();
+    expect(ben.ctl.friendLists()).toMatchObject([{ owner: anna.created.record.owner, lists: [{ id: list, name: 'Weekend', items: ['osm:node/1'] }] }]);
+
+    await anna.ctl.setListVisibility(list, 'public');
+    const pub = anna.ctl.publicList(list)!;
+    expect(pub.file).toBe(`${anna.location}public/lists.geojson`);
+    const g = await anna.storage.get('public/lists.geojson');
+    const geo = JSON.parse(new TextDecoder().decode(g!.data));
+    expect(geo.features.map((f: { properties: { name: string } }) => f.properties.name)).toEqual(['Open']);
+    expect(geo.attribution).toContain('OpenStreetMap');
+    // Ben can also follow it by its public link.
+    const r = await ben.ctl.followList(pub.fragment);
+    expect(theirPlaces(ben, r.id)).toEqual([{ name: 'Open', comment: '' }]);
+  });
+});

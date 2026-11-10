@@ -30,6 +30,11 @@
               "scheme": "https",
               "host": "triangulair.app",
               "pathPrefix": "/r"
+            },
+            {
+              "scheme": "https",
+              "host": "triangulair.app",
+              "pathPrefix": "/l"
             }
           ],
           "category": [

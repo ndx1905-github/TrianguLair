@@ -44,6 +44,8 @@ import {
 } from './listLogic';
 import { StorageNeededIfMissing } from '../storage/useStorageForSharing';
 import { ListMap } from './ListMap';
+import { PublicWarning } from './PublicWarning';
+import { ToggleRow } from '../firstLaunch/ToggleRow';
 import { useMyPlaces, type MyPlace } from './useListData';
 
 const STATUSES: SaveStatus[] = ['to_try', 'tried', 'favorite'];
@@ -98,6 +100,9 @@ export function ListEditor({ listId }: { listId: string | null }) {
     [mine, inSaveIds, draft, ctx],
   );
   const inRows = rows.filter((r) => r.in);
+  // Going public (a new public list, or a list that was link-only): warn first (spec "Privacy").
+  const goingPublic = draft.visibility === 'public' && existing?.visibility !== 'public';
+  const [publicOk, setPublicOk] = useState(false);
   const outRows = rows.filter((r) => !r.in);
   const inPlaceIds = useMemo(() => new Set(inRows.map((r) => r.place.id)), [inRows]);
 
@@ -143,7 +148,7 @@ export function ListEditor({ listId }: { listId: string | null }) {
   const back = () => (router.canGoBack() ? router.back() : router.replace('/lists'));
 
   const save = () => {
-    if (!canSave(draft)) return;
+    if (!canSave(draft) || (goingPublic && !publicOk)) return;
     const filter = draftToFilter(draft);
     const id = mutate((s) =>
       s.change((tx) => {
@@ -378,9 +383,12 @@ export function ListEditor({ listId }: { listId: string | null }) {
       <Text style={[styles.hint, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
         {draft.visibility === 'public' ? t('listEdit.visibility.publicHint') : t('listEdit.visibility.linkHint')}
       </Text>
-      <View style={{ marginTop: 8 }}>
-        <Banner>{t('lists.sharingLater')}</Banner>
-      </View>
+      {goingPublic && (
+        <View style={{ marginTop: 8, gap: 8 }}>
+          <PublicWarning places={inRows.map((r) => r.place)} testID="list-public-warning" />
+          <ToggleRow label={t('sharing.public.understood')} value={publicOk} onChange={setPublicOk} testID="list-public-ok" />
+        </View>
+      )}
       <View style={{ marginTop: 8 }}>
         <StorageNeededIfMissing reason={draft.visibility === 'public' ? 'public-list' : 'link-list'} />
       </View>
@@ -435,7 +443,7 @@ export function ListEditor({ listId }: { listId: string | null }) {
         ) : (
           <Button kind="secondary" label={t('lists.delete')} onPress={() => setConfirmDelete(true)} testID="list-delete" />
         ))}
-      <Button label={t('listEdit.save')} onPress={save} disabled={!canSave(draft)} testID="list-save" />
+      <Button label={t('listEdit.save')} onPress={save} disabled={!canSave(draft) || (goingPublic && !publicOk)} testID="list-save" />
     </View>
   );
 
