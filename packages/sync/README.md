@@ -310,6 +310,12 @@ T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vaul
   anchor, OSM-synced rows, swapped and malformed own packs, the remote wipe and its hooks, size limits per file,
   per friend and per pass, shared concurrency, coarse-ETag races, vault order and previous vault keys, scheduler
   read-only passes and non-retryable problems, strict strings and dates, the padding floor, the injected clock).
+- `review-lists.test.ts`: the shared-lists review (docs/reviews/2026-11-10-lists-review.md), its reproductions now
+  normal tests, plus the fixes' behaviour: stale picks and the per-viewer membership filter (M-01), home-like places
+  held by a public filter list (M-02), the dead link after public and back (L-01), the vault without unfollowed links,
+  the 180-day pruning and the 200-list cap (L-02), day-rounded dates and the tag-name opt-in shared by my devices
+  (L-03), tombstones across a rotation (L-04), follow only after a first read (L-05), the list bounds and the shared
+  pass budget (L-07).
 - `real-servers.test.ts` (`TL_REAL_SERVERS=1`): the main scenarios, rollback and rotation, and the review fixes
   (a race under an unchanged ETag, a declared-lost device's injection) on **Apache mod_dav** (friends over its
   public HTTP folder), **WsgiDAV** (coarse ETags, emulated conditions), **moto S3** and **OpenSSH sftp**: 12/12

@@ -210,3 +210,23 @@ Fix:
 - **Previous sync review**: the R-01…R-14 tests (`review.test.ts`, `fixes.test.ts`) still pass. The new reader
   applies R-03 (served-path check), R-05 (nothing is read after a wipe), R-06 (bounds) and R-13 (strict strings
   and dates), and `own.ts` parses lists packs inside the existing per-pack `try` (R-12).
+
+## Status after the fixes (branch `t-211-fixes`)
+
+| Finding | Status | Where |
+| --- | --- | --- |
+| M-01 | Fixed: picks only while `share === true`, dropped on any change of scope; friends' lists packs keep only places every viewer can read | `contacts.ts`, `list-packs.ts` |
+| M-02 | Fixed: warning in the place card and in the editor of a public list; a public filter list holds home-like places out of the public file until confirmed (`include`), listed in the share sheet | `home.ts`, `public-lists.ts`, app |
+| L-01 | Fixed: leaving link-only clears `linkKey` | data `updateList` |
+| L-02 | Fixed: removed entries keep `{ at, removed }` only, pruned after 180 days; at most 200 followed lists | `contacts.ts` |
+| L-03 | Fixed: dates rounded to the UTC day, tag names only on opt-in (vault, all devices) | `features.ts`, share sheet |
+| L-04 | Fixed: tombstones kept across a rotation | `own.ts` |
+| L-05 | Fixed: recorded only after a successful first read | `engine.ts`, follow screen |
+| L-06 | Fixed: author shown by key short code, contact name or quoted declared name with "not in your contacts" | app `authorLabel` |
+| L-07 | Fixed: `listPackBytes`, `listReadBytes`, `listPreviewBytes`; one pass budget; preview only on demand | `limits.ts`, `followed.ts`, follow screen |
+| Info 1 | Fixed (feature and hash from the same pack) | `followed.ts` |
+| Info 2 | Documented (crypto package frozen) | THREATS |
+| Info 3 | Fixed (`path` instead of `pathPrefix`) | `app.json` |
+| Info 4 | Fixed (wording) | README, THREATS, `lists.ts` |
+| Info 5, 6 | Documented | THREATS |
+| Info 7 | Fixed (an unpublished new link is taken back) | controller |
