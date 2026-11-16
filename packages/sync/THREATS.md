@@ -115,6 +115,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   everything does not learn my list names unless picked. Membership never names a place they cannot read: picks
   count only while the contact sees everything and are dropped at any change of scope, and a lists pack keeps only
   the places every one of its viewers can read (audiences of the places packs), whatever the policies say (M-01).
+- **My vault and followed lists**: the vault holds the link (and so the key) of every list I follow; an unfollowed
+  list keeps only its id and the time (L-02), and the entry goes after 180 days. Whoever opens my vault (recovery
+  phrase, an unlocked stolen device) learns the lists I follow now, not the ones I followed before.
 - **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must not read
   `location.hash`, the web app removes it from the address bar, links are never logged.
 

@@ -5,7 +5,7 @@
  * the desired behaviour; the fixes made them plain tests, with extra ones for the new behaviour.
  */
 import { describe, expect, it } from 'vitest';
-import { audienceOf, ContactBook, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
+import { audienceOf, ContactBook, FOLLOWED_REMOVED_KEEP_MS, MAX_FOLLOWED_LISTS, mergeBooks, TooManyFollowedListsError, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
 
 await listsReady();
@@ -160,7 +160,7 @@ describe('review PR #85: lists', () => {
 
   // L-02 (Low): unfollowing keeps the whole link (the list's secret key) in the `removed` vault
   // entry forever; the vault only needs the followed-list id to stop a merge from bringing it back.
-  it.fails('L-02: an unfollowed list leaves no list key in my vault', async () => {
+  it('L-02: an unfollowed list leaves no list key in my vault', async () => {
     const w = new World();
     const { a, list } = anna(w);
     const ben = addDevice(w, makeUser(w, 'ben'));
@@ -171,6 +171,31 @@ describe('review PR #85: lists', () => {
     ben.engine.unfollowList(followIdOf(parseListLinkFragment(link)));
     await ben.engine.sync();
     expect(JSON.stringify(ben.engine.book.records)).not.toContain(link);
+  });
+
+  it('L-02: removed entries lose their link in a merge, are dropped after 180 days, and the number of followed lists is capped', () => {
+    const w = new World();
+    const owner = makeUser(w, 'me').owner;
+    const book = ContactBook.empty(owner);
+    // A vault written by older code: the removed entry still holds its link.
+    const old = ContactBook.empty(owner);
+    old.followList('list:a', 'SECRET', 1);
+    const part = (old.records.app as Record<string, { lists: Record<string, unknown> }>).triangulair_sync!;
+    part.lists['list:a'] = { link: 'SECRET', at: 2, removed: true };
+    book.records = mergeBooks(book.records, old.records);
+    expect(JSON.stringify(book.records)).not.toContain('SECRET');
+    expect(book.followedLists()).toEqual([]);
+    // Kept 180 days (a merge cannot bring the list back), then dropped.
+    expect(book.pruneFollowedLists(2 + FOLLOWED_REMOVED_KEEP_MS)).toBe(false);
+    expect(book.pruneFollowedLists(3 + FOLLOWED_REMOVED_KEEP_MS)).toBe(true);
+    expect(JSON.stringify(book.records)).not.toContain('list:a');
+
+    for (let i = 0; i < MAX_FOLLOWED_LISTS; i++) book.followList(`list:${i}`, `L${i}`, 10 + i);
+    expect(() => book.followList('list:more', 'M', 1000)).toThrow(TooManyFollowedListsError);
+    book.followList('list:0', 'L0', 1001); // already followed: fine
+    book.unfollowList('list:1', 1002);
+    book.followList('list:more', 'M', 1003);
+    expect(book.followedLists()).toHaveLength(MAX_FOLLOWED_LISTS);
   });
 
   // L-03 (Low): a forwardable link carries the exact time each place was saved and last edited

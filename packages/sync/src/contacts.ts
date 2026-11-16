@@ -65,13 +65,31 @@ const sameShare = (a: SharePolicy, b: SharePolicy): boolean =>
 /**
  * A list followed by its link (spec "Following a list without following the person"), kept in the
  * vault so that all my devices follow it: the link fragment (it holds the list key of a link-only
- * list) and the time of the change; an unfollowed list keeps a `removed` entry so that a merge
- * never brings it back.
+ * list) and the time of the change. An unfollowed list keeps only `{ at, removed: true }` (never
+ * its link, so the vault does not keep the list's key: review L-02) so that a merge never brings
+ * it back, for FOLLOWED_REMOVED_KEEP_MS; then the entry is dropped.
  */
 export interface FollowedListEntry {
-  link: string;
+  link?: string;
   at: number;
   removed?: boolean;
+}
+
+/** At most this many lists followed by link (review L-02, L-07). */
+export const MAX_FOLLOWED_LISTS = 200;
+/** An unfollowed list's entry stays this long (like the tombstones), then it is dropped. */
+export const FOLLOWED_REMOVED_KEEP_MS = 180 * 24 * 3600 * 1000;
+
+export class TooManyFollowedListsError extends Error {
+  constructor() {
+    super(`you already follow ${MAX_FOLLOWED_LISTS} lists`);
+    this.name = 'TooManyFollowedListsError';
+  }
+}
+
+/** The stored form of an entry: a removed one never keeps its link. */
+function cleanEntry(e: FollowedListEntry): FollowedListEntry {
+  return e.removed ? { at: e.at, removed: true } : e;
 }
 
 export interface Contact {
@@ -155,7 +173,7 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const la = appPart(a).lists ?? {};
   const lb = appPart(b).lists ?? {};
   const lists: Record<string, FollowedListEntry> = {};
-  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = laterEntry(la[k], lb[k])!;
+  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = cleanEntry(laterEntry(la[k], lb[k])!);
   return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }) });
 }
 
@@ -277,25 +295,55 @@ export class ContactBook {
 
   // ---------------------------------------------------------------- followed lists
 
-  /** Lists I follow by link (not unfollowed), by followed-list id. */
+  /** Lists I follow by link (not unfollowed), by followed-list id, oldest first (at most MAX_FOLLOWED_LISTS). */
   followedLists(): { id: string; link: string; at: number }[] {
     const l = appPart(this.r).lists ?? {};
     return Object.entries(l)
-      .filter(([, e]) => !e.removed)
-      .map(([id, e]) => ({ id, link: e.link, at: e.at }));
+      .flatMap(([id, e]) => (!e.removed && typeof e.link === 'string' ? [{ id, link: e.link, at: e.at }] : []))
+      .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
+      .slice(0, MAX_FOLLOWED_LISTS);
   }
 
+  /** Follows a list (throws TooManyFollowedListsError beyond MAX_FOLLOWED_LISTS). */
   followList(id: string, link: string, now = Date.now()): void {
     const part = appPart(this.r);
     const cur = part.lists?.[id];
-    this.r = withApp(this.r, { ...part, lists: { ...(part.lists ?? {}), [id]: { link, at: Math.max(now, (cur?.at ?? 0) + 1) } } });
+    const live = this.followedLists();
+    if (!live.some((e) => e.id === id) && live.length >= MAX_FOLLOWED_LISTS) throw new TooManyFollowedListsError();
+    const lists = { ...this.prunedLists(now), [id]: { link, at: Math.max(now, (cur?.at ?? 0) + 1) } };
+    this.r = withApp(this.r, { ...part, lists });
   }
 
+  /** Unfollows a list: only `{ at, removed }` is kept (no link, no list key). */
   unfollowList(id: string, now = Date.now()): void {
     const part = appPart(this.r);
     const cur = part.lists?.[id];
     if (!cur) return;
-    this.r = withApp(this.r, { ...part, lists: { ...(part.lists ?? {}), [id]: { link: cur.link, at: Math.max(now, cur.at + 1), removed: true } } });
+    const lists = { ...this.prunedLists(now), [id]: { at: Math.max(now, cur.at + 1), removed: true } };
+    this.r = withApp(this.r, { ...part, lists });
+  }
+
+  /**
+   * Drops the entries of lists unfollowed more than FOLLOWED_REMOVED_KEEP_MS ago, and the link of
+   * any removed entry (vaults written by older code kept it). Returns whether anything changed.
+   */
+  pruneFollowedLists(now = Date.now()): boolean {
+    const part = appPart(this.r);
+    if (!part.lists) return false;
+    const lists = this.prunedLists(now);
+    if (canonicalize(lists as never) === canonicalize(part.lists as never)) return false;
+    const { lists: _old, ...rest } = part;
+    this.r = withApp(this.r, Object.keys(lists).length ? { ...rest, lists } : rest);
+    return true;
+  }
+
+  private prunedLists(now: number): Record<string, FollowedListEntry> {
+    const out: Record<string, FollowedListEntry> = {};
+    for (const [id, e] of Object.entries(appPart(this.r).lists ?? {})) {
+      if (e.removed && e.at < now - FOLLOWED_REMOVED_KEEP_MS) continue;
+      out[id] = cleanEntry(e);
+    }
+    return out;
   }
 
   /** Removes a contact: they no longer see my places and I stop reading theirs (spec "Remove a friend"). */

@@ -324,6 +324,7 @@ export class SyncEngine {
           report.ok = false;
         }
       }
+      if (this.book.pruneFollowedLists(this.nowMs())) touched = true;
       if (touched) this.saveBook();
       // Lists followed by link (unfollowed on another device: their places leave).
       const followed = this.book.followedLists().filter((e) => isFollowId(e.id));

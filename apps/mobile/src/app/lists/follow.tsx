@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { ListGoneError, ListLinkError, type ListPreview } from '@triangulair/sync';
+import { ListGoneError, ListLinkError, TooManyFollowedListsError, type ListPreview } from '@triangulair/sync';
 
 import { DataGate } from '../../components/DataGate';
 import { Banner, Button } from '../../components/ui';
@@ -23,7 +23,7 @@ import { categoryLabel } from '../../places/card';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { useSync } from '../../sync/SyncProvider';
 
-type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable';
+type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable' | 'too-many';
 
 function FollowScreen() {
   const tr = useI18n();
@@ -82,8 +82,8 @@ function FollowScreen() {
       const r = await ctl.followList(fragment);
       if (r.status === 'error') throw new Error('read failed');
       router.replace(`/lists/followed/${encodeURIComponent(preview.id)}` as Href);
-    } catch {
-      setProblem('unreachable');
+    } catch (e) {
+      setProblem(e instanceof TooManyFollowedListsError ? 'too-many' : 'unreachable');
     } finally {
       setFollowing(false);
     }

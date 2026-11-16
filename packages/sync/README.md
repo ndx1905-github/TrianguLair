@@ -209,7 +209,9 @@ must hold: the site never reads `location.hash`, the web app removes the fragmen
 never logged. The link stays forwardable until renewed (spec threat model, "Holder of a list link").
 
 **Following** (`followList`, no account, no request, no consent): the followed list is kept in my vault
-(`app.triangulair_sync.lists`, per list, latest change wins, `removed` tombstones), so all my devices follow it. Its
+(`app.triangulair_sync.lists`, per list, latest change wins, `removed` tombstones), so all my devices follow it. An
+unfollowed list keeps only `{ at, removed }`, never its link (the list key), and the entry is dropped 180 days later;
+at most `MAX_FOLLOWED_LISTS` (200) lists are followed (`TooManyFollowedListsError`; review L-02). Its
 places go to my cache as foreign saves whose owner is the followed-list id (`list:` + 22 characters of BLAKE2b over
 author, address and key): they show like friends' places, never mix with the author's own cache if I also follow
 them, feed What's new (`SyncReport.lists[].whatsNew`), and leave when the list is unfollowed or gone. Each pass reads

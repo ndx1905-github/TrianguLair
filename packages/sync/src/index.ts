@@ -8,7 +8,7 @@ export { SyncEngine, type SyncEngineOptions, type SyncReport, type WipeHooks } f
 export { OwnSync, VAULT_PATH, keyPath, type OwnSyncOptions, type PublishReport, type PullResult, type PreviousVaultKey } from './own.ts';
 export { FriendReader, READ_MAJORS, type ReaderOptions, type FriendTarget, type FriendReport, type WhatsNew, type ChangedItem } from './reader.ts';
 export { SyncScheduler, type SchedulerOptions, type SyncStatus, type SyncReason, type Timers, type RunOptions } from './scheduler.ts';
-export { ContactBook, mergeBooks, laterAnchor, listsSeenBy, OWN_ANCHOR_STEP, type Contact, type ContactPolicy, type SharePolicy, type FollowedListEntry } from './contacts.ts';
+export { ContactBook, mergeBooks, laterAnchor, listsSeenBy, OWN_ANCHOR_STEP, MAX_FOLLOWED_LISTS, FOLLOWED_REMOVED_KEEP_MS, TooManyFollowedListsError, type Contact, type ContactPolicy, type SharePolicy, type FollowedListEntry } from './contacts.ts';
 export { ListReader, ListGoneError, type ListGone, type ListPreview, type ListReport, type ListMeta, type FollowedListInfo, type ListReaderOptions } from './followed.ts';
 export {
   encodeListLink,
