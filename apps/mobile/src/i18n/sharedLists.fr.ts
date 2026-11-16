@@ -60,6 +60,9 @@ export const sharedListsFr: Messages = {
   'sharing.gone.linkDead': 'Ce lien ne fonctionne plus.',
   'sharing.gone.askNew': 'Demandez un nouveau lien à son auteur.',
 
+  'follow.offer': 'On vous a envoyé une liste',
+  'follow.offerHelp': 'Rien n’est téléchargé avant que vous le demandiez : l’aperçu lit la liste sur le stockage de son auteur, qui voit votre adresse IP.',
+  'follow.showPreview': 'Voir la liste',
   'follow.open': 'Ouvrir',
   'follow.preview': 'Aperçu',
   'follow.by': 'Par {name}',

@@ -190,6 +190,10 @@ test('link-only list: followed without being a contact, cut by a new link; publi
   await b.goto(autostart('/'));
   await expect(b.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
   await b.goto(`${autostart('/l')}#${link.split('#')[1]!}`);
+  // Nothing is read before the user asks for the preview (review L-07).
+  await expect(b.getByTestId('follow-offer')).toBeVisible({ timeout: 60_000 });
+  await expect(b.getByTestId('follow-preview')).toHaveCount(0);
+  await b.getByTestId('follow-show-preview').click();
   await expect(b.getByTestId('follow-preview')).toBeVisible({ timeout: 60_000 });
   // The fragment left the address bar.
   expect(new URL(b.url()).hash).toBe('');

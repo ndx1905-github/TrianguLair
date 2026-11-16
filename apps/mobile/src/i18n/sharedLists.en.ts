@@ -60,6 +60,9 @@ export const sharedListsEn: Messages = {
   'sharing.gone.linkDead': 'This link no longer works.',
   'sharing.gone.askNew': 'Ask its author for a new link.',
 
+  'follow.offer': 'Someone sent you a list',
+  'follow.offerHelp': 'Nothing is downloaded until you ask: the preview reads the list from its author’s storage, which sees your IP address.',
+  'follow.showPreview': 'Show the list',
   'follow.open': 'Open',
   'follow.preview': 'Preview',
   'follow.by': 'By {name}',

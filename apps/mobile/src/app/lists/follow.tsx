@@ -1,6 +1,7 @@
 /**
  * "Follow a list by link" (T-212, spec "Following a list without following the person"): paste a
- * list link (or open it: the `/l#…` deep link hands it over in memory), see the preview (map and
+ * list link (or open it: the `/l#…` deep link hands it over in memory, and the preview waits for a
+ * tap, so opening a link downloads nothing by itself), see the preview (map and
  * places, the author's name, the update date), then "Follow this list". No account, no request,
  * no key exchange: the link is enough. A link that no longer works or a deleted list says so, with
  * the suggestion to ask for a new link. The list is followed only once its first read worked; if
@@ -65,14 +66,16 @@ function FollowScreen() {
     }
   };
 
-  // A link opened from outside (deep link, QR code): in memory, never in the URL.
+  // A link opened from outside (deep link, QR code): in memory, never in the URL. Nothing is
+  // downloaded until the user asks for the preview (review L-07: one tap on a hostile link must not
+  // make the phone fetch anything from the author's storage).
   const [pending] = useState(() => takePendingLink());
+  const [offered, setOffered] = useState(false);
   useEffect(() => {
-    if (!pending || !engineReady) return;
+    if (!pending) return;
     setText(pending.text);
-    void open(pending.text);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineReady]);
+    setOffered(true);
+  }, [pending]);
 
   const already = useMemo(() => (preview && ctl ? ctl.followedLists().some((l) => l.id === preview.id) : false), [preview, ctl, sync.snapshot]);
 
@@ -106,6 +109,21 @@ function FollowScreen() {
       <Section title={t('follow.link')}>
         <Muted>{t('follow.lead')}</Muted>
         <PasteField label={t('follow.link')} value={text} onChange={setText} onSubmit={() => void open(text)} action={t('follow.open')} busy={busy} disabled={!engineReady} testID="follow" />
+        {offered && !preview && !problem && (
+          <Card testID="follow-offer">
+            <Strong>{t('follow.offer')}</Strong>
+            <Muted>{t('follow.offerHelp')}</Muted>
+            <Button
+              label={t('follow.showPreview')}
+              disabled={!engineReady || busy}
+              onPress={() => {
+                setOffered(false);
+                void open(text);
+              }}
+              testID="follow-show-preview"
+            />
+          </Card>
+        )}
         {problem && (
           <Banner tone="warning" testID={`follow-problem-${problem}`}>
             {problem === 'deleted' || problem === 'link-dead' ? `${t(goneKey(problem))}\n${t('sharing.gone.askNew')}` : t(`follow.problem.${problem}`)}

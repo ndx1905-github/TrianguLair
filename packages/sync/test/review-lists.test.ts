@@ -4,8 +4,8 @@
  * docs/reviews/2026-11-10-lists-review.md. Each test was an `it.fails` reproduction that states
  * the desired behaviour; the fixes made them plain tests, with extra ones for the new behaviour.
  */
-import { describe, expect, it } from 'vitest';
-import { audienceOf, ContactBook, FOLLOWED_REMOVED_KEEP_MS, MAX_FOLLOWED_LISTS, mergeBooks, TooManyFollowedListsError, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { audienceOf, ContactBook, DEFAULT_LIMITS, LimitError, FOLLOWED_REMOVED_KEEP_MS, MAX_FOLLOWED_LISTS, mergeBooks, TooManyFollowedListsError, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
 import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert, type SharingKey } from '@triangulair/crypto';
 import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
 
@@ -312,5 +312,38 @@ describe('review PR #85: lists', () => {
     await a.engine.sync();
     expect(await ben.engine.followList(goneLink)).toMatchObject({ status: 'gone', gone: 'deleted' });
     expect(ben.engine.followedLists().map((l) => l.id)).toEqual([id]);
+  });
+
+  // L-07 (Low): previews and followed lists have their own, smaller bounds; one pass budget.
+  it('L-07: followed lists and previews have smaller bounds than friends, and share the pass budget', async () => {
+    expect(DEFAULT_LIMITS.listPreviewBytes).toBeLessThan(DEFAULT_LIMITS.friendReadBytes);
+    expect(DEFAULT_LIMITS.listReadBytes).toBeLessThan(DEFAULT_LIMITS.friendReadBytes);
+    expect(DEFAULT_LIMITS.listPackBytes).toBeLessThan(DEFAULT_LIMITS.packBytes);
+    const w = new World();
+    const { a, list } = anna(w);
+    for (let i = 10; i < 400; i++) a.store.putSave({ place: point(i, `Filler ${i}`), comment: 'x'.repeat(200) });
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    const small = addDevice(w, makeUser(w, 'carl'), { limits: { listPreviewBytes: 1000 } });
+    await expect(small.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    const ok = addDevice(w, makeUser(w, 'dan'), { limits: { listPreviewBytes: 1000, listReadBytes: 1_000_000 } });
+    await expect(ok.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    expect(await ok.engine.followList(link)).toMatchObject({ status: 'updated' }); // reading has its own budget
+    const strict = addDevice(w, makeUser(w, 'gil'), { limits: { listReadBytes: 1000 } });
+    expect(await strict.engine.followList(link)).toMatchObject({ status: 'error' });
+
+    // A file over listPackBytes is not downloaded; when nothing readable is left, it is an error, not "link dead".
+    const tiny = addDevice(w, makeUser(w, 'eve'), { limits: { listPackBytes: 64 } });
+    await expect(tiny.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    const fine = addDevice(w, makeUser(w, 'fay'));
+    expect((await fine.engine.previewList(link)).count).toBe(2);
+
+    // One pass budget for friends and followed lists.
+    const friendsSpy = vi.spyOn(fine.engine.reader, 'readAll');
+    const listsSpy = vi.spyOn(fine.engine.lists, 'readAll');
+    await fine.engine.followList(link);
+    await fine.engine.sync();
+    expect(friendsSpy.mock.calls[0]![2]).toBeDefined();
+    expect(listsSpy.mock.calls[0]![2]).toBe(friendsSpy.mock.calls[0]![2]);
   });
 });

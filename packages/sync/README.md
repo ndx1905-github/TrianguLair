@@ -219,7 +219,9 @@ places go to my cache as foreign saves whose owner is the followed-list id (`lis
 author, address and key): they show like friends' places, never mix with the author's own cache if I also follow
 them, feed What's new (`SyncReport.lists[].whatsNew`), and leave when the list is unfollowed or gone. Each pass reads
 the followed lists after the friends (one HEAD when nothing changed; packs already seen are not downloaded again;
-same byte limits as a friend). The author does not learn who follows; their host sees readers' IP addresses.
+smaller byte limits than a friend: `listPackBytes` 1 MiB per file tried, a bigger one is skipped; `listReadBytes`
+8 MiB per list per read, `listPreviewBytes` 4 MiB for a preview; friends and followed lists share one `passBytes`
+budget per pass; review L-07). The author does not learn who follows; their host sees readers' IP addresses.
 
 ## Limits
 

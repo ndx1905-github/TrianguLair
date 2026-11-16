@@ -88,7 +88,8 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   everything also gets the list's name). Everything needs a storage: the "storage needed" card's button goes through
   `useStorageForSharing().ensure()` and comes back to the share screen.
 - **Following a list by link** (`/lists/follow`, deep link `/l#…` in `src/app/l.tsx`: the fragment is taken from the
-  address bar, removed from it and handed over in memory): paste or open → preview (map with the author's tag colors,
+  address bar, removed from it and handed over in memory; an opened link waits for "Show the list", so nothing is
+  downloaded by a single tap, review L-07): paste or open → preview (map with the author's tag colors,
   places with public comments, author, date, number of places) → "Follow this list"; no account, no request, not a
   contact. The author is shown by their key (`authorLabel`: "By Marie, in your contacts (AbCd…WxYz)" when the key is
   a contact, else "Signs as “Marie” (AbCd…WxYz), not in your contacts": the name in a list is self-declared, review

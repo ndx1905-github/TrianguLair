@@ -33,7 +33,7 @@ import {
   type SignedIndex,
 } from '@triangulair/crypto';
 import { saveIdFor, type DataStore } from '@triangulair/data';
-import { NotFound, fetchHighestIndex, indexPath, type StorageAdapter } from '@triangulair/storage';
+import { NotFound, TooLarge, fetchHighestIndex, indexPath, type StorageAdapter } from '@triangulair/storage';
 import { classifyError, type SyncProblem } from './errors.ts';
 import { toForeignSave, type PlaceFeature } from './features.ts';
 import {
@@ -51,7 +51,7 @@ import { resolveLimits, type SyncLimits } from './limits.ts';
 import { decodePayload } from './payload.ts';
 import { READ_MAJORS, prunePlaces, type WhatsNew } from './reader.ts';
 import type { SyncStateStore } from './state.ts';
-import { ByteBudget, Semaphore, mapLimit } from './util.ts';
+import { ByteBudget, LimitError, Semaphore, mapLimit } from './util.ts';
 
 /** Why a followed list shows nothing: "This list no longer exists" / "This link no longer works". */
 export type ListGone = 'deleted' | 'link-dead';
@@ -109,6 +109,8 @@ export interface FollowedListInfo {
 
 interface PackSeen {
   notFor?: true;
+  /** Over `listPackBytes`: not downloaded (a list pack is never that big). */
+  tooBig?: true;
   /** Readable lists pack: its entries and its places (place id → feature hash). */
   lists?: (ListDef | { id: string; deleted: true })[];
   items?: Record<string, string>;
@@ -209,7 +211,7 @@ export class ListReader {
     await listsReady();
     const link = parseListLinkFragment(fragment);
     const id = followIdOf(link);
-    const f = await this.fetch(link, null, new ByteBudget(this.limits.friendReadBytes, 'read'));
+    const f = await this.fetch(link, null, new ByteBudget(this.limits.listPreviewBytes, 'read'));
     if (f.gone) throw new ListGoneError(f.gone);
     return {
       id,
@@ -246,7 +248,7 @@ export class ListReader {
       await listsReady();
       const link = parseListLinkFragment(entry.link);
       if (followIdOf(link) !== entry.id) throw new Error('followed list: the link does not match its id');
-      const budget = new ByteBudget(this.limits.friendReadBytes, 'read', opts.pass);
+      const budget = new ByteBudget(this.limits.listReadBytes, 'read', opts.pass);
       const f = await this.fetch(link, prev ?? null, budget);
       const now = this.nowMs();
       if (f.unchanged && prev) {
@@ -321,8 +323,8 @@ export class ListReader {
     }
   }
 
-  async readAll(entries: readonly { id: string; link: string }[], concurrency = 8): Promise<ListReport[]> {
-    const pass = new ByteBudget(this.limits.passBytes, 'pass');
+  /** `pass`: the sync pass's budget, shared with the friends read in it (default: a new one). */
+  async readAll(entries: readonly { id: string; link: string }[], concurrency = 8, pass = new ByteBudget(this.limits.passBytes, 'pass')): Promise<ListReport[]> {
     return mapLimit(entries, concurrency, (e) => this.read(e, { pass }));
   }
 
@@ -372,11 +374,19 @@ export class ListReader {
     const listed = index.packs.filter((p) => p.file.startsWith('packs/'));
     const packs: Record<string, PackSeen> = {};
     for (const p of listed) if (prev?.packs[p.hash]) packs[p.hash] = prev.packs[p.hash]!;
-    const features = new Map<string, PlaceFeature>();
+    // Features per pack read now: a place's feature and its stored hash come from the same pack (review Info 1).
+    const byPack = new Map<string, Map<string, PlaceFeature>>();
     const need = listed.filter((p) => !packs[p.hash]);
     await mapLimit(need, need.length, (p) =>
       this.slots.run(async () => {
-        const g = await adapter.get(p.file, { maxBytes: L.packBytes });
+        let g;
+        try {
+          g = await adapter.get(p.file, { maxBytes: L.listPackBytes });
+        } catch (e) {
+          if (!(e instanceof TooLarge)) throw e;
+          packs[p.hash] = { notFor: true, tooBig: true };
+          return;
+        }
         if (!g) throw new NotFound(p.file);
         budget.take(g.data.length, p.file);
         let opened;
@@ -401,10 +411,12 @@ export class ListReader {
         }
         const parsed = parseLists(body);
         const items: Record<string, string> = {};
+        const mine = new Map<string, PlaceFeature>();
         for (const x of parsed.features) {
           items[x.feature.id] = x.hash;
-          features.set(x.feature.id, x.feature);
+          mine.set(x.feature.id, x.feature);
         }
+        byPack.set(p.hash, mine);
         packs[p.hash] = {
           lists: parsed.lists.map((l) => (isTombstone(l) ? { id: l.id, deleted: true as const } : l)),
           items,
@@ -427,6 +439,15 @@ export class ListReader {
       if (s.author !== undefined) author = s.author;
       for (const [id, h] of Object.entries(s.items ?? {})) if (!items[id] || p.hash < items[id]![1]) items[id] = [h, p.hash];
     }
+    const features = new Map<string, PlaceFeature>();
+    for (const [id, [, src]] of Object.entries(items)) {
+      const f = byPack.get(src)?.get(id);
+      if (f) features.set(id, f);
+    }
+    if (!def && !deleted && listed.some((p) => packs[p.hash]?.tooBig)) {
+      // Nothing readable, but some files were too big to try: say so rather than "link dead".
+      throw new LimitError('pack', listed.find((p) => packs[p.hash]?.tooBig)!.file);
+    }
     if (!def) return { ...base, packs, features, items: {}, meta: prev?.meta ?? null, gone: deleted ? 'deleted' : 'link-dead' };
     const d = def as ListDef;
     return {
@@ -447,7 +468,7 @@ export class ListReader {
     base: Pick<Fetched, 'index' | 'location' | 'etag' | 'path' | 'hash' | 'unchanged' | 'full'>,
   ): Promise<Fetched> {
     if (!index.public) return { ...base, packs: {}, features: new Map(), items: {}, meta: null, gone: 'deleted' };
-    const g = await adapter.get(index.public.file, { maxBytes: this.limits.packBytes });
+    const g = await adapter.get(index.public.file, { maxBytes: Math.max(1, Math.min(this.limits.packBytes, budget.remaining)) });
     if (!g) throw new NotFound(index.public.file);
     budget.take(g.data.length, index.public.file);
     verifyPublicFile(g.data, index);

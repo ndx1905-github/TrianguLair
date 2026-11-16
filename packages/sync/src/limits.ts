@@ -25,8 +25,18 @@ export interface SyncLimits {
   ownDocPayloadBytes: number;
   /** Bytes downloaded plus bytes decompressed for one friend in one read. Default 32 MiB. */
   friendReadBytes: number;
-  /** Same, for all the friends read in one sync pass (the rest waits for the next pass). Default 128 MiB. */
+  /** Same, for all the friends and followed lists read in one sync pass (the rest waits for the next pass). Default 128 MiB. */
   passBytes: number;
+  /**
+   * Lists followed by link (review L-07: following is much cheaper to trigger than befriending, so
+   * their bounds are smaller). One pack download while looking for a list's pack (a link-only list
+   * pack holds at most 500 places, about 100 KB; a bigger file is skipped). Default 1 MiB.
+   */
+  listPackBytes: number;
+  /** Bytes downloaded plus decompressed for one followed list in one read (its index aside). Default 8 MiB. */
+  listReadBytes: number;
+  /** Same, for the preview of a list before "Follow this list". Default 4 MiB. */
+  listPreviewBytes: number;
 }
 
 const MiB = 1024 * 1024;
@@ -40,6 +50,9 @@ export const DEFAULT_LIMITS: Readonly<SyncLimits> = Object.freeze({
   ownDocPayloadBytes: 64 * MiB,
   friendReadBytes: 32 * MiB,
   passBytes: 128 * MiB,
+  listPackBytes: 1 * MiB,
+  listReadBytes: 8 * MiB,
+  listPreviewBytes: 4 * MiB,
 });
 
 export function resolveLimits(l: Partial<SyncLimits> | undefined): SyncLimits {

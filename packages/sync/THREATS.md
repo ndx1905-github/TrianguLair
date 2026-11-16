@@ -109,6 +109,11 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - **Forged links**: a link naming my key with someone else's address is refused (the index must be signed for the
   master key in the link and certify the address it was read from); a list pack re-listed in another index does not
   open (owner bound in the AEAD). After the first read, an older index is refused (anchor per followed list).
+- **Cost of a link** (L-07): following needs no consent, so its bounds are smaller than a friend's: one file tried at
+  most `listPackBytes` (1 MiB; a list pack is about 100 KB), one list's read `listReadBytes` (8 MiB), a preview
+  `listPreviewBytes` (4 MiB), at most 200 followed lists, and friends and followed lists share one pass budget. The
+  app downloads nothing when a link is opened, only when the user asks for the preview. A follower still downloads
+  each `packs/` file of the author once (no hint which one is theirs: README open question 9).
 - **Malicious public list or link-only list author**: their places land in my cache like a friend's (same strict
   payload checks, sizes bounded, under their own `list:` owner, never merged into another cache); a public list may
   expose someone's private address: the app warns the author before a place that looks like a home enters a public

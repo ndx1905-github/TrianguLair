@@ -22,6 +22,7 @@ import { FriendReader, type FriendReport } from './reader.ts';
 import { ListReader, type FollowedListInfo, type ListPreview, type ListReport } from './followed.ts';
 import { followIdOf, isFollowId, parseListLinkFragment } from './lists.ts';
 import type { SyncStateStore } from './state.ts';
+import { ByteBudget } from './util.ts';
 
 /** What the app erases on a remote wipe (both may be async). */
 export interface WipeHooks {
@@ -330,7 +331,9 @@ export class SyncEngine {
           ? [{ owner: c.owner, location: c.sharingCert.location, anchor: c.anchor, retiredOwners: this.book.retiredOwners(), ...this.friendKeys(c.owner) }]
           : [],
       );
-      report.friends = await this.reader.readAll(targets, this.o.friendConcurrency ?? 8);
+      // One byte budget for the whole pass: friends and lists followed by link (review L-07).
+      const pass = new ByteBudget(this.reader.limits.passBytes, 'pass');
+      report.friends = await this.reader.readAll(targets, this.o.friendConcurrency ?? 8, pass);
       let touched = false;
       for (const f of report.friends) {
         if (f.index) {
@@ -348,7 +351,7 @@ export class SyncEngine {
       const followed = this.book.followedLists().filter((e) => isFollowId(e.id));
       const ids = new Set(followed.map((e) => e.id));
       for (const id of this.lists.known()) if (!ids.has(id)) this.lists.forget(id);
-      report.lists = await this.lists.readAll(followed, this.o.friendConcurrency ?? 8);
+      report.lists = await this.lists.readAll(followed, this.o.friendConcurrency ?? 8, pass);
       for (const l of report.lists ?? []) {
         if (l.problem) {
           report.problems.push({ about: l.id, problem: l.problem });

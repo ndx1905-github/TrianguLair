@@ -372,8 +372,7 @@ export class FriendReader {
    * Reads several friends in parallel (bounded: `concurrency` index checks at once; their pack work
    * shares the reader's `concurrency` slots), within one pass budget (SyncLimits.passBytes).
    */
-  async readAll(targets: readonly FriendTarget[], concurrency = 8): Promise<FriendReport[]> {
-    const pass = new ByteBudget(this.limits.passBytes, 'pass');
+  async readAll(targets: readonly FriendTarget[], concurrency = 8, pass = new ByteBudget(this.limits.passBytes, 'pass')): Promise<FriendReport[]> {
     return mapLimit(targets, concurrency, (t) => this.read(t, { pass }));
   }
 }
