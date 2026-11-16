@@ -95,7 +95,7 @@ function LostScreen() {
     setStep({ kind: 'working' });
     try {
       const r = await sync.declareLost(rotation, { cancelInvitations: !remove });
-      setStep({ kind: 'done', name: target.name, cancelled: r.cancelled, delivered: r.delivered.length, device: target.cert.device });
+      setStep({ kind: 'done', name: target.name || t('devices.unnamed'), cancelled: r.cancelled, delivered: r.delivered.length, device: target.cert.device });
     } catch (e) {
       setStep({ kind: 'failed', reason: e instanceof Error ? e.message.replace(/^sync: /, '') : 'error' });
     }
@@ -153,7 +153,7 @@ function LostScreen() {
       <Section title={t('lost.choose')}>
         {others.length === 0 && <Muted>{t('lost.noOther')}</Muted>}
         {others.map((d) => (
-          <ChoiceCard key={d.cert.device} title={d.name} help={t('devices.added', { date: new Date(d.added).toLocaleDateString() })} selected={chosen === d.cert.device} onPress={() => setChosen(d.cert.device)} testID="lost-device" />
+          <ChoiceCard key={d.cert.device} title={d.name || t('devices.unnamed')} help={d.added ? t('devices.added', { date: new Date(d.added).toLocaleDateString() }) : ''} selected={chosen === d.cert.device} onPress={() => setChosen(d.cert.device)} testID="lost-device" />
         ))}
       </Section>
       {target && (

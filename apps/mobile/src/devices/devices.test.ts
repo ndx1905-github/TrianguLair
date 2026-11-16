@@ -85,8 +85,11 @@ async function anna(opts: { vault?: boolean } = {}): Promise<Anna> {
   const storage = new MemoryAdapter();
   if (opts.vault !== false) {
     const book = ContactBook.empty(created.record.owner);
-    book.setValue(VALUE_STORAGE, config);
-    book.setValue(VALUE_PROFILE, { name: 'Anna' });
+    // Values in the vault are signed (devices review F-01): here by my master key.
+    const master = masterIdentity(created.record, secrets, { kind: 'primary' });
+    const signer = { id: created.record.owner, secretKey: master.master.secretKey };
+    book.setValue(VALUE_STORAGE, config, signer);
+    book.setValue(VALUE_PROFILE, { name: 'Anna' }, signer);
     await storage.put(VAULT_PATH, sealVault(book.records, rot.sharing.vaultDataKey));
   }
   const registered: Anna['registered'] = [];

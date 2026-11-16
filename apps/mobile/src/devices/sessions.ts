@@ -345,19 +345,24 @@ export interface NewDeviceDeps {
   now?: () => number;
 }
 
-/** Reads my vault at the read address with the vault data key: storage settings and first name. */
-export async function readVaultValues(adapter: StorageAdapter, owner: string, vaultDataKey: Uint8Array): Promise<{ storage: StorageConfig | null; profileName: string }> {
+/**
+ * Reads my vault at the read address with the vault data key: storage settings and first name,
+ * as signed by my master key or a certified device my current certificate does not revoke
+ * (devices review F-01; a value planted by a lost device is not taken).
+ */
+export async function readVaultValues(adapter: StorageAdapter, sharing: SharingKey): Promise<{ storage: StorageConfig | null; profileName: string }> {
   const g = await adapter.get(VAULT_PATH, { maxBytes: 16 * 1024 * 1024 });
   if (!g) return { storage: null, profileName: '' };
-  const book = new ContactBook(openVault(g.data, owner, vaultDataKey));
+  const book = new ContactBook(openVault(g.data, sharing.cert.owner, sharing.vaultDataKey));
+  const trust = { revoked: sharing.cert.revoked_devices };
   let storage: StorageConfig | null = null;
   try {
-    const v = book.value<unknown>(VALUE_STORAGE)?.value;
+    const v = book.value<unknown>(VALUE_STORAGE, trust)?.value;
     storage = v ? parseConfig(v) : null;
   } catch {
     storage = null;
   }
-  const p = book.value<{ name?: unknown }>(VALUE_PROFILE)?.value;
+  const p = book.value<{ name?: unknown }>(VALUE_PROFILE, trust)?.value;
   return { storage, profileName: typeof p?.name === 'string' ? p.name : '' };
 }
 
@@ -413,7 +418,7 @@ export class LinkReceiver extends Machine<LinkReceiverState> {
       return this.set({ phase: 'enter', error: 'failed' });
     }
     try {
-      const v = await readVaultValues(reader, sharing.cert.owner, sharing.vaultDataKey);
+      const v = await readVaultValues(reader, sharing);
       if (!v.storage || v.storage.kind === 'https') return this.set({ phase: 'failed', error: 'no-storage' });
       const writer = this.d.writeAdapter(v.storage);
       // Single use: the blob goes as soon as it is opened.
@@ -521,7 +526,7 @@ export class QrReceiver extends Machine<QrReceiverState> {
       const cert = verifyDeviceCert(pkg.cert as never, { expectedOwner: sharing.cert.owner });
       if (cert.device !== this.deviceKeys.id || cert.box !== devicePublicKeys(this.deviceKeys).box) throw new Error('not for me');
       if (sharing.cert.location !== reply.location) throw new Error('another address');
-      const v = await readVaultValues(reader, sharing.cert.owner, sharing.vaultDataKey);
+      const v = await readVaultValues(reader, sharing);
       if (v.storage && v.storage.kind !== 'https') await this.d.writeAdapter(v.storage).delete(slotFiles(reply.slot).qr).catch(() => {});
       this.eph.secretKey.fill(0);
       this.set({ phase: 'approved', joined: { owner: sharing.cert.owner, deviceKeys: this.deviceKeys, deviceCert: cert, sharing, storage: v.storage, profileName: v.profileName, primaryIdentity: null, vaultCopy: null } });
@@ -577,7 +582,7 @@ export async function restoreWithPhrase(phrase: string, location: string, d: New
     }
     const deviceKeys = generateDeviceKeys();
     const deviceCert = issueDeviceCert(id, devicePublicKeys(deviceKeys));
-    const v = await readVaultValues(sharing.cert.location ? d.readAdapter(sharing.cert.location) : reader, id.owner, sharing.vaultDataKey).catch(() => ({ storage: null, profileName: '' }));
+    const v = await readVaultValues(sharing.cert.location ? d.readAdapter(sharing.cert.location) : reader, sharing).catch(() => ({ storage: null, profileName: '' }));
     return {
       owner: id.owner,
       deviceKeys,

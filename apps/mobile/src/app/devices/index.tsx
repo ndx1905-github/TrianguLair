@@ -67,7 +67,7 @@ function DevicesScreen() {
           {live.map((d) => {
             const id = d.cert.device;
             const mine = id === me;
-            const shown = d.name;
+            const shown = d.name || t('devices.unnamed');
             return (
               <Card key={id} testID={`device-${mine ? 'me' : 'other'}`}>
                 <View style={styles.head}>
@@ -77,7 +77,7 @@ function DevicesScreen() {
                   {mine && <Badge label={t('devices.thisDevice')} testID="device-badge-me" />}
                   {d.primary && <Badge label={t('devices.primary')} testID="device-badge-primary" />}
                 </View>
-                <Muted>{t('devices.added', { date: date(d.added) })}</Muted>
+                {d.added > 0 && <Muted>{t('devices.added', { date: date(d.added) })}</Muted>}
                 {editing === id ? (
                   <>
                     <Field label={t('devices.nameLabel')} value={name} onChange={setName} testID="device-rename-input" />
@@ -111,9 +111,9 @@ function DevicesScreen() {
           {removed.map((d) => (
             <View key={d.cert.device} style={{ gap: 2 }} testID="device-removed-row">
               <Text style={{ color: c.textMuted, fontSize: 15, textDecorationLine: 'line-through' }} maxFontSizeMultiplier={2}>
-                {d.name}
+                {d.name || t('devices.unnamed')}
               </Text>
-              <Muted>{t('devices.removed', { date: date(d.removed!) })}</Muted>
+              <Muted>{d.removed ? t('devices.removed', { date: date(d.removed) }) : t('devices.removedUndated')}</Muted>
             </View>
           ))}
           <View style={styles.row}>

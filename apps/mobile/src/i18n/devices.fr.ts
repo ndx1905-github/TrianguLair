@@ -52,6 +52,8 @@ export const devicesFr: Messages = {
   'devices.primary': 'Principal',
   'devices.added': 'Ajouté le {date}',
   'devices.removed': 'Retiré le {date}',
+  'devices.unnamed': 'Un de vos appareils',
+  'devices.removedUndated': 'Retiré',
   'devices.rename': 'Renommer',
   'devices.save': 'Enregistrer',
   'devices.remove': 'Retirer',

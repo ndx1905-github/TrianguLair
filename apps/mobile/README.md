@@ -180,8 +180,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     certificate comes from the other device (primary: one tap; else the 12 words) or from the words typed here; the
     sharing key, vault data key, storage access and first name come with it (storage settings from the vault value
     `storage`); no demo seed; then it syncs.
-  - *Settings › Devices* (`/devices`): every device listed in the vault (name, date added, "This device", "Primary",
-    removed ones struck through), rename, remove, declare lost, add, changes since a date, primary device lost.
+  - *Settings › Devices* (`/devices`): every device with a master-signed certificate in the vault (name, date added,
+    "This device", "Primary"), rename, remove, declare lost, add, changes since a date, primary device lost. Removed
+    (struck through) means revoked by my current sharing certificate, nothing else; names, dates and the primary mark
+    are display entries signed by the device that wrote them (`packages/sync` devices.ts, devices review F-02).
   - *Add a device* (`/devices/add`): QR (default) or link + code; the request shows the new device's name and a 12-digit
     number that both screens show; approval with the master key; the transfer is cancelled when the screen closes,
     and its files are deleted at expiry by the controller anyway.
@@ -201,7 +203,11 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     protocol for the current storage and every previous one still redirecting (`guide.ts`: Nextcloud Devices & sessions
     link, AWS access keys link, steps for WebDAV and HTTPS-only, "Type the new credentials"), and links to the changes.
     New credentials typed on one device reach the others through the vault value; a device whose credentials are
-    refused reads the vault anonymously at the read address and takes them.
+    refused reads the vault anonymously at the read address and takes them. Devices review F-01: the value counts
+    only when signed by my master key or a certified device my current certificate does not revoke (the declaration
+    drops what the lost device signed and resets the values to the declaring device's), and a device takes **only new
+    credentials for the same storage** (`sameWriteTarget`: kind, read address, WebDAV URL or S3 endpoint, bucket,
+    prefix, region, path style): another write endpoint is never adopted from the vault.
   - *Changes since a date* (`/devices/changes`, `journal.ts`): at each pass that imports my other devices' changes,
     the controller records my saves before and after, with the device that signed them (120 days, 400 changes);
     filtered by date and by the lost device; "Revert" puts back the values kept here (trash / restore, comment, status,

@@ -55,6 +55,7 @@ import { engineSyncPort, type SyncPort } from '../contacts/port';
 import { slotFiles } from '../devices/channel';
 import { JOURNAL_KEY, addEntry, diffSaves, markReverted, ownSaves, revertChange, type JournalEntry, type SaveMap } from '../devices/journal';
 import { VALUE_PROFILE, VALUE_STORAGE } from '../devices/sessions';
+import { parseConfig, sameWriteTarget, type StorageConfig } from '../storage/config';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
 import { logLine } from './problems';
@@ -68,6 +69,7 @@ const OWN_OK_KEY = 'app:own-ok';
 const SLOTS_KEY = 'app:transfer-slots';
 const WRITTEN_KEY = 'app:vault-written';
 const RECOVERY_KEY = 'app:recovery-copy';
+const SELF_KEY = 'app:device-listed';
 /** The sync package's own key for my vault records (SyncEngine BOOK_KEY), reset by an identity change. */
 const BOOK_KEY = 'vault:records';
 
@@ -317,9 +319,13 @@ export class SyncController implements StorageMoveHooks {
     const own = engine.own!;
     const me = this.d.device?.();
     if (me) {
+      // This device's own display entry (signed by it; devices.ts): written once, and when its primary mark changes.
       const cur = engine.devices().find((d) => d.cert.device === own.device.keys.id);
-      if (!cur) engine.putDevice(own.device.cert, { name: me.name, added: me.added, primary: me.primary });
-      else if (!!cur.primary !== me.primary && cur.removed === undefined) engine.updateDevice(cur.cert.device, { primary: me.primary });
+      const written = this.d.state.get<boolean>(SELF_KEY) === true;
+      if (!cur || !written) {
+        engine.putDevice(own.device.cert, { name: cur?.name || me.name, added: me.added, primary: me.primary });
+        this.d.state.set(SELF_KEY, true);
+      } else if (!!cur.primary !== me.primary && cur.removed === undefined) engine.updateDevice(cur.cert.device, { primary: me.primary });
     }
     const written = this.d.state.get<Record<string, string>>(WRITTEN_KEY) ?? {};
     const put = (key: string, value: unknown) => {
@@ -363,6 +369,12 @@ export class SyncController implements StorageMoveHooks {
    * After a pass: newer storage settings in the vault (changed on another device) are taken here.
    * When my storage refuses my credentials, the vault is read at the read address (anonymous), so
    * a device whose password was changed elsewhere picks the new one up by itself.
+   *
+   * Devices review F-01: only a value signed by my master key or by a certified device that my
+   * current certificate does not revoke counts (`engine.value`, devices.ts), and only **new
+   * credentials for the same storage** are taken (`sameWriteTarget`: same kind, read address and
+   * write endpoint). A value naming another write endpoint is never adopted automatically: a
+   * storage move goes through the move screens and a new certificate.
    */
   private async afterOwn(engine: SyncEngine, report: SyncReport): Promise<void> {
     const own = engine.own;
@@ -374,29 +386,40 @@ export class SyncController implements StorageMoveHooks {
       try {
         const g = await this.d.access.readAdapter()?.get(VAULT_PATH, { maxBytes: 16 * 1024 * 1024 });
         if (!g) return;
-        value = new ContactBook(openVault(g.data, engine.owner, own.sharing.vaultDataKey)).value(VALUE_STORAGE)?.value;
+        const trust = { revoked: own.sharing.cert.revoked_devices, now: this.now() };
+        value = new ContactBook(openVault(g.data, engine.owner, own.sharing.vaultDataKey)).value(VALUE_STORAGE, trust)?.value;
       } catch {
         return;
       }
     } else value = engine.value(VALUE_STORAGE)?.value;
     if (!value || typeof value !== 'object') return;
-    const v = value as { readUrl?: unknown };
-    if (v.readUrl !== cfg.readUrl || canonicalize(value as never) === canonicalize(cfg as never)) return;
+    let next: StorageConfig;
+    try {
+      next = parseConfig(value);
+    } catch {
+      return;
+    }
+    if (!sameWriteTarget(next, cfg) || canonicalize(next as never) === canonicalize(cfg as never)) return;
     const written = this.d.state.get<Record<string, string>>(WRITTEN_KEY) ?? {};
     if (!auth && written[VALUE_STORAGE] !== canonicalize(cfg as never)) return; // my own change, not written yet
     try {
-      await this.d.onStorageValue(value);
-      this.d.state.set(WRITTEN_KEY, { ...written, [VALUE_STORAGE]: canonicalize(value as never) });
+      await this.d.onStorageValue(next);
+      this.d.state.set(WRITTEN_KEY, { ...written, [VALUE_STORAGE]: canonicalize(next as never) });
     } catch (e) {
       console.warn('Could not take the storage settings from the vault', e);
     }
   }
 
-  /** My saves before the pass, when another device of mine can change them (for the changes since a theft). */
+  /**
+   * My saves before the pass, when another device of mine can change them (for the changes since a
+   * theft): whenever a device other than this one holds a master-signed certificate in the vault
+   * (devices review F-02: certificates cannot be hidden by a stolen device).
+   */
   private journalBase(engine: SyncEngine): SaveMap | null {
     if (!engine.own) return null;
     try {
-      return engine.devices().length > 1 ? ownSaves(this.d.store) : null;
+      const me = engine.own.device.keys.id;
+      return engine.devices().some((d) => d.cert.device !== me) ? ownSaves(this.d.store) : null;
     } catch {
       return null;
     }
@@ -487,7 +510,14 @@ export class SyncController implements StorageMoveHooks {
       const engine = await this.engineReady();
       if (!engine.own) throw new Error('sync: no storage to publish to');
       const open = this.openNow(engine, r.previous);
-      const res = await engine.rotateKey(r.sharing, { cancelInvitations: opts.cancelInvitations, recoveryCopy: r.vaultCopy });
+      // The app values are reset to this device's (devices review F-01): what a lost device planted goes.
+      const values: Record<string, unknown> = {};
+      const cfg = this.d.access.config();
+      if (cfg) values[VALUE_STORAGE] = cfg;
+      const name = this.d.author?.();
+      if (name) values[VALUE_PROFILE] = { name };
+      const res = await engine.rotateKey(r.sharing, { cancelInvitations: opts.cancelInvitations, recoveryCopy: r.vaultCopy, values });
+      this.d.state.set(WRITTEN_KEY, Object.fromEntries(Object.entries(values).map(([k, v]) => [k, canonicalize(v as never)])));
       this.d.state.set(RECOVERY_KEY, packHash(r.vaultCopy));
       const report = await engine.sync({ readFriends: false });
       this.afterPass(engine, report, new Set());
@@ -546,7 +576,8 @@ export class SyncController implements StorageMoveHooks {
       }
       const records = JSON.parse(JSON.stringify({ ...emptyVault(next.owner), contacts: old.contacts, retired_owners: old.retired_owners, app })) as VaultRecords;
       const book = new ContactBook(records);
-      book.putDevice(next.deviceCert, { name: next.deviceName, added: next.added, primary: true }, this.now());
+      // This device's certificate under the new identity; its display entry is signed at its first pass.
+      book.putDeviceCert(next.deviceCert);
       // The old identity's index and the files it lists.
       const g = await own.storage.get(INDEX, { maxBytes: INDEX_MAX }).catch(() => null);
       let files: string[] = [];
@@ -561,7 +592,7 @@ export class SyncController implements StorageMoveHooks {
       for (const f of files) await own.storage.delete(f).catch(() => {});
       await own.storage.delete(keyPath(engine.owner)).catch(() => {});
       for (const k of this.d.state.keys('own:')) this.d.state.delete(k);
-      for (const k of [RECOVERY_KEY, WRITTEN_KEY]) this.d.state.delete(k);
+      for (const k of [RECOVERY_KEY, WRITTEN_KEY, SELF_KEY]) this.d.state.delete(k);
       this.d.state.set(BOOK_KEY, book.records);
       this.scheduler.stop();
       this.engine = null;

@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import initSqlJs from 'sql.js';
 import {
   decodeKeyExport,
+  devicePublicKeys,
+  generateDeviceKeys,
   decryptTransfer,
   issueDeviceCert,
   openVault,
@@ -122,7 +124,7 @@ function person(name: string, opts: { recoveryCopy?: boolean } = {}) {
 const sharingOf = async (d: Dev) => (await openSyncKeys(d.record, { deviceKeys: d.deviceKeys, sharingKey: d.sharingKey, syncKeys: null })).sharing;
 
 describe('review F-01: storage settings in the vault are adopted from any writer', () => {
-  it.fails('a device never switches to a write endpoint that a vault value (writable by a stolen device) names', async () => {
+  it('a device never switches to a write endpoint that a vault value (writable by a stolen device) names', async () => {
     const anna = person('anna');
     anna.d.store.putSave({ place: { osm: { type: 'node', id: 1 }, name: 'P', category: 'amenity=cafe', geometry: { type: 'Point', coordinates: [2.35, 48.85] } } });
     await anna.d.ctl.refresh();
@@ -134,11 +136,29 @@ describe('review F-01: storage settings in the vault are adopted from any writer
     const r = openVault(g!.data, anna.d.record.owner, vdk);
     const values = (r.app?.['triangulair_values'] as { values: Record<string, unknown> }).values;
     const evil: StorageConfig = { ...anna.config, url: 'https://evil.example/proxy/', password: 'thief' } as StorageConfig;
-    const planted = { ...r, app: { ...r.app, triangulair_values: { version: 1, values: { ...values, storage: { value: evil, at: Number.MAX_SAFE_INTEGER } } } } } as VaultRecords;
+    const planted = { ...r, app: { ...r.app, triangulair_values: { version: 2, values: { ...values, storage: { 'ed25519:x': { value: evil, at: Number.MAX_SAFE_INTEGER, sig: 'AAAA' } } } } } } as VaultRecords;
     await anna.storage.put(VAULT_PATH, sealVault(new ContactBook(planted).records, vdk));
-    // Anna's own device syncs: today it hands the thief's settings to the app (StorageProvider.updateCurrent).
     await anna.d.ctl.refresh();
     expect(anna.d.adopted.map((c) => (c as { url: string }).url)).not.toContain('https://evil.example/proxy/');
+
+    // The same, validly signed by the stolen device (still certified) within the clock skew.
+    const thiefKeys = generateDeviceKeys();
+    const master = masterIdentity(anna.d.record, { deviceKeys: anna.d.deviceKeys, sharingKey: anna.d.sharingKey, primaryIdentity: anna.d.primaryIdentity }, { kind: 'primary' });
+    const thief = { id: thiefKeys.id, secretKey: thiefKeys.sign.secretKey };
+    const plant = async (value: StorageConfig) => {
+      const cur = openVault((await anna.storage.get(VAULT_PATH))!.data, anna.d.record.owner, vdk);
+      const book = new ContactBook(cur);
+      book.putDeviceCert(issueDeviceCert(master, devicePublicKeys(thiefKeys)));
+      book.setValue('storage', value, thief, Date.now() + 60_000);
+      await anna.storage.put(VAULT_PATH, sealVault(book.records, vdk));
+    };
+    await plant(evil);
+    await anna.d.ctl.refresh();
+    expect(anna.d.adopted.map((c) => (c as { url: string }).url)).not.toContain('https://evil.example/proxy/');
+    // New credentials for the same storage, from a certified device, are taken (a password changed elsewhere).
+    await plant({ ...anna.config, password: 'changed' } as StorageConfig);
+    await anna.d.ctl.refresh();
+    expect(anna.d.adopted).toEqual([{ ...anna.config, password: 'changed' }]);
   });
 });
 
@@ -161,7 +181,7 @@ describe('review F-03: link + code releases every secret before the comparison',
     const blobPath = files.map((f) => (typeof f === 'string' ? f : (f as { path: string }).path)).find((p) => p.endsWith('.bin'))!;
     const blob = (await readOnly(anna.storage).get(blobPath))!.data;
     const sharing = decodeKeyExport(decryptTransfer(blob, s.code));
-    const v = await readVaultValues(readOnly(anna.storage), sharing.cert.owner, sharing.vaultDataKey);
+    const v = await readVaultValues(readOnly(anna.storage), sharing);
     // Desired: the blob only opens a channel; the sharing key, vault data key (and so the storage
     // credentials in the vault) are sealed to the new device key AFTER the 12-digit comparison.
     expect(v.storage).toBeNull();
