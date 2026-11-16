@@ -541,7 +541,10 @@ export class SyncController implements StorageMoveHooks {
     await this.publishNow();
   }
 
-  /** Public or link-only; publishes (the public file appears or goes). */
+  /**
+   * Public or link-only; publishes (the public file appears or goes). Leaving link-only drops the
+   * list key (data package), so coming back needs "Create the link": the old link stays dead.
+   */
   async setListVisibility(listId: string, visibility: 'link' | 'public'): Promise<void> {
     this.d.store.updateList(listId, { visibility });
     this.d.onData();

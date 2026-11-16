@@ -138,7 +138,7 @@ describe('review PR #85: lists', () => {
   // L-01 (Low): switching a link-only list to public and back keeps `linkKey`, so the "dead" link
   // silently works again for everyone who had it (README: "switching to public does the same" as
   // "taking the link away").
-  it.fails('L-01: a link cut by going public stays dead when the list becomes link-only again', async () => {
+  it('L-01: a link cut by going public stays dead when the list becomes link-only again', async () => {
     const w = new World();
     const { a, list } = anna(w);
     const ben = addDevice(w, makeUser(w, 'ben'));
