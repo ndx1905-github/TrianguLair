@@ -70,12 +70,18 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   list", "Does not match: tags, zones"…). Membership always comes from `Repository.evaluateList`.
   Visibility (link / public) is stored and used by the share screen below (`src/lists/`). Going public from the
   editor shows the warning (anyone can read it, the author's responsibility, places that may be a home) and asks to
-  tick "I understand" before saving.
+  tick "I understand" before saving. In a list that is already public, places that look like a home and are not in
+  it yet ask for their own confirmation; on a filter list, the confirmed ones become explicit "include"s (the public
+  file holds the others back, below). Adding such a place to a public list from the place card asks first too
+  (`HomeConfirm`, review M-02).
 - **Sharing a list** (`/lists/share?id=`, "Share" on a list, T-211/T-212; logic in `@triangulair/sync`, see its
   README "Lists"): *link only*: "Create the link" makes the list's key (in my document, all my devices) and publishes
   before showing `https://triangulair.app/l#…` with its QR code, share / copy; "New link" (confirmed: everyone with
   the old link loses it) and "Stop sharing by link"; *public*: the warning first (`PublicWarning.tsx`, with the places
-  that look like a home: a dwelling category, no category, a point placed by hand), then the GeoJSON file's address
+  that look like a home: a dwelling category, no category, a point placed by hand, the sync package's
+  `looksLikeHome`; on a filter list, confirming includes them), the places a public filter list took by itself but
+  holds out of the public file because they look like a home ("Publish them" = include, "Leave them out" = exclude,
+  `heldPublicPlaces`), then the GeoJSON file's address
   on my storage, "View on uMap" (`umapUrl`: a new uMap map importing the file) with its address shown, and the
   in-app link to follow it; *friends*: pick who sees the list (its name and places) among my contacts
   (`setListAccess`: a contact who sees nothing gets this list only, a restricted one gets it added, one who sees

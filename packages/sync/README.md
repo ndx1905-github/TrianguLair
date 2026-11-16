@@ -163,7 +163,10 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
   "public-lists", version, owner, author?, lists: [{ id, name, description?, updated }] }`, one feature per (list,
   place) with `list`, `list_name`, `description` (the public comment), `url` (openstreetmap.org page of an OSM place)
   and `_umap_options` (uMap's per-feature style: main tag color, "Drop" marker for points, 20 % fill and thin outline
-  for zones, a 5 px line for streets); each list's `count`. "View on uMap" = `umapUrl(publicListsUrl(location))`:
+  for zones, a 5 px line for streets); each list's `count`. A place that looks like a home (`home.ts`: a dwelling
+  category, no category with an address, a point placed by hand; never a zone) that a *filter* list took by itself
+  stays out of the file until the author confirms it as an explicit `include` of the filter (`heldPublicPlaces` lists
+  the ones waiting; the app warns before a place enters a public list by hand: review M-02). "View on uMap" = `umapUrl(publicListsUrl(location))`:
   `https://umap.openstreetmap.fr/<lang>/map/new/?dataUrl=<file>&dataFormat=geojson` (uMap's own query parameters,
   read by `loadDataFromQueryString`; the instance fetches the file through its proxy, so no CORS rule is needed for
   uMap). It opens a new uMap map with a copy of the file's current content, all my public lists in one layer.

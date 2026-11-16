@@ -61,6 +61,7 @@ export {
   type TagOut,
 } from './features.ts';
 export { encodePayload, decodePayload, inflateBounded, PAYLOAD_VERSION, MAX_PAYLOAD_BYTES, PAYLOAD_LIMITS, PAYLOAD_PAD_FLOOR, type PayloadKind } from './payload.ts';
+export { looksLikeHome, itemLooksLikeHome, heldPublicPlaces, RESIDENTIAL_CATEGORIES, type HomeLikeSubject } from './home.ts';
 export { buildPublicLists, ODBL_ATTRIBUTION, ODBL_URL, PUBLIC_LISTS_NAME } from './public-lists.ts';
 export { MemoryStateStore, SqliteStateStore, type SyncStateStore } from './state.ts';
 export {

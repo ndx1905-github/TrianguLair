@@ -5,7 +5,7 @@
  * the desired behaviour; the fixes made them plain tests, with extra ones for the new behaviour.
  */
 import { describe, expect, it } from 'vitest';
-import { audienceOf, ContactBook, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, type Audience, type ListDef } from '../src/index.ts';
+import { audienceOf, ContactBook, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
 
 await listsReady();
@@ -90,6 +90,49 @@ describe('review PR #85: lists', () => {
     const friends = packs.filter((p) => p.role === 'friends');
     expect(friends).toHaveLength(1);
     expect((parseLists(friends[0]!.body).lists[0] as ListDef).items).toEqual(['osm:node/1']);
+  });
+
+  // M-02 (Medium): a home-like place that a public filter list takes by itself is held out of the
+  // public file until the author confirms it (an explicit "include" of the filter).
+  it('M-02: a home-like place newly matching a public filter list waits for the author', async () => {
+    const w = new World();
+    const a = addDevice(w, makeUser(w, 'anna'));
+    const s = a.store;
+    const tag = s.createTag({ name: 'Brunch', color: '#16A34A' });
+    s.putSave({ place: point(1, 'Cafe') });
+    const list = s.createList({ name: 'Brunch', kind: 'filter', visibility: 'public', filter: { tags: [tag] } });
+    s.addSaveTag('osm:node/1', tag);
+    await a.engine.sync();
+    const names = async () => {
+      const geo = JSON.parse(new TextDecoder().decode((await w.readAdapter(a.user.location).get('public/lists.geojson'))!.data));
+      return (geo.features as { properties: { name: string } }[]).map((f) => f.properties.name).sort();
+    };
+    expect(await names()).toEqual(['Cafe']);
+
+    // A friend's house and a point placed by hand get the same tag: held.
+    s.putSave({ place: { ...point(2, "Marie's"), category: 'building=house' } });
+    s.putSave({ place: { id: 'local:pin00001', name: 'Pin', category: null, kind: 'place', geometry: { type: 'Point', coordinates: [2.3, 48.8] } } });
+    const pin = s.repo.queryPlaces({ source: 'mine' }).find((p) => p.name === 'Pin')!.id;
+    s.addSaveTag('osm:node/2', tag);
+    s.addSaveTag(pin, tag);
+    await a.engine.sync();
+    expect(await names()).toEqual(['Cafe']);
+    expect([...heldPublicPlaces(s.repo, readOwnItems(s.repo)).get(list)!.map((i) => i.name)].sort()).toEqual(["Marie's", 'Pin']);
+
+    // Confirmed (include): published; refused (exclude): out of the list for good.
+    s.setListFilter(list, { tags: [tag], include: ['osm:node/2'], exclude: [pin] });
+    await a.engine.sync();
+    expect(await names()).toEqual(['Cafe', "Marie's"]);
+    expect(heldPublicPlaces(s.repo, readOwnItems(s.repo)).size).toBe(0);
+  });
+
+  it('M-02: the home rule (dwellings, places without category, never zones)', () => {
+    expect(looksLikeHome({ kind: 'place', category: 'building=apartments', local: false, address: null })).toBe(true);
+    expect(looksLikeHome({ kind: 'place', category: 'amenity=cafe', local: false, address: '1 rue X' })).toBe(false);
+    expect(looksLikeHome({ kind: 'place', category: null, local: false, address: '1 rue X' })).toBe(true);
+    expect(looksLikeHome({ kind: 'place', category: null, local: false, address: null })).toBe(false);
+    expect(looksLikeHome({ kind: 'place', category: null, local: true, address: null })).toBe(true);
+    expect(looksLikeHome({ kind: 'zone', category: null, local: true, address: null })).toBe(false);
   });
 
   // L-01 (Low): switching a link-only list to public and back keeps `linkKey`, so the "dead" link

@@ -7,7 +7,9 @@
  *   never sent to a server), its QR code, share / copy; "New link" cuts everyone who has the old
  *   one; "Stop sharing by link".
  * - **Public**: a warning first (anyone can read it, the author is responsible, places that look
- *   like a home), then the address of the GeoJSON file on my storage, "View on uMap" (a uMap map
+ *   like a home; confirming publishes those of a filter list as explicit "include"s), the places
+ *   a public filter list holds back because they look like a home (publish them or leave them out,
+ *   review M-02), then the address of the GeoJSON file on my storage, "View on uMap" (a uMap map
  *   that imports the file) and the in-app link to follow it.
  * - **Friends**: pick who sees this list (its name and places) among my contacts.
  *
@@ -27,8 +29,8 @@ import { useData } from '../../data/DataProvider';
 import { ToggleRow } from '../../firstLaunch/ToggleRow';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
-import { PublicWarning } from '../../lists/PublicWarning';
-import { buildListLink } from '../../lists/sharing';
+import { HomeConfirm, PublicWarning } from '../../lists/PublicWarning';
+import { buildListLink, confirmInFilter, homeLikePlaces } from '../../lists/sharing';
 import { useListPlaceIds } from '../../lists/useListData';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { StorageNeeded, useStorageForSharing } from '../../storage/useStorageForSharing';
@@ -42,7 +44,7 @@ function ShareListScreen() {
   const c = useUiColors();
   const { t, locale } = useI18n();
   const router = useRouter();
-  const { repo, version } = useData();
+  const { repo, version, mutate } = useData();
   const sync = useSync();
   const ctl = sync.controller();
   const storage = useStorageForSharing();
@@ -68,6 +70,7 @@ function ShareListScreen() {
   const pub = engineReady && list.visibility === 'public' ? ctl!.publicList(list.id) : null;
   const friends = (sync.snapshot?.friends ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const viewers = new Set(engineReady ? ctl!.listViewers(list.id) : []);
+  const held = engineReady && list.visibility === 'public' && list.kind === 'filter' ? ctl!.heldPublic(list.id) : [];
 
   const run = async (what: Busy, fn: () => Promise<unknown>) => {
     setBusy(what);
@@ -112,6 +115,9 @@ function ShareListScreen() {
             onCancel={() => setConfirmPublic(false)}
             onConfirm={() =>
               void run('public', async () => {
+                // Confirmed here, with the places listed: a filter list publishes them (M-02).
+                const homes = homeLikePlaces(places).map((p) => p.id);
+                if (list.kind === 'filter' && homes.length) mutate((s) => s.setListFilter(list.id, confirmInFilter(list.filter, homes, true)));
                 await ctl!.setListVisibility(list.id, 'public');
                 setConfirmPublic(false);
               })
@@ -175,6 +181,21 @@ function ShareListScreen() {
               )}
             </Card>
           )}
+        </Section>
+      )}
+
+      {held.length > 0 && busy !== 'public' && (
+        <Section title={t('sharing.public.heldTitle')}>
+          <Muted>{t('sharing.public.heldLead')}</Muted>
+          <HomeConfirm
+            places={held}
+            busy={busy !== null}
+            confirmLabel={t('sharing.public.heldPublish')}
+            cancelLabel={t('sharing.public.heldLeaveOut')}
+            onConfirm={() => void run('public', () => ctl!.decideHeld(list.id, held.map((p) => p.id), true))}
+            onCancel={() => void run('public', () => ctl!.decideHeld(list.id, held.map((p) => p.id), false))}
+            testID="share-held"
+          />
         </Section>
       )}
 

@@ -8,6 +8,8 @@
  * - Only my public lists, only places that are not private, not in the trash
  *   and not known to be closed (the data package's list rules), and only
  *   comments marked public (spec "Comment with its own visibility").
+ * - A place that looks like a home and that a filter list took by itself
+ *   stays out until I confirm it (home.ts, review M-02).
  * - ODbL: the file contains data derived from OpenStreetMap (names,
  *   geometries), so it carries the attribution and the license (spec "Data
  *   attributions and licenses"; the legal analysis is still to be confirmed).
@@ -24,6 +26,7 @@
  */
 import { parseOsmPlaceId, type Repository } from '@triangulair/data';
 import { featureFor, type OwnItem } from './features.ts';
+import { publishable } from './home.ts';
 import { utf8 } from './payload.ts';
 
 export const PUBLIC_LISTS_NAME = 'lists';
@@ -62,7 +65,7 @@ export function buildPublicLists(repo: Repository, items: readonly OwnItem[], op
     let count = 0;
     for (const saveId of repo.listItems(l.id)) {
       const it = bySave.get(saveId);
-      if (!it || it.sharing === 'private' || it.placeStatus === 'closed') continue;
+      if (!it || !publishable(l, it)) continue;
       const f = featureFor(it, 'public');
       const props: Record<string, unknown> = { ...f.properties, list: l.id, list_name: l.name };
       if (f.properties.comment) props.description = f.properties.comment;

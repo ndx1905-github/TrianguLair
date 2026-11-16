@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlaceRecord } from '@triangulair/data';
 import type { FollowedListInfo, PlaceFeature } from '@triangulair/sync';
 
-import { buildListLink, featurePins, goneKey, groupByAuthor, homeLikePlaces, listFragmentOf } from './sharing';
+import { buildListLink, confirmInFilter, featurePins, goneKey, groupByAuthor, homeLikePlaces, homesToConfirm, listFragmentOf } from './sharing';
 
 const placeRec = (p: Partial<PlaceRecord>): PlaceRecord => ({ id: 'osm:node/1', osmType: 'node', osmId: 1, name: 'X', category: 'amenity=cafe', kind: 'place', address: null, ...p }) as PlaceRecord;
 
@@ -29,6 +29,22 @@ describe('before going public', () => {
       placeRec({ id: 'local:zoneaaaa', osmType: null, osmId: null, name: 'Zone', category: null, kind: 'zone' }),
     ]);
     expect(homes.map((p) => p.name)).toEqual(['House', 'Address', 'Pin']);
+  });
+});
+
+describe('places entering a public list (M-02)', () => {
+  it('asks only for a public list, only about home-like places', () => {
+    const house = placeRec({ id: 'osm:way/2', name: 'House', category: 'building=house' });
+    const cafe = placeRec({ id: 'osm:node/1', name: 'Cafe' });
+    expect(homesToConfirm({ visibility: 'public' }, [house, cafe]).map((p) => p.name)).toEqual(['House']);
+    expect(homesToConfirm({ visibility: 'link' }, [house])).toEqual([]);
+    expect(homesToConfirm(null, [house])).toEqual([]);
+  });
+
+  it('publishing a held place includes it; leaving it out excludes it', () => {
+    const f = { tags: ['t'], include: ['a'], exclude: ['b'] };
+    expect(confirmInFilter(f, ['b', 'c'], true)).toEqual({ tags: ['t'], include: ['a', 'b', 'c'], exclude: [] });
+    expect(confirmInFilter(f, ['a', 'c'], false)).toEqual({ tags: ['t'], include: [], exclude: ['b', 'a', 'c'] });
   });
 });
 

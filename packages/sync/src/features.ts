@@ -100,6 +100,8 @@ export interface OwnItem {
   lon: number;
   /** OSM side status of the place (closed places leave public lists). */
   placeStatus: string;
+  /** Postal address known for the place ("looks like a home", home.ts); never published. */
+  address: string | null;
   tags: TagOut[];
 }
 
@@ -142,10 +144,10 @@ export function readOwnItems(repo: Repository): OwnItem[] {
       id: string; place_id: string; comment: string; comment_visibility: CommentVisibility; status: SaveStatus | null;
       price_level: PriceLevel | null; sharing: 'private' | 'friends'; created_at: number; updated_at: number;
       snap: string | null; osm_fields: string; name: string; category: string | null; kind: 'place' | 'zone';
-      edge: 'sharp' | 'blurred'; geom: string; pstatus: string;
+      edge: 'sharp' | 'blurred'; geom: string; pstatus: string; address: string | null;
     }>(
       `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.created_at,
-         s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus
+         s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus, p.address
        FROM saves s JOIN places p ON p.id = s.place_id
        WHERE s.owner_id = ? AND s.deleted_at IS NULL ORDER BY s.place_id`,
       [me],
@@ -174,6 +176,7 @@ export function readOwnItems(repo: Repository): OwnItem[] {
         lat,
         lon,
         placeStatus: r.pstatus,
+        address: r.address,
         tags: byS.get(r.id) ?? [],
       };
     });

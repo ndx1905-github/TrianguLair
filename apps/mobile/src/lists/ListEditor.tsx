@@ -45,6 +45,7 @@ import {
 import { StorageNeededIfMissing } from '../storage/useStorageForSharing';
 import { ListMap } from './ListMap';
 import { PublicWarning } from './PublicWarning';
+import { homeLikePlaces } from './sharing';
 import { ToggleRow } from '../firstLaunch/ToggleRow';
 import { useMyPlaces, type MyPlace } from './useListData';
 
@@ -103,6 +104,15 @@ export function ListEditor({ listId }: { listId: string | null }) {
   // Going public (a new public list, or a list that was link-only): warn first (spec "Privacy").
   const goingPublic = draft.visibility === 'public' && existing?.visibility !== 'public';
   const [publicOk, setPublicOk] = useState(false);
+  // A list that is already public: places that look like a home and are not in it yet ask first
+  // (spec "Privacy", review M-02). Going public covers every place (PublicWarning above).
+  const before = useMemo(() => new Set(existing ? repo.listItems(existing.id) : []), [repo, existing, mine]);
+  const newHomes = useMemo(
+    () => (draft.visibility === 'public' && !goingPublic ? homeLikePlaces(inRows.filter((r) => !before.has(r.save.id)).map((r) => r.place)) : []),
+    [draft.visibility, goingPublic, inRows, before],
+  );
+  const [homesOk, setHomesOk] = useState(false);
+  const homesPending = newHomes.length > 0 && !homesOk;
   const outRows = rows.filter((r) => !r.in);
   const inPlaceIds = useMemo(() => new Set(inRows.map((r) => r.place.id)), [inRows]);
 
@@ -148,8 +158,11 @@ export function ListEditor({ listId }: { listId: string | null }) {
   const back = () => (router.canGoBack() ? router.back() : router.replace('/lists'));
 
   const save = () => {
-    if (!canSave(draft) || (goingPublic && !publicOk)) return;
-    const filter = draftToFilter(draft);
+    if (!canSave(draft) || (goingPublic && !publicOk) || homesPending) return;
+    // A filter list publishes the home-like places it takes only once confirmed (sync package,
+    // M-02): what the author just confirmed here becomes an explicit "include".
+    const confirmed = draft.visibility === 'public' ? (goingPublic ? homeLikePlaces(inRows.map((r) => r.place)) : newHomes).map((p) => p.id) : [];
+    const filter = draftToFilter(draft.kind === 'filter' && confirmed.length ? { ...draft, include: [...new Set([...draft.include, ...confirmed])] } : draft);
     const id = mutate((s) =>
       s.change((tx) => {
         if (listId && existing) {
@@ -389,6 +402,22 @@ export function ListEditor({ listId }: { listId: string | null }) {
           <ToggleRow label={t('sharing.public.understood')} value={publicOk} onChange={setPublicOk} testID="list-public-ok" />
         </View>
       )}
+      {newHomes.length > 0 && (
+        <View style={{ marginTop: 8, gap: 8, borderWidth: 1, borderRadius: 14, padding: 12, borderColor: c.warning, backgroundColor: c.surfaceAlt }} testID="list-homes-warning">
+          <Text style={{ color: c.warning, fontSize: 15, fontWeight: '700' }} maxFontSizeMultiplier={2}>
+            {t('sharing.public.homesFound', { count: newHomes.length })}
+          </Text>
+          {newHomes.slice(0, 8).map((p) => (
+            <Text key={p.id} style={{ color: c.text, fontSize: 14 }} maxFontSizeMultiplier={2}>
+              {`• ${p.name || t('sharing.unnamed')}`}
+            </Text>
+          ))}
+          <Text style={{ color: c.text, fontSize: 14 }} maxFontSizeMultiplier={2}>
+            {t('sharing.public.homeInPublic')}
+          </Text>
+          <ToggleRow label={t('sharing.public.homesOk')} value={homesOk} onChange={setHomesOk} testID="list-homes-ok" />
+        </View>
+      )}
       <View style={{ marginTop: 8 }}>
         <StorageNeededIfMissing reason={draft.visibility === 'public' ? 'public-list' : 'link-list'} />
       </View>
@@ -443,7 +472,7 @@ export function ListEditor({ listId }: { listId: string | null }) {
         ) : (
           <Button kind="secondary" label={t('lists.delete')} onPress={() => setConfirmDelete(true)} testID="list-delete" />
         ))}
-      <Button label={t('listEdit.save')} onPress={save} disabled={!canSave(draft) || (goingPublic && !publicOk)} testID="list-save" />
+      <Button label={t('listEdit.save')} onPress={save} disabled={!canSave(draft) || (goingPublic && !publicOk) || homesPending} testID="list-save" />
     </View>
   );
 

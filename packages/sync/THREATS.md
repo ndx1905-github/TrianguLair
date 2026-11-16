@@ -108,7 +108,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   open (owner bound in the AEAD). After the first read, an older index is refused (anchor per followed list).
 - **Malicious public list or link-only list author**: their places land in my cache like a friend's (same strict
   payload checks, sizes bounded, under their own `list:` owner, never merged into another cache); a public list may
-  expose someone's private address: the app warns the author before publishing (spec), and the reader only sees it.
+  expose someone's private address: the app warns the author before a place that looks like a home enters a public
+  list (going public, the place card, the editor), and a public filter list holds such places out of the public file
+  until the author confirms them (M-02); the reader only sees what was published.
 - **Friends' lists**: a lists pack is sealed only to the contacts given access to those lists; a friend who sees
   everything does not learn my list names unless picked. Membership never names a place they cannot read: picks
   count only while the contact sees everything and are dropped at any change of scope, and a lists pack keeps only

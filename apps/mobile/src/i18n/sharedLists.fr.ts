@@ -38,6 +38,13 @@ export const sharedListsFr: Messages = {
   'sharing.public.warnLicense': 'Les noms et les formes viennent d’OpenStreetMap : le fichier porte la mention ODbL.',
   'sharing.public.publish': 'Publier la liste',
   'sharing.public.understood': 'J’ai compris : cette liste sera publique',
+  'sharing.public.homeInPublic': 'Cette liste est publique : tout le monde pourrait la voir. Ne publiez pas le domicile de quelqu’un sans son accord.',
+  'sharing.public.homesOk': 'J’ai compris : les publier dans cette liste',
+  'sharing.public.addAnyway': 'L’ajouter quand même',
+  'sharing.public.heldTitle': 'En attente de votre vérification',
+  'sharing.public.heldLead': 'Ces lieux sont entrés dans la liste par son filtre mais sont peut-être des adresses privées. Ils restent hors du fichier public tant que vous n’avez pas décidé.',
+  'sharing.public.heldPublish': 'Les publier',
+  'sharing.public.heldLeaveOut': 'Les laisser de côté',
 
   'sharing.friends.title': 'Amis qui voient cette liste',
   'sharing.friends.lead': 'Ils voient le nom de la liste et ses lieux dans leur app. Retirer quelqu’un lui enlève l’accès à sa prochaine synchronisation.',

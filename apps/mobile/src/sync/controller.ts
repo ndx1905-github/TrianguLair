@@ -33,8 +33,10 @@ import {
   type ListDef,
   type ListPreview,
   type ListReport,
+  heldPublicPlaces,
   listLinkFragment,
   listSecretOf,
+  readOwnItems,
   newListKey,
   publicListsUrl,
 } from '@triangulair/sync';
@@ -42,6 +44,7 @@ import {
 import { engineSyncPort, type SyncPort } from '../contacts/port';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
+import { confirmInFilter } from '../lists/sharing';
 import { logLine } from './problems';
 import { WhatsNewLog } from './whatsNew';
 
@@ -541,6 +544,27 @@ export class SyncController implements StorageMoveHooks {
   /** Public or link-only; publishes (the public file appears or goes). */
   async setListVisibility(listId: string, visibility: 'link' | 'public'): Promise<void> {
     this.d.store.updateList(listId, { visibility });
+    this.d.onData();
+    await this.publishNow();
+  }
+
+  /**
+   * Places that a public filter list of mine keeps out of the public file because they look like a
+   * home, until I decide (sync package `heldPublicPlaces`, review M-02).
+   */
+  heldPublic(listId: string): { id: string; name: string }[] {
+    const repo = this.d.store.repo;
+    return safe(() => (heldPublicPlaces(repo, readOwnItems(repo)).get(listId) ?? []).map((i) => ({ id: i.placeId, name: i.name })), []);
+  }
+
+  /**
+   * Decides about places a public filter list holds back: publish them (an explicit "include" of
+   * the filter) or leave them out ("exclude"); then publishes.
+   */
+  async decideHeld(listId: string, placeIds: readonly string[], publish: boolean): Promise<void> {
+    const list = this.d.store.repo.getList(listId);
+    if (!list || placeIds.length === 0) return;
+    this.d.store.setListFilter(listId, confirmInFilter(list.filter, placeIds, publish));
     this.d.onData();
     await this.publishNow();
   }

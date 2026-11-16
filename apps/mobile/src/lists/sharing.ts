@@ -1,11 +1,12 @@
 /**
  * Pure helpers of the list sharing screens (T-211, T-212): list links, the "looks like a home"
- * warning before a list goes public (spec "Privacy": "Warning when a place looks like a home
- * (residential address) before adding it to a public list"), followed lists grouped by author,
+ * warning before a place enters a public list (spec "Privacy": "Warning when a place looks like a
+ * home (residential address) before adding it to a public list": going public, the place card,
+ * the editor of a public list, and the places a public filter list holds; review M-02), followed lists grouped by author,
  * and the wording keys of a gone list.
  */
-import { representativePoint, type PlaceRecord } from '@triangulair/data';
-import type { FollowedListInfo, ListGone, PlaceFeature } from '@triangulair/sync';
+import { representativePoint, type ListFilter, type PlaceRecord } from '@triangulair/data';
+import { looksLikeHome, type FollowedListInfo, type ListGone, type PlaceFeature } from '@triangulair/sync';
 
 import type { MapPin } from '../components/map/types';
 import { findLink, LIST_PREFIX } from '../contacts/links';
@@ -23,33 +24,30 @@ export function listFragmentOf(text: string): string | null {
   return f && f.kind === 'list' ? f.fragment : null;
 }
 
-/** OSM categories of dwellings: such a place in a public list may be someone's home. */
-const RESIDENTIAL = new Set([
-  'building=house',
-  'building=residential',
-  'building=apartments',
-  'building=detached',
-  'building=semidetached_house',
-  'building=terrace',
-  'building=bungalow',
-  'building=dormitory',
-  'building=farm',
-  'landuse=residential',
-  'place=house',
-]);
+/**
+ * Places that may be a private address (the sync package's rule, `looksLikeHome`, which also keeps
+ * such places out of the public file while a public filter list holds them): a dwelling (OSM
+ * category), or a place without any category (an address node, a point placed by hand). Zones are
+ * left out (a neighbourhood is not an address).
+ */
+export function homeLikePlaces<P extends Pick<PlaceRecord, 'kind' | 'category' | 'osmType' | 'address'>>(places: readonly P[]): P[] {
+  return places.filter((p) => looksLikeHome({ kind: p.kind, category: p.category, local: p.osmType === null, address: p.address }));
+}
 
 /**
- * Places of a list that may be a private address: a dwelling (OSM category), or a place without
- * any category (an address node, a point placed by hand). Zones are left out (a neighbourhood is
- * not an address).
+ * The places that need the "looks like a home" confirmation before they enter `list` (spec
+ * "Privacy"): only when the list is public, only the home-like ones among `places`.
  */
-export function homeLikePlaces(places: readonly PlaceRecord[]): PlaceRecord[] {
-  return places.filter((p) => {
-    if (p.kind === 'zone') return false;
-    if (p.category) return RESIDENTIAL.has(p.category);
-    // No category: an address node, or a point placed by hand.
-    return p.osmType === null || !!p.address;
-  });
+export function homesToConfirm<P extends Pick<PlaceRecord, 'kind' | 'category' | 'osmType' | 'address'>>(list: { visibility: string } | null | undefined, places: readonly P[]): P[] {
+  return list?.visibility === 'public' ? homeLikePlaces(places) : [];
+}
+
+/** A list filter with `placeIds` included (published) or excluded (left out) by hand. */
+export function confirmInFilter(f: ListFilter, placeIds: readonly string[], include: boolean): ListFilter {
+  const ids = new Set(placeIds);
+  const inc = (f.include ?? []).filter((x) => !ids.has(x));
+  const exc = (f.exclude ?? []).filter((x) => !ids.has(x));
+  return { ...f, include: include ? [...inc, ...ids] : inc, exclude: include ? exc : [...exc, ...ids] };
 }
 
 export interface AuthorGroup {
