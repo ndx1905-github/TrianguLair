@@ -14,8 +14,8 @@ import { Card } from '../../contacts/ui';
 import { setDeviceName } from '../../devices/local';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
-import { useReadyIdentity } from '../../identity/IdentityProvider';
-import { Field, Muted, Section, StorageScreen } from '../../storage/components';
+import { useIdentity, useReadyIdentity } from '../../identity/IdentityProvider';
+import { Field, MasterKeyPrompt, Muted, Section, StorageScreen } from '../../storage/components';
 import { useStorage } from '../../storage/StorageProvider';
 import { StorageNeeded } from '../../storage/useStorageForSharing';
 import { useSync } from '../../sync/SyncProvider';
@@ -28,6 +28,41 @@ function Badge({ label, testID }: { label: string; testID?: string }) {
         {label}
       </Text>
     </View>
+  );
+}
+
+/**
+ * "Restore with the 12 words" needs a copy of my current key sealed with them on my storage; an
+ * identity made before it existed (or a key changed on another device that had no master key)
+ * has none, and only the 12 words can make it here (devices review F-05).
+ */
+function RecoveryCopyCard({ onDone }: { onDone: () => void }) {
+  const { t } = useI18n();
+  const c = useUiColors();
+  const identity = useIdentity();
+  const [state, setState] = useState<'ask' | 'done' | 'wrong'>('ask');
+  if (state === 'done') return <Muted testID="recovery-copy-done">{t('devices.copy.done')}</Muted>;
+  return (
+    <Card testID="recovery-copy-card">
+      <Text style={{ color: c.text, fontSize: 17, fontWeight: '700' }} maxFontSizeMultiplier={2}>
+        {t('devices.copy.title')}
+      </Text>
+      <Muted>{t('devices.copy.body')}</Muted>
+      <MasterKeyPrompt
+        onReady={(m) =>
+          void identity.writeRecoveryCopy(m).then(
+            () => {
+              setState('done');
+              onDone();
+            },
+            () => setState('wrong'),
+          )
+        }
+        actionLabel={t('devices.copy.go')}
+        testID="recovery-copy-master"
+      />
+      {state === 'wrong' && <Text style={{ color: c.danger }} maxFontSizeMultiplier={2}>{t('settings.primaryMismatch')}</Text>}
+    </Card>
   );
 }
 
@@ -116,6 +151,7 @@ function DevicesScreen() {
               <Muted>{d.removed ? t('devices.removed', { date: date(d.removed) }) : t('devices.removedUndated')}</Muted>
             </View>
           ))}
+          {sync.snapshot?.recoveryCopyMissing && <RecoveryCopyCard onDone={() => void sync.refresh()} />}
           <View style={styles.row}>
             <Button label={t('devices.add')} onPress={() => router.push('/devices/add')} testID="devices-add" />
             <Button kind="secondary" label={t('devices.changes')} onPress={() => router.push('/devices/changes')} testID="devices-changes" />

@@ -29,6 +29,7 @@ import type { OpenInvitationSummary } from '../storage/interfaces';
 import type { JournalEntry } from '../devices/journal';
 import { deviceName, staleSync } from '../devices/local';
 import { staleSyncAction } from '../identity/lock';
+import { recoveryCopyFor } from '../identity/recovery';
 import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
@@ -140,7 +141,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (alive) registerSyncPort(c.port());
       },
       device: () => ({ name: deviceName(), added: record.createdAt, primary: identityRef.current.state.kind === 'ready' && identityRef.current.state.record.primary }),
-      recoveryCopy: () => secrets.get('recovery-copy'),
+      recoveryCopy: async (sharing) => {
+        const [stored, primaryIdentity, pendingPhrase] = await Promise.all([secrets.get('recovery-copy'), secrets.get('primary-identity'), secrets.get('pending-phrase')]);
+        const r = recoveryCopyFor(sharing, { stored, primaryIdentity, pendingPhrase });
+        if (r?.store) await secrets.set('recovery-copy', r.store);
+        return r?.copy ?? null;
+      },
       onStorageValue: async (v) => {
         await storageRef.current.updateCurrent(parseConfig(v));
       },

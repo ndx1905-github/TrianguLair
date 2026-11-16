@@ -31,6 +31,7 @@ import {
   toB64Url,
   fromB64Url,
   verifyDeviceCert,
+  verifyIndex,
   type DeviceCert,
   type DeviceKeys,
   type SharingKey,
@@ -76,6 +77,7 @@ export const VALUE_STORAGE = 'storage';
 export const VALUE_PROFILE = 'profile';
 
 const MAX_FILE = 256 * 1024;
+const INDEX = 'index.json';
 
 type Listener = () => void;
 
@@ -648,7 +650,7 @@ export function normalizePhrase(p: string): string {
   return p.trim().toLowerCase().split(/\s+/).join(' ');
 }
 
-export type RestoreError = 'phrase' | 'address' | 'not-found' | 'failed';
+export type RestoreError = 'phrase' | 'address' | 'not-found' | 'stale' | 'failed';
 
 export class RestoreFailed extends Error {
   constructor(readonly code: RestoreError) {
@@ -657,9 +659,24 @@ export class RestoreFailed extends Error {
 }
 
 /**
+ * The certificate my index publishes at `reader` (master-signed; null when there is no index).
+ * Throws when an index is there but does not verify for me.
+ */
+async function publishedCert(reader: StorageAdapter, owner: string): Promise<{ key: string; location: string; rotation: number } | null> {
+  const g = await reader.get(INDEX, { maxBytes: 4 * 1024 * 1024 });
+  if (!g) return null;
+  return verifyIndex(g.data, { expectedOwner: owner }).sharing_cert;
+}
+
+/**
  * The 12 words and the storage read address (the recovery kit): the phrase-protected copy of my
  * sharing key at `keys/<owner>.bin`, then the vault. This device gets its own keys and a device
  * certificate from the phrase.
+ *
+ * Freshness (devices review F-05): the copy must hold the certificate my index publishes there
+ * (same rotation and key; a copy put back from before a declaration of loss is refused, `stale`),
+ * and the vault must open with it. When the index there certifies another address (the kit names a
+ * previous storage, which keeps a signed redirect), the restore continues at that address.
  */
 export async function restoreWithPhrase(phrase: string, location: string, d: NewDeviceDeps, opts: { primary?: boolean; deviceKeys?: DeviceKeys } = {}): Promise<Joined> {
   let id;
@@ -669,17 +686,24 @@ export async function restoreWithPhrase(phrase: string, location: string, d: New
     throw new RestoreFailed('phrase');
   }
   try {
+    let at = location.trim();
     let reader: StorageAdapter;
-    try {
-      reader = d.readAdapter(location.trim());
-    } catch {
-      throw new RestoreFailed('address');
-    }
     let g;
-    try {
-      g = await reader.get(keyPath(id.owner), { maxBytes: MAX_FILE });
-    } catch {
-      throw new RestoreFailed('address');
+    let published: { key: string; location: string; rotation: number } | null;
+    for (let hop = 0; ; hop++) {
+      try {
+        reader = d.readAdapter(at);
+        published = await publishedCert(reader, id.owner);
+        g = await reader.get(keyPath(id.owner), { maxBytes: MAX_FILE });
+      } catch {
+        throw new RestoreFailed('address');
+      }
+      // A previous storage: its index is the signed redirect to where I live now.
+      if (hop === 0 && published?.location && published.location !== at) {
+        at = published.location;
+        continue;
+      }
+      break;
     }
     if (!g) throw new RestoreFailed('not-found');
     let sharing: SharingKey;
@@ -688,9 +712,18 @@ export async function restoreWithPhrase(phrase: string, location: string, d: New
     } catch {
       throw new RestoreFailed('not-found');
     }
+    if (published && (published.rotation > sharing.cert.rotation || (published.rotation === sharing.cert.rotation && published.key !== sharing.cert.key))) {
+      throw new RestoreFailed('stale');
+    }
+    let v: { storage: StorageConfig | null; profileName: string };
+    try {
+      v = await readVaultValues(sharing.cert.location ? d.readAdapter(sharing.cert.location) : reader, sharing);
+    } catch {
+      // A vault that does not open with this key was written under a newer one.
+      throw new RestoreFailed('stale');
+    }
     const deviceKeys = opts.deviceKeys ?? generateDeviceKeys();
     const deviceCert = issueDeviceCert(id, devicePublicKeys(deviceKeys));
-    const v = await readVaultValues(sharing.cert.location ? d.readAdapter(sharing.cert.location) : reader, sharing).catch(() => ({ storage: null, profileName: '' }));
     return {
       owner: id.owner,
       deviceKeys,

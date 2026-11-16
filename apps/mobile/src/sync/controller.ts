@@ -104,8 +104,12 @@ export interface ControllerDeps {
   onEngine?(): void;
   /** This device as listed in Settings › Devices (T-206): its name, when it was added, whether it keeps the master key. */
   device?(): { name: string; added: number; primary: boolean };
-  /** My sharing key sealed with the phrase-derived key (b64url TLSK mode 2), kept at keys/<owner>.bin for a restore. */
-  recoveryCopy?(): Promise<string | null>;
+  /**
+   * My current sharing key `sharing` sealed with the phrase-derived key (b64url TLSK mode 2), kept at
+   * keys/<owner>.bin for a restore; null when this device cannot make one without the 12 words
+   * (`identity/recovery.ts`: never a copy of an older key).
+   */
+  recoveryCopy?(sharing: SharingKey): Promise<string | null>;
   /**
    * The vault holds newer settings for my current storage (same read address: the credentials were
    * changed on another device after a declaration of loss). The app stores them and rebuilds.
@@ -141,6 +145,11 @@ export interface ControllerSnapshot {
   lastPassAt: number | null;
   /** Last pass where my storage worked (kept across launches; the scheduler's own value is per session). */
   lastOwnSuccess: number | null;
+  /**
+   * "Restore with the 12 words" would not find my current key: no phrase copy on this device, and
+   * only the 12 words can make one (devices review F-05; Settings › Devices asks for them).
+   */
+  recoveryCopyMissing: boolean;
 }
 
 export interface AddContactInput {
@@ -175,6 +184,8 @@ export class SyncController implements StorageMoveHooks {
   /** An identity change is under way: this controller (old identity) no longer runs. */
   private moving = false;
   private lastPassAt: number | null = null;
+  /** No phrase copy of my current key could be written (only the 12 words can make it). */
+  private copyMissing = false;
   private readonly friendProblems = new Map<string, SyncProblem | null>();
   private keysFor: (owner: string) => KeyPair[] = () => [];
   private portCache: { engine: SyncEngine; port: SyncPort } | null = null;
@@ -340,7 +351,8 @@ export class SyncController implements StorageMoveHooks {
     if (name) put(VALUE_PROFILE, { name });
     this.d.state.set(WRITTEN_KEY, written);
     try {
-      const rc = await this.d.recoveryCopy?.();
+      const rc = this.d.recoveryCopy ? await this.d.recoveryCopy(own.sharing) : undefined;
+      this.copyMissing = rc === null;
       if (rc) {
         const bytes = fromB64Url(rc, 'recovery copy');
         const h = packHash(bytes);
@@ -928,6 +940,7 @@ export class SyncController implements StorageMoveHooks {
       unseen: this.wiped ? 0 : safe(() => this.whatsNew.unseen(), 0),
       lastPassAt: this.lastPassAt,
       lastOwnSuccess: this.wiped ? null : safe(() => this.d.state.get<number>(OWN_OK_KEY) ?? null, null),
+      recoveryCopyMissing: !this.wiped && !!e?.own && this.copyMissing,
     };
   }
 }

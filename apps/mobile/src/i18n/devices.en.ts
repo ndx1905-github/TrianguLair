@@ -45,6 +45,7 @@ export const devicesEn: Messages = {
   'device.error.phrase': 'These are not 12 valid words.',
   'device.error.address': 'Nothing answers at this address.',
   'device.error.not-found': 'No copy of your key at this address for these words.',
+  'device.error.stale': 'The copy of your key at this address is older than the key your storage publishes (it may have been put back). Add this device from another of your devices instead, and check your storage access.',
 
   // Settings › Devices
   'settings.devices': 'Devices',
@@ -69,6 +70,10 @@ export const devicesEn: Messages = {
   'devices.none': 'Your devices are listed here once this device has synced with your storage.',
   'devices.nameLabel': 'Device name',
   'devices.changes': 'Changes since a date',
+  'devices.copy.title': 'Restoring with your 12 words is not ready',
+  'devices.copy.body': 'A copy of your current key, locked with your 12 words, must be on your storage so that a new device can restore everything from your recovery kit. Type your words once to write it.',
+  'devices.copy.go': 'Write the copy',
+  'devices.copy.done': 'Done: your recovery kit restores your current key.',
 
   // Add a device (old device)
   'add.deviceTitle': 'Add a device',

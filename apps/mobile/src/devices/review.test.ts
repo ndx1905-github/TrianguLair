@@ -27,6 +27,7 @@ import { staleSyncAction } from '../identity/lock';
 import { masterIdentity, rotateStoredSharingKey } from '../storage/certify';
 import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
+import { encodeRecoveryCopy, recoveryCopyFor, sealRecoveryCopy } from '../identity/recovery';
 import { SyncController } from '../sync/controller';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from '../sync/keys';
 import { decodeInvite, deviceFingerprint, encodeRequestLink, sealRequest } from './channel';
@@ -87,7 +88,7 @@ function person(name: string, opts: { recoveryCopy?: boolean } = {}) {
     sharingKey: rot.sealedForThisDevice,
     syncKeys: null,
     primaryIdentity: created.secrets.primaryIdentity,
-    recoveryCopy: opts.recoveryCopy === false ? null : toB64Url(rot.vaultCopy),
+    recoveryCopy: opts.recoveryCopy === false ? null : encodeRecoveryCopy(rot.vaultCopy, rot.cert),
     store,
     adopted: [] as unknown[],
   } as unknown as Dev;
@@ -116,7 +117,11 @@ function person(name: string, opts: { recoveryCopy?: boolean } = {}) {
     onChange: () => {},
     author: () => name,
     device: () => ({ name, added: d.record.createdAt, primary: !!d.primaryIdentity }),
-    recoveryCopy: async () => d.recoveryCopy,
+    recoveryCopy: async (sharing) => {
+      const r = recoveryCopyFor(sharing, { stored: d.recoveryCopy, primaryIdentity: d.primaryIdentity });
+      if (r?.store) d.recoveryCopy = r.store;
+      return r?.copy ?? null;
+    },
     onStorageValue: async (v) => void d.adopted.push(v),
   });
   return { created, location, storage, d, config };
@@ -234,14 +239,14 @@ describe('review F-04: QR "cancel" after approval', () => {
 });
 
 describe('review F-05: restore with the 12 words', () => {
-  it.fails('a restore refuses a phrase copy of the sharing key older than the certificate my index publishes (rolled back keys/<owner>.bin)', async () => {
+  it('a restore refuses a phrase copy of the sharing key older than the certificate my index publishes (rolled back keys/<owner>.bin)', async () => {
     const anna = person('anna');
     await anna.d.ctl.refresh();
     const old = (await anna.storage.get(keyPath(anna.d.record.owner)))!.data;
     // A key change (remove a device / declaration): keys/<owner>.bin follows the new key.
     const rot = rotateStoredSharingKey(anna.d.record, { deviceKeys: anna.d.deviceKeys, sharingKey: anna.d.sharingKey, primaryIdentity: anna.d.primaryIdentity }, { newKey: true }, { kind: 'primary' });
     anna.d.sharingKey = rot.sealedForThisDevice;
-    anna.d.recoveryCopy = toB64Url(rot.vaultCopy);
+    anna.d.recoveryCopy = encodeRecoveryCopy(rot.vaultCopy, rot.cert);
     await anna.d.ctl.declareLost(rot, { cancelInvitations: true });
     // The host (or a stolen device whose storage access was not changed yet) puts the old copy back.
     await anna.storage.put(keyPath(anna.d.record.owner), old);
@@ -252,13 +257,57 @@ describe('review F-05: restore with the 12 words', () => {
       rotation = null; // refused: fine
     }
     expect(rotation === null || rotation === rot.cert.rotation).toBe(true);
+    await expect(restoreWithPhrase(anna.created.phrase, anna.location, { readAdapter, writeAdapter: () => anna.storage })).rejects.toMatchObject({ code: 'stale' });
+    // The current copy restores (rotation 2).
+    await anna.storage.put(keyPath(anna.d.record.owner), rot.vaultCopy);
+    const j = await restoreWithPhrase(anna.created.phrase, anna.location, { readAdapter, writeAdapter: () => anna.storage });
+    expect(j.sharing.cert.rotation).toBe(rot.cert.rotation);
+    expect(j.storage).toEqual(anna.config);
   });
 
-  it.fails('an identity without a stored recovery copy (created before this version) still gets keys/<owner>.bin from its primary device', async () => {
+  it('an identity without a stored recovery copy (created before this version) still gets keys/<owner>.bin from its primary device', async () => {
     const anna = person('anna', { recoveryCopy: false });
     await anna.d.ctl.refresh();
     // Without it, "restore with the 12 words" answers "not found" (sessions.ts restoreWithPhrase).
     expect(await anna.storage.get(keyPath(anna.d.record.owner))).not.toBeNull();
+    expect(anna.d.ctl.snapshot().recoveryCopyMissing).toBe(false);
+    const j = await restoreWithPhrase(anna.created.phrase, anna.location, { readAdapter, writeAdapter: () => anna.storage });
+    expect(j.sharing.cert.key).toBe((await sharingOf(anna.d)).cert.key);
+  });
+
+  it('a device that cannot make the copy (no master key) says so, and never uploads a copy of an older key', async () => {
+    const anna = person('anna', { recoveryCopy: false });
+    anna.d.primaryIdentity = null;
+    await anna.d.ctl.refresh();
+    expect(await anna.storage.get(keyPath(anna.d.record.owner))).toBeNull();
+    expect(anna.d.ctl.snapshot().recoveryCopyMissing).toBe(true);
+    // A copy made for another certificate (an older key) is not used.
+    const other = rotateStoredSharingKey(anna.d.record, { deviceKeys: anna.d.deviceKeys, sharingKey: anna.d.sharingKey, primaryIdentity: anna.created.secrets.primaryIdentity }, { newKey: true }, { kind: 'primary' });
+    anna.d.recoveryCopy = encodeRecoveryCopy(other.vaultCopy, other.cert);
+    anna.d.store.putSave({ place: { osm: { type: 'node', id: 9 }, name: 'Q', category: 'amenity=cafe', geometry: { type: 'Point', coordinates: [2.35, 48.85] } } });
+    await anna.d.ctl.refresh();
+    expect(await anna.storage.get(keyPath(anna.d.record.owner))).toBeNull();
+    // The 12 words once (IdentityApi.writeRecoveryCopy): sealed for the current key, uploaded.
+    const id = masterIdentity(anna.d.record, { deviceKeys: anna.d.deviceKeys, sharingKey: anna.d.sharingKey, primaryIdentity: null }, { kind: 'phrase', phrase: anna.created.phrase });
+    anna.d.recoveryCopy = sealRecoveryCopy(await sharingOf(anna.d), id).store;
+    anna.d.store.putSave({ place: { osm: { type: 'node', id: 10 }, name: 'R', category: 'amenity=cafe', geometry: { type: 'Point', coordinates: [2.35, 48.85] } } });
+    await anna.d.ctl.refresh();
+    expect(anna.d.ctl.snapshot().recoveryCopyMissing).toBe(false);
+    expect((await restoreWithPhrase(anna.created.phrase, anna.location, { readAdapter, writeAdapter: () => anna.storage })).sharing.cert.rotation).toBe(1);
+  });
+
+  it('a recovery kit naming a previous storage follows its signed redirect to the current one', async () => {
+    const anna = person('anna');
+    await anna.d.ctl.refresh();
+    // The previous storage keeps my newest index (the redirect, certifying the new address) and
+    // an old keys/<owner>.bin; the current storage has the current copy.
+    const oldAddress = `https://anna-old-${++ids}.example/tl/`;
+    const oldStorage = new MemoryAdapter();
+    world.set(oldAddress, oldStorage);
+    await oldStorage.put('index.json', (await anna.storage.get('index.json'))!.data);
+    await oldStorage.put(keyPath(anna.d.record.owner), new Uint8Array([1, 2, 3]));
+    const j = await restoreWithPhrase(anna.created.phrase, oldAddress, { readAdapter, writeAdapter: () => anna.storage });
+    expect(j.sharing.cert.location).toBe(anna.location);
   });
 });
 

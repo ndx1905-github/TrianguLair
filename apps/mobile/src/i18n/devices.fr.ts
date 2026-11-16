@@ -44,6 +44,7 @@ export const devicesFr: Messages = {
   'device.error.phrase': 'Ce ne sont pas 12 mots valides.',
   'device.error.address': 'Rien ne répond à cette adresse.',
   'device.error.not-found': 'Aucune copie de votre clé à cette adresse pour ces mots.',
+  'device.error.stale': 'La copie de votre clé à cette adresse est plus ancienne que la clé publiée par votre stockage (elle a pu être remise en place). Ajoutez plutôt cet appareil depuis un autre de vos appareils, et vérifiez l’accès à votre stockage.',
 
   'settings.devices': 'Appareils',
   'settings.devicesHelp': 'Ajouter un appareil, en renommer ou en retirer un, en déclarer un perdu.',
@@ -67,6 +68,10 @@ export const devicesFr: Messages = {
   'devices.none': 'Vos appareils s’affichent ici une fois cet appareil synchronisé avec votre stockage.',
   'devices.nameLabel': 'Nom de l’appareil',
   'devices.changes': 'Changements depuis une date',
+  'devices.copy.title': 'La restauration avec vos 12 mots n’est pas prête',
+  'devices.copy.body': 'Une copie de votre clé actuelle, verrouillée par vos 12 mots, doit être sur votre stockage pour qu’un nouvel appareil puisse tout restaurer depuis votre kit de récupération. Tapez vos mots une fois pour l’écrire.',
+  'devices.copy.go': 'Écrire la copie',
+  'devices.copy.done': 'C’est fait : votre kit de récupération restaure votre clé actuelle.',
 
   'add.deviceTitle': 'Ajouter un appareil',
   'add.lead': 'Le nouvel appareil reçoit sa propre clé, certifiée par votre clé maîtresse, et votre clé de partage actuelle. Vos 12 mots ne voyagent jamais.',

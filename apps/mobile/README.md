@@ -176,7 +176,13 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
 - **Devices** (T-206, T-207; logic in `src/devices/`, tested in `devices.test.ts` and `flow.test.ts`):
   - *First launch "I already have TrianguLair on another device"* (`/welcome/device`): the device name, then QR code,
     link + 6-word code, or the 12 words with the storage read address (`restoreWithPhrase`: the phrase copy of the
-    sharing key at `keys/<owner>.bin`, then the vault). The new device makes its own keys; its master-signed device
+    sharing key at `keys/<owner>.bin`, then the vault). Devices review F-05: the copy must hold the certificate my
+    index publishes there (same rotation and key) and the vault must open with it, else "stale" (a copy put back from
+    before a declaration is refused); a kit naming a previous storage follows its signed redirect. The copy is kept
+    in the secret store with the certificate it was made for (`identity/recovery.ts`) and uploaded only for the
+    current key; a primary device (or a pending phrase) seals a fresh one when it is missing or older, any 12-word
+    prompt (adding a device, a key change) refreshes it, and otherwise Settings › Devices says that restoring with
+    the 12 words is not ready and asks for them once (`IdentityApi.writeRecoveryCopy`). The new device makes its own keys; its master-signed device
     certificate comes from the other device (primary: one tap; else the 12 words) or from the words typed here; the
     sharing key, vault data key, storage access and first name come with it (storage settings from the vault value
     `storage`); no demo seed; then it syncs.

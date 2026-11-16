@@ -18,6 +18,7 @@ import { createIdentity, parseDeviceKeys, type IdentityRecord } from '../identit
 import { masterIdentity, rotateStoredSharingKey } from '../storage/certify';
 import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
+import { encodeRecoveryCopy, recoveryCopyFor } from '../identity/recovery';
 import { SyncController } from '../sync/controller';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from '../sync/keys';
 import { joinedIdentity, moveIdentity } from './identity';
@@ -102,7 +103,11 @@ function device(name: string, init: Omit<Dev, 'store' | 'ctl' | 'wiped' | 'name'
     onChange: () => {},
     author: () => name,
     device: () => ({ name, added: d.record.createdAt, primary: !!d.primaryIdentity }),
-    recoveryCopy: async () => d.recoveryCopy,
+    recoveryCopy: async (sharing) => {
+      const r = recoveryCopyFor(sharing, { stored: d.recoveryCopy, primaryIdentity: d.primaryIdentity });
+      if (r?.store) d.recoveryCopy = r.store;
+      return r?.copy ?? null;
+    },
   });
   return d;
 }
@@ -115,7 +120,7 @@ function person(name: string) {
   world.set(location, storage);
   const d = device(name, {
     record: created.record, deviceKeys: created.secrets.deviceKeys, sharingKey: rot.sealedForThisDevice, syncKeys: null,
-    primaryIdentity: created.secrets.primaryIdentity, recoveryCopy: toB64Url(rot.vaultCopy),
+    primaryIdentity: created.secrets.primaryIdentity, recoveryCopy: encodeRecoveryCopy(rot.vaultCopy, rot.cert),
   }, storage, location);
   return { created, location, storage, d };
 }
@@ -249,7 +254,7 @@ describe('adding a device and declaring it lost', () => {
     const a1b = device('anna', {
       record: moved.record, deviceKeys: moved.secrets.deviceKeys, sharingKey: moved.secrets.sharingKey,
       syncKeys: serializeSyncKeys({ previousSharingKeys: [moved.previousSharing], previousVaultKeys: [] }),
-      primaryIdentity: moved.secrets.primaryIdentity, recoveryCopy: toB64Url(moved.vaultCopy),
+      primaryIdentity: moved.secrets.primaryIdentity, recoveryCopy: encodeRecoveryCopy(moved.vaultCopy, moved.sharing.cert),
     }, anna.storage, anna.location, a1.driver);
     expect(mine(a1b).map((x) => x.place_id)).toEqual(['osm:node/1']);
     // The vault records continued under the new owner.
