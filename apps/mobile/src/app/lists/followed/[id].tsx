@@ -10,12 +10,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { DataGate } from '../../../components/DataGate';
 import { Banner, Button } from '../../../components/ui';
 import { useContacts } from '../../../contacts/ContactsProvider';
-import { shortKey } from '../../../contacts/ui';
 import { useData } from '../../../data/DataProvider';
 import { useUiColors } from '../../../hooks/useUiColors';
 import { useI18n } from '../../../i18n';
 import { ListPlacesView } from '../../../lists/ListPlacesView';
-import { goneKey } from '../../../lists/sharing';
+import { authorLabel, goneKey } from '../../../lists/sharing';
 import { useSync } from '../../../sync/SyncProvider';
 
 function FollowedListScreen() {
@@ -36,7 +35,7 @@ function FollowedListScreen() {
   );
   const [confirm, setConfirm] = useState(false);
   const back = () => (router.canGoBack() ? router.back() : router.replace('/lists/followed'));
-  const author = info ? svc?.contact(info.owner)?.name || info.author : undefined;
+  const author = info ? authorLabel(t, { owner: info.owner, declared: info.author, contactName: svc?.contact(info.owner)?.name || undefined }) : '';
   const date = (iso: string) => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso));
 
   const header = (
@@ -45,7 +44,7 @@ function FollowedListScreen() {
       {info && (
         <>
           <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2} testID="followed-list-meta">
-            {[author ? t('follow.by', { name: author }) : t('follow.byKey', { key: shortKey(info.owner) }), t('filters.places', { count: info.count }), info.updated ? t('follow.updated', { date: date(info.updated) }) : null]
+            {[author, t('filters.places', { count: info.count }), info.updated ? t('follow.updated', { date: date(info.updated) }) : null]
               .filter(Boolean)
               .join(' · ')}
           </Text>

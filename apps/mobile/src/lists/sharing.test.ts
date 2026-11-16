@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PlaceRecord } from '@triangulair/data';
 import type { FollowedListInfo, PlaceFeature } from '@triangulair/sync';
 
-import { buildListLink, confirmInFilter, featurePins, goneKey, groupByAuthor, homeLikePlaces, homesToConfirm, listFragmentOf } from './sharing';
+import { authorLabel, buildListLink, confirmInFilter, featurePins, goneKey, groupByAuthor, homeLikePlaces, homesToConfirm, listFragmentOf } from './sharing';
 
 const placeRec = (p: Partial<PlaceRecord>): PlaceRecord => ({ id: 'osm:node/1', osmType: 'node', osmId: 1, name: 'X', category: 'amenity=cafe', kind: 'place', address: null, ...p }) as PlaceRecord;
 
@@ -69,8 +69,26 @@ describe('followed lists', () => {
       ['Anna', ['Brunch']],
       ['Benoît', ['Apéro', 'Zinc']],
     ]);
+    // Benoît is a contact: his name; Anna only declares hers.
+    expect(g[0]).toMatchObject({ declared: 'Anna' });
+    expect(g[0]!.contactName).toBeUndefined();
+    expect(g[1]).toMatchObject({ contactName: 'Benoît', declared: 'Ben' });
     expect(goneKey('deleted')).toBe('sharing.gone.deleted');
     expect(goneKey('link-dead')).toBe('sharing.gone.linkDead');
+  });
+
+  it('the author is their key: a contact by name, anyone else by the declared name in quotes, never trusted (L-06)', () => {
+    const t = (k: string, p?: Record<string, string | number>) => `${k}|${p?.name ?? ''}|${p?.key ?? ''}`;
+    const owner = 'ed25519:ABCDefghijklmnopqrstuvwxyz0123456789-_ABCDE';
+    expect(authorLabel(t, { owner, contactName: 'Marie', declared: 'Someone' })).toBe('follow.byContact|Marie|ABCD…BCDE');
+    expect(authorLabel(t, { owner, declared: 'Marie' })).toBe('follow.signsAs|Marie|ABCD…BCDE');
+    expect(authorLabel(t, { owner })).toBe('follow.byStranger||ABCD…BCDE');
+    // Two authors declaring the same name stay two groups, the contact one named from my contacts.
+    const g = groupByAuthor([info('1', 'ed25519:x', 'L1', 'Marie'), info('2', 'ed25519:m', 'L2', 'Marie')], (o) => (o === 'ed25519:m' ? 'Marie' : undefined));
+    expect(g.map((x) => [x.owner, x.contactName ?? null])).toEqual([
+      ['ed25519:x', null],
+      ['ed25519:m', 'Marie'],
+    ]);
   });
 
   it('preview pins carry the author tag colors and a zone badge', () => {

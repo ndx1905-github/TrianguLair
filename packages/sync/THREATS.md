@@ -118,6 +118,11 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   everything does not learn my list names unless picked. Membership never names a place they cannot read: picks
   count only while the contact sees everything and are dropped at any change of scope, and a lists pack keeps only
   the places every one of its viewers can read (audiences of the places packs), whatever the policies say (M-01).
+- **Impersonation by name** (L-06): the `author` of a link pack or public file is self-declared. The app never
+  shows it as an identity: a followed list shows the author's master key as a short code, the name from my contacts
+  when that key is a contact of mine, and otherwise the declared name in quotes with "not in your contacts". Lists
+  are grouped by master key, so two authors who declare the same name stay apart. An 8-character short code can be
+  ground (about 48 bits): compare the safety code to be sure.
 - **My vault and followed lists**: the vault holds the link (and so the key) of every list I follow; an unfollowed
   list keeps only its id and the time (L-02), and the entry goes after 180 days. Whoever opens my vault (recovery
   phrase, an unlocked stolen device) learns the lists I follow now, not the ones I followed before.

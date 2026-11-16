@@ -90,8 +90,11 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
 - **Following a list by link** (`/lists/follow`, deep link `/l#…` in `src/app/l.tsx`: the fragment is taken from the
   address bar, removed from it and handed over in memory): paste or open → preview (map with the author's tag colors,
   places with public comments, author, date, number of places) → "Follow this list"; no account, no request, not a
-  contact. Problems in plain words: not a list link, "This link no longer works" / "This list no longer exists" (ask
-  for a new link), my own list, unreachable.
+  contact. The author is shown by their key (`authorLabel`: "By Marie, in your contacts (AbCd…WxYz)" when the key is
+  a contact, else "Signs as “Marie” (AbCd…WxYz), not in your contacts": the name in a list is self-declared, review
+  L-06). The list is followed only once its first read worked; otherwise nothing is kept and the button stays to
+  try again (L-05). Problems in plain words: not a list link, "This link no longer works" / "This list no longer
+  exists" (ask for a new link), my own list, unreachable, 200 lists already followed.
 - **Followed lists** (`/lists/followed`, from My lists and Friends): by author, with places, date and the gone
   message; a list's screen (`/lists/followed/[id]`, `ListPlacesView.tsx`: map + rows, card) with Refresh and Unfollow
   (its places leave now, on all my devices through the vault). Lists friends shared with me

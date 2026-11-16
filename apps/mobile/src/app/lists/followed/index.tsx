@@ -15,7 +15,7 @@ import { shortKey } from '../../../contacts/ui';
 import { useData } from '../../../data/DataProvider';
 import { useUiColors } from '../../../hooks/useUiColors';
 import { useI18n } from '../../../i18n';
-import { goneKey, groupByAuthor } from '../../../lists/sharing';
+import { authorLabel, goneKey, groupByAuthor } from '../../../lists/sharing';
 import { Muted, Section, StorageScreen } from '../../../storage/components';
 import { useSync } from '../../../sync/SyncProvider';
 
@@ -64,7 +64,7 @@ function FollowedScreen() {
           groups.map((g) => (
             <View key={g.owner} style={{ gap: 8 }} testID={`followed-author-${g.name || shortKey(g.owner)}`}>
               <Text style={{ fontSize: 14, fontWeight: '700', color: c.textMuted }} maxFontSizeMultiplier={2}>
-                {g.name ? t('follow.by', { name: g.name }) : t('follow.byKey', { key: shortKey(g.owner) })}
+                {authorLabel(t, { owner: g.owner, declared: g.declared, contactName: g.contactName })}
               </Text>
               {g.lists.map((l) => (
                 <Row

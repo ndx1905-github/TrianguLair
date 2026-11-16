@@ -14,12 +14,13 @@ import { ListGoneError, ListLinkError, TooManyFollowedListsError, type ListPrevi
 import { DataGate } from '../../components/DataGate';
 import { Banner, Button } from '../../components/ui';
 import { takePendingLink } from '../../contacts/pending';
-import { Card, PasteField, Strong, shortKey } from '../../contacts/ui';
+import { Card, PasteField, Strong } from '../../contacts/ui';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { categoryIdOf } from '../../lists/listLogic';
 import { PreviewMap } from '../../lists/PreviewMap';
-import { goneKey, listFragmentOf } from '../../lists/sharing';
+import { authorLabel, goneKey, listFragmentOf } from '../../lists/sharing';
+import { useContacts } from '../../contacts/ContactsProvider';
 import { categoryLabel } from '../../places/card';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { useSync } from '../../sync/SyncProvider';
@@ -33,6 +34,7 @@ function FollowScreen() {
   const router = useRouter();
   const sync = useSync();
   const ctl = sync.controller();
+  const svc = useContacts();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<ListPreview | null>(null);
@@ -117,7 +119,7 @@ function FollowScreen() {
             <Strong testID="follow-preview-name">{preview.name}</Strong>
             <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2} testID="follow-preview-meta">
               {[
-                preview.author ? t('follow.by', { name: preview.author }) : t('follow.byKey', { key: shortKey(preview.owner) }),
+                authorLabel(t, { owner: preview.owner, declared: preview.author, contactName: svc?.contact(preview.owner)?.name || undefined }),
                 t('filters.places', { count: preview.count }),
                 preview.updated ? t('follow.updated', { date: date(preview.updated) }) : null,
                 t(`follow.kind.${preview.kind}`),

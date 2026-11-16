@@ -10,6 +10,7 @@ import { looksLikeHome, type FollowedListInfo, type ListGone, type PlaceFeature 
 
 import type { MapPin } from '../components/map/types';
 import { findLink, LIST_PREFIX } from '../contacts/links';
+import { shortKey } from '../contacts/model';
 import { iconPath, isIconName, UNTAGGED_COLOR } from '../theme/tags';
 
 /** `https://triangulair.app/l#<fragment>`: opens the app (or the store page) on "Follow this list". */
@@ -52,21 +53,43 @@ export function confirmInFilter(f: ListFilter, placeIds: readonly string[], incl
 
 export interface AuthorGroup {
   owner: string;
+  /** The contact's name, else the name the lists declare, else "" (for sorting and test ids). */
   name: string;
+  /** My contact's name when the author's master key is a contact of mine. */
+  contactName?: string;
+  /** The name the author wrote in the list (self-declared, never trusted as an identity). */
+  declared?: string;
   lists: FollowedListInfo[];
 }
 
-/** Followed lists by author (name from my contacts, else the one in the list, else "" for the screen to fill). */
+/** Followed lists by author (their master key: two authors who declare the same name stay apart). */
 export function groupByAuthor(lists: readonly FollowedListInfo[], contactName: (owner: string) => string | undefined): AuthorGroup[] {
   const m = new Map<string, AuthorGroup>();
   for (const l of lists) {
     let g = m.get(l.owner);
-    if (!g) m.set(l.owner, (g = { owner: l.owner, name: contactName(l.owner) || l.author || '', lists: [] }));
+    if (!g) {
+      const cn = contactName(l.owner) || undefined;
+      m.set(l.owner, (g = { owner: l.owner, name: cn || l.author || '', ...(cn && { contactName: cn }), ...(l.author && { declared: l.author }), lists: [] }));
+    }
+    if (!g.declared && l.author) g.declared = l.author;
     if (!g.name && l.author) g.name = l.author;
     g.lists.push(l);
   }
   for (const g of m.values()) g.lists.sort((a, b) => a.name.localeCompare(b.name));
   return [...m.values()].sort((a, b) => (a.name || '￿').localeCompare(b.name || '￿'));
+}
+
+/**
+ * Who a list is by (review L-06). The name in a list is self-declared: anyone can write "Marie".
+ * The author's identity is their master key (the link names it, their index is signed by it), shown
+ * as its short code. When that key is one of my contacts, their name in my contacts; otherwise the
+ * declared name in quotes, with "not in your contacts".
+ */
+export function authorLabel(t: (key: string, params?: Record<string, string | number>) => string, a: { owner: string; declared?: string | undefined; contactName?: string | undefined }): string {
+  const key = shortKey(a.owner);
+  if (a.contactName) return t('follow.byContact', { name: a.contactName, key });
+  if (a.declared) return t('follow.signsAs', { name: a.declared, key });
+  return t('follow.byStranger', { key });
 }
 
 /** "This list no longer exists" / "This link no longer works". */
