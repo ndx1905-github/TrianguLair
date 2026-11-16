@@ -744,6 +744,15 @@ export class OwnSync {
       want.set(`${d.audience.fp}|${d.h}`, d);
     }
     const liveLists = new Set(repo.lists().map((l) => l.id));
+    // Tombstones the local state still produces (the list is in my trash): those replace older ones.
+    const tombsWanted = new Set([...want.values()].filter((d) => d.role === 'tombstone').flatMap((d) => d.lists));
+    // Recipient sets of an older manifest (before a rotation), for the tombstones carried over.
+    const anyFps: Record<string, string> = {};
+    for (const p of listed) {
+      const i = infoOf(p);
+      if (i?.k === 'manifest') Object.assign(anyFps, i.fps);
+    }
+    Object.assign(anyFps, fps);
     for (const p of listed) {
       const i = infoOf(p);
       if (i?.k !== 'lists') continue;
@@ -751,10 +760,13 @@ export class OwnSync {
       if (fp && want.delete(`${fp}|${i.h}`)) {
         entries.push(p);
         newFps[i.id] = fp;
-      } else if (fp && i.tomb && i.tomb.until > now.getTime() && !liveLists.has(i.tomb.list)) {
-        // The tombstone of a list purged from my trash (or deleted on another device): kept until it expires.
+      } else if (i.tomb && i.tomb.until > now.getTime() && !liveLists.has(i.tomb.list) && !tombsWanted.has(i.tomb.list)) {
+        // The tombstone of a list purged from my trash (or deleted on another device): kept until it
+        // expires, whatever the rotation it was sealed under (its list key is gone with the list, so
+        // it cannot be sealed again: review L-04).
         entries.push(p);
-        newFps[i.id] = fp;
+        const tfp = fp ?? anyFps[i.id];
+        if (tfp) newFps[i.id] = tfp;
       } else drop.push(p.file);
     }
     for (const d of want.values()) {

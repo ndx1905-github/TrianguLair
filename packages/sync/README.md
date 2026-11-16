@@ -200,7 +200,7 @@ devices in three ways:
   `linkKey` (data package `updateList`), so going back needs "Create the link" (a new key) and the old link stays
   dead (review L-01). **Deleting** the list
   publishes a tombstone sealed to its last key, kept 180 days (also after the list leaves the trash, by every device
-  that sees the tombstone in the index): "This list no longer exists".
+  that sees the tombstone in the index, and across a rotation of my sharing key: review L-04): "This list no longer exists".
 - **Public**: `public/lists.geojson` (above). A public list can also be followed by link (`kind: public`, the list id
   instead of a key): the file is checked against the hash in the verified index, filtered by list id.
 

@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { audienceOf, ContactBook, FOLLOWED_REMOVED_KEEP_MS, MAX_FOLLOWED_LISTS, mergeBooks, TooManyFollowedListsError, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
+import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert, type SharingKey } from '@triangulair/crypto';
 import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
 
 await listsReady();
@@ -235,5 +236,51 @@ describe('review PR #85: lists', () => {
     expect(p.features.find((f) => f.id === 'osm:node/1')!.properties.tags).toEqual([{ name: "Mum's", color: '#16A34A', icon: 'heart' }]);
     geo = await publicFile();
     expect(geo.features[0].properties.tags[0].name).toBe("Mum's");
+  });
+
+  // L-04 (Low): the tombstone of a list purged from my trash survives a sharing-key rotation.
+  it('L-04: a deleted list stays "no longer exists" after the list leaves the trash and the sharing key rotates', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const a2 = addDevice(w, a.user);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    await ben.engine.followList(link);
+    a.store.deleteList(list);
+    await a.engine.sync();
+    a.store.purgeTrash();
+    a.store.repo.db.run(`DELETE FROM lists WHERE id = ?`, [list]); // as after the 30 days
+    await a.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+
+    const kp = generateX25519KeyPair();
+    const next: SharingKey = { keyPair: kp, cert: issueSharingCert(a.user.identity, kp.publicKey, { rotation: 1, location: a.user.location }), vaultDataKey: generateVaultDataKey() };
+    await a.engine.own!.rotate(next, [a2.signer.cert]);
+    expect((await a.engine.sync()).own!.published).toBe(true);
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    // My other device adopts the key and keeps it too.
+    await a2.engine.sync();
+    await a2.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    expect((await ben.engine.sync()).lists![0]).toMatchObject({ status: 'gone', gone: 'deleted' });
+  });
+
+  it('L-04: a list still in my trash gets one tombstone, re-sealed for the new key', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    await ben.engine.followList(link);
+    a.store.deleteList(list);
+    await a.engine.sync();
+    const kp = generateX25519KeyPair();
+    await a.engine.own!.rotate({ keyPair: kp, cert: issueSharingCert(a.user.identity, kp.publicKey, { rotation: 1, location: a.user.location }), vaultDataKey: generateVaultDataKey() }, []);
+    await a.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    const index = a.engine.own!.index!;
+    // places packs (2 saves, one pack), the tombstone, own document, manifest
+    expect(index.packs.filter((p) => p.file.startsWith('packs/'))).toHaveLength(2);
   });
 });
