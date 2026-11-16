@@ -210,7 +210,8 @@ whole URL to it without a request. The reader then contacts only my storage (ind
 must hold: the site never reads `location.hash`, the web app removes the fragment from the address bar, links are
 never logged. The link stays forwardable until renewed (spec threat model, "Holder of a list link").
 
-**Following** (`followList`, no account, no request, no consent): the followed list is kept in my vault
+**Following** (`followList`, no account, no request, no consent): the list is read first and recorded only when
+that read worked (a failed or gone read leaves nothing, review L-05); the followed list is kept in my vault
 (`app.triangulair_sync.lists`, per list, latest change wins, `removed` tombstones), so all my devices follow it. An
 unfollowed list keeps only `{ at, removed }`, never its link (the list key), and the entry is dropped 180 days later;
 at most `MAX_FOLLOWED_LISTS` (200) lists are followed (`TooManyFollowedListsError`; review L-02). Its

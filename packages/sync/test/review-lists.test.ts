@@ -283,4 +283,34 @@ describe('review PR #85: lists', () => {
     // places packs (2 saves, one pack), the tombstone, own document, manifest
     expect(index.packs.filter((p) => p.file.startsWith('packs/'))).toHaveLength(2);
   });
+
+  // L-05 (Low): a list is followed only once a first read worked.
+  it('L-05: a failed or gone first read follows nothing; a later try follows', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    const id = followIdOf(parseListLinkFragment(link));
+    const storage = w.storages.get(a.user.location)!;
+    const get = storage.get.bind(storage);
+    storage.get = async () => {
+      throw new Error('host down');
+    };
+    expect(await ben.engine.followList(link)).toMatchObject({ status: 'error' });
+    expect(ben.engine.followedLists()).toEqual([]);
+    expect(ben.engine.lists.known()).toEqual([]);
+    storage.get = get;
+    expect(await ben.engine.followList(link)).toMatchObject({ status: 'updated' });
+    expect(ben.engine.followedLists().map((l) => l.id)).toEqual([id]);
+
+    // A deleted list is not followed either.
+    const other = a.store.createList({ name: 'Gone', kind: 'manual', visibility: 'link', linkKey: newListKey() });
+    await a.engine.sync();
+    const goneLink = linkOf(a, other);
+    a.store.deleteList(other);
+    await a.engine.sync();
+    expect(await ben.engine.followList(goneLink)).toMatchObject({ status: 'gone', gone: 'deleted' });
+    expect(ben.engine.followedLists().map((l) => l.id)).toEqual([id]);
+  });
 });

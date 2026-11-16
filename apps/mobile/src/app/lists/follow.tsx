@@ -3,7 +3,8 @@
  * list link (or open it: the `/l#…` deep link hands it over in memory), see the preview (map and
  * places, the author's name, the update date), then "Follow this list". No account, no request,
  * no key exchange: the link is enough. A link that no longer works or a deleted list says so, with
- * the suggestion to ask for a new link.
+ * the suggestion to ask for a new link. The list is followed only once its first read worked; if
+ * that read fails, nothing is kept and "Follow this list" stays there to try again (review L-05).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -23,7 +24,7 @@ import { categoryLabel } from '../../places/card';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { useSync } from '../../sync/SyncProvider';
 
-type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable' | 'too-many';
+type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable' | 'too-many' | 'not-followed';
 
 function FollowScreen() {
   const tr = useI18n();
@@ -79,11 +80,17 @@ function FollowScreen() {
     if (!fragment) return;
     setFollowing(true);
     try {
+      // Followed only once this first read worked (L-05): otherwise nothing is kept, try again.
       const r = await ctl.followList(fragment);
+      if (r.status === 'gone') {
+        setPreview(null);
+        setProblem(r.gone ?? 'link-dead');
+        return;
+      }
       if (r.status === 'error') throw new Error('read failed');
       router.replace(`/lists/followed/${encodeURIComponent(preview.id)}` as Href);
     } catch (e) {
-      setProblem(e instanceof TooManyFollowedListsError ? 'too-many' : 'unreachable');
+      setProblem(e instanceof TooManyFollowedListsError ? 'too-many' : 'not-followed');
     } finally {
       setFollowing(false);
     }

@@ -74,6 +74,7 @@ export const sharedListsEn: Messages = {
   'follow.problem.not-a-list': 'This is not a list link. A list link starts with https://triangulair.app/l#',
   'follow.problem.mine': 'This list is yours: it is in My lists.',
   'follow.problem.unreachable': 'The list could not be read right now (no network, or the author’s storage did not answer). Try again later.',
+  'follow.problem.not-followed': 'The list could not be read just now, so it is not followed. Check your connection and tap “Follow this list” again.',
   'follow.problem.too-many': 'You already follow 200 lists, the most the app keeps. Unfollow one to follow this one.',
 
   'followed.title': 'Followed lists',

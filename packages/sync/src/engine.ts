@@ -228,16 +228,28 @@ export class SyncEngine {
   }
 
   /**
-   * Follows a list by its link (kept in the vault, so my other devices follow it too) and reads it
-   * now. Following my own list is refused.
+   * Follows a list by its link: reads it first, and records it in the vault (so my other devices
+   * follow it too) only when that read worked (review L-05). A failed read (`status: 'error'`) or a
+   * gone list (`status: 'gone'`) leaves nothing behind: not followed, nothing in my cache; the app
+   * says so and the user may try again. A list I already follow is only read again. Following my
+   * own list is refused; beyond MAX_FOLLOWED_LISTS, TooManyFollowedListsError (before any download).
+   * Do not run it concurrently with a sync pass (the app serializes both).
    */
   async followList(fragment: string): Promise<ListReport> {
     const link = parseListLinkFragment(fragment);
     if (link.owner === this.owner) throw new Error('this list is mine');
     const id = followIdOf(link);
+    this.book.checkCanFollow(id);
+    const already = this.book.followedLists().some((e) => e.id === id);
+    const r = await this.lists.read({ id, link: fragment });
+    if (already) return r;
+    if (r.status === 'error' || r.status === 'gone') {
+      this.lists.forget(id);
+      return r;
+    }
     this.book.followList(id, fragment, this.nowMs());
     this.saveBook();
-    return this.lists.read({ id, link: fragment });
+    return r;
   }
 
   /** Stops following a list: its places leave my cache now. */

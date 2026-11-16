@@ -74,6 +74,7 @@ export const sharedListsFr: Messages = {
   'follow.problem.not-a-list': 'Ce n’est pas un lien de liste. Un lien de liste commence par https://triangulair.app/l#',
   'follow.problem.mine': 'Cette liste est à vous : elle est dans Mes listes.',
   'follow.problem.unreachable': 'Impossible de lire la liste pour l’instant (pas de réseau, ou le stockage de l’auteur n’a pas répondu). Réessayez plus tard.',
+  'follow.problem.not-followed': 'La liste n’a pas pu être lue à l’instant : elle n’est donc pas suivie. Vérifiez votre connexion et touchez à nouveau « Suivre cette liste ».',
   'follow.problem.too-many': 'Vous suivez déjà 200 listes, le maximum que l’app garde. Ne suivez plus l’une d’elles pour suivre celle-ci.',
 
   'followed.title': 'Listes suivies',

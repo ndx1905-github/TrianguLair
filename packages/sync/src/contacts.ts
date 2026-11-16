@@ -323,12 +323,17 @@ export class ContactBook {
       .slice(0, MAX_FOLLOWED_LISTS);
   }
 
+  /** Throws TooManyFollowedListsError when `id` is not followed yet and MAX_FOLLOWED_LISTS are. */
+  checkCanFollow(id: string): void {
+    const live = this.followedLists();
+    if (!live.some((e) => e.id === id) && live.length >= MAX_FOLLOWED_LISTS) throw new TooManyFollowedListsError();
+  }
+
   /** Follows a list (throws TooManyFollowedListsError beyond MAX_FOLLOWED_LISTS). */
   followList(id: string, link: string, now = Date.now()): void {
     const part = appPart(this.r);
     const cur = part.lists?.[id];
-    const live = this.followedLists();
-    if (!live.some((e) => e.id === id) && live.length >= MAX_FOLLOWED_LISTS) throw new TooManyFollowedListsError();
+    this.checkCanFollow(id);
     const lists = { ...this.prunedLists(now), [id]: { link, at: Math.max(now, (cur?.at ?? 0) + 1) } };
     this.r = withApp(this.r, { ...part, lists });
   }
