@@ -36,7 +36,7 @@ function tamperDevices(r: VaultRecords, edit: (devices: Record<string, Record<st
 }
 
 describe('review F-02: the device list in the vault is writable by a stolen device', () => {
-  it.fails('a stolen device cannot mark itself removed, so it stays selectable in "Declare a device lost"', async () => {
+  it('a stolen device cannot mark itself removed, so it stays selectable in "Declare a device lost"', async () => {
     const w = new World();
     const user = makeUser(w, 'alice');
     const a = addDevice(w, user);
@@ -56,7 +56,7 @@ describe('review F-02: the device list in the vault is writable by a stolen devi
     expect(entry.removed).toBeUndefined();
   });
 
-  it.fails('a stolen device cannot hide another device of mine from the next key delivery', async () => {
+  it('a stolen device cannot hide another device of mine from the next key delivery', async () => {
     const w = new World();
     const user = makeUser(w, 'alice');
     const a = addDevice(w, user);
@@ -69,7 +69,7 @@ describe('review F-02: the device list in the vault is writable by a stolen devi
     // The thief replaces b's entry by one with a broken certificate and a far-future change time:
     // it wins every merge (`later` by `at`) and `devicesOf` then drops b altogether.
     thief.engine.book.records = tamperDevices(thief.engine.book.records, (devices) => {
-      devices[b.signer.keys.id] = { cert: { broken: true }, name: 'x', added: 1, at: Number.MAX_SAFE_INTEGER };
+      devices[b.signer.keys.id] = { cert: { broken: true }, info: {}, name: 'x', added: 1, at: Number.MAX_SAFE_INTEGER };
     });
     thief.engine.updateDevice(thief.signer.keys.id, { name: 'Old phone' });
     await thief.engine.sync();
@@ -82,22 +82,56 @@ describe('review F-02: the device list in the vault is writable by a stolen devi
 });
 
 describe('review F-01: app values (storage settings) in the vault', () => {
-  it.fails('a value planted with a far-future time does not beat a later legitimate change', () => {
-    const owner = 'ed25519:' + 'A'.repeat(43);
-    const honest = ContactBook.empty(owner);
-    honest.setValue('storage', { url: 'https://dav.example/me/', password: 'old' }, 1000);
-    // The stolen device's copy: same read address, its own write endpoint, time = 2^53 - 1.
-    const thief = new ContactBook(honest.records);
-    const planted = { ...(thief.records.app!['triangulair_values'] as { values: Record<string, unknown> }) };
-    thief.records = {
-      ...thief.records,
-      app: { ...thief.records.app, triangulair_values: { version: 1, values: { ...planted.values, storage: { value: { url: 'https://evil.example/dav/', password: 'x' }, at: Number.MAX_SAFE_INTEGER } } } },
+  it('a value planted with a far-future time does not beat a later legitimate change', () => {
+    const w = new World();
+    const user = makeUser(w, 'alice');
+    const a = addDevice(w, user);
+    const thief = addDevice(w, user);
+    const honest = ContactBook.empty(user.owner);
+    honest.putDeviceCert(a.signer.cert);
+    honest.putDeviceCert(thief.signer.cert);
+    const signer = (d: typeof a) => ({ id: d.signer.keys.id, secretKey: d.signer.keys.sign.secretKey });
+    honest.setValue('storage', { url: 'https://dav.example/me/', password: 'old' }, signer(a), 1000);
+    // The stolen device's copy: same read address, its own write endpoint, time = 2^53 - 1, and
+    // validly signed with its own (still certified) device key.
+    const thiefBook = new ContactBook(honest.records);
+    thiefBook.setValue('storage', { url: 'https://evil.example/dav/', password: 'x' }, signer(thief), Number.MAX_SAFE_INTEGER);
+    // An unsigned copy of the old format, stamped likewise.
+    const planted = { ...(thiefBook.records.app!['triangulair_values'] as { values: Record<string, unknown> }) };
+    thiefBook.records = {
+      ...thiefBook.records,
+      app: { ...thiefBook.records.app, triangulair_values: { version: 2, values: { ...planted.values, profile: { [thief.signer.keys.id]: { value: { name: 'x' }, at: Number.MAX_SAFE_INTEGER, sig: 'AAAA' } } } } },
     } as VaultRecords;
     // The honest device merges it (before the declaration), then the user changes the password
     // as the declaration guide says.
-    const merged = new ContactBook(mergeBooks(honest.records, thief.records));
-    merged.setValue('storage', { url: 'https://dav.example/me/', password: 'new' }, 5000);
-    const again = new ContactBook(mergeBooks(merged.records, thief.records));
+    const merged = new ContactBook(mergeBooks(honest.records, thiefBook.records));
+    expect(merged.value('storage')?.value).toEqual({ url: 'https://dav.example/me/', password: 'old' });
+    expect(merged.value('profile')).toBeUndefined();
+    merged.setValue('storage', { url: 'https://dav.example/me/', password: 'new' }, signer(a), 5000);
+    const again = new ContactBook(mergeBooks(merged.records, thiefBook.records));
     expect(again.value('storage')?.value).toEqual({ url: 'https://dav.example/me/', password: 'new' });
+  });
+
+  it('after the declaration, nothing the lost device signed is taken, and values are the declaring device\'s', async () => {
+    const w = new World();
+    const user = makeUser(w, 'alice');
+    const a = addDevice(w, user);
+    const thief = addDevice(w, user);
+    a.engine.putDevice(a.signer.cert, { name: 'Phone' });
+    a.engine.setValue('storage', { url: 'https://dav.example/me/', password: 'old' });
+    await a.engine.sync();
+    await thief.engine.sync();
+    // Within the allowed clock skew, newer than a's: it wins until the declaration.
+    thief.engine.setValue('storage', { url: 'https://evil.example/dav/', password: 'x' });
+    await thief.engine.sync();
+    await a.engine.sync();
+    expect(a.engine.value<{ url: string }>('storage')!.value.url).toBe('https://evil.example/dav/');
+    await a.engine.rotateKey(newKey(user, 1, [thief.signer.keys.id]), { cancelInvitations: true, values: { storage: { url: 'https://dav.example/me/', password: 'new' } } });
+    expect(a.engine.value<{ url: string }>('storage')!.value).toEqual({ url: 'https://dav.example/me/', password: 'new' });
+    await a.engine.sync();
+    // Even a copy that still holds the thief's entry (merged by a device that had not seen the
+    // declaration) does not bring it back: its signer is revoked.
+    const stale = new ContactBook(mergeBooks(a.engine.book.records, thief.engine.book.records, { revoked: [thief.signer.keys.id] }));
+    expect(stale.value<{ url: string }>('storage', { revoked: [thief.signer.keys.id] })!.value.url).toBe('https://dav.example/me/');
   });
 });

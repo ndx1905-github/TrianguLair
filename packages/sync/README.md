@@ -188,18 +188,29 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 
 ## My devices, declaration of loss, identity moves (T-206, T-207)
 
-- **Device list** (`devices.ts`): the vault's `app.triangulair_devices` holds one entry per device of mine: its full
-  master-signed device certificate, a name, the date added, a primary mark and a removal date; merged per device by
-  `mergeBooks` (latest change wins, removal sticky). An entry counts only if its certificate verifies for my owner id
-  (a stolen device cannot add one); revocation is the sharing certificate's `revoked_devices`, never the `removed`
-  mark, which is display only. `app.triangulair_values` holds small named values, latest wins per key (the app keeps
-  its storage settings and my first name there for a new device). Engine: `devices()`, `putDevice`, `updateDevice`,
-  `value`, `setValue`.
+- **Device list** (`devices.ts`, vault `app.triangulair_devices`, version 2): per device id, its full
+  **master-signed device certificate**, a removal date (display only) and display entries (name, date added,
+  primary mark), **one signed slot per signer** (`sign.ts`: Ed25519, prefix `TrianguLair-app-signature-v1`, domain
+  `vault-device-info`; a stolen device can only write its own slot). Security decisions use only what a thief
+  cannot forge (review F-02):
+  - which devices exist: the certificates that verify for my owner id (merged as a union; one that does not verify
+    never replaces one that does);
+  - which are removed: the current sharing certificate's `revoked_devices` (`removed` is set for those only);
+  - display entries count only from a valid signer (my master key, or a certified device the current certificate
+    does not revoke); the primary mark only from the device's own slot.
+- **App values** (vault `app.triangulair_values`, version 2): small named values (the app keeps its storage
+  settings and my first name there for a new device), one signed slot per signer (domain `vault-value`). The
+  visible value is the newest slot of a valid signer (review F-01). Times more than `MAX_SKEW_MS` (10 min) ahead are
+  refused when merging and reading; a new value is stamped after every valid one seen (a later change by the user
+  wins), never past `MAX_SAFE_INTEGER`. Unsigned version 1 values are dropped.
+- Engine: `devices()`, `putDevice`, `updateDevice`, `value`, `setValue` (all signed by this device, judged against
+  the current certificate); `mergeBooks(a, b, { revoked, now })`.
 - **Key delivery**: before each publication the engine seals the current sharing key to every listed device that does
   not have it yet (`keys/<device>.bin`, marker per device in the state).
 - **`rotateKey(newKey, { cancelInvitations, recoveryCopy })`**: adopts a rotation made on this device with the master
   key (declaration of loss, a removed device), cancels every open invitation (`cancelAllInvitations`, V4-02), seals the
-  key to the remaining listed devices, deletes the lost device's `keys/` file, marks it removed, and writes the
+  key to the remaining certified devices it does not revoke, deletes the lost device's `keys/` file, drops every
+  slot the lost device signed, resets the app values to this device's (`values`), and writes the
   phrase-protected copy (TLSK mode 2) at `keys/<owner id>.bin` (restore with the 12 words). Then `sync()` re-encrypts
   and publishes; the lost device finds itself in `revoked_devices` at its next pass and wipes (existing remote wipe).
 - **Identity move**: engine option `move` (written in every index, R-11). A friend whose index carries a valid move from
@@ -209,8 +220,9 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
   whose own-document changes were imported), for the app's "changes since the theft".
 - Storage layout additions: `keys/<owner id>.bin` (recovery copy), and the app's `transfer/<slot>.*` files (adding a
   device, at most 15 minutes, see the app README).
-- Tests: `test/devices.test.ts` (list merge and forged entries, values, declaration with invitations cancelled, key
-  delivered, lost device wiped, friend told; delivery to a device added later; following an identity move).
+- Tests: `test/devices.test.ts` (list merge and forged entries, signed values, declaration with invitations
+  cancelled, key delivered, lost device wiped, friend told; delivery to a device added later; following an identity
+  move); `test/review-devices.test.ts` (the devices review's F-01 and F-02 reproductions).
 
 ## Error cases (spec table) → `SyncProblem`
 

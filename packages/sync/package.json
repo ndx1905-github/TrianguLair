@@ -20,7 +20,8 @@
     "@triangulair/crypto": "file:../crypto",
     "@triangulair/data": "file:../data",
     "@triangulair/storage": "file:../storage",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "libsodium-wrappers-sumo": "^0.8.4"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

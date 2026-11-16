@@ -6,7 +6,6 @@
 import {
   createInvitation,
   devicePublicKeys,
-  emptyVault,
   generateDeviceKeys,
   generateRecoveryPhrase,
   generateVaultDataKey,
@@ -23,7 +22,7 @@ import { DataStore } from '@triangulair/data';
 import { NodeSqliteDriver } from '@triangulair/data/node';
 import { describe, expect, it } from 'vitest';
 import { ContactBook, mergeBooks } from '../src/contacts.ts';
-import { MAX_DEVICE_NAME, cleanName, devicesOf } from '../src/devices.ts';
+import { MAX_DEVICE_NAME, MAX_SKEW_MS, cleanName, devicesOf } from '../src/devices.ts';
 import { SyncEngine } from '../src/engine.ts';
 import { keyPath } from '../src/own.ts';
 import { MemoryStateStore } from '../src/state.ts';
@@ -34,8 +33,10 @@ function newKey(user: ReturnType<typeof makeUser>, rotation: number, revokedDevi
   return { keyPair: kp, cert: issueSharingCert(user.identity, kp.publicKey, { rotation, location: user.location, revokedDevices }), vaultDataKey: generateVaultDataKey() };
 }
 
+const signerOf = (k: ReturnType<typeof generateDeviceKeys>) => ({ id: k.id, secretKey: k.sign.secretKey });
+
 describe('device list in the vault', () => {
-  it('keeps master-signed devices only, merges renames, removal is sticky', () => {
+  it('keeps master-signed devices only, display entries per signer, removal from the certificate only', () => {
     const w = new World();
     const user = makeUser(w, 'alice');
     const other = makeUser(w, 'mallory');
@@ -43,40 +44,90 @@ describe('device list in the vault', () => {
     const k2 = generateDeviceKeys();
     const c1 = issueDeviceCert(user.identity, devicePublicKeys(k1));
     const c2 = issueDeviceCert(user.identity, devicePublicKeys(k2));
+    const s1 = signerOf(k1);
+    const s2 = signerOf(k2);
     const foreign = issueDeviceCert(other.identity, devicePublicKeys(generateDeviceKeys()));
     const a = ContactBook.empty(user.owner);
-    a.putDevice(c1, { name: 'Phone', added: 1000, primary: true }, 1000);
-    expect(() => a.putDevice(foreign, { name: 'Not mine' }, 1001)).toThrow();
+    a.putDeviceCert(c1);
+    a.putDeviceInfo(c1.device, { name: 'Phone', added: 1000, primary: true }, s1, 1000);
+    expect(() => a.putDeviceCert(foreign)).toThrow();
     const b = new ContactBook(a.records);
-    a.updateDevice(c1.device, { name: 'Anna’s phone' }, 2000);
-    b.putDevice(c2, { name: 'Tablet', added: 1500 }, 1500);
+    a.putDeviceInfo(c1.device, { name: 'Anna’s phone' }, s1, 2000);
+    b.putDeviceCert(c2);
+    b.putDeviceInfo(c2.device, { name: 'Tablet', added: 1500 }, s1, 1500);
     b.markDevicesRemoved([c2.device], 3000);
     const m = new ContactBook(mergeBooks(a.records, b.records));
+    // The removal mark alone removes nothing: only the sharing certificate's revocation does.
     expect(m.devices().map((d) => [d.name, d.removed ?? null, d.primary ?? false])).toEqual([
       ['Anna’s phone', null, true],
-      ['Tablet', 3000, false],
+      ['Tablet', null, false],
     ]);
-    // A removal survives a later rename from a copy that had not seen it.
-    const c = new ContactBook(a.records);
-    c.putDevice(c2, { name: 'Tablet renamed' }, 4000);
-    const m2 = new ContactBook(mergeBooks(c.records, m.records));
-    expect(m2.devices().find((d) => d.cert.device === c2.device)!.removed).toBe(3000);
-    // An entry planted with a foreign (or forged) certificate is ignored.
-    const planted = { ...m.records, app: { ...m.records.app, triangulair_devices: { version: 1, devices: { ...(m.records.app!['triangulair_devices'] as { devices: object }).devices, [foreign.device]: { cert: foreign, name: 'x', added: 1, at: 1 } } } } };
+    expect(m.devices({ revoked: [c2.device] }).map((d) => [d.name, d.removed ?? null])).toEqual([
+      ['Anna’s phone', null],
+      ['Tablet', 3000],
+    ]);
+    // Another device may rename it (its own slot), never give it the primary mark.
+    m.putDeviceInfo(c2.device, { name: 'Tablet (kitchen)', primary: true }, s1, 4000);
+    m.putDeviceInfo(c1.device, { name: 'Old name', primary: false }, s2, 4000);
+    expect(m.devices().map((d) => [d.name, d.primary ?? false])).toEqual([
+      ['Old name', true],
+      ['Tablet (kitchen)', false],
+    ]);
+    // Once c2 is revoked, what it signed is not shown any more.
+    expect(m.devices({ revoked: [c2.device] }).map((d) => d.name)).toEqual(['Anna’s phone', 'Tablet (kitchen)']);
+    // An entry planted with a foreign (or forged) certificate is ignored, and dropped by a merge.
+    const part = m.records.app!['triangulair_devices'] as { version: number; devices: Record<string, unknown> };
+    const planted = { ...m.records, app: { ...m.records.app, triangulair_devices: { ...part, devices: { ...part.devices, [foreign.device]: { cert: foreign, info: {} } } } } };
     expect(devicesOf(planted as never).map((d) => d.cert.device)).not.toContain(foreign.device);
+    expect(Object.keys((new ContactBook(mergeBooks(m.records, planted as never)).records.app!['triangulair_devices'] as typeof part).devices)).not.toContain(foreign.device);
+    // A display entry that does not verify (unsigned, or signed by someone else) is ignored.
+    const forged = JSON.parse(JSON.stringify(m.records)) as typeof m.records;
+    (forged.app!['triangulair_devices'] as { devices: Record<string, { info: Record<string, { name: string }> }> }).devices[c1.device]!.info[c1.device]!.name = 'Forged';
+    expect(new ContactBook(forged).devices().find((d) => d.cert.device === c1.device)!.name).toBe('Old name');
   });
 
-  it('cleans names and merges app values per key', () => {
+  it('cleans names; app values are signed per signer, future times refused, revoked signers ignored, reset at a declaration', () => {
     expect(cleanName('  a‮ b\n c ')).toBe('a b c');
     expect([...cleanName('x'.repeat(200))].length).toBe(MAX_DEVICE_NAME);
-    const a = ContactBook.empty('ed25519:' + 'A'.repeat(43));
-    const b = new ContactBook(emptyVault(a.records.owner));
-    a.setValue('storage', { url: 'one' }, 10);
-    b.setValue('storage', { url: 'two' }, 20);
-    b.setValue('profile', { name: 'Anna' }, 5);
+    const w = new World();
+    const user = makeUser(w, 'alice');
+    const k1 = generateDeviceKeys();
+    const k2 = generateDeviceKeys();
+    const s1 = signerOf(k1);
+    const s2 = signerOf(k2);
+    const a = ContactBook.empty(user.owner);
+    a.putDeviceCert(issueDeviceCert(user.identity, devicePublicKeys(k1)));
+    a.putDeviceCert(issueDeviceCert(user.identity, devicePublicKeys(k2)));
+    const b = new ContactBook(a.records);
+    a.setValue('storage', { url: 'one' }, s1, 10);
+    b.setValue('storage', { url: 'two' }, s2, 20);
+    b.setValue('profile', { name: 'Anna' }, s2, 5);
     const m = new ContactBook(mergeBooks(a.records, b.records));
     expect(m.value('storage')!.value).toEqual({ url: 'two' });
     expect(m.value('profile')!.value).toEqual({ name: 'Anna' });
+    // A later change wins even against an entry stamped ahead of this clock (within the skew).
+    m.setValue('storage', { url: 'three' }, s1, 15);
+    expect(m.value('storage')).toMatchObject({ value: { url: 'three' }, at: 21, by: k1.id });
+    // A revoked signer's value is not taken: the newest valid one is.
+    expect(m.value('storage', { revoked: [k1.id] })!.value).toEqual({ url: 'two' });
+    // My master key may sign too; an unknown key may not.
+    m.setValue('profile', { name: 'Master' }, { id: user.owner, secretKey: user.identity.master.secretKey }, 30);
+    expect(m.value('profile')!.by).toBe(user.owner);
+    const stranger = generateDeviceKeys();
+    const s = new ContactBook(m.records);
+    s.setValue('profile', { name: 'Stranger' }, signerOf(stranger), 40);
+    expect(s.value('profile')!.value).toEqual({ name: 'Master' });
+    // An entry from the future (more than MAX_SKEW_MS ahead) is refused, and dropped by a merge.
+    const f = new ContactBook(m.records);
+    f.setValue('storage', { url: 'future' }, s2, Date.now() + MAX_SKEW_MS + 60_000);
+    expect(f.value('storage')!.value).toEqual({ url: 'three' });
+    expect(new ContactBook(mergeBooks(m.records, f.records)).value('storage', { now: Date.now() + 10 * MAX_SKEW_MS })!.value).toEqual({ url: 'three' });
+    // A declaration: k2 revoked, its entries dropped, the values become the declaring device's.
+    const d = new ContactBook(mergeBooks(m.records, b.records));
+    d.dropSigners([k2.id]);
+    d.resetValues({ storage: { url: 'declared' } }, s1, 100);
+    expect(d.value('storage')).toMatchObject({ value: { url: 'declared' }, at: 100, by: k1.id });
+    expect(d.value('profile')).toBeUndefined();
   });
 });
 

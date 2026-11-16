@@ -522,7 +522,7 @@ export class OwnSync {
       this.vaultDirty = true;
       return;
     }
-    const merged = mergeBooks(this.book.records, remote);
+    const merged = mergeBooks(this.book.records, remote, { revoked: this.sharing.cert.revoked_devices, now: this.nowMs() });
     this.book.records = merged;
     this.o.saveBook?.();
     this.vaultDirty ||= !current || !sameRecords(merged, remote);

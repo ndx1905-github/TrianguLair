@@ -29,7 +29,20 @@ import {
   type VaultRecords,
   type DeviceCert,
 } from '@triangulair/crypto';
-import { devicesOf, markDevicesRemoved, mergeDeviceParts, putDevice, setValue, updateDevice, valueOf, type DeviceEntry } from './devices.ts';
+import {
+  devicesOf,
+  dropSigners,
+  markDevicesRemoved,
+  mergeDeviceParts,
+  putDeviceCert,
+  putDeviceInfo,
+  resetValues,
+  setValue,
+  valueOf,
+  type DeviceEntry,
+  type EntrySigner,
+  type TrustContext,
+} from './devices.ts';
 
 /** What a contact may read: everything I share with friends, nothing, or only the places of some of my lists. */
 export type SharePolicy = boolean | { lists: string[] };
@@ -107,15 +120,19 @@ function laterPolicy(a: ContactPolicy | undefined, b: ContactPolicy | undefined)
   return canonicalize(a) >= canonicalize(b) ? a : b; // deterministic on both devices
 }
 
-/** Merges two copies of my vault records (crypto records by `mergeVaults`, contact policies per contact). */
-export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
+/**
+ * Merges two copies of my vault records (crypto records by `mergeVaults`, contact policies per
+ * contact, my devices and app values by `mergeDeviceParts`; `ctx`: the current certificate's
+ * revocations and the clock, see devices.ts).
+ */
+export function mergeBooks(a: VaultRecords, b: VaultRecords, ctx: TrustContext = {}): VaultRecords {
   const merged = mergeVaults(a, b);
   const pa = appPart(a).contacts;
   const pb = appPart(b).contacts;
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
   const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
-  return mergeDeviceParts(withApp(merged, { version: 1, contacts, ...(own && { own }) }), a, b);
+  return mergeDeviceParts(withApp(merged, { version: 1, contacts, ...(own && { own }) }), a, b, ctx);
 }
 
 /**
@@ -251,29 +268,41 @@ export class ContactBook {
 
   // ------------------------------------------------------------------ my devices (devices.ts)
 
-  /** My devices whose certificate verifies (removed ones included, with `removed`). */
-  devices(): DeviceEntry[] {
-    return devicesOf(this.r);
+  /** My devices whose certificate verifies; `removed` for those `ctx.revoked` lists (devices.ts). */
+  devices(ctx: TrustContext = {}): DeviceEntry[] {
+    return devicesOf(this.r, ctx);
   }
 
-  putDevice(cert: DeviceCert, info: { name: string; added?: number; primary?: boolean }, now = Date.now()): void {
-    this.r = putDevice(this.r, cert, info, now);
+  /** Lists a master-signed device certificate (throws when it is not mine). */
+  putDeviceCert(cert: DeviceCert): void {
+    this.r = putDeviceCert(this.r, cert);
   }
 
-  updateDevice(id: string, patch: { name?: string; primary?: boolean }, now = Date.now()): void {
-    this.r = updateDevice(this.r, id, patch, now);
+  /** `signer`'s display entry for a listed device (name, date added, primary mark for itself). */
+  putDeviceInfo(id: string, patch: { name?: string; added?: number; primary?: boolean }, signer: EntrySigner, now = Date.now(), ctx: TrustContext = {}): void {
+    this.r = putDeviceInfo(this.r, id, patch, signer, now, ctx);
   }
 
+  /** Display only: when these (revoked) devices were removed. */
   markDevicesRemoved(ids: readonly string[], now = Date.now()): void {
     this.r = markDevicesRemoved(this.r, ids, now);
   }
 
-  value<T>(key: string): { value: T; at: number } | undefined {
-    return valueOf<T>(this.r, key);
+  value<T>(key: string, ctx: TrustContext = {}): { value: T; at: number; by: string } | undefined {
+    return valueOf<T>(this.r, key, ctx);
   }
 
-  setValue(key: string, value: unknown, now = Date.now()): void {
-    this.r = setValue(this.r, key, value, now);
+  setValue(key: string, value: unknown, signer: EntrySigner, now = Date.now(), ctx: TrustContext = {}): void {
+    this.r = setValue(this.r, key, value, signer, now, ctx);
+  }
+
+  /** Declaration of loss: forget what the revoked devices signed, values reset to the declaring device's. */
+  dropSigners(ids: Iterable<string>): void {
+    this.r = dropSigners(this.r, ids);
+  }
+
+  resetValues(values: Record<string, unknown>, signer: EntrySigner, now = Date.now()): void {
+    this.r = resetValues(this.r, values, signer, now);
   }
 
   /** My own anchor recorded in the vault (checked; undefined when absent or malformed). */

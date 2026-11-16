@@ -80,6 +80,15 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - The vault (`vault.bin`) is authenticated by the vault data key only; contact switches in its free-form part are
   as trustworthy as the vault itself (a stolen device could change them until the declaration; they are not
   security fields of the format: they decide who gets wraps, which the owner sees in the app).
+- **My devices and app values in the vault** (devices review F-01, F-02): every entry is signed by the device that
+  wrote it, in its own slot, and counts only while that device is certified and not revoked by my current sharing
+  certificate. Who my devices are, who is removed and who gets the new key come from master-signed device
+  certificates and the certificate's `revoked_devices` only. Times more than 10 minutes ahead are refused. A
+  declaration drops everything the lost device signed and resets the values to the declaring device's.
+  Residual: until the declaration, a stolen device is a valid signer: it can rename devices and set values
+  (storage settings included) in its own slot, newest-wins. The app never takes another write endpoint from the
+  vault, only new credentials for the same one (apps/mobile README). After the declaration, what it signed is ignored
+  even in an old copy merged by a device that had not seen it.
 
 ## Friends' cache
 

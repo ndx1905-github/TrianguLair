@@ -14,10 +14,14 @@ export {
   VALUES_KEY,
   MAX_DEVICE_NAME,
   MAX_DEVICES,
+  MAX_SKEW_MS,
   cleanName,
   devicesOf,
+  valueOf,
   mergeDeviceParts,
   type DeviceEntry,
+  type EntrySigner,
+  type TrustContext,
 } from './devices.ts';
 export { DEFAULT_LIMITS, resolveLimits, type SyncLimits } from './limits.ts';
 export { ByteBudget, LimitError, Semaphore } from './util.ts';

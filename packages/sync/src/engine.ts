@@ -26,7 +26,7 @@ import {
 import type { DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, fetchHighestIndex, type StorageAdapter } from '@triangulair/storage';
 import { ContactBook, type Contact, type SharePolicy } from './contacts.ts';
-import type { DeviceEntry } from './devices.ts';
+import type { DeviceEntry, EntrySigner, TrustContext } from './devices.ts';
 import { DeviceRevokedError, classifyError, type SyncProblem } from './errors.ts';
 import type { SyncLimits } from './limits.ts';
 import { OwnSync, keyPath, type OwnSyncOptions, type PreviousVaultKey, type PublishReport, type PullResult } from './own.ts';
@@ -212,31 +212,60 @@ export class SyncEngine {
 
   // ------------------------------------------------------------------ my devices (devices.ts)
 
-  /** My devices listed in the vault (certificate verified; removed ones carry `removed`). */
+  /** The current certificate's revocations and the clock: who counts in the devices and values parts. */
+  private trust(): TrustContext {
+    return { revoked: (this.own?.sharing ?? this.o.sharing).cert.revoked_devices, now: this.nowMs() };
+  }
+
+  /** This device signs its entries in the vault (and is listed there first). */
+  private signer(): EntrySigner | null {
+    const d = this.o.device;
+    if (!d) return null;
+    this.book.putDeviceCert(d.cert);
+    return { id: d.keys.id, secretKey: d.keys.sign.secretKey };
+  }
+
+  /**
+   * My devices: every master-signed device certificate in the vault; `removed` when the current
+   * sharing certificate revokes it (devices.ts: nothing a stolen device writes decides this).
+   */
   devices(): DeviceEntry[] {
-    return this.book.devices();
+    return this.book.devices(this.trust());
   }
 
-  /** Lists a device (its certificate must be master-signed for me), e.g. right after adding it. */
+  /**
+   * Lists a device (its certificate must be master-signed for me), e.g. right after adding it, with
+   * this device's display entry for it (name, date added; the primary mark only for itself).
+   */
   putDevice(cert: DeviceCert, info: { name: string; added?: number; primary?: boolean }): void {
-    this.book.putDevice(cert, info, this.nowMs());
+    this.book.putDeviceCert(cert);
+    const s = this.signer();
+    if (s) this.book.putDeviceInfo(cert.device, { name: info.name, ...(info.added !== undefined && { added: info.added }), ...(info.primary !== undefined && { primary: info.primary }) }, s, this.nowMs(), this.trust());
     this.saveBook();
   }
 
-  /** Rename, or the primary mark (display only). */
+  /** Rename, or this device's primary mark (display only), signed by this device. */
   updateDevice(id: string, patch: { name?: string; primary?: boolean }): void {
-    this.book.updateDevice(id, patch, this.nowMs());
+    const s = this.signer();
+    if (!s) return;
+    this.book.putDeviceInfo(id, patch, s, this.nowMs(), this.trust());
     this.saveBook();
   }
 
-  /** A small app value kept in the vault (storage settings, profile), merged per key, latest wins. */
-  value<T>(key: string): { value: T; at: number } | undefined {
-    return this.book.value<T>(key);
+  /**
+   * A small app value kept in the vault (storage settings, profile): the newest one signed by my
+   * master key or by a certified device that the current certificate does not revoke.
+   */
+  value<T>(key: string): { value: T; at: number; by: string } | undefined {
+    return this.book.value<T>(key, this.trust());
   }
 
+  /** Sets a value, signed by this device (it then wins over every value seen so far). */
   setValue(key: string, value: unknown): void {
+    const s = this.signer();
+    if (!s) return;
     const before = this.book.records;
-    this.book.setValue(key, value, this.nowMs());
+    this.book.setValue(key, value, s, this.nowMs(), this.trust());
     if (this.book.records !== before) this.saveBook();
   }
 
@@ -252,8 +281,16 @@ export class SyncEngine {
    * - newly revoked devices: their `keys/` file is deleted and their vault entry marked removed.
    * - `recoveryCopy`: the sharing key sealed to my identity (TLSK mode 2, phrase-derived key), kept
    *   at `keys/<owner id>.bin` for a restore from the recovery kit.
+   * - newly revoked devices (F-01 of the devices review): everything they signed in the devices and
+   *   values parts is dropped, and the app values are reset to this device's (`values`, or its own
+   *   entries), signed by it: a value a thief planted does not survive the declaration.
+   * - keys are delivered to the devices whose certificate is master-signed and that the new
+   *   certificate does not revoke, whatever the vault says about them (F-02).
    */
-  async rotateKey(k: SharingKey, opts: { cancelInvitations?: boolean; recoveryCopy?: Uint8Array } = {}): Promise<{ cancelled: CancelledInvitation[]; delivered: string[] }> {
+  async rotateKey(
+    k: SharingKey,
+    opts: { cancelInvitations?: boolean; recoveryCopy?: Uint8Array; values?: Record<string, unknown> } = {},
+  ): Promise<{ cancelled: CancelledInvitation[]; delivered: string[] }> {
     const own = this.own;
     if (!own) throw new Error('rotateKey: no storage of mine');
     if (k.cert.owner !== this.owner) throw new Error('rotateKey: another identity');
@@ -267,7 +304,10 @@ export class SyncEngine {
     const before = new Set(own.sharing.cert.revoked_devices);
     const revoked = new Set(k.cert.revoked_devices);
     const me = own.device.keys.id;
-    const targets = this.book.devices().filter((d) => d.cert.device !== me && !revoked.has(d.cert.device)).map((d) => d.cert);
+    const targets = this.book
+      .devices({ revoked, now: this.nowMs() })
+      .filter((d) => d.cert.device !== me && d.removed === undefined)
+      .map((d) => d.cert);
     await own.rotate(k, targets);
     for (const c of targets) this.o.state.set(deliveredKey(c.device), deliveredMark(k));
     const lost = [...revoked].filter((id) => !before.has(id));
@@ -279,7 +319,12 @@ export class SyncEngine {
         // already gone
       }
     }
-    if (lost.length) this.book.markDevicesRemoved(lost, this.nowMs());
+    if (lost.length) {
+      this.book.markDevicesRemoved(lost, this.nowMs());
+      this.book.dropSigners(lost);
+      const s = this.signer();
+      if (s) this.book.resetValues(opts.values ?? {}, s, this.nowMs());
+    }
     if (opts.recoveryCopy) await own.storage.put(keyPath(this.owner), opts.recoveryCopy);
     this.saveBook();
     return { cancelled, delivered: targets.map((c) => c.device) };
@@ -293,12 +338,11 @@ export class SyncEngine {
     const own = this.own;
     if (!own) return [];
     const k = own.sharing;
-    const revoked = new Set(k.cert.revoked_devices);
     const mark = deliveredMark(k);
     const done: string[] = [];
-    for (const d of this.book.devices()) {
+    for (const d of this.book.devices({ revoked: k.cert.revoked_devices, now: this.nowMs() })) {
       const id = d.cert.device;
-      if (id === own.device.keys.id || revoked.has(id) || this.o.state.get<string>(deliveredKey(id)) === mark) continue;
+      if (id === own.device.keys.id || d.removed !== undefined || this.o.state.get<string>(deliveredKey(id)) === mark) continue;
       await own.rotate(k, [d.cert]); // same key: only writes keys/<device>.bin
       this.o.state.set(deliveredKey(id), mark);
       done.push(id);
