@@ -163,7 +163,9 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
   "public-lists", version, owner, author?, lists: [{ id, name, description?, updated }] }`, one feature per (list,
   place) with `list`, `list_name`, `description` (the public comment), `url` (openstreetmap.org page of an OSM place)
   and `_umap_options` (uMap's per-feature style: main tag color, "Drop" marker for points, 20 % fill and thin outline
-  for zones, a 5 px line for streets); each list's `count`. A place that looks like a home (`home.ts`: a dwelling
+  for zones, a 5 px line for streets); each list's `count`. Dates (places and lists) are rounded to the UTC day and
+  places carry no `tags` unless I opted in to publishing my tag names (`engine.setPublicTagNames(true)`, kept in the
+  vault: `app.triangulair_sync.publish`, latest change wins); the same holds for link-only list packs (review L-03). A place that looks like a home (`home.ts`: a dwelling
   category, no category with an address, a point placed by hand; never a zone) that a *filter* list took by itself
   stays out of the file until the author confirms it as an explicit `include` of the filter (`heldPublicPlaces` lists
   the ones waiting; the app warns before a place enters a public list by hand: review M-02). "View on uMap" = `umapUrl(publicListsUrl(location))`:

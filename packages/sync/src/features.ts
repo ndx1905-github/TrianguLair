@@ -183,12 +183,23 @@ export function readOwnItems(repo: Repository): OwnItem[] {
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+const DAY_MS = 24 * 3600 * 1000;
+/** A date rounded down to its UTC day (what forwardable lists publish: review L-03). */
+export const dayOf = (ms: number): string => iso(Math.floor(ms / DAY_MS) * DAY_MS);
+
+export interface PublicFeatureOptions {
+  /** Publish my tag names (and parents): only when I opted in (`ContactBook.publicTagNames`). */
+  tagNames?: boolean;
+}
 
 /**
  * The feature of one of my saves for an audience: "friends" (packs) sees
- * comments marked friends or public, "public" (public lists) only public ones.
+ * comments marked friends or public, "public" (public lists and link-only
+ * lists, which can be forwarded) only public ones. For "public", dates are
+ * rounded to the day (they would show my habits) and tags are left out unless
+ * I opted in to publishing their names (personal names: review L-03).
  */
-export function featureFor(item: OwnItem, audience: 'friends' | 'public'): PlaceFeature {
+export function featureFor(item: OwnItem, audience: 'friends' | 'public', opts: PublicFeatureOptions = {}): PlaceFeature {
   const props = { name: clean(item.name, 500) } as PlaceFeature['properties'];
   if (item.category) props.category = clean(item.category, 200);
   if (item.kind === 'zone') props.kind = 'zone';
@@ -200,15 +211,15 @@ export function featureFor(item: OwnItem, audience: 'friends' | 'public'): Place
   }
   if (item.status) props.status = item.status;
   if (item.priceLevel) props.price_level = item.priceLevel;
-  if (item.tags.length) {
+  if (item.tags.length && (audience === 'friends' || opts.tagNames)) {
     props.tags = item.tags.map((t) => {
       const o: TagOut = { ...t, name: clean(t.name, 100) };
       if (t.parent !== undefined) o.parent = clean(t.parent, 100);
       return o;
     });
   }
-  props.created = iso(item.createdAt);
-  props.updated = iso(item.updatedAt);
+  props.created = audience === 'public' ? dayOf(item.createdAt) : iso(item.createdAt);
+  props.updated = audience === 'public' ? dayOf(item.updatedAt) : iso(item.updatedAt);
   return { type: 'Feature', id: item.placeId, geometry: item.geometry, properties: props };
 }
 

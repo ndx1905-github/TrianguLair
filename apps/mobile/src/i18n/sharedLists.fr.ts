@@ -46,6 +46,10 @@ export const sharedListsFr: Messages = {
   'sharing.public.heldPublish': 'Les publier',
   'sharing.public.heldLeaveOut': 'Les laisser de côté',
 
+  'sharing.details.title': 'Ce que voient ceux qui ont le lien',
+  'sharing.details.tagNames': 'Montrer les noms de mes étiquettes',
+  'sharing.details.tagNamesHelp': 'Désactivé : les lieux gardent leurs couleurs mais pas les noms de vos étiquettes (ils peuvent être personnels). Les dates ne sont données qu’au jour près. S’applique à toutes vos listes par lien et publiques.',
+
   'sharing.friends.title': 'Amis qui voient cette liste',
   'sharing.friends.lead': 'Ils voient le nom de la liste et ses lieux dans leur app. Retirer quelqu’un lui enlève l’accès à sa prochaine synchronisation.',
   'sharing.friends.none': 'Pas encore d’amis.',

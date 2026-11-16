@@ -572,6 +572,20 @@ export class SyncController implements StorageMoveHooks {
     await this.publishNow();
   }
 
+  /** Whether my link-only lists and public file carry my tag names (opt-in, kept in my vault). */
+  publicTagNames(): boolean {
+    return this.engine && !this.wiped ? this.engine.book.publicTagNames() : false;
+  }
+
+  /** Opt in or out of publishing my tag names in forwardable lists, then publishes (best effort). */
+  setPublicTagNames(on: boolean): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      engine.setPublicTagNames(on);
+      this.d.onChange();
+    }).then(() => this.publishNow().catch(() => this.localChange()));
+  }
+
   /** Owners of my contacts who see this list (its name, description and places). */
   listViewers(listId: string): string[] {
     return this.engine && !this.wiped ? this.engine.book.listViewers(listId) : [];

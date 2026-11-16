@@ -100,6 +100,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   and deletes the old file: an old holder keeps only what they already copied. The list key is a direct recipient
   of the list pack only (never a group member, never wrapped inside any other pack), so it opens nothing else of
   mine; link packs carry only public comments and never a private place.
+- **Forwardable lists and habits** (L-03): link-only packs and the public file give save, edit and list dates to
+  the day only, and tag names only on opt-in (a tag's color still styles uMap). Friends' packs keep exact dates
+  (friends already see my places as they change).
 - **What a link holder learns** besides the list: my master key and read address (they can read my public index
   like anyone), the number and sizes of my packs, and when I publish. They cannot tell which other packs exist for
   whom (wraps are anonymous); they download each `packs/` file once to find theirs.
@@ -135,8 +138,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 
 ## Known limits (review notes not fixed in this round)
 
-- **N-1 Public file content**: the public lists file carries every `featureFor(…, 'public')` property, including
-  my tag names, status, price level and dates. To narrow, or to show exactly in the "make public" preview (T-212).
+- **N-1 Public file content** (fixed with review L-03): forwardable lists (the public file and link-only list
+  packs) carry dates rounded to the day and no tag names unless I opt in (`setPublicTagNames`, kept in my vault so
+  all my devices publish the same); they still carry status and price level, which the preview shows.
 - **N-2** Removing a contact or `share: false` takes effect at the next publication the app triggers
   (`localChange()`); the engine does not schedule one by itself.
 - **N-3** A friend whose index disappears keeps their cache (no signed "content deleted" marker yet, T-213).

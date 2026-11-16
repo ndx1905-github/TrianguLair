@@ -46,6 +46,10 @@ export const sharedListsEn: Messages = {
   'sharing.public.heldPublish': 'Publish them',
   'sharing.public.heldLeaveOut': 'Leave them out',
 
+  'sharing.details.title': 'What people with the link see',
+  'sharing.details.tagNames': 'Show my tag names',
+  'sharing.details.tagNamesHelp': 'Off: places keep their colors but not the names of your tags (they can be personal). Dates are only given to the day. Applies to all your link-only and public lists.',
+
   'sharing.friends.title': 'Friends who see this list',
   'sharing.friends.lead': 'They see the list’s name and its places in their app. Removing someone takes them away at their next sync.',
   'sharing.friends.none': 'No friends yet.',

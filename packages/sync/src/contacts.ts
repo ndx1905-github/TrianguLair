@@ -111,7 +111,20 @@ const DEFAULT_POLICY: ContactPolicy = { share: false, follow: false, at: 0 };
  * or every OWN_ANCHOR_STEP publications) so it does not cost a vault write
  * per publication; it is a floor, never ahead of the truth.
  */
-type AppPart = { version: 1; contacts: Record<string, ContactPolicy>; own?: IndexAnchor; lists?: Record<string, FollowedListEntry> };
+type AppPart = {
+  version: 1;
+  contacts: Record<string, ContactPolicy>;
+  own?: IndexAnchor;
+  lists?: Record<string, FollowedListEntry>;
+  /** What forwardable lists (link-only, public) publish: tag names only on opt-in (review L-03). */
+  publish?: PublishPrefs;
+};
+
+/** Shared by all my devices (they must publish the same packs and public file). */
+export interface PublishPrefs {
+  tagNames: boolean;
+  at: number;
+}
 
 /** The vault's own anchor is rewritten after this many publications (or at a rotation). */
 export const OWN_ANCHOR_STEP = 16;
@@ -144,6 +157,11 @@ export function laterAnchor(a: IndexAnchor | undefined, b: IndexAnchor | undefin
   return b.seq >= a.seq ? b : a;
 }
 
+function checkedPrefs(p: unknown): PublishPrefs | undefined {
+  const x = p as PublishPrefs | undefined;
+  return x && typeof x === 'object' && typeof x.tagNames === 'boolean' && Number.isSafeInteger(x.at) ? { tagNames: x.tagNames, at: x.at } : undefined;
+}
+
 function withApp(r: VaultRecords, part: AppPart): VaultRecords {
   return { ...r, app: { ...(r.app ?? {}), [APP_KEY]: part } };
 }
@@ -174,7 +192,8 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const lb = appPart(b).lists ?? {};
   const lists: Record<string, FollowedListEntry> = {};
   for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = cleanEntry(laterEntry(la[k], lb[k])!);
-  return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }) });
+  const publish = laterEntry(checkedPrefs(appPart(a).publish), checkedPrefs(appPart(b).publish));
+  return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }), ...(publish && { publish }) });
 }
 
 /**
@@ -344,6 +363,17 @@ export class ContactBook {
       out[id] = cleanEntry(e);
     }
     return out;
+  }
+
+  /** Whether link-only lists and the public file carry my tag names (off unless I opted in). */
+  publicTagNames(): boolean {
+    return checkedPrefs(appPart(this.r).publish)?.tagNames ?? false;
+  }
+
+  setPublicTagNames(on: boolean, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = checkedPrefs(part.publish);
+    this.r = withApp(this.r, { ...part, publish: { tagNames: on, at: Math.max(now, (cur?.at ?? 0) + 1) } });
   }
 
   /** Removes a contact: they no longer see my places and I stop reading theirs (spec "Remove a friend"). */

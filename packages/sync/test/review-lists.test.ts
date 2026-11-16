@@ -198,14 +198,42 @@ describe('review PR #85: lists', () => {
     expect(book.followedLists()).toHaveLength(MAX_FOLLOWED_LISTS);
   });
 
-  // L-03 (Low): a forwardable link carries the exact time each place was saved and last edited
-  // (habits), although the preview never shows them; the public file has the same fields.
-  it.fails('L-03: places of a link-only list carry no exact save dates', async () => {
+  // L-03 (Low): a forwardable list (link-only, public file) carries dates rounded to the day and no
+  // tag names unless the author opted in (shared by all their devices through the vault).
+  it('L-03: link-only lists and the public file carry day-rounded dates and no tag names unless opted in', async () => {
     const w = new World();
     const { a, list } = anna(w);
+    const tag = a.store.createTag({ name: "Mum's", color: '#16A34A', icon: 'heart' });
+    a.store.addSaveTag('osm:node/1', tag);
+    const pub = a.store.createList({ name: 'Pub', kind: 'manual', visibility: 'public' });
+    a.store.addToList(pub, 'osm:node/1');
+    const a2 = addDevice(w, a.user, { author: 'Anna' });
     const ben = addDevice(w, makeUser(w, 'ben'));
     await a.engine.sync();
-    const p = await ben.engine.previewList(linkOf(a, list));
-    for (const f of p.features) expect((f.properties as Record<string, unknown>).created).toBeUndefined();
+    const day = /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/;
+    const publicFile = async () => JSON.parse(new TextDecoder().decode((await w.readAdapter(a.user.location).get('public/lists.geojson'))!.data));
+    let p = await ben.engine.previewList(linkOf(a, list));
+    expect(p.updated).toMatch(day);
+    for (const f of p.features) {
+      expect(f.properties.created).toMatch(day);
+      expect(f.properties.updated).toMatch(day);
+      expect(f.properties.tags).toBeUndefined();
+    }
+    let geo = await publicFile();
+    expect(JSON.stringify(geo)).not.toContain("Mum's");
+    expect(geo.triangulair.lists[0].updated).toMatch(day);
+    expect(geo.features[0].properties.created).toMatch(day);
+    expect(geo.features[0].properties._umap_options.color).toBe('#16A34A'); // the color still styles uMap
+
+    // Opt-in on one device: every device publishes the names.
+    a.engine.setPublicTagNames(true);
+    await a.engine.sync();
+    await a2.engine.sync();
+    expect(a2.engine.book.publicTagNames()).toBe(true);
+    expect((await a2.engine.sync()).own!.packsWritten).toBe(0); // the same packs on both devices
+    p = await ben.engine.previewList(linkOf(a, list));
+    expect(p.features.find((f) => f.id === 'osm:node/1')!.properties.tags).toEqual([{ name: "Mum's", color: '#16A34A', icon: 'heart' }]);
+    geo = await publicFile();
+    expect(geo.features[0].properties.tags[0].name).toBe("Mum's");
   });
 });

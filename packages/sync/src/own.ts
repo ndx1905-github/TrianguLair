@@ -740,7 +740,7 @@ export class OwnSync {
 
     // Lists packs (lists.ts): kept when their recipient set and body are unchanged.
     const want = new Map<string, DesiredListPack>();
-    for (const d of desiredListPacks({ repo, items, myCert: this.sharing.cert, contacts: this.book.contacts(), audiences, now, ...(this.o.author && { author: this.o.author }) })) {
+    for (const d of desiredListPacks({ repo, items, myCert: this.sharing.cert, contacts: this.book.contacts(), audiences, now, tagNames: this.book.publicTagNames(), ...(this.o.author && { author: this.o.author }) })) {
       want.set(`${d.audience.fp}|${d.h}`, d);
     }
     const liveLists = new Set(repo.lists().map((l) => l.id));
@@ -804,7 +804,7 @@ export class OwnSync {
 
 
     // Public lists (plaintext).
-    const publicFile = buildPublicLists(repo, items, { owner: this.owner, ...(this.o.author && { author: this.o.author }) });
+    const publicFile = buildPublicLists(repo, items, { owner: this.owner, tagNames: this.book.publicTagNames(), ...(this.o.author && { author: this.o.author }) });
     const pub = publicFile ? publicEntry(publicFile, PUBLIC_LISTS_NAME) : undefined;
     const publicChanged = (pub?.hash ?? null) !== (prev?.public?.hash ?? null);
 

@@ -20,12 +20,14 @@
  *   streets), `description` is the public comment (uMap's default popup shows
  *   `name` and `description`), and `url` links an OSM place to its page on
  *   openstreetmap.org.
+ * - Dates are rounded to the day, and tag names are left out unless I opted in
+ *   (`featureFor(…, 'public')`, review L-03).
  * - The file names its author's identity (`triangulair.owner`), so a reader
  *   that follows a public list by link (followed.ts) checks it against the
  *   verified index, like everything else.
  */
 import { parseOsmPlaceId, type Repository } from '@triangulair/data';
-import { featureFor, type OwnItem } from './features.ts';
+import { dayOf, featureFor, type OwnItem } from './features.ts';
 import { publishable } from './home.ts';
 import { utf8 } from './payload.ts';
 
@@ -37,6 +39,8 @@ export interface PublicListsOptions {
   owner: string;
   /** Author name shown in the file (optional). */
   author?: string;
+  /** Publish my tag names (opt-in; otherwise places carry no tags, only the uMap color). */
+  tagNames?: boolean;
 }
 
 /** Default color of a place without a colored tag (the app's accent). */
@@ -59,14 +63,14 @@ export function buildPublicLists(repo: Repository, items: readonly OwnItem[], op
   const features: unknown[] = [];
   const meta: { id: string; name: string; description?: string; updated: string; count?: number }[] = [];
   for (const l of lists) {
-    const m: (typeof meta)[number] = { id: l.id, name: l.name, updated: new Date(l.updatedAt).toISOString() };
+    const m: (typeof meta)[number] = { id: l.id, name: l.name, updated: dayOf(l.updatedAt) };
     if (l.description) m.description = l.description;
     meta.push(m);
     let count = 0;
     for (const saveId of repo.listItems(l.id)) {
       const it = bySave.get(saveId);
       if (!it || !publishable(l, it)) continue;
-      const f = featureFor(it, 'public');
+      const f = featureFor(it, 'public', { tagNames: !!opts.tagNames });
       const props: Record<string, unknown> = { ...f.properties, list: l.id, list_name: l.name };
       if (f.properties.comment) props.description = f.properties.comment;
       const osm = parseOsmPlaceId(it.placeId);

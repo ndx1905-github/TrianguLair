@@ -15,7 +15,7 @@ import { formatKey, packHash, type SharingCert } from '@triangulair/crypto';
 import type { Repository } from '@triangulair/data';
 import { audienceOf, type Audience } from './audience.ts';
 import { listsSeenBy, type Contact } from './contacts.ts';
-import { featureFor, type OwnItem } from './features.ts';
+import { dayOf, featureFor, type OwnItem } from './features.ts';
 import {
   LIST_PACK_CAPACITY,
   LIST_TOMBSTONE_MS,
@@ -48,6 +48,8 @@ export function desiredListPacks(input: {
   /** Recipient set of each shared place (`computeAudiences`, the same as the places packs'). */
   audiences: ReadonlyMap<string, Audience>;
   author?: string;
+  /** Publish my tag names in link-only lists (opt-in, review L-03). */
+  tagNames?: boolean;
   now: Date;
 }): DesiredListPack[] {
   const { repo, items, myCert } = input;
@@ -60,11 +62,12 @@ export function desiredListPacks(input: {
       .map((s) => bySave.get(s))
       .filter((i): i is OwnItem => !!i && i.sharing !== 'private')
       .sort((a, b) => (a.placeId < b.placeId ? -1 : a.placeId > b.placeId ? 1 : 0));
-  const def = (l: (typeof live)[number], ids: string[]): ListDef => ({
+  // Link-only lists can be forwarded: their dates are rounded to the day (L-03).
+  const def = (l: (typeof live)[number], ids: string[], forwardable = false): ListDef => ({
     id: l.id,
     name: l.name,
     ...(l.description && { description: l.description }),
-    updated: iso(l.updatedAt),
+    updated: forwardable ? dayOf(l.updatedAt) : iso(l.updatedAt),
     items: ids,
   });
 
@@ -106,7 +109,7 @@ export function desiredListPacks(input: {
     const its = shared(l.id);
     for (let i = 0; i === 0 || i < its.length; i += LIST_PACK_CAPACITY) {
       const part = its.slice(i, i + LIST_PACK_CAPACITY);
-      const body = listsCollection([def(l, part.map((x) => x.placeId))], part.map((x) => featureFor(x, 'public')), input.author ? { author: input.author } : {});
+      const body = listsCollection([def(l, part.map((x) => x.placeId), true)], part.map((x) => featureFor(x, 'public', { tagNames: !!input.tagNames })), input.author ? { author: input.author } : {});
       out.push({ audience, body, h: packHash(body), role: 'link', lists: [l.id] });
     }
   }
@@ -117,10 +120,10 @@ export function desiredListPacks(input: {
     if (l.deletedAt === null || l.visibility !== 'link') continue;
     const secret = listSecretOf(l.linkKey);
     if (!secret) continue;
-    const until = l.deletedAt + LIST_TOMBSTONE_MS;
+    const until = Date.parse(dayOf(l.deletedAt + LIST_TOMBSTONE_MS)) + 24 * 3600 * 1000; // the next day boundary
     if (until <= now) continue;
     const audience = audienceOf([myCert.key, formatKey('x25519', listKeyPair(secret).publicKey)]);
-    const body = listsCollection([{ id: l.id, deleted: true, updated: iso(l.deletedAt), until: iso(until) }], []);
+    const body = listsCollection([{ id: l.id, deleted: true, updated: dayOf(l.deletedAt), until: iso(until) }], []);
     out.push({ audience, body, h: packHash(body), role: 'tombstone', lists: [l.id], until });
   }
   return out;

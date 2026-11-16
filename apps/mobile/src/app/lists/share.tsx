@@ -11,6 +11,8 @@
  *   a public filter list holds back because they look like a home (publish them or leave them out,
  *   review M-02), then the address of the GeoJSON file on my storage, "View on uMap" (a uMap map
  *   that imports the file) and the in-app link to follow it.
+ * - **Details**: whether link-only and public lists show my tag names (off by default; dates are
+ *   always rounded to the day: review L-03). One setting for all my lists, kept in my vault.
  * - **Friends**: pick who sees this list (its name and places) among my contacts.
  *
  * Everything here needs a storage: the "storage needed" card goes through
@@ -214,6 +216,19 @@ function ShareListScreen() {
             <Strong>{t('sharing.public.appLink')}</Strong>
             <LinkActions link={buildListLink(pub.fragment)} message={shareMessage(t('sharing.public.sentence', { name: list.name }), buildListLink(pub.fragment))} testID="share-public-link" />
           </Card>
+        </Section>
+      )}
+
+      {(link || (list.visibility === 'public' && pub)) && (
+        <Section title={t('sharing.details.title')}>
+          <ToggleRow
+            label={t('sharing.details.tagNames')}
+            help={t('sharing.details.tagNamesHelp')}
+            value={ctl!.publicTagNames()}
+            disabled={!connected || busy !== null}
+            onChange={(on) => void run('public', () => ctl!.setPublicTagNames(on))}
+            testID="share-tag-names"
+          />
         </Section>
       )}
 

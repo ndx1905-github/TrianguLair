@@ -214,6 +214,12 @@ export class SyncEngine {
     this.saveBook();
   }
 
+  /** Opt-in: link-only lists and the public file carry my tag names (kept in the vault: all my devices); publish after. */
+  setPublicTagNames(on: boolean): void {
+    this.book.setPublicTagNames(on, this.nowMs());
+    this.saveBook();
+  }
+
   // ------------------------------------------------------------------ lists followed by link
 
   /** Reads a list from its link fragment without following it. Throws ListGoneError, or the read's error. */
