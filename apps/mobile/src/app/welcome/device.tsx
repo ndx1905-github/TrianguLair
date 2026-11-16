@@ -5,7 +5,7 @@ import { ready } from '@triangulair/crypto';
 import { HttpsReadOnlyAdapter } from '@triangulair/storage';
 
 import { Banner, Button, Segmented } from '../../components/ui';
-import { QrCode } from '../../contacts/ui';
+import { LinkActions, QrCode } from '../../contacts/ui';
 import { Scanner } from '../../contacts/Scanner';
 import { defaultDeviceName } from '../../devices/local';
 import { LinkReceiver, QrReceiver, RestoreFailed, restoreWithPhrase, type Joined, type NewDeviceDeps } from '../../devices/sessions';
@@ -154,6 +154,8 @@ function LinkWay({ name, onJoined }: { name: string; onJoined: (j: Joined) => vo
   }
   return (
     <View style={{ gap: 12 }} testID="device-link-waiting">
+      <Frame.Note>{t('device.link.reply')}</Frame.Note>
+      <LinkActions link={s.requestLink} message={t('device.link.message', { link: s.requestLink })} testID="device-request" />
       <Frame.Note>{t('device.link.check')}</Frame.Note>
       <Fingerprint value={s.fingerprint} testID="device-fingerprint" />
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -161,7 +163,7 @@ function LinkWay({ name, onJoined }: { name: string; onJoined: (j: Joined) => vo
         <Frame.Note>{t('device.link.waiting')}</Frame.Note>
       </View>
       <Frame.Note>{t('device.link.orPhrase')}</Frame.Note>
-      <WordsField label={t('device.link.phrase')} value={phrase} onChange={setPhrase} testID="device-link-phrase" error={s.error === 'phrase-mismatch'} />
+      <WordsField label={t('device.link.phrase')} value={phrase} onChange={setPhrase} testID="device-link-phrase" error={!!s.error} />
       {s.error && <ErrorText>{t(`device.error.${s.error}`)}</ErrorText>}
       <Button kind="secondary" label={t('device.link.usePhrase')} onPress={() => void receiver?.certifyWithPhrase(phrase)} disabled={phrase.trim().split(/\s+/).length !== 12} testID="device-link-use-phrase" />
     </View>

@@ -70,8 +70,11 @@ function LostScreen() {
   const { t } = useI18n();
   const c = useUiColors();
   const router = useRouter();
-  const params = useLocalSearchParams<{ device?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ device?: string; mode?: string; rogue?: string; name?: string }>();
   const remove = params.mode === 'remove';
+  // A device that asked to join and was refused (Add a device, devices review F-03): never certified,
+  // nothing given; revoked anyway, with a key change, at the user's request.
+  const rogue = typeof params.rogue === 'string' && params.rogue ? params.rogue : null;
   const identity = useIdentity();
   const me = useReadyIdentity().record.deviceId;
   const storage = useStorage();
@@ -80,14 +83,19 @@ function LostScreen() {
   const [chosen, setChosen] = useState<string | null>(typeof params.device === 'string' ? params.device : null);
   const [step, setStep] = useState<Step>({ kind: 'choose' });
   const [wrong, setWrong] = useState(false);
-  const target = others.find((d) => d.cert.device === chosen) ?? null;
+  const listed = others.find((d) => d.cert.device === chosen);
+  const target: { id: string; name: string } | null = rogue
+    ? { id: rogue, name: (typeof params.name === 'string' && params.name) || t('devices.unnamed') }
+    : listed
+      ? { id: listed.cert.device, name: listed.name || t('devices.unnamed') }
+      : null;
 
   const run = async (master: MasterKeySource) => {
     if (!target) return;
     setWrong(false);
     let rotation;
     try {
-      rotation = await identity.rotateSharingCert({ revokeDevices: [target.cert.device], newKey: true }, master);
+      rotation = await identity.rotateSharingCert({ revokeDevices: [target.id], newKey: true }, master);
     } catch (e) {
       if (e instanceof Error && (e.message === 'phrase-mismatch' || e.message === 'master-key-needed')) return setWrong(true);
       return setStep({ kind: 'failed', reason: e instanceof Error ? e.message : 'error' });
@@ -95,13 +103,13 @@ function LostScreen() {
     setStep({ kind: 'working' });
     try {
       const r = await sync.declareLost(rotation, { cancelInvitations: !remove });
-      setStep({ kind: 'done', name: target.name || t('devices.unnamed'), cancelled: r.cancelled, delivered: r.delivered.length, device: target.cert.device });
+      setStep({ kind: 'done', name: target.name, cancelled: r.cancelled, delivered: r.delivered.length, device: target.id });
     } catch (e) {
       setStep({ kind: 'failed', reason: e instanceof Error ? e.message.replace(/^sync: /, '') : 'error' });
     }
   };
 
-  const title = remove ? t('lost.removeTitle') : t('lost.title');
+  const title = rogue ? t('lost.rogueTitle') : remove ? t('lost.removeTitle') : t('lost.title');
   if (step.kind === 'working') {
     return (
       <StorageScreen title={title} testID="lost-screen">
@@ -113,10 +121,10 @@ function LostScreen() {
     );
   }
   if (step.kind === 'done') {
-    const guide = remove ? [] : credentialGuide(storage.state, Date.now());
+    const guide = remove || rogue ? [] : credentialGuide(storage.state, Date.now());
     return (
       <StorageScreen title={title} testID="lost-screen">
-        <Banner testID="lost-done">{remove ? t('lost.removed', { name: step.name }) : t('lost.done', { name: step.name })}</Banner>
+        <Banner testID="lost-done">{rogue ? t('lost.rogueDone') : remove ? t('lost.removed', { name: step.name }) : t('lost.done', { name: step.name })}</Banner>
         <Muted>{t('lost.delivered', { count: step.delivered })}</Muted>
         {!remove && (
           <Section title={t('inviting.title')}>
@@ -141,28 +149,28 @@ function LostScreen() {
             ))}
           </Section>
         )}
-        {!remove && <Button label={t('lost.changes')} onPress={() => router.push(`/devices/changes?device=${encodeURIComponent(step.device)}` as Href)} testID="lost-changes" />}
+        {!remove && !rogue && <Button label={t('lost.changes')} onPress={() => router.push(`/devices/changes?device=${encodeURIComponent(step.device)}` as Href)} testID="lost-changes" />}
         <Button kind="secondary" label={t('add.back')} onPress={() => router.replace('/devices')} testID="lost-back" />
       </StorageScreen>
     );
   }
   return (
     <StorageScreen title={title} testID="lost-screen">
-      <Muted>{remove ? t('lost.removeLead') : t('lost.lead')}</Muted>
+      <Muted>{rogue ? t('lost.rogueLead', { name: target?.name ?? '' }) : remove ? t('lost.removeLead') : t('lost.lead')}</Muted>
       {step.kind === 'failed' && <Banner tone="warning" testID="lost-failed">{t('lost.failed', { reason: step.reason })}</Banner>}
-      <Section title={t('lost.choose')}>
+      {!rogue && <Section title={t('lost.choose')}>
         {others.length === 0 && <Muted>{t('lost.noOther')}</Muted>}
         {others.map((d) => (
           <ChoiceCard key={d.cert.device} title={d.name || t('devices.unnamed')} help={d.added ? t('devices.added', { date: new Date(d.added).toLocaleDateString() }) : ''} selected={chosen === d.cert.device} onPress={() => setChosen(d.cert.device)} testID="lost-device" />
         ))}
-      </Section>
+      </Section>}
       {target && (
         <>
           <Section title={t('lost.what.title')}>
             <Bullet>{t('lost.what.key')}</Bullet>
             {!remove && <Bullet>{t('lost.what.invites')}</Bullet>}
-            <Bullet>{t('lost.what.wipe')}</Bullet>
-            {!remove && <Bullet>{t('lost.what.access')}</Bullet>}
+            {!rogue && <Bullet>{t('lost.what.wipe')}</Bullet>}
+            {!remove && !rogue && <Bullet>{t('lost.what.access')}</Bullet>}
           </Section>
           <Muted>{t('lost.master')}</Muted>
           <MasterKeyPrompt onReady={(m) => void run(m)} actionLabel={remove ? t('lost.removeGo') : t('lost.go')} testID="lost-master" />

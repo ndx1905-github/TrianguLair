@@ -5,18 +5,19 @@
  *
  * Old device (this identity, any of my devices; the device certificate needs the master key:
  * primary device or the 12 words):
- *   LinkSender  idle → creating → waiting → request → approving → done   (+ expired, cancelled, failed)
- *   QrSender    idle → confirm → approving → showing → done              (+ expired, cancelled, failed)
+ *   LinkSender  idle → creating → waiting → request → approving → sent → done
+ *                                                   (+ refused, expired, cancelled, failed)
+ *   QrSender    idle → confirm → approving → showing → done              (+ refused, expired, cancelled, failed)
+ *   The new device is listed (`register`) only once it has picked its keys up (review F-04); a
+ *   refusal (or digits that differ) releases nothing, and the screen offers a key change (F-03).
  * New device (first launch, "I already have TrianguLair on another device"):
- *   LinkReceiver enter → opening → waiting → approved                    (+ wrong-code, expired, gone, failed)
+ *   LinkReceiver enter → opening → waiting (request link shown) → approved   (+ wrong-code, expired, gone, failed)
  *   QrReceiver   showing → opening → approved                            (+ gone, failed)
  *   restoreWithPhrase(phrase, read address)                              (the 12 words: no other device)
  */
 import {
-  decodeKeyExport,
   decryptTransfer,
   devicePublicKeys,
-  encodeKeyExport,
   encryptForTransfer,
   encodePrimaryIdentity,
   ExpiredError,
@@ -42,8 +43,14 @@ import type { MasterKeySource } from '../storage/certify';
 import { parseConfig, type StorageConfig } from '../storage/config';
 import {
   TRANSFER_WINDOW_MS,
+  decodeInvite,
   deviceFingerprint,
   encodeDeviceLink,
+  encodeInvite,
+  encodeRequestLink,
+  newChannelKey,
+  parseRequestLink,
+  type DeviceInvite,
   encodeOffer,
   encodeReply,
   ephemeralKeys,
@@ -123,24 +130,47 @@ export interface OldDeviceDeps {
 }
 
 export interface PendingDevice extends DeviceRequest {
+  /** 12 digits (3 groups of 4) of the new device key, shown in full on the new device. */
   fingerprint: string;
+}
+
+/** The last 4 digits of the number, which the user types on the old device (devices review F-03). */
+export function lastDigits(fingerprint: string): string {
+  return fingerprint.replace(/\D/g, '').slice(-4);
+}
+
+/** The number as the old device shows it: the last group is what the user types. */
+export function maskedFingerprint(fingerprint: string): string {
+  return fingerprint.replace(/\d{4}$/, '····');
+}
+
+function digitsMatch(device: PendingDevice, typed: string): boolean {
+  return typed.replace(/\D/g, '') === lastDigits(device.fingerprint);
 }
 
 export type LinkSenderState =
   | { phase: 'idle' }
   | { phase: 'creating' }
-  | { phase: 'waiting'; link: string; code: string; expiresAt: number }
+  | { phase: 'waiting'; link: string; code: string; expiresAt: number; error?: 'bad-link' }
   | { phase: 'request'; link: string; code: string; expiresAt: number; device: PendingDevice; error?: string }
   | { phase: 'approving'; link: string; code: string; expiresAt: number; device: PendingDevice }
+  | { phase: 'sent'; name: string; device: string; expiresAt: number }
   | { phase: 'done'; name: string; device: string }
+  | { phase: 'refused'; device: PendingDevice }
   | { phase: 'expired' }
   | { phase: 'cancelled' }
   | { phase: 'failed'; error: string };
 
-/** "Link + code" on the old device. */
+/**
+ * "Link + code" on the old device (channel.ts): an invitation to enrol, then the new device's
+ * request link pasted here, the number checked (last 4 digits typed), the certificate issued with
+ * the master key, and only then the keys sealed to the new device. Nothing is listed or delivered
+ * until the new device has picked its approval up.
+ */
 export class LinkSender extends Machine<LinkSenderState> {
   private slot = '';
-  private secret: Uint8Array | null = null;
+  private key: Uint8Array | null = null;
+  private cert: DeviceCert | null = null;
   constructor(private readonly d: OldDeviceDeps) {
     super({ phase: 'idle' });
   }
@@ -153,52 +183,58 @@ export class LinkSender extends Machine<LinkSenderState> {
     this.set({ phase: 'creating' });
     try {
       const sharing = await this.d.sharing();
-      this.secret = sharing.keyPair.secretKey.slice();
       this.slot = newSlot();
+      this.key = newChannelKey();
       const code = generateTransferCode();
       const now = this.now();
-      const blob = encryptForTransfer(encodeKeyExport(sharing), code, { now: new Date(now), ttlMs: TRANSFER_WINDOW_MS, ...(this.d.argon && { params: this.d.argon }) });
-      await this.d.storage.put(slotFiles(this.slot).blob, blob, { contentType: 'application/octet-stream' });
+      const invite = encodeInvite({ owner: sharing.cert.owner, location: this.d.location, slot: this.slot, key: this.key });
+      const blob = encryptForTransfer(invite, code, { now: new Date(now), ttlMs: TRANSFER_WINDOW_MS, ...(this.d.argon && { params: this.d.argon }) });
       const expiresAt = now + TRANSFER_WINDOW_MS;
       this.d.trackSlot?.(this.slot, expiresAt);
+      await this.d.storage.put(slotFiles(this.slot).blob, blob, { contentType: 'application/octet-stream' });
       this.set({ phase: 'waiting', link: encodeDeviceLink({ slot: this.slot, location: this.d.location }), code, expiresAt });
     } catch (e) {
+      this.wipe();
       this.set({ phase: 'failed', error: errorCode(e) });
     }
   }
 
-  /** Looks for the new device's request (call every few seconds while waiting). */
-  async poll(): Promise<void> {
+  /** The new device's request link, pasted here. Sets `error: 'bad-link'` when it is not this transfer's. */
+  received(text: string): void {
     const s = this.s;
-    if (s.phase !== 'waiting' && s.phase !== 'request') return;
-    if (this.now() >= s.expiresAt) return this.expire();
-    if (s.phase !== 'waiting' || !this.secret) return;
-    const f = slotFiles(this.slot);
+    if (s.phase !== 'waiting' || !this.key) return;
+    if (this.now() >= s.expiresAt) {
+      void this.expire();
+      return;
+    }
     try {
-      const g = await this.d.storage.get(f.request, { maxBytes: MAX_FILE });
-      if (!g) return;
-      const req = openRequest(g.data, this.secret, this.slot);
-      if (this.s.phase !== 'waiting') return;
-      this.set({ ...s, phase: 'request', device: { ...req, fingerprint: deviceFingerprint(req.device) } });
+      const r = parseRequestLink(text);
+      if (r.slot !== this.slot) throw new Error('another transfer');
+      const req = openRequest(r.sealed, this.key, this.slot);
+      this.set({ phase: 'request', link: s.link, code: s.code, expiresAt: s.expiresAt, device: { ...req, fingerprint: deviceFingerprint(req.device) } });
     } catch {
-      // a broken or foreign file: ignore it, the real request may still come
+      this.set({ ...s, error: 'bad-link' });
     }
   }
 
-  /** The user checked the fingerprint on both screens: issue the certificate. */
-  async approve(master: MasterKeySource): Promise<void> {
+  /**
+   * The user typed the last 4 digits the new device shows (`digits`) and the master key is at hand:
+   * issue the certificate, seal the keys to the new device, drop the approval.
+   */
+  async approve(master: MasterKeySource, digits: string): Promise<void> {
     const s = this.s;
-    if (s.phase !== 'request' || !this.secret) return;
+    if (s.phase !== 'request' || !this.key) return;
     if (this.now() >= s.expiresAt) return this.expire();
+    if (!digitsMatch(s.device, digits)) return this.set({ ...s, error: 'digits' });
     this.set({ phase: 'approving', link: s.link, code: s.code, expiresAt: s.expiresAt, device: s.device });
     try {
       const cert = await this.d.certify({ device: s.device.device, box: s.device.box }, master);
-      await this.d.storage.put(slotFiles(this.slot).approval, sealApproval(cert, this.secret, this.slot), { contentType: 'application/octet-stream' });
-      await quietDelete(this.d.storage, slotFiles(this.slot).request);
+      const sharing = await this.d.sharing();
+      await this.d.storage.put(slotFiles(this.slot).approval, sealApproval({ cert, sealed: sealSharingKey(sharing, cert) }, this.key, this.slot), { contentType: 'application/octet-stream' });
       await quietDelete(this.d.storage, slotFiles(this.slot).blob);
-      await this.d.register(cert, s.device.name);
+      this.cert = cert;
       this.wipe();
-      this.set({ phase: 'done', name: s.device.name, device: cert.device });
+      this.set({ phase: 'sent', name: s.device.name, device: cert.device, expiresAt: s.expiresAt });
     } catch (e) {
       const error = errorCode(e);
       // A wrong phrase can be typed again; anything else ends the transfer.
@@ -210,13 +246,49 @@ export class LinkSender extends Machine<LinkSenderState> {
     }
   }
 
-  /** Not my device: refuse and close the transfer. */
+  /** The new device picked its approval up (it deletes the file): list it now. */
+  async poll(): Promise<void> {
+    const s = this.s;
+    if (s.phase === 'waiting' || s.phase === 'request') {
+      if (this.now() >= s.expiresAt) await this.expire();
+      return;
+    }
+    if (s.phase !== 'sent') return;
+    try {
+      if (!(await this.d.storage.head(slotFiles(this.slot).approval))) return this.finish();
+    } catch {
+      return; // try again
+    }
+    if (this.now() >= s.expiresAt) await this.expire();
+  }
+
+  private async finish(): Promise<void> {
+    const s = this.s;
+    if (s.phase !== 'sent' || !this.cert) return;
+    this.set({ phase: 'done', name: s.name, device: s.device });
+    try {
+      await this.d.register(this.cert, s.name);
+    } catch {
+      // it lists itself at its first sync anyway
+    }
+  }
+
+  /** Not my device (or the digits differ): nothing was given to it. The screen offers a key change. */
   async refuse(): Promise<void> {
-    await this.cancel();
+    const s = this.s;
+    if (s.phase !== 'request') return this.cancel();
+    await this.cleanup();
+    this.set({ phase: 'refused', device: s.device });
   }
 
   async cancel(): Promise<void> {
-    if (this.s.phase === 'done' || this.s.phase === 'cancelled') return;
+    const s = this.s;
+    if (s.phase === 'done' || s.phase === 'cancelled' || s.phase === 'refused') return;
+    if (s.phase === 'sent') {
+      // Picked up already: the device has its keys, it is listed (remove it from Settings › Devices).
+      const there = await this.d.storage.head(slotFiles(this.slot).approval).catch(() => true);
+      if (!there) return this.finish();
+    }
     await this.cleanup();
     this.set({ phase: 'cancelled' });
   }
@@ -234,8 +306,8 @@ export class LinkSender extends Machine<LinkSenderState> {
   }
 
   private wipe(): void {
-    this.secret?.fill(0);
-    this.secret = null;
+    this.key?.fill(0);
+    this.key = null;
   }
 }
 
@@ -245,11 +317,16 @@ export type QrSenderState =
   | { phase: 'approving'; device: PendingDevice }
   | { phase: 'showing'; reply: string; name: string; expiresAt: number }
   | { phase: 'done'; name: string; device: string }
+  | { phase: 'refused'; device: PendingDevice }
   | { phase: 'expired' }
   | { phase: 'cancelled' }
   | { phase: 'failed'; error: string };
 
-/** "QR code" on the old device: scan the new device's code, approve, show the answer code. */
+/**
+ * "QR code" on the old device: scan the new device's code, check the number (last 4 digits typed),
+ * approve, show the answer code. The new device is listed only once it has fetched its package
+ * (devices review F-04): "Cancel" before that leaves nothing behind.
+ */
 export class QrSender extends Machine<QrSenderState> {
   private offer: DeviceOffer | null = null;
   private slot = '';
@@ -269,9 +346,10 @@ export class QrSender extends Machine<QrSenderState> {
     this.set({ phase: 'confirm', device: { device: offer.device, box: offer.box, name: offer.name, fingerprint: deviceFingerprint(offer.device) } });
   }
 
-  async approve(master: MasterKeySource): Promise<void> {
+  async approve(master: MasterKeySource, digits: string): Promise<void> {
     const s = this.s;
     if (s.phase !== 'confirm' || !this.offer) return;
+    if (!digitsMatch(s.device, digits)) return this.set({ ...s, error: 'digits' });
     this.set({ phase: 'approving', device: s.device });
     const eph: EphemeralKeys = ephemeralKeys();
     try {
@@ -281,10 +359,9 @@ export class QrSender extends Machine<QrSenderState> {
       const key = sharedKey(eph, this.offer.ephemeral, 'old', this.slot);
       const bytes = sealQrPackage({ cert, sealed: sealSharingKey(sharing, cert) }, key, this.slot);
       key.fill(0);
-      await this.d.storage.put(slotFiles(this.slot).qr, bytes, { contentType: 'application/octet-stream' });
       const expiresAt = this.now() + TRANSFER_WINDOW_MS;
       this.d.trackSlot?.(this.slot, expiresAt);
-      await this.d.register(cert, s.device.name);
+      await this.d.storage.put(slotFiles(this.slot).qr, bytes, { contentType: 'application/octet-stream' });
       this.cert = cert;
       this.set({ phase: 'showing', reply: encodeReply({ slot: this.slot, ephemeral: eph.publicKey, location: this.d.location }), name: s.device.name, expiresAt });
     } catch (e) {
@@ -296,24 +373,47 @@ export class QrSender extends Machine<QrSenderState> {
     }
   }
 
-  /** The new device deletes the file once it has it: then this side is done. */
+  /** The new device deletes the file once it has it: then it is listed and this side is done. */
   async poll(): Promise<void> {
     const s = this.s;
     if (s.phase !== 'showing') return;
+    try {
+      if (!(await this.d.storage.head(slotFiles(this.slot).qr))) return this.finish();
+    } catch {
+      return; // try again
+    }
     if (this.now() >= s.expiresAt) {
       await quietDelete(this.d.storage, slotFiles(this.slot).qr);
       this.set({ phase: 'expired' });
-      return;
-    }
-    try {
-      if (!(await this.d.storage.head(slotFiles(this.slot).qr))) this.set({ phase: 'done', name: s.name, device: this.cert!.device });
-    } catch {
-      // try again
     }
   }
 
+  private async finish(): Promise<void> {
+    const s = this.s;
+    if (s.phase !== 'showing' || !this.cert) return;
+    this.set({ phase: 'done', name: s.name, device: this.cert.device });
+    try {
+      await this.d.register(this.cert, s.name);
+    } catch {
+      // it lists itself at its first sync anyway
+    }
+  }
+
+  /** Not my device (or the digits differ): nothing was given to it. The screen offers a key change. */
+  refuse(): void {
+    const s = this.s;
+    if (s.phase === 'confirm') this.set({ phase: 'refused', device: s.device });
+    else void this.cancel();
+  }
+
   async cancel(): Promise<void> {
-    if (this.s.phase === 'done' || this.s.phase === 'cancelled') return;
+    const s = this.s;
+    if (s.phase === 'done' || s.phase === 'cancelled' || s.phase === 'refused') return;
+    if (s.phase === 'showing') {
+      // Fetched already: the device has its keys, it is listed (remove it from Settings › Devices).
+      const there = await this.d.storage.head(slotFiles(this.slot).qr).catch(() => true);
+      if (!there) return this.finish();
+    }
     if (this.slot) await quietDelete(this.d.storage, slotFiles(this.slot).qr);
     this.set({ phase: 'cancelled' });
   }
@@ -369,14 +469,17 @@ export async function readVaultValues(adapter: StorageAdapter, sharing: SharingK
 export type LinkReceiverState =
   | { phase: 'enter'; error?: 'bad-link' | 'wrong-code' | 'expired' | 'gone' | 'failed' }
   | { phase: 'opening' }
-  | { phase: 'waiting'; fingerprint: string; error?: string }
+  | { phase: 'waiting'; requestLink: string; fingerprint: string; error?: string }
   | { phase: 'approved'; joined: Joined }
-  | { phase: 'failed'; error: 'no-storage' | 'storage-write' | 'failed' };
+  | { phase: 'failed'; error: 'failed' };
 
-/** "Link + code" on the new device. */
+/**
+ * "Link + code" on the new device: open the invitation with the 6 words, show the request link to
+ * send back and the number, then wait for the approval, which alone carries the keys (F-03).
+ */
 export class LinkReceiver extends Machine<LinkReceiverState> {
   readonly deviceKeys: DeviceKeys;
-  private ctx: { slot: string; location: string; sharing: SharingKey; storage: StorageConfig; profileName: string; writer: StorageAdapter } | null = null;
+  private ctx: { invite: DeviceInvite; reader: StorageAdapter } | null = null;
   constructor(private readonly d: NewDeviceDeps, private readonly deviceName: string) {
     super({ phase: 'enter' });
     this.deviceKeys = generateDeviceKeys();
@@ -397,11 +500,11 @@ export class LinkReceiver extends Machine<LinkReceiverState> {
       return this.set({ phase: 'enter', error: 'bad-link' });
     }
     this.set({ phase: 'opening' });
-    const reader = this.d.readAdapter(link.location);
-    const files = slotFiles(link.slot);
-    let sharing: SharingKey;
+    let invite: DeviceInvite;
+    let reader: StorageAdapter;
     try {
-      const g = await reader.get(files.blob, { maxBytes: MAX_FILE });
+      reader = this.d.readAdapter(link.location);
+      const g = await reader.get(slotFiles(link.slot).blob, { maxBytes: MAX_FILE });
       if (!g) return this.set({ phase: 'enter', error: 'gone' });
       let plain: Uint8Array;
       try {
@@ -410,75 +513,80 @@ export class LinkReceiver extends Machine<LinkReceiverState> {
         if (e instanceof ExpiredError) return this.set({ phase: 'enter', error: 'expired' });
         return this.set({ phase: 'enter', error: 'wrong-code' });
       }
-      sharing = decodeKeyExport(plain);
-      plain.fill(0);
-      // The key export certifies my read address: it must be the one the link pointed to.
-      if (sharing.cert.location !== link.location) return this.set({ phase: 'enter', error: 'failed' });
+      invite = decodeInvite(plain);
+      // The invitation names my read address and this slot: they must be the link's.
+      if (invite.location !== link.location || invite.slot !== link.slot) return this.set({ phase: 'enter', error: 'failed' });
     } catch {
       return this.set({ phase: 'enter', error: 'failed' });
     }
-    try {
-      const v = await readVaultValues(reader, sharing);
-      if (!v.storage || v.storage.kind === 'https') return this.set({ phase: 'failed', error: 'no-storage' });
-      const writer = this.d.writeAdapter(v.storage);
-      // Single use: the blob goes as soon as it is opened.
-      await writer.delete(files.blob).catch(() => {});
-      const pub = devicePublicKeys(this.deviceKeys);
-      await writer.put(files.request, sealRequest({ device: pub.device, box: pub.box, name: this.deviceName }, sharing.keyPair.secretKey, link.slot), { contentType: 'application/octet-stream' });
-      this.ctx = { slot: link.slot, location: link.location, sharing, storage: v.storage, profileName: v.profileName, writer };
-      this.set({ phase: 'waiting', fingerprint: this.fingerprint });
-    } catch {
-      this.set({ phase: 'failed', error: 'storage-write' });
-    }
+    const pub = devicePublicKeys(this.deviceKeys);
+    const sealed = sealRequest({ device: pub.device, box: pub.box, name: this.deviceName }, invite.key, invite.slot);
+    this.ctx = { invite, reader };
+    this.set({ phase: 'waiting', requestLink: encodeRequestLink(invite.slot, sealed), fingerprint: this.fingerprint });
   }
 
   /** Looks for the old device's approval (every few seconds while waiting). */
   async poll(): Promise<void> {
     const c = this.ctx;
     if (this.s.phase !== 'waiting' || !c) return;
-    const f = slotFiles(c.slot);
+    const f = slotFiles(c.invite.slot);
+    let joined: Joined;
     try {
-      const g = await c.writer.get(f.approval, { maxBytes: MAX_FILE });
+      const g = await c.reader.get(f.approval, { maxBytes: MAX_FILE });
       if (!g) return;
-      const cert = verifyDeviceCert(openApproval(g.data, c.sharing.keyPair.secretKey, c.slot) as never, { expectedOwner: c.sharing.cert.owner });
+      const a = openApproval(g.data, c.invite.key, c.invite.slot);
+      const owner = c.invite.owner;
+      const cert = verifyDeviceCert(a.cert as never, { expectedOwner: owner });
       if (cert.device !== this.deviceKeys.id || cert.box !== devicePublicKeys(this.deviceKeys).box) return;
-      await quietDelete(c.writer, f.approval);
-      await quietDelete(c.writer, f.request);
-      this.finish(cert, null, null);
+      const sharing = openSharingKey(fromB64Url(a.sealed, 'sealed'), this.deviceKeys, { expectedOwner: owner });
+      if (sharing.cert.location !== c.invite.location) return;
+      const v = await readVaultValues(c.reader, sharing);
+      joined = { owner, deviceKeys: this.deviceKeys, deviceCert: cert, sharing, storage: v.storage, profileName: v.profileName, primaryIdentity: null, vaultCopy: null };
     } catch {
-      // not there yet, or not for me
+      return; // not there yet, or not for me
     }
+    // Picked up: the old device sees the file gone and lists this device.
+    if (joined.storage && joined.storage.kind !== 'https') {
+      const w = this.d.writeAdapter(joined.storage);
+      for (const p of [f.approval, f.blob, f.request]) await quietDelete(w, p);
+    }
+    this.wipe();
+    this.set({ phase: 'approved', joined });
   }
 
-  /** While waiting: certify this device with the 12 words instead (no need for the other device). */
+  /**
+   * While waiting: the other device is out of reach. The 12 words restore from the read address
+   * the invitation named (`restoreWithPhrase`), for the identity it named.
+   */
   async certifyWithPhrase(phrase: string, opts: { primary?: boolean } = {}): Promise<void> {
     const c = this.ctx;
-    if (this.s.phase !== 'waiting' || !c) return;
-    let id;
+    const s = this.s;
+    if (s.phase !== 'waiting' || !c) return;
     try {
-      id = identityFromPhrase(normalizePhrase(phrase));
-    } catch {
-      return this.set({ phase: 'waiting', fingerprint: this.fingerprint, error: 'phrase-mismatch' });
-    }
-    try {
-      if (id.owner !== c.sharing.cert.owner) return this.set({ phase: 'waiting', fingerprint: this.fingerprint, error: 'phrase-mismatch' });
-      const cert = issueDeviceCert(id, devicePublicKeys(this.deviceKeys));
-      // Tell the old device (it shows "added") and close the slot.
-      await c.writer.put(slotFiles(c.slot).approval, sealApproval(cert, c.sharing.keyPair.secretKey, c.slot)).catch(() => {});
-      await quietDelete(c.writer, slotFiles(c.slot).request);
-      this.finish(cert, opts.primary ? toB64Url(encodePrimaryIdentity(id)) : null, sealSharingKey(c.sharing, id));
-    } finally {
+      const id = identityFromPhrase(normalizePhrase(phrase));
+      const owner = id.owner;
       id.master.secretKey.fill(0);
       id.vaultKey.fill(0);
+      if (owner !== c.invite.owner) return this.set({ ...s, error: 'phrase-mismatch' });
+    } catch {
+      return this.set({ ...s, error: 'phrase-mismatch' });
+    }
+    try {
+      const joined = await restoreWithPhrase(phrase, c.invite.location, this.d, { ...opts, deviceKeys: this.deviceKeys });
+      if (joined.storage && joined.storage.kind !== 'https') {
+        const w = this.d.writeAdapter(joined.storage);
+        for (const p of Object.values(slotFiles(c.invite.slot))) await quietDelete(w, p);
+      }
+      this.wipe();
+      this.set({ phase: 'approved', joined });
+    } catch (e) {
+      this.set({ ...s, error: e instanceof RestoreFailed ? e.code : 'failed' });
     }
   }
 
-  private finish(cert: DeviceCert, primaryIdentity: string | null, vaultCopy: Uint8Array | null): void {
-    const c = this.ctx!;
-    this.set({
-      phase: 'approved',
-      joined: { owner: c.sharing.cert.owner, deviceKeys: this.deviceKeys, deviceCert: cert, sharing: c.sharing, storage: c.storage, profileName: c.profileName, primaryIdentity, vaultCopy },
-    });
+  private wipe(): void {
+    this.ctx?.invite.key.fill(0);
+    this.ctx = null;
   }
 
   /** Back to the link and code fields. */
@@ -553,7 +661,7 @@ export class RestoreFailed extends Error {
  * sharing key at `keys/<owner>.bin`, then the vault. This device gets its own keys and a device
  * certificate from the phrase.
  */
-export async function restoreWithPhrase(phrase: string, location: string, d: NewDeviceDeps, opts: { primary?: boolean } = {}): Promise<Joined> {
+export async function restoreWithPhrase(phrase: string, location: string, d: NewDeviceDeps, opts: { primary?: boolean; deviceKeys?: DeviceKeys } = {}): Promise<Joined> {
   let id;
   try {
     id = identityFromPhrase(normalizePhrase(phrase));
@@ -580,7 +688,7 @@ export async function restoreWithPhrase(phrase: string, location: string, d: New
     } catch {
       throw new RestoreFailed('not-found');
     }
-    const deviceKeys = generateDeviceKeys();
+    const deviceKeys = opts.deviceKeys ?? generateDeviceKeys();
     const deviceCert = issueDeviceCert(id, devicePublicKeys(deviceKeys));
     const v = await readVaultValues(sharing.cert.location ? d.readAdapter(sharing.cert.location) : reader, sharing).catch(() => ({ storage: null, profileName: '' }));
     return {

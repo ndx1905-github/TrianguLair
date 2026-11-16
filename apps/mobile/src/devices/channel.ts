@@ -2,23 +2,26 @@
  * Adding a device (spec "Adding a device", T-206): the app-level wrappers around the frozen crypto
  * structures. Nothing here is a crypto format; the crypto package is unchanged.
  *
- * Link + code (remote):
- *   - the old device seals `encodeKeyExport(current)` with `encryptForTransfer(…, code)` (TLTX,
- *     Argon2id, 15-minute authenticated expiry) and drops it at `transfer/<slot>.bin` on my storage;
- *   - the link is `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>`: the read
- *     address tells the new device where to fetch the blob anonymously (the read address serves the
- *     same folder); it holds no secret ("the link alone allows nothing");
- *   - the new device decrypts with the 6 words, reads the vault at the read address with the vault
- *     data key (storage write access, profile), deletes the blob (single use), and leaves a
- *     **request** `transfer/<slot>.req` with its public device keys and name;
- *   - the old device shows the request (name + a 12-digit fingerprint of the new device key, shown
- *     on both screens), issues the device certificate with the master key (primary device or the
- *     12 words) and writes the **approval** `transfer/<slot>.ok`.
- *   Request and approval are encrypted (XChaCha20-Poly1305) under BLAKE2b(key = sharing secret key,
- *   "TrianguLair/device-slot/v1" | kind | slot), a key both devices hold once the blob is opened,
- *   so the host learns no device name. The confirmation on both screens is what authenticates the
- *   request (someone else holding the sharing key, a device stolen and not declared yet, could
- *   write one during those 15 minutes).
+ * Link + code (remote; devices review F-03: no key leaves the old device before its approval):
+ *   - the old device makes a slot, a 6-word code and a random 32-byte channel key, and drops at
+ *     `transfer/<slot>.bin` on my storage the frozen TLTX blob (Argon2id from the code, 15-minute
+ *     authenticated expiry) of an **invitation to enrol**: `{owner, location, slot, channel key}`,
+ *     no secret of mine (no sharing key, no vault data key, no storage access);
+ *   - the **device link** `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>` tells
+ *     the new device where to fetch it anonymously; it holds no secret ("the link alone allows
+ *     nothing");
+ *   - the new device opens the blob with the 6 words and answers with a **request link**
+ *     `https://triangulair.app/d#<b64url(2 | slot 16 B | sealed request)>`: its public device keys
+ *     and name, sealed under the channel key; the user sends it back to the old device (the new
+ *     device cannot write to my storage: the storage access is in the vault, not released yet);
+ *   - the old device opens the request, shows the name and a 12-digit number of the new device key
+ *     (shown on both screens: the user types its last 4 digits), issues the device certificate with
+ *     the master key and only then drops the **approval** `transfer/<slot>.ok`: the certificate and
+ *     the sharing key with the vault data key sealed to the new device key (TLSK mode 1), under the
+ *     channel key. The new device then reads my storage settings in the vault.
+ *   Request and approval are XChaCha20-Poly1305 under the channel key (AD: kind and slot). Whoever
+ *   intercepts the link and the code can write a request: the number on both screens is what
+ *   authenticates it, and a refusal releases nothing (the app offers a key change anyway).
  *
  * QR (side by side, the default):
  *   - the new device shows `TLDA1:<b64url(sign pk | box pk | ephemeral X25519 pk | name)>`;
@@ -73,24 +76,39 @@ function checkSlot(slot: string): string {
 
 export interface DeviceLink {
   slot: string;
-  /** The certified read address: the blob is at `<location>transfer/<slot>.bin`. */
+  /** The certified read address: the invitation is at `<location>transfer/<slot>.bin`. */
   location: string;
 }
 
-export function encodeDeviceLink(l: DeviceLink): string {
-  checkLocation(l.location);
-  return `${DEVICE_LINK_BASE}#${toB64Url(concat(Uint8Array.of(1), fromB64Url(l.slot, 'slot', SLOT_BYTES), enc.encode(l.location)))}`;
+const LINK_INVITE = 1;
+const LINK_REQUEST = 2;
+
+function linkBytes(kind: number, slot: string, rest: Uint8Array): string {
+  return `${DEVICE_LINK_BASE}#${toB64Url(concat(Uint8Array.of(kind), fromB64Url(slot, 'slot', SLOT_BYTES), rest))}`;
 }
 
-/** Finds a device link in pasted text (a mail, a message). Throws `Error('bad-link')`. */
-export function parseDeviceLink(text: string): DeviceLink {
+function linkPayload(text: string, kind: number): { slot: string; rest: Uint8Array } {
   const m = /triangulair\.app\/d#([A-Za-z0-9_-]+)/.exec(text.trim());
   if (!m) throw new Error('bad-link');
   try {
     const b = fromB64Url(m[1], 'link');
-    if (b.length < 1 + SLOT_BYTES + 8 || b[0] !== 1) throw new Error('version');
-    const slot = toB64Url(b.subarray(1, 1 + SLOT_BYTES));
-    const location = dec.decode(b.subarray(1 + SLOT_BYTES));
+    if (b.length < 1 + SLOT_BYTES + 8 || b[0] !== kind) throw new Error('kind');
+    return { slot: toB64Url(b.subarray(1, 1 + SLOT_BYTES)), rest: b.slice(1 + SLOT_BYTES) };
+  } catch {
+    throw new Error('bad-link');
+  }
+}
+
+export function encodeDeviceLink(l: DeviceLink): string {
+  checkLocation(l.location);
+  return linkBytes(LINK_INVITE, l.slot, enc.encode(l.location));
+}
+
+/** Finds a device link in pasted text (a mail, a message). Throws `Error('bad-link')` (a request link included). */
+export function parseDeviceLink(text: string): DeviceLink {
+  const { slot, rest } = linkPayload(text, LINK_INVITE);
+  try {
+    const location = dec.decode(rest);
     checkLocation(location);
     return { slot, location };
   } catch {
@@ -98,16 +116,52 @@ export function parseDeviceLink(text: string): DeviceLink {
   }
 }
 
-// ------------------------------------------------------------------ request / approval (sealed JSON)
+/** The new device's answer, to send back to the old device. */
+export function encodeRequestLink(slot: string, sealed: Uint8Array): string {
+  return linkBytes(LINK_REQUEST, slot, sealed);
+}
+
+/** Throws `Error('bad-link')` (an invitation link included). */
+export function parseRequestLink(text: string): { slot: string; sealed: Uint8Array } {
+  const { slot, rest } = linkPayload(text, LINK_REQUEST);
+  return { slot, sealed: rest };
+}
+
+// ------------------------------------------------------------------ invitation, request, approval
+
+export const CHANNEL_KEY_BYTES = 32;
+
+export interface DeviceInvite {
+  owner: string;
+  location: string;
+  slot: string;
+  /** Channel key for the request and the approval. */
+  key: Uint8Array;
+}
+
+export function newChannelKey(): Uint8Array {
+  return _sodium.randombytes_buf(CHANNEL_KEY_BYTES);
+}
+
+/** The TLTX payload of `transfer/<slot>.bin` (encrypted by the caller with `encryptForTransfer`). */
+export function encodeInvite(i: DeviceInvite): Uint8Array {
+  checkLocation(i.location);
+  parseKey('ed25519', i.owner, 'owner');
+  return enc.encode(JSON.stringify({ type: 'tl-device-invite', v: 1, owner: i.owner, location: i.location, slot: checkSlot(i.slot), key: toB64Url(i.key) }));
+}
+
+export function decodeInvite(bytes: Uint8Array): DeviceInvite {
+  const o = JSON.parse(dec.decode(bytes)) as unknown;
+  if (!isObj(o) || o['type'] !== 'tl-device-invite' || o['v'] !== 1 || typeof o['owner'] !== 'string' || typeof o['location'] !== 'string' || typeof o['slot'] !== 'string') throw new Error('bad-file');
+  parseKey('ed25519', o['owner'], 'owner');
+  checkLocation(o['location']);
+  return { owner: o['owner'], location: o['location'], slot: checkSlot(o['slot']), key: fromB64Url(o['key'], 'key', CHANNEL_KEY_BYTES) };
+}
 
 export interface DeviceRequest {
   device: string;
   box: string;
   name: string;
-}
-
-function slotKey(sharingSecret: Uint8Array, kind: 'req' | 'ok', slot: string): Uint8Array {
-  return _sodium.crypto_generichash(32, concat(enc.encode(`TrianguLair/device-slot/v1|${kind}|`), fromB64Url(slot, 'slot', SLOT_BYTES)), sharingSecret);
 }
 
 function seal(json: unknown, key: Uint8Array, ad: Uint8Array): Uint8Array {
@@ -123,27 +177,28 @@ function open(bytes: Uint8Array, key: Uint8Array, ad: Uint8Array): unknown {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export function sealRequest(r: DeviceRequest, sharingSecret: Uint8Array, slot: string): Uint8Array {
-  return seal({ type: 'tl-device-request', v: 1, device: r.device, box: r.box, name: r.name }, slotKey(sharingSecret, 'req', slot), enc.encode(`req|${slot}`));
+export function sealRequest(r: DeviceRequest, channelKey: Uint8Array, slot: string): Uint8Array {
+  return seal({ type: 'tl-device-request', v: 2, device: r.device, box: r.box, name: cleanDeviceName(r.name) }, channelKey, enc.encode(`req|${slot}`));
 }
 
-export function openRequest(bytes: Uint8Array, sharingSecret: Uint8Array, slot: string): DeviceRequest {
-  const o = open(bytes, slotKey(sharingSecret, 'req', slot), enc.encode(`req|${slot}`));
-  if (!isObj(o) || o['type'] !== 'tl-device-request' || o['v'] !== 1 || typeof o['name'] !== 'string') throw new Error('bad-file');
+export function openRequest(bytes: Uint8Array, channelKey: Uint8Array, slot: string): DeviceRequest {
+  const o = open(bytes, channelKey, enc.encode(`req|${slot}`));
+  if (!isObj(o) || o['type'] !== 'tl-device-request' || o['v'] !== 2 || typeof o['name'] !== 'string') throw new Error('bad-file');
   parseKey('ed25519', o['device'], 'device');
   parseKey('x25519', o['box'], 'box');
   return { device: o['device'] as string, box: o['box'] as string, name: cleanDeviceName(o['name']) };
 }
 
-export function sealApproval(cert: DeviceCert, sharingSecret: Uint8Array, slot: string): Uint8Array {
-  return seal({ type: 'tl-device-approval', v: 1, cert }, slotKey(sharingSecret, 'ok', slot), enc.encode(`ok|${slot}`));
+/** The approval: the device certificate and the sharing key sealed to the new device (TLSK mode 1). */
+export function sealApproval(p: { cert: DeviceCert; sealed: Uint8Array }, channelKey: Uint8Array, slot: string): Uint8Array {
+  return seal({ type: 'tl-device-approval', v: 2, cert: p.cert, sealed: toB64Url(p.sealed) }, channelKey, enc.encode(`ok|${slot}`));
 }
 
-/** The certificate inside (still to verify against the owner and this device's keys). */
-export function openApproval(bytes: Uint8Array, sharingSecret: Uint8Array, slot: string): unknown {
-  const o = open(bytes, slotKey(sharingSecret, 'ok', slot), enc.encode(`ok|${slot}`));
-  if (!isObj(o) || o['type'] !== 'tl-device-approval' || o['v'] !== 1 || !isObj(o['cert'])) throw new Error('bad-file');
-  return o['cert'];
+/** The certificate inside (still to verify against the owner and this device's keys) and the sealed key. */
+export function openApproval(bytes: Uint8Array, channelKey: Uint8Array, slot: string): { cert: unknown; sealed: string } {
+  const o = open(bytes, channelKey, enc.encode(`ok|${slot}`));
+  if (!isObj(o) || o['type'] !== 'tl-device-approval' || o['v'] !== 2 || !isObj(o['cert']) || typeof o['sealed'] !== 'string') throw new Error('bad-file');
+  return { cert: o['cert'], sealed: o['sealed'] };
 }
 
 // ------------------------------------------------------------------ QR channel

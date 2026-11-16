@@ -184,18 +184,26 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     "This device", "Primary"), rename, remove, declare lost, add, changes since a date, primary device lost. Removed
     (struck through) means revoked by my current sharing certificate, nothing else; names, dates and the primary mark
     are display entries signed by the device that wrote them (`packages/sync` devices.ts, devices review F-02).
-  - *Add a device* (`/devices/add`): QR (default) or link + code; the request shows the new device's name and a 12-digit
-    number that both screens show; approval with the master key; the transfer is cancelled when the screen closes,
-    and its files are deleted at expiry by the controller anyway.
-  - *App-level wrappers* (`channel.ts`, not crypto formats; the crypto package is unchanged): the device link
-    `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>`; `transfer/<slot>.bin` = the frozen TLTX blob of
-    `encodeKeyExport` (Argon2id from the 6 words, 15-minute authenticated expiry), fetched anonymously at the read
-    address and deleted by the new device right after opening (single use); `transfer/<slot>.req` (the new device's
-    public keys and name) and `transfer/<slot>.ok` (the device certificate), both XChaCha20-Poly1305 under
-    BLAKE2b(key = sharing secret key, kind | slot). QR: the new device shows `TLDA1:<b64url(sign pk | box pk | ephemeral
-    X25519 pk | name)>`, the old one answers `TLDB1:<b64url(slot | ephemeral pk | read address)>` and drops
-    `transfer/<slot>.qr` = {device cert, TLSK sealed to the new device} under BLAKE2b(X25519(ephemerals) | both pks |
-    slot): the shared temporary key of the spec.
+  - *Add a device* (`/devices/add`): QR (default) or link + code. The request shows the new device's name and the
+    first 8 digits of a 12-digit number of its key; the user types the last 4 digits shown on the new device (devices
+    review F-03), then approves with the master key. **No key leaves the old device before that**: the device
+    certificate and the sharing key with the vault data key (TLSK mode 1, sealed to the new device key) are sent only
+    then, and the storage access follows from the vault. The new device is listed (`register`) only once it has
+    picked its package up (review F-04): "Cancel" before that leaves nothing behind. "Not my device" (or digits
+    that differ) gives nothing and offers **Change my key now** (`/devices/lost?rogue=<id>`: a key change that revokes
+    that device id for good and cancels the open invitations). The transfer is cancelled when the screen closes, and
+    its files are deleted at expiry by the controller anyway.
+  - *App-level wrappers* (`channel.ts`, not crypto formats; the crypto package is unchanged). Link + code: the
+    **device link** `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>`; `transfer/<slot>.bin` = the
+    frozen TLTX blob (Argon2id from the 6 words, 15-minute authenticated expiry) of an invitation to enrol `{owner,
+    read address, slot, random channel key}` (no key of mine), fetched anonymously at the read address; the new
+    device answers with a **request link** `https://triangulair.app/d#<b64url(2 | slot | request)>` (its public keys
+    and name, XChaCha20-Poly1305 under the channel key), which the user sends back to the old device (the new device
+    has no storage access yet); the old device drops `transfer/<slot>.ok` = {device cert, TLSK sealed to the new
+    device} under the channel key; the new device deletes the files once it has them. QR: the new device shows
+    `TLDA1:<b64url(sign pk | box pk | ephemeral X25519 pk | name)>`, the old one answers `TLDB1:<b64url(slot |
+    ephemeral pk | read address)>` and drops `transfer/<slot>.qr` = {device cert, TLSK sealed to the new device}
+    under BLAKE2b(X25519(ephemerals) | both pks | slot): the shared temporary key of the spec.
   - *Declare a device lost / remove it* (`/devices/lost`): master key (`rotateSharingCert({ revokeDevices, newKey })`:
     new random sharing key and vault data key, rotation + 1), then `SyncController.declareLost` (`rotateKey`: every open
     invitation cancelled for a declaration, key delivered to the remaining devices, recovery copy, re-encryption,
@@ -642,7 +650,7 @@ contexts: Anna, Ben and Anna's new device):
 | `docs/tablet-fr-device-qr.png`, `docs/tablet-fr-add-qr.png` | French tablet: the new device's QR code; the old device's answer code |
 
 End-to-end: `e2e/devices.spec.ts` (skipped without Apache): Anna and Ben become friends; Anna adds a device by link +
-code (a wrong code first), both list the same places and an edit on the tablet reaches the phone, both list the two
+code (a wrong code first; the request link back; wrong last digits first), both list the same places and an edit on the tablet reaches the phone, both list the two
 devices; Anna declares the tablet lost from her phone: the tablet is wiped at its next sync, Ben keeps reading Anna (a
 place added after the declaration) and sees "Anna changed their key". With `SHOTS=1`, a second test adds a device by QR
 codes (French tablet).
@@ -654,8 +662,10 @@ Devices open questions:
 - **Storage moves with several devices**: other devices get the new certificate through `keys/`, but they keep reading
   the old storage (the redirect) until their settings follow; the move of the storage settings through the vault is
   not automatic yet.
-- **Request authentication** (link + code): the request is sealed under the sharing key, which a stolen but not yet
-  declared device also holds; the number compared on both screens is what authenticates the new device.
+- **Request authentication** (link + code): whoever intercepts the link and the code can write a request; the number
+  (last 4 digits typed) is what authenticates the new device, and nothing is released before it.
+- **Link + code needs two links**: the invitation to the new device, the request link back (the new device cannot
+  write to my storage before its approval).
 - **Revert** covers my saves (fields, trash, tags); lists, zones and tags edited by the lost device are only listed by
   the storage's own version history.
 - The QR flow needs both devices to scan (two codes); on the web build without camera the codes are pasted.

@@ -29,7 +29,8 @@ import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
 import { SyncController } from '../sync/controller';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from '../sync/keys';
-import { LinkSender, QrReceiver, QrSender, readVaultValues, restoreWithPhrase } from './sessions';
+import { decodeInvite, deviceFingerprint, encodeRequestLink, sealRequest } from './channel';
+import { LinkSender, QrReceiver, QrSender, lastDigits, restoreWithPhrase } from './sessions';
 
 await ready();
 const SQL = await initSqlJs();
@@ -163,7 +164,7 @@ describe('review F-01: storage settings in the vault are adopted from any writer
 });
 
 describe('review F-03: link + code releases every secret before the comparison', () => {
-  it.fails('whoever holds the link and the 6 words gets no vault data key or storage credentials before the old device approves', async () => {
+  it('whoever holds the link and the 6 words gets no vault data key or storage credentials before the old device approves', async () => {
     const anna = person('anna');
     await anna.d.ctl.refresh();
     const sender = new LinkSender({
@@ -180,17 +181,28 @@ describe('review F-03: link + code releases every secret before the comparison',
     const files = await anna.storage.list('transfer/');
     const blobPath = files.map((f) => (typeof f === 'string' ? f : (f as { path: string }).path)).find((p) => p.endsWith('.bin'))!;
     const blob = (await readOnly(anna.storage).get(blobPath))!.data;
-    const sharing = decodeKeyExport(decryptTransfer(blob, s.code));
-    const v = await readVaultValues(readOnly(anna.storage), sharing);
-    // Desired: the blob only opens a channel; the sharing key, vault data key (and so the storage
-    // credentials in the vault) are sealed to the new device key AFTER the 12-digit comparison.
-    expect(v.storage).toBeNull();
+    const plain = decryptTransfer(blob, s.code);
+    // The blob only opens a channel: no key export, and its channel key does not open the vault.
+    expect(() => decodeKeyExport(plain)).toThrow();
+    const invite = decodeInvite(plain);
+    const vault = (await anna.storage.get(VAULT_PATH))!.data;
+    expect(() => openVault(vault, anna.d.record.owner, invite.key)).toThrow();
+    // The interceptor answers with its own request: the number differs from the real new
+    // device's, so the user refuses; nothing is certified or written, a key change is offered.
+    const rogue = generateDeviceKeys();
+    const pub = devicePublicKeys(rogue);
+    sender.received(encodeRequestLink(invite.slot, sealRequest({ device: pub.device, box: pub.box, name: 'tablet' }, invite.key, invite.slot)));
+    expect(sender.state.phase).toBe('request');
+    await sender.approve({ kind: 'primary' }, '0000' === lastDigits(deviceFingerprint(rogue.id)) ? '0001' : '0000');
+    expect(sender.state).toMatchObject({ phase: 'request', error: 'digits' });
     await sender.refuse();
+    expect(sender.state).toMatchObject({ phase: 'refused', device: { device: rogue.id } });
+    expect(await anna.storage.list('transfer/')).toEqual([]);
   });
 });
 
 describe('review F-04: QR "cancel" after approval', () => {
-  it.fails('cancelling the QR transfer after approval does not leave a certified, listed device behind', async () => {
+  it('cancelling the QR transfer after approval does not leave a certified, listed device behind', async () => {
     const anna = person('anna');
     await anna.d.ctl.refresh();
     const registered: string[] = [];
@@ -207,13 +219,13 @@ describe('review F-04: QR "cancel" after approval', () => {
     const receiver = new QrReceiver({ readAdapter, writeAdapter: () => anna.storage }, 'tablet');
     const offer = receiver.state.phase === 'showing' ? receiver.state.offer : '';
     sender.scanned(offer);
-    await sender.approve({ kind: 'primary' });
+    await sender.approve({ kind: 'primary' }, lastDigits(receiver.state.phase === 'showing' ? receiver.state.fingerprint : ''));
     expect(sender.state.phase).toBe('showing');
     // The user changes their mind (wrong device, the code was pasted from a message…).
     await sender.cancel();
     expect(sender.state.phase).toBe('cancelled');
-    // Today the device stays listed (and certified): the next publication seals the sharing key to
-    // it at keys/<device>.bin, readable at the public read address.
+    // Nothing was listed: the device is registered only once it fetched its package, so no
+    // publication seals the sharing key to it at keys/<device>.bin.
     await anna.d.ctl.refresh();
     const id = receiver.deviceKeys.id;
     expect(anna.d.ctl.devices().filter((x) => x.removed === undefined).map((x) => x.cert.device)).not.toContain(id);

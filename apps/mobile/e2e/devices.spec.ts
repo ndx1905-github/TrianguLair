@@ -6,7 +6,9 @@
  *
  * Anna and Ben are friends (invitation, answer, acceptance). Anna adds a second device by link +
  * 6-word code: a fresh browser context goes through "I already have TrianguLair on another device",
- * the first device approves after comparing the number shown on both; both see the same places, an
+ * opens the link with the code and gives a request link back; the first device opens it, and
+ * approves once the last 4 digits of the number the new device shows are typed (wrong digits
+ * first: refused); only then are the keys sent; both see the same places, an
  * edit on either reaches the other. Then Anna declares the second device lost from the first: the
  * lost one is wiped at its next sync, Ben keeps reading Anna with her new key and sees the notice.
  *
@@ -245,15 +247,25 @@ test('a second device by link + code, then declared lost: wiped at its next sync
   await t2.getByTestId('device-code').fill(code);
   await t2.getByTestId('device-link-open').click();
   await expect(t2.getByTestId('device-fingerprint')).toBeVisible({ timeout: 60_000 });
-  const fingerprint = (await t2.getByTestId('device-fingerprint').textContent())!;
+  const fingerprint = (await t2.getByTestId('device-fingerprint').textContent())!.trim();
+  const requestLink = (await t2.getByTestId('device-request-link').textContent())!;
   await shot(t2, 'phone-device-waiting.png');
 
-  // The first device sees the request with the same number, and approves with its master key.
+  // The request link comes back to the first device: the name and the number's first 8 digits.
+  await a.getByTestId('add-link-reply').fill(`From my tablet: ${requestLink}`);
+  await a.getByTestId('add-link-reply-open').click();
   await expect(a.getByTestId('add-confirm')).toBeVisible({ timeout: 30_000 });
   await expect(a.getByTestId('add-confirm-name')).toHaveText('Add “Anna’s tablet”?');
-  await expect(a.getByTestId('add-fingerprint')).toHaveText(fingerprint);
+  await expect(a.getByTestId('add-fingerprint')).toHaveText(`${fingerprint.slice(0, 9)} ····`);
+  // Wrong last digits: nothing is certified.
+  const last = fingerprint.replace(/\D/g, '').slice(-4);
+  await a.getByTestId('add-digits').fill(last === '0000' ? '0001' : '0000');
+  await a.getByTestId('master-go').click();
+  await expect(a.getByTestId('add-digits-error')).toBeVisible();
+  await a.getByTestId('add-digits').fill(last);
   await shot(a, 'phone-add-confirm.png');
   await a.getByTestId('master-go').click();
+  // Done once the new device has picked its keys up.
   await expect(a.getByTestId('add-done')).toBeVisible({ timeout: 60_000 });
 
   // The new device opens the app and syncs: the same places.
@@ -337,6 +349,8 @@ test('French tablet: QR code on both sides, dark welcome', async ({ browser }) =
   await anna.page.getByTestId('add-qr-input').fill(offer!);
   await anna.page.getByTestId('add-qr-open').click();
   await expect(anna.page.getByTestId('add-confirm')).toBeVisible();
+  const fp = (await fresh.page.getByTestId('device-fingerprint').textContent())!;
+  await anna.page.getByTestId('add-digits').fill(fp.replace(/\D/g, '').slice(-4));
   await anna.page.getByTestId('master-go').click();
   await expect(anna.page.getByTestId('add-qr-reply')).toBeVisible({ timeout: 60_000 });
   await shot(anna.page, 'tablet-fr-add-qr.png');

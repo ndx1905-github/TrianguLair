@@ -22,7 +22,7 @@ import { SyncController } from '../sync/controller';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from '../sync/keys';
 import { joinedIdentity, moveIdentity } from './identity';
 import { changesSince } from './journal';
-import { LinkReceiver, LinkSender } from './sessions';
+import { LinkReceiver, LinkSender, lastDigits } from './sessions';
 
 await ready();
 const SQL = await initSqlJs();
@@ -156,11 +156,17 @@ describe('adding a device and declaring it lost', () => {
     if (s.phase !== 'waiting') throw new Error(s.phase);
     const receiver = new LinkReceiver({ readAdapter, writeAdapter: () => anna.storage }, 'tablet');
     await receiver.open(s.link, s.code);
-    await sender.poll();
-    await sender.approve({ kind: 'primary' });
+    const w = receiver.state;
+    if (w.phase !== 'waiting') throw new Error(w.phase);
+    // The new device's request link comes back to a1; the user types the last 4 digits it shows.
+    sender.received(w.requestLink);
+    await sender.approve({ kind: 'primary' }, lastDigits(w.fingerprint));
+    expect(sender.state.phase).toBe('sent');
     await receiver.poll();
     const r = receiver.state;
     if (r.phase !== 'approved') throw new Error(r.phase);
+    await sender.poll();
+    expect(sender.state.phase).toBe('done');
     // The storage settings came from the vault (written by a1's controller).
     expect(r.joined.storage).toEqual(cfg(anna.location));
     expect(r.joined.profileName).toBe('anna');

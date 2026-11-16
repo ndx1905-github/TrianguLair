@@ -1,22 +1,24 @@
 /**
  * Settings › Devices › Add a device (spec "Adding a device", T-206), on a device that already has
  * my identity. QR code by default (both devices side by side), link + 6-word code from afar. The
- * new device's key is certified by the master key: one tap on the primary device, else the 12 words.
+ * new device's key is certified by the master key: one tap on the primary device, else the 12 words,
+ * after the user typed the last 4 digits of the number the new device shows (devices review F-03).
+ * Nothing is given before that; a refusal offers a key change.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 
 import { DataGate } from '../../components/DataGate';
 import { Banner, Button, Segmented } from '../../components/ui';
 import { Scanner } from '../../contacts/Scanner';
 import { Card, LinkActions, QrCode, Strong } from '../../contacts/ui';
-import { LinkSender, QrSender, type OldDeviceDeps, type PendingDevice } from '../../devices/sessions';
+import { LinkSender, QrSender, maskedFingerprint, type OldDeviceDeps, type PendingDevice } from '../../devices/sessions';
 import { ErrorText, Fingerprint, WordsCode, WordsField, useMachine, usePoll } from '../../devices/ui';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { useIdentity } from '../../identity/IdentityProvider';
-import { CopyBlock, MasterKeyPrompt, Muted, StorageScreen } from '../../storage/components';
+import { CopyBlock, Field, MasterKeyPrompt, Muted, StorageScreen } from '../../storage/components';
 import { useStorage } from '../../storage/StorageProvider';
 import { StorageNeeded } from '../../storage/useStorageForSharing';
 import type { MasterKeySource } from '../../storage/certify';
@@ -44,18 +46,41 @@ function useDeps(): OldDeviceDeps | null {
   }, [cfg, location]);
 }
 
-function Confirm({ device, error, busy, onApprove, onRefuse }: { device: PendingDevice; error?: string; busy: boolean; onApprove: (m: MasterKeySource) => void; onRefuse: () => void }) {
+function Confirm({ device, error, busy, onApprove, onRefuse }: { device: PendingDevice; error?: string; busy: boolean; onApprove: (m: MasterKeySource, digits: string) => void; onRefuse: () => void }) {
   const { t } = useI18n();
+  const [digits, setDigits] = useState('');
+  const ok = /^\d{4}$/.test(digits.replace(/\s/g, ''));
   return (
     <Card testID="add-confirm">
       <Strong testID="add-confirm-name">{device.name ? t('add.confirm.title', { name: device.name }) : t('add.confirm.unnamed')}</Strong>
       <Muted>{t('add.confirm.fingerprint')}</Muted>
-      <Fingerprint value={device.fingerprint} testID="add-fingerprint" />
+      <Fingerprint value={maskedFingerprint(device.fingerprint)} testID="add-fingerprint" />
+      <Field label={t('add.confirm.digits')} value={digits} onChange={setDigits} keyboard="number" testID="add-digits" />
+      {error === 'digits' && <ErrorText testID="add-digits-error">{t('add.error.digits')}</ErrorText>}
       <Muted>{t('add.master')}</Muted>
-      {busy ? <ActivityIndicator /> : <MasterKeyPrompt onReady={onApprove} actionLabel={t('add.confirm.go')} testID="add-master" />}
-      {error && <ErrorText>{t(`device.error.${error === 'master-key-needed' ? 'phrase-mismatch' : error}`)}</ErrorText>}
+      {busy ? <ActivityIndicator /> : ok ? <MasterKeyPrompt onReady={(m) => onApprove(m, digits)} actionLabel={t('add.confirm.go')} testID="add-master" /> : null}
+      {error && error !== 'digits' && <ErrorText>{t(`device.error.${error === 'master-key-needed' ? 'phrase-mismatch' : error}`)}</ErrorText>}
       <Button kind="secondary" label={t('add.confirm.refuse')} onPress={onRefuse} disabled={busy} testID="add-refuse" />
     </Card>
+  );
+}
+
+/** Refused, or the digits differed: nothing was given; a key change revokes that device for good (F-03). */
+function Refused({ device }: { device: PendingDevice }) {
+  const { t } = useI18n();
+  const router = useRouter();
+  return (
+    <View style={{ gap: 12 }}>
+      <Banner tone="warning" testID="add-refused">{t('add.refused.title')}</Banner>
+      <Muted>{t('add.refused.body')}</Muted>
+      <Button
+        kind="danger"
+        label={t('add.refused.keyChange')}
+        onPress={() => router.push(`/devices/lost?rogue=${encodeURIComponent(device.device)}&name=${encodeURIComponent(device.name)}` as Href)}
+        testID="add-refused-key"
+      />
+      <Button kind="secondary" label={t('add.back')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/devices'))} testID="add-back" />
+    </View>
   );
 }
 
@@ -78,11 +103,12 @@ function LinkWay({ deps }: { deps: OldDeviceDeps }) {
   const [sender, setSender] = useState(() => new LinkSender(deps));
   const s = useMachine(sender)!;
   const [now, setNow] = useState(Date.now());
+  const [reply, setReply] = useState('');
   const poll = useCallback(async () => {
     await sender.poll();
     setNow(Date.now());
   }, [sender]);
-  usePoll(s.phase === 'waiting' || s.phase === 'request', poll);
+  usePoll(s.phase === 'waiting' || s.phase === 'request' || s.phase === 'sent', poll);
   // Leaving the screen before the end cancels the transfer (the link stops working).
   useEffect(
     () => () => {
@@ -100,6 +126,18 @@ function LinkWay({ deps }: { deps: OldDeviceDeps }) {
     );
   }
   if (s.phase === 'creating') return <ActivityIndicator color={c.accent} />;
+  if (s.phase === 'refused') return <Refused device={s.device} />;
+  if (s.phase === 'sent') {
+    return (
+      <View style={{ gap: 12 }}>
+        <View style={styles.row}>
+          <ActivityIndicator color={c.accent} />
+          <Muted testID="add-sent">{t('add.sent', { name: s.name })}</Muted>
+        </View>
+        <Button kind="secondary" label={t('add.cancel')} onPress={() => void sender.cancel()} testID="add-cancel" />
+      </View>
+    );
+  }
   if (s.phase === 'done' || s.phase === 'expired' || s.phase === 'cancelled' || s.phase === 'failed') {
     return (
       <>
@@ -119,12 +157,13 @@ function LinkWay({ deps }: { deps: OldDeviceDeps }) {
       <WordsCode code={s.code} testID="add-code" />
       <Muted testID="add-expires">{t('add.link.expires', { count: minutes })}</Muted>
       {s.phase === 'waiting' ? (
-        <View style={styles.row}>
-          <ActivityIndicator color={c.accent} />
-          <Muted>{t('add.link.waiting')}</Muted>
-        </View>
+        <>
+          <WordsField label={t('add.link.reply')} value={reply} onChange={setReply} testID="add-link-reply" lines={3} error={s.error === 'bad-link'} />
+          {s.error === 'bad-link' && <ErrorText testID="add-link-reply-error">{t('add.link.badReply')}</ErrorText>}
+          <Button label={t('add.link.replyOpen')} onPress={() => sender.received(reply)} disabled={!reply.trim()} testID="add-link-reply-open" />
+        </>
       ) : (
-        <Confirm device={s.device} {...(s.phase === 'request' && s.error && { error: s.error })} busy={s.phase === 'approving'} onApprove={(m) => void sender.approve(m)} onRefuse={() => void sender.refuse()} />
+        <Confirm device={s.device} {...(s.phase === 'request' && s.error && { error: s.error })} busy={s.phase === 'approving'} onApprove={(m, d) => void sender.approve(m, d)} onRefuse={() => void sender.refuse()} />
       )}
       <Button kind="secondary" label={t('add.cancel')} onPress={() => void sender.cancel()} testID="add-cancel" />
     </View>
@@ -165,8 +204,9 @@ function QrWay({ deps }: { deps: OldDeviceDeps }) {
       </View>
     );
   }
+  if (s.phase === 'refused') return <Refused device={s.device} />;
   if (s.phase === 'confirm' || s.phase === 'approving') {
-    return <Confirm device={s.device} {...(s.phase === 'confirm' && s.error && { error: s.error })} busy={s.phase === 'approving'} onApprove={(m) => void sender.approve(m)} onRefuse={() => void sender.cancel()} />;
+    return <Confirm device={s.device} {...(s.phase === 'confirm' && s.error && { error: s.error })} busy={s.phase === 'approving'} onApprove={(m, d) => void sender.approve(m, d)} onRefuse={() => sender.refuse()} />;
   }
   return (
     <View style={{ gap: 12 }} testID="add-qr-showing">
