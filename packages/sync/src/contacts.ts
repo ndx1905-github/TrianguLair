@@ -41,19 +41,26 @@ export interface ContactPolicy {
   /**
    * Lists whose definition (name, description, membership) this contact also receives, besides
    * those of a `share: { lists }` restriction (which always come with it): the "pick who" of a
-   * list's share sheet, for a contact who sees everything I share with friends. Ignored when
-   * `share` is false.
+   * list's share sheet, for a contact who sees everything I share with friends. Only used while
+   * `share` is true (review M-01): a restricted contact sees exactly the lists of the restriction,
+   * and `setPolicy` drops the picks whenever `share` changes, so a stale pick never comes back.
    */
   lists?: string[];
   /** Time of the last change (ms), for the merge. */
   at: number;
 }
 
-/** The lists a contact sees the definition of (restriction lists, then the picked ones). */
+/**
+ * The lists a contact sees the definition of: those of a "some lists" restriction, or, for a
+ * contact who sees everything, the ones picked in a list's share sheet (never both: M-01).
+ */
 export function listsSeenBy(p: ContactPolicy): string[] {
   if (p.removed || p.share === false) return [];
-  return [...new Set([...(p.share === true ? [] : p.share.lists), ...(p.lists ?? [])])].sort();
+  return [...new Set(p.share === true ? (p.lists ?? []) : p.share.lists)].sort();
 }
+
+const sameShare = (a: SharePolicy, b: SharePolicy): boolean =>
+  typeof a === 'boolean' || typeof b === 'boolean' ? a === b : canonicalize([...new Set(a.lists)].sort() as never) === canonicalize([...new Set(b.lists)].sort() as never);
 
 /**
  * A list followed by its link (spec "Following a list without following the person"), kept in the
@@ -233,8 +240,11 @@ export class ContactBook {
     const cur = part.contacts[owner] ?? DEFAULT_POLICY;
     const next: ContactPolicy = { share: patch.share ?? cur.share, follow: patch.follow ?? cur.follow, at: Math.max(now, cur.at + 1) };
     if (patch.removed ?? cur.removed) next.removed = true;
-    const lists = [...new Set(patch.lists ?? cur.lists ?? [])].sort();
-    if (lists.length && !next.removed) next.lists = lists;
+    // The picks only mean something for a contact who sees everything, and only for the scope they
+    // were made in: a change of scope drops them (M-01).
+    const kept = patch.share === undefined || sameShare(patch.share, cur.share) ? cur.lists : undefined;
+    const lists = [...new Set(patch.lists ?? kept ?? [])].sort();
+    if (lists.length && !next.removed && next.share === true) next.lists = lists;
     this.r = withApp(this.r, { ...part, contacts: { ...part.contacts, [owner]: next } });
   }
 
@@ -262,8 +272,7 @@ export class ContactBook {
     const cur = new Set(p.share === false ? [] : p.share.lists);
     if (on) cur.add(listId);
     else cur.delete(listId);
-    const extra = (p.lists ?? []).filter((l) => l !== listId);
-    this.setPolicy(owner, { share: cur.size ? { lists: [...cur].sort() } : false, lists: on ? p.lists ?? [] : extra }, now);
+    this.setPolicy(owner, { share: cur.size ? { lists: [...cur].sort() } : false }, now);
   }
 
   // ---------------------------------------------------------------- followed lists

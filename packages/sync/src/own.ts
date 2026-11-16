@@ -740,7 +740,7 @@ export class OwnSync {
 
     // Lists packs (lists.ts): kept when their recipient set and body are unchanged.
     const want = new Map<string, DesiredListPack>();
-    for (const d of desiredListPacks({ repo, items, myCert: this.sharing.cert, contacts: this.book.contacts(), now, ...(this.o.author && { author: this.o.author }) })) {
+    for (const d of desiredListPacks({ repo, items, myCert: this.sharing.cert, contacts: this.book.contacts(), audiences, now, ...(this.o.author && { author: this.o.author }) })) {
       want.set(`${d.audience.fp}|${d.h}`, d);
     }
     const liveLists = new Set(repo.lists().map((l) => l.id));

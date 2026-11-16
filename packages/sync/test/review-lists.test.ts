@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Review of PR #85 (T-211/T-212: shared lists, link-only lists, following by link).
- * docs/reviews/2026-11-10-lists-review.md. Each `it.fails` states the DESIRED behaviour and
- * fails today; it turns red (unexpected pass) once the finding is fixed, so flip it to `it`.
+ * docs/reviews/2026-11-10-lists-review.md. Each test was an `it.fails` reproduction that states
+ * the desired behaviour; the fixes made them plain tests, with extra ones for the new behaviour.
  */
 import { describe, expect, it } from 'vitest';
-import { followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment } from '../src/index.ts';
+import { audienceOf, ContactBook, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, type Audience, type ListDef } from '../src/index.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
 
 await listsReady();
@@ -29,7 +29,7 @@ describe('review PR #85: lists', () => {
   // M-01 (Medium): a contact picked for a list while seeing everything, then restricted to "some
   // lists", keeps the stale `policy.lists` entry: listsSeenBy() still names the old list, so its
   // definition (name, description, place ids of places she can no longer read) is sealed to her.
-  it.fails('M-01: a friend restricted to "some lists" never receives a list she was picked for earlier', async () => {
+  it('M-01: a friend restricted to "some lists" never receives a list she was picked for earlier', async () => {
     const w = new World();
     const a = addDevice(w, makeUser(w, 'anna'));
     const s = a.store;
@@ -49,6 +49,47 @@ describe('review PR #85: lists', () => {
     expect([...friendSaves(erin, a.user.owner).keys()].sort()).toEqual(['osm:node/1', 'osm:node/2']); // places: OK
     expect(a.engine.book.listViewers(secret)).toEqual([]);
     expect(erin.engine.reader.friendLists(a.user.owner).map((l) => l.name)).toEqual(['Trip']);
+  });
+
+  it('M-01: a pick is dropped when the scope changes and does not come back (true → false → true)', () => {
+    const w = new World();
+    const book = ContactBook.empty(makeUser(w, 'me').owner);
+    book.setPolicy('ed25519:erin', { share: true, follow: false }, 1);
+    book.setListAccess('ed25519:erin', 'secret', true, 2);
+    expect(book.policy('ed25519:erin').lists).toEqual(['secret']);
+    book.setPolicy('ed25519:erin', { share: true }, 3); // same scope: kept
+    expect(book.policy('ed25519:erin').lists).toEqual(['secret']);
+    book.setPolicy('ed25519:erin', { share: false }, 4);
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+    book.setPolicy('ed25519:erin', { share: true }, 5);
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+    // Restricted: the restriction alone decides; picking adds to the restriction itself.
+    book.setPolicy('ed25519:erin', { share: { lists: ['trip'] } }, 6);
+    book.setListAccess('ed25519:erin', 'secret', true, 7);
+    expect(book.policy('ed25519:erin')).toMatchObject({ share: { lists: ['secret', 'trip'] } });
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+  });
+
+  it('M-01: a friends\' lists pack only names places every viewer of the pack can read', () => {
+    const w = new World();
+    const a = addDevice(w, makeUser(w, 'anna'));
+    const s = a.store;
+    for (let i = 1; i <= 3; i++) s.putSave({ place: point(i, `P${i}`) });
+    const list = s.createList({ name: 'Mixed', kind: 'manual', visibility: 'link' });
+    for (const id of ['osm:node/1', 'osm:node/2', 'osm:node/3']) s.addToList(list, id);
+    const erin = makeUser(w, 'erin');
+    const me = a.user.sharing.cert.key;
+    const her = erin.sharing.cert.key;
+    // As if a policy slip named the list to Erin while she can only read place 1.
+    const contacts = [{ owner: erin.owner, sharingCert: erin.sharing.cert, anchor: undefined, verified: true, policy: { share: true, follow: false, lists: [list], at: 1 } }];
+    const audiences = new Map<string, Audience>([
+      ['osm:node/1', audienceOf([me, her])],
+      ['osm:node/2', audienceOf([me])],
+    ]);
+    const packs = desiredListPacks({ repo: s.repo, items: readOwnItems(s.repo), myCert: a.user.sharing.cert, contacts, audiences, now: new Date() });
+    const friends = packs.filter((p) => p.role === 'friends');
+    expect(friends).toHaveLength(1);
+    expect((parseLists(friends[0]!.body).lists[0] as ListDef).items).toEqual(['osm:node/1']);
   });
 
   // L-01 (Low): switching a link-only list to public and back keeps `linkKey`, so the "dead" link

@@ -5,7 +5,9 @@
  * keeps a listed pack whose recipient set and body are unchanged instead of re-sealing it.
  *
  * Visibility rules: a private save never enters a list (data package) and is skipped again here;
- * friends only learn the membership of places they can read anyway; a link-only list carries only
+ * friends only learn the membership of places they can read anyway: a friends' pack only names
+ * the places that EVERY viewer of that pack can read, according to the audiences of the places
+ * packs (`computeAudiences`, review M-01: defence in depth against any policy slip); a link-only list carries only
  * public comments (its link can be forwarded, like a public list), and keeps closed places (data
  * package README, open question 8: only public lists drop them).
  */
@@ -43,6 +45,8 @@ export function desiredListPacks(input: {
   items: readonly OwnItem[];
   myCert: SharingCert;
   contacts: readonly Contact[];
+  /** Recipient set of each shared place (`computeAudiences`, the same as the places packs'). */
+  audiences: ReadonlyMap<string, Audience>;
   author?: string;
   now: Date;
 }): DesiredListPack[] {
@@ -78,7 +82,12 @@ export function desiredListPacks(input: {
     const audience = audienceOf([myCert.key, ...v]);
     let g = groups.get(audience.fp);
     if (!g) groups.set(audience.fp, (g = { audience, defs: [] }));
-    g.defs.push(def(l, shared(l.id).map((i) => i.placeId)));
+    // Only places every viewer of this pack can read anyway (M-01).
+    const readable = shared(l.id).filter((i) => {
+      const a = input.audiences.get(i.placeId);
+      return !!a && v.every((k) => a.keys.includes(k));
+    });
+    g.defs.push(def(l, readable.map((i) => i.placeId)));
   }
   for (const g of groups.values()) {
     for (let i = 0; i < g.defs.length; i += MAX_LISTS_PER_PACK) {

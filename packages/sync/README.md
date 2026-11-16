@@ -177,7 +177,10 @@ devices in three ways:
   list's share sheet: `ContactPolicy.lists`, set by `setListAccess`, kept in the vault like the other switches): one
   lists pack per set of viewers with the definitions. Restricted contacts already receive the places of their lists
   (`computeAudiences`); friends only learn the membership of places they can read. A friend's reader keeps them
-  (`reader.friendLists(owner)`).
+  (`reader.friendLists(owner)`). The picks only count while the contact sees everything: a restricted contact sees
+  exactly the lists of the restriction (`listsSeenBy`), and any change of `share` drops the picks, so they never come
+  back after true → some lists → true (review M-01). As a second barrier, each friends' lists pack only names the
+  places that every one of its viewers can read according to the places packs' audiences.
 - **Link-only**: the list's own random X25519 key pair, whose 32-byte secret is `ListRecord.linkKey` (base64url, in
   my Yjs document, so all my devices publish the same packs). The list pack (definition and places, public comments
   only: a link can be forwarded) is sealed with the frozen `sealPack` to my sharing key and the list's public key, a

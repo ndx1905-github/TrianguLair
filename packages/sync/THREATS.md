@@ -110,7 +110,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   payload checks, sizes bounded, under their own `list:` owner, never merged into another cache); a public list may
   expose someone's private address: the app warns the author before publishing (spec), and the reader only sees it.
 - **Friends' lists**: a lists pack is sealed only to the contacts given access to those lists; a friend who sees
-  everything does not learn my list names unless picked. Membership never names a place they cannot read.
+  everything does not learn my list names unless picked. Membership never names a place they cannot read: picks
+  count only while the contact sees everything and are dropped at any change of scope, and a lists pack keeps only
+  the places every one of its viewers can read (audiences of the places packs), whatever the policies say (M-01).
 - **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must not read
   `location.hash`, the web app removes it from the address bar, links are never logged.
 
