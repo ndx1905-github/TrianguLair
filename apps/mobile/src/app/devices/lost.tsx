@@ -5,6 +5,10 @@
  * (declaration of loss); the new key sealed to my remaining devices; everything re-encrypted and
  * published; then the storage access to change (current storage and every previous one that still
  * redirects) and what changed since the theft.
+ *
+ * A device that keeps (or may keep) my master key is not declared this way (devices review F-06,
+ * `risk.ts`): its own primary mark sends the user to the identity change; when nothing tells, the
+ * screen asks whether it kept the master key.
  */
 import { useState } from 'react';
 import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
@@ -14,6 +18,7 @@ import { DataGate } from '../../components/DataGate';
 import { Banner, Button } from '../../components/ui';
 import { Card, Strong } from '../../contacts/ui';
 import { credentialGuide, type GuideItem } from '../../devices/guide';
+import { primaryRisk } from '../../devices/risk';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { useIdentity, useReadyIdentity } from '../../identity/IdentityProvider';
@@ -76,19 +81,25 @@ function LostScreen() {
   // nothing given; revoked anyway, with a key change, at the user's request.
   const rogue = typeof params.rogue === 'string' && params.rogue ? params.rogue : null;
   const identity = useIdentity();
-  const me = useReadyIdentity().record.deviceId;
+  const record = useReadyIdentity().record;
+  const me = record.deviceId;
   const storage = useStorage();
   const sync = useSync();
   const others = sync.devices().filter((d) => d.removed === undefined && d.cert.device !== me);
   const [chosen, setChosen] = useState<string | null>(typeof params.device === 'string' ? params.device : null);
   const [step, setStep] = useState<Step>({ kind: 'choose' });
   const [wrong, setWrong] = useState(false);
+  // "Did it keep your master key?" answered no (devices review F-06).
+  const [notPrimary, setNotPrimary] = useState<string | null>(null);
   const listed = others.find((d) => d.cert.device === chosen);
   const target: { id: string; name: string } | null = rogue
     ? { id: rogue, name: (typeof params.name === 'string' && params.name) || t('devices.unnamed') }
     : listed
       ? { id: listed.cert.device, name: listed.name || t('devices.unnamed') }
       : null;
+
+  const risk = target && !rogue ? primaryRisk(target.id, sync.devices(), { id: me, primary: record.primary }) : 'not-primary';
+  const blocked = risk === 'primary' || (risk === 'unknown' && notPrimary !== target?.id);
 
   const run = async (master: MasterKeySource) => {
     if (!target) return;
@@ -164,7 +175,24 @@ function LostScreen() {
           <ChoiceCard key={d.cert.device} title={d.name || t('devices.unnamed')} help={d.added ? t('devices.added', { date: new Date(d.added).toLocaleDateString() }) : ''} selected={chosen === d.cert.device} onPress={() => setChosen(d.cert.device)} testID="lost-device" />
         ))}
       </Section>}
-      {target && (
+      {target && risk === 'primary' && (
+        <Card testID="lost-primary">
+          <Strong>{t('lost.primary.title', { name: target.name })}</Strong>
+          <Muted>{t('lost.primary.is')}</Muted>
+          <Button kind="danger" label={t('devices.primaryLost')} onPress={() => router.push('/devices/identity')} testID="lost-primary-identity" />
+        </Card>
+      )}
+      {target && risk === 'unknown' && notPrimary !== target.id && (
+        <Card testID="lost-primary-ask">
+          <Strong>{t('lost.primary.ask', { name: target.name })}</Strong>
+          <Muted>{t('lost.primary.askHelp')}</Muted>
+          <View style={styles.row}>
+            <Button kind="danger" label={t('lost.primary.yes')} onPress={() => router.push('/devices/identity')} testID="lost-primary-yes" />
+            <Button kind="secondary" label={t('lost.primary.no')} onPress={() => setNotPrimary(target.id)} testID="lost-primary-no" />
+          </View>
+        </Card>
+      )}
+      {target && !blocked && (
         <>
           <Section title={t('lost.what.title')}>
             <Bullet>{t('lost.what.key')}</Bullet>

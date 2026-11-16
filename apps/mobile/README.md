@@ -210,7 +210,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     `TLDA1:<b64url(sign pk | box pk | ephemeral X25519 pk | name)>`, the old one answers `TLDB1:<b64url(slot |
     ephemeral pk | read address)>` and drops `transfer/<slot>.qr` = {device cert, TLSK sealed to the new device}
     under BLAKE2b(X25519(ephemerals) | both pks | slot): the shared temporary key of the spec.
-  - *Declare a device lost / remove it* (`/devices/lost`): master key (`rotateSharingCert({ revokeDevices, newKey })`:
+  - *Declare a device lost / remove it* (`/devices/lost`): a device that keeps, or may keep, the master key is not
+    declared this way (devices review F-06, `risk.ts`): its own primary mark sends the user to the identity change;
+    when neither this device nor another one says it is primary, the screen asks "Did it keep your master key?"
+    (yes: identity change). Otherwise the master key (`rotateSharingCert({ revokeDevices, newKey })`:
     new random sharing key and vault data key, rotation + 1), then `SyncController.declareLost` (`rotateKey`: every open
     invitation cancelled for a declaration, key delivered to the remaining devices, recovery copy, re-encryption,
     publication). The result lists the people invited who had not answered, guides the storage access change per

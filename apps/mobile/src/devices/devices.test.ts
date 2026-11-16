@@ -49,6 +49,7 @@ import {
   TRANSFER_WINDOW_MS,
 } from './channel';
 import { credentialGuide, guideFor } from './guide';
+import { primaryRisk } from './risk';
 import { joinedIdentity, moveIdentity } from './identity';
 import { addEntry, changesSince, diffSaves, ownSaves, revertChange, JOURNAL_MAX } from './journal';
 import { LinkReceiver, LinkSender, QrReceiver, QrSender, RestoreFailed, VALUE_PROFILE, VALUE_STORAGE, lastDigits, maskedFingerprint, restoreWithPhrase, type OldDeviceDeps } from './sessions';
@@ -405,6 +406,20 @@ describe('identity move (theft of the primary device)', () => {
     expect(m.record.move).toEqual(m.move);
     expect(checkStoredIdentity(m.record, m.secrets).device.id).toBe(keys.id);
     expect(identityFromPhrase(m.phrase).owner).toBe(m.record.owner);
+  });
+});
+
+describe('declaring a device that may keep the master key (review F-06)', () => {
+  it('its own primary mark, or nothing that tells, keeps the plain declaration away', () => {
+    const entry = (id: string, extra: { primary?: boolean; removed?: number } = {}) => ({ cert: { device: id } as never, name: id, added: 1, at: 1, ...extra });
+    const devices = [entry('me'), entry('tablet'), entry('phone', { primary: true }), entry('old', { primary: true, removed: 5 })];
+    expect(primaryRisk('phone', devices, { id: 'me', primary: false })).toBe('primary');
+    // Another device says it keeps the master key: the tablet does not (single primary device).
+    expect(primaryRisk('tablet', devices, { id: 'me', primary: false })).toBe('not-primary');
+    // This device keeps it.
+    expect(primaryRisk('tablet', [entry('me'), entry('tablet')], { id: 'me', primary: true })).toBe('not-primary');
+    // Nothing tells (a stolen device can hide its own mark; a removed one does not count): ask.
+    expect(primaryRisk('tablet', [entry('me'), entry('tablet'), entry('old', { primary: true, removed: 5 })], { id: 'me', primary: false })).toBe('unknown');
   });
 });
 
