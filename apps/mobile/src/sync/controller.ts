@@ -528,7 +528,15 @@ export class SyncController implements StorageMoveHooks {
     if (!list) throw new Error('lists: no such list');
     this.d.store.updateList(listId, { linkKey: newListKey(), ...(list.visibility !== 'link' && { visibility: 'link' as const }) });
     this.d.onData();
-    await this.publishNow();
+    try {
+      await this.publishNow();
+    } catch (e) {
+      // Not published (offline, storage down): never show a link that does not work yet (review
+      // Info 7). Back to what is published; the user tries again.
+      this.d.store.updateList(listId, { linkKey: list.linkKey, ...(list.visibility !== 'link' && { visibility: list.visibility }) });
+      this.d.onData();
+      throw e;
+    }
     const f = this.listLink(listId);
     if (!f) throw new Error('lists: no link');
     return f;

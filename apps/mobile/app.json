@@ -24,17 +24,17 @@
             {
               "scheme": "https",
               "host": "triangulair.app",
-              "pathPrefix": "/i"
+              "path": "/i"
             },
             {
               "scheme": "https",
               "host": "triangulair.app",
-              "pathPrefix": "/r"
+              "path": "/r"
             },
             {
               "scheme": "https",
               "host": "triangulair.app",
-              "pathPrefix": "/l"
+              "path": "/l"
             }
           ],
           "category": [

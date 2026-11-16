@@ -597,9 +597,11 @@ for a storage with `?reason=public-list&return=/lists/share…`.
 
 Shared lists open questions:
 
-- **Universal links for `/l`**: `app.json` declares the Android intent filter; the site must serve the matching
-  `apple-app-site-association` / `assetlinks.json`, and its `/l` page must never read `location.hash` (it only sends
-  people without the app to the store page).
+- **Universal links for `/l`**: `app.json` declares the Android intent filter (exact paths `/i`, `/r`, `/l`, so
+  `/lists`, `/legal` and the like stay on the site: review Info 3); the site must serve the matching
+  `apple-app-site-association` / `assetlinks.json`, and its `/l` page must never send the fragment anywhere (it only
+  sends people without the app to the store page; the app's own web export reads it and removes it from the address
+  bar).
 - **"Add places to my places" and "Ask to follow the author"** (spec, preview actions) are not done: the card's "Add to
   my places" works on each place; asking to follow needs a return link without an invitation.
 - **A switch per followed list on the map** (spec "Followed lists panel") is not done: followed lists' places follow

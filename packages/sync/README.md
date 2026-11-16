@@ -207,7 +207,8 @@ devices in three ways:
 **Why the key never reaches a server**: the fragment (after `#`) is not part of an HTTP request (RFC 3986 §3.5,
 RFC 9110 §7.1): the `triangulair.app` site gets `/l` only when the app is missing, and a phone with the app hands the
 whole URL to it without a request. The reader then contacts only my storage (index, packs), never with the link. What
-must hold: the site never reads `location.hash`, the web app removes the fragment from the address bar, links are
+must hold: the site never sends `location.hash` anywhere (the app's web export reads it on its `/l` route, by design,
+and removes it from the address bar at once), links are
 never logged. The link stays forwardable until renewed (spec threat model, "Holder of a list link").
 
 **Following** (`followList`, no account, no request, no consent): the list is read first and recorded only when

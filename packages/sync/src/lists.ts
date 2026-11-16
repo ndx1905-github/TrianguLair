@@ -28,9 +28,9 @@
  * server (when the app is not installed, the browser asks for `/l` only) nor any proxy sees it; on
  * a phone with the app, the system hands the whole URL to the app without any request (universal
  * links / app links). The app then reads only the author's storage (index and packs), whose host
- * never sees the link either. What must hold on our side: the `triangulair.app` page must not
- * read `location.hash` (no script that sends it anywhere), the app removes the fragment from the
- * address bar on the web, and never logs links.
+ * never sees the link either. What must hold on our side: the `triangulair.app` site must never
+ * send `location.hash` anywhere (the app's web export reads it on `/l`, by design, and removes it
+ * from the address bar at once), and the app never logs links.
  *
  * Link bytes (version 1), then base64url after `https://triangulair.app/l#`:
  *

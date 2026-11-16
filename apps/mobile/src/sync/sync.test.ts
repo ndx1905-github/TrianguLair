@@ -494,6 +494,25 @@ describe('SyncController: shared lists (T-211, T-212)', () => {
     expect(ben.ctl.followedLists()).toEqual([]);
   });
 
+  it('a link that could not be published is not shown (review Info 7); leaving link-only kills it (L-01)', async () => {
+    const anna = makeUser('anna-offline');
+    anna.store.putSave({ place: place(1, 'Open') });
+    const list = anna.store.createList({ name: 'Weekend', kind: 'manual', visibility: 'link', items: ['osm:node/1'] });
+    await anna.ctl.refresh();
+    const put = anna.storage.put.bind(anna.storage);
+    anna.storage.put = async () => {
+      throw new Error('storage down');
+    };
+    await expect(anna.ctl.newListLink(list)).rejects.toThrow();
+    expect(anna.ctl.listLink(list)).toBeNull();
+    anna.storage.put = put;
+    const fragment = await anna.ctl.newListLink(list);
+    expect(anna.ctl.listLink(list)).toBe(fragment);
+    await anna.ctl.setListVisibility(list, 'public');
+    await anna.ctl.setListVisibility(list, 'link');
+    expect(anna.ctl.listLink(list)).toBeNull(); // "Create the link" again: a new key
+  });
+
   it('public: the file address and uMap; friends picked for a list see it', async () => {
     const anna = makeUser('anna-pub');
     const ben = makeUser('ben-pub');

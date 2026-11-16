@@ -131,8 +131,24 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - **My vault and followed lists**: the vault holds the link (and so the key) of every list I follow; an unfollowed
   list keeps only its id and the time (L-02), and the entry goes after 180 days. Whoever opens my vault (recovery
   phrase, an unlocked stolen device) learns the lists I follow now, not the ones I followed before.
-- **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must not read
-  `location.hash`, the web app removes it from the address bar, links are never logged.
+- **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must never send
+  `location.hash` anywhere (the app's own web export reads it on `/l` by design and removes it from the address bar
+  at once; Info 4), links are never logged.
+- **Replay to a new holder** (Info 5): indexes do not expire, so a storage host that kept an old index and its old
+  pack files can serve them to someone who opens an old link and has no anchor for that list yet. They then see the
+  list as it was when that link was current; this never reveals content sealed after "new link", and an anchor
+  refuses the rollback once a newer index was seen.
+- **A public list made link-only** (Info 6): its public link then says "This list no longer exists" (the public file
+  no longer names it), where a renewed link-only list says "This link no longer works". Accepted wording: both mean
+  "ask the author for a new link".
+- **Key handling outside the crypto package** (Info 2, not changed now: the crypto package is frozen): the list
+  key's public half is derived in this package with `crypto_scalarmult_base` from `libsodium-wrappers-sumo`
+  (`lists.ts`, `listKeyPair`). The derivation is correct (same public key as `crypto_box_keypair`, clamping inside
+  libsodium, any 32 bytes are a valid secret), but it is a second sodium instance and `ready` promise, and Metro's
+  hierarchical lookup could bundle a second copy from `packages/sync/node_modules`. To do when the crypto package
+  next opens: export `x25519PublicKeyOf(secret)` there and drop the direct dependency.
+- **Android app links** (Info 3): exact paths `/i`, `/r`, `/l` (`path`, not `pathPrefix`), so other pages of the
+  site stay in the browser.
 
 ## Concurrency
 
