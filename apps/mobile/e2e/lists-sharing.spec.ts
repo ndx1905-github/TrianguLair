@@ -290,6 +290,8 @@ test('link-only list: followed without being a contact, cut by a new link; publi
   const popup = anna.ctx.waitForEvent('page', { timeout: 10_000 }).catch(() => null);
   await a.getByTestId('share-umap').click();
   const opened = await popup;
+  // The new page's URL is empty until its first navigation commits (slow or blocked network).
+  if (opened) await opened.waitForURL((u) => u.href.startsWith('https://'), { waitUntil: 'commit', timeout: 15_000 }).catch(() => {});
   expect(opened ? opened.url() : a.url()).toBe(umap.href);
   await opened?.close();
   await shot(a, 'phone-list-share-public.png');
