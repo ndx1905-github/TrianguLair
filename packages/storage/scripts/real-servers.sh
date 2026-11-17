@@ -16,8 +16,11 @@ if ! command -v apache2 >/dev/null || ! command -v htpasswd >/dev/null || [ ! -x
   apt-get update -q >/dev/null
   apt-get install -y -q apache2 apache2-utils openssh-server >/dev/null
 fi
-# Versions the results in README.md were obtained with.
-"$PIP" install --break-system-packages -q "moto[server]==5.2.5" "wsgidav==4.4.1" "cheroot==11.1.2"
+# Versions the results in README.md were obtained with (CI installs them as the runner user and
+# sets TL_PIP_INSTALL=0).
+if [ "${TL_PIP_INSTALL:-1}" = 1 ]; then
+  "$PIP" install --break-system-packages -q "moto[server]==5.2.5" "wsgidav==4.4.1" "cheroot==11.1.2"
+fi
 W=/srv/tl; mkdir -p $W/apache $W/wsgi $W/lock $W/full $W/small
 mountpoint -q $W/full || mount -t tmpfs -o size=1m tmpfs $W/full
 chown -R www-data:www-data $W/apache $W/lock $W/full $W/small
@@ -67,16 +70,17 @@ provider_mapping: {"/dav": "/srv/tl/wsgi"}
 http_authenticator: {domain_controller: null, accept_basic: true, accept_digest: false, default_to_digest: false}
 simple_dc: {user_mapping: {"*": {"alice": {password: "s3cret"}}}}
 CONF
-pgrep -f "wsgidav --config" >/dev/null || nohup wsgidav --config $W/wsgidav.yaml >/tmp/wsgidav.log 2>&1 &
-pgrep -f "moto_server" >/dev/null || nohup moto_server -H 127.0.0.1 -p 5005 >/tmp/moto.log 2>&1 &
+up() { curl -s -o /dev/null --max-time 2 "$1"; }
+if ! up http://127.0.0.1:8082/; then nohup wsgidav --config $W/wsgidav.yaml </dev/null >/tmp/wsgidav.log 2>&1 & fi
+if ! up http://127.0.0.1:5005/; then nohup moto_server -H 127.0.0.1 -p 5005 </dev/null >/tmp/moto.log 2>&1 & fi
 id alice >/dev/null 2>&1 || useradd -m alice; echo alice:s3cret | chpasswd
 mkdir -p /run/sshd; ssh-keygen -A >/dev/null
 printf 'Port 2222\nListenAddress 127.0.0.1\nPasswordAuthentication yes\nKbdInteractiveAuthentication no\nUsePAM yes\nSubsystem sftp internal-sftp\nPidFile /run/sshd_tl.pid\n' > /etc/ssh/sshd_tl.conf
 [ -f /run/sshd_tl.pid ] && kill -0 "$(cat /run/sshd_tl.pid)" 2>/dev/null || /usr/sbin/sshd -f /etc/ssh/sshd_tl.conf
 # Wait until every server answers.
 for i in $(seq 1 60); do
-  if curl -s -o /dev/null http://127.0.0.1:8081/pub/ && curl -s -o /dev/null http://127.0.0.1:8082/ \
-    && curl -s -o /dev/null http://127.0.0.1:5005/ && (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+  if up http://127.0.0.1:8081/pub/ && up http://127.0.0.1:8082/ && up http://127.0.0.1:5005/ \
+    && (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
     echo "real servers ready"; exit 0
   fi
   sleep 1
