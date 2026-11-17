@@ -22,6 +22,8 @@ import {
   normEtag,
   parentDirs,
   resolveFetch,
+  timedFetch,
+  checkTimeout,
   sortEntries,
   withSlash,
   xmlElements,
@@ -42,6 +44,12 @@ export interface WebDavOptions {
   baseUrl: string;
   auth?: WebDavAuth;
   fetch?: FetchLike;
+  /**
+   * Time to wait for the response headers of each request, in ms (default
+   * 120 000; 0: no limit). Past it the request is aborted and `TimeoutError`
+   * (a retryable `NetworkError`) is thrown.
+   */
+  timeoutMs?: number;
   /**
    * Public read URL prefix for friends (e.g. a Nextcloud public share
    * `https://cloud.example/public.php/dav/files/<token>/`). `publicUrl()`
@@ -94,7 +102,7 @@ export class WebDavAdapter implements StorageAdapter {
   constructor(opts: WebDavOptions) {
     this.base = withSlash(opts.baseUrl);
     this.basePath = decodeURIComponent(new URL(this.base).pathname);
-    this.fetch = resolveFetch(opts.fetch);
+    this.fetch = timedFetch(resolveFetch(opts.fetch), checkTimeout(opts.timeoutMs));
     const a = opts.auth;
     this.authHeader = !a
       ? undefined

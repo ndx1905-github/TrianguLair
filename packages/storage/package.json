@@ -10,7 +10,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./sftp": "./src/sftp.ts",
-    "./testing": "./src/testing/conformance.ts"
+    "./testing": "./src/testing/conformance.ts",
+    "./testing/faults": "./src/testing/faults.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -128,6 +128,9 @@ export function classifyError(e: unknown, about: 'own' | 'friend', online = true
         return P('conflict', true, false, 'Two of my devices write at the same time', '', detail);
       case 'NOT_FOUND':
         return P('not-found', true, false, friend ? 'A friend\'s storage unreachable' : 'Interrupted write', friend ? 'Updated {age} ago' : '', detail);
+      case 'QUOTA':
+        // QuotaExceeded: 507 / 413 / an S3 quota code (storage package, T-202).
+        return P('quota', true, false, 'Quota full', 'Your storage is full', detail);
       case 'TOO_LARGE':
         return P('too-large', false, false, 'Tampered content (invalid signature)', friend ? '{name}\'s content could not be verified' : 'Sync error', detail);
       case 'PROTOCOL':
