@@ -19,8 +19,10 @@ import {
   verifySharingCert,
   contactRecord,
   emptyVault,
+  INVITATION_ANSWER_GRACE_MS,
   invitationFromRecord,
   invitationRecord,
+  invitationStatus,
   mergeVaults,
   type IndexAnchor,
   type OwnerInvitation,
@@ -451,6 +453,38 @@ export class ContactBook {
         // invalid record: signIndex would skip it as "invalid"; T-208 drops it from the vault
       }
     }
+    return out;
+  }
+
+  /**
+   * Spec "Error cases", invitation records in the vault: drops the records that can never be listed
+   * again — invalid (unsigned, a bad device certificate, lasting more than 7 days), created by a
+   * device that `cert` revokes, or expired for longer than the answer grace period — and keeps the
+   * rest, including the genuine ones that cannot be listed yet ("not-yet": a creating clock ahead, a
+   * newer certificate than this device holds) and those a rotation superseded (answers already sent
+   * are still read until expiry). Only invalid, revoked or expired records are ever removed
+   * (InvitationSkipReason). Returns the ids dropped, by reason; the caller saves the book.
+   */
+  sweepInvitations(cert: SharingCert, now: number): { invalid: string[]; revoked: string[]; expired: string[] } {
+    const out = { invalid: [] as string[], revoked: [] as string[], expired: [] as string[] };
+    const keep = this.r.invitations.filter((rec) => {
+      let status: ReturnType<typeof invitationStatus>;
+      try {
+        status = invitationStatus(invitationFromRecord(rec, this.r.owner).invitation, cert, new Date(now));
+      } catch {
+        status = 'invalid';
+      }
+      if (status === 'invalid' || status === 'revoked') {
+        out[status].push(rec.id);
+        return false;
+      }
+      if (status === 'expired' && now >= Date.parse(rec.expires) + INVITATION_ANSWER_GRACE_MS) {
+        out.expired.push(rec.id);
+        return false;
+      }
+      return true;
+    });
+    if (keep.length !== this.r.invitations.length) this.r = { ...this.r, invitations: keep };
     return out;
   }
 

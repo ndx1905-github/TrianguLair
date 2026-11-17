@@ -89,6 +89,12 @@ export interface SyncReport {
   ok: boolean;
   /** This device was declared lost: the pass stopped and the local content was erased. */
   wiped?: boolean;
+  /**
+   * Invitation records dropped from my vault before this pass published (ContactBook.sweepInvitations):
+   * `invalid` and `revoked` ones could not be verified ("An invitation could not be verified and was
+   * removed"); `expired` ones ended their answer grace period. Absent when none was dropped.
+   */
+  invitationsDropped?: { invalid: string[]; revoked: string[]; expired: string[] };
   startedAt: number;
   durationMs: number;
 }
@@ -550,6 +556,12 @@ export class SyncEngine {
     // 3. Publish.
     if (this.own && ownOk && opts.publish !== false) {
       try {
+        // Invitation records that can never be listed again leave the vault (spec "Error cases").
+        const swept = this.book.sweepInvitations(this.own.sharing.cert, this.nowMs());
+        if (swept.invalid.length + swept.revoked.length + swept.expired.length > 0) {
+          report.invitationsDropped = swept;
+          this.saveBook();
+        }
         await this.deliverKeys();
         report.own = await this.own.publish();
       } catch (e) {
