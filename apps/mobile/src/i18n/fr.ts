@@ -65,6 +65,7 @@ export const fr: Messages = {
   'osm.offline': 'OpenStreetMap est injoignable pour le moment. Voici les lieux enregistrés sur cet appareil.',
   'osm.busy': 'Les services OpenStreetMap sont saturés. Réessayez dans un instant.',
   'osm.unavailable': 'Les services OpenStreetMap sont indisponibles pour le moment.',
+  'osm.searchUnavailable': 'Recherche indisponible : placez le lieu sur la carte (appui long, ou point posé au centre).',
   'osm.fixtureShort': 'Données de démo (exemples hors ligne)',
   'osm.fixtureMode': 'Mode démo : les réponses OpenStreetMap viennent de données d’exemple intégrées.',
 

@@ -11,7 +11,7 @@ import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { useAppState } from '../state/AppState';
 import { noteText } from './noteText';
-import { ownNote } from './problems';
+import { noteHref, ownNote } from './problems';
 import { useMaybeSync } from './SyncProvider';
 import { useFollowed } from './FriendsPicker';
 
@@ -34,7 +34,7 @@ export function SyncBar() {
     <View style={styles.row} pointerEvents="box-none">
       {note && (
         <Pressable
-          onPress={() => router.push(note.action === 'storage' ? '/storage' : '/sync')}
+          onPress={() => router.push(noteHref(note))}
           style={[styles.note, { backgroundColor: toneBg, borderColor: toneBorder, shadowColor: c.shadow }]}
           accessibilityRole="button"
           accessibilityLiveRegion="polite"

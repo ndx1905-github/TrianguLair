@@ -42,6 +42,7 @@ import {
   keyPath,
   type DeviceEntry,
   type SharePolicy,
+  type SpaceUsed,
   type SyncProblem,
   type SyncReason,
   type SyncReport,
@@ -69,7 +70,7 @@ import { parseConfig, sameWriteTarget, type StorageConfig } from '../storage/con
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
 import { confirmInFilter } from '../lists/sharing';
-import { logLine } from './problems';
+import { invitationsLogLine, logLine } from './problems';
 import { WhatsNewLog } from './whatsNew';
 
 const INDEX = 'index.json';
@@ -77,6 +78,8 @@ const INDEX_MAX = 4 * 1024 * 1024;
 const LOG_KEY = 'app:log';
 const LOG_MAX = 80;
 const OWN_OK_KEY = 'app:own-ok';
+/** When I chose to keep the places of a friend whose storage no longer answers (spec "Error cases"). */
+const keptKey = (owner: string) => `app:friend-kept:${owner}`;
 const SLOTS_KEY = 'app:transfer-slots';
 const WRITTEN_KEY = 'app:vault-written';
 const RECOVERY_KEY = 'app:recovery-copy';
@@ -142,6 +145,8 @@ export interface FriendLine {
   problem: SyncProblem | null;
   /** Their places in my cache. */
   places: number;
+  /** When I chose to keep their places although their storage no longer answers (null: never). */
+  keptAt: number | null;
 }
 
 export interface ControllerSnapshot {
@@ -672,9 +677,10 @@ export class SyncController implements StorageMoveHooks {
     }
     this.recordNews([...report.friends, ...(report.lists ?? []).map(asFriendReport)], firstRead);
     this.syncPeople(engine);
-    if (report.problems.length) {
+    const dropped = report.invitationsDropped ? [invitationsLogLine(report.invitationsDropped, report.startedAt)] : [];
+    if (report.problems.length || dropped.length) {
       const log = this.d.state.get<string[]>(LOG_KEY) ?? [];
-      this.d.state.set(LOG_KEY, [...report.problems.map((p) => logLine(p.about, p.problem, report.startedAt)), ...log].slice(0, LOG_MAX));
+      this.d.state.set(LOG_KEY, [...dropped, ...report.problems.map((p) => logLine(p.about, p.problem, report.startedAt)), ...log].slice(0, LOG_MAX));
     }
     const changed =
       report.friends.some((f) => f.status === 'updated') ||
@@ -1131,6 +1137,27 @@ export class SyncController implements StorageMoveHooks {
     return this.d.state.get<string[]>(LOG_KEY) ?? [];
   }
 
+  /** Space used on my storage by content type (sync status screen; null without a storage I write to, or when it cannot list). */
+  async spaceUsed(): Promise<SpaceUsed | null> {
+    const own = this.wiped ? null : this.engine?.own;
+    if (!own) return null;
+    try {
+      return await own.spaceUsed();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * "Keep" on a friend whose storage has not answered for months: their places stay, and the offer
+   * comes back only after as long again ("Remove" is `setPolicy(owner, { follow: false })`).
+   */
+  keepFriend(owner: string): void {
+    if (this.wiped) return;
+    this.d.state.set(keptKey(owner), this.now());
+    this.d.onChange();
+  }
+
   snapshot(): ControllerSnapshot {
     const e = this.engine;
     const repo = this.d.store.repo;
@@ -1146,6 +1173,7 @@ export class SyncController implements StorageMoveHooks {
           lastSuccess: e.reader.lastSuccess(c.owner),
           problem: this.friendProblems.get(c.owner) ?? null,
           places: repo.db.get<{ n: number }>(`SELECT count(*) AS n FROM saves WHERE owner_id = ? AND deleted_at IS NULL`, [c.owner])?.n ?? 0,
+          keptAt: this.d.state.get<number>(keptKey(c.owner)) ?? null,
         }));
       } catch {
         friends = [];

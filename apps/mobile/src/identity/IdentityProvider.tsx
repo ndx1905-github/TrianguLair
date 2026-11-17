@@ -16,7 +16,7 @@ import type { Joined } from '../devices/sessions';
 import { masterIdentity, rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
 import { LOCAL_ONLY, serializeStorageState } from '../storage/state';
 import { parseSyncKeys, serializeSyncKeys } from '../sync/keys';
-import { checkStoredIdentity, createIdentity, parseDeviceKeys, parseIdentityRecord, primaryFromPhrase, type CreatedIdentity, type IdentityRecord } from './create';
+import { checkStoredIdentity, createIdentity, parseDeviceKeys, parseIdentityRecord, primaryFromPhrase, storedIdentityKind, type CreatedIdentity, type IdentityRecord } from './create';
 import { encodeRecoveryCopy, parseRecoveryCopy, sealRecoveryCopy } from './recovery';
 import { openSecretStore, type SecretStore } from './secretStore';
 
@@ -30,7 +30,11 @@ export type OnboardingStep = 'lock' | 'location' | 'import' | 'done';
 
 export type IdentityState =
   | { kind: 'loading' }
-  | { kind: 'none'; secretStore: SecretStore['kind'] }
+  /**
+   * No identity on this device. `keysMissing`: an identity record is there but its keys are not
+   * (system restore without the system vault): nothing syncs or writes, the recovery kit is asked.
+   */
+  | { kind: 'none'; secretStore: SecretStore['kind']; keysMissing?: boolean }
   | { kind: 'error'; error: unknown }
   | {
       kind: 'ready';
@@ -189,7 +193,12 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         store.get('primary-identity'),
         store.get('pending-phrase'),
       ]);
-      if (!deviceKeys || !sharingKey) throw new Error('identity: device keys are missing');
+      if (storedIdentityKind(record, { deviceKeys, sharingKey }) === 'keys-missing' || !deviceKeys || !sharingKey) {
+        // Spec "Error cases", key missing from the phone's vault: blocked before any write.
+        console.warn('identity: the keys of this device are missing from the system vault');
+        setState({ kind: 'none', secretStore: store.kind, keysMissing: true });
+        return;
+      }
       checkStoredIdentity(record, { deviceKeys, sharingKey, primaryIdentity });
       if (cancelled) return;
       setState({

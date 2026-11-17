@@ -1,7 +1,7 @@
 import { ActivityIndicator, View } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 
-import { Button } from '../../components/ui';
+import { Banner, Button } from '../../components/ui';
 import { Frame, SecretStoreNotice } from '../../firstLaunch/Frame';
 import { Hero } from '../../firstLaunch/Hero';
 import { useUiColors } from '../../hooks/useUiColors';
@@ -20,6 +20,24 @@ export default function Welcome() {
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.background }}>
         <ActivityIndicator color={c.accent} />
       </View>
+    );
+  }
+  if (state.keysMissing) {
+    // Spec "Error cases", key missing from the phone's vault: nothing syncs; the recovery kit restores.
+    return (
+      <Frame
+        title={t('welcome.keysMissing.title')}
+        lead={t('welcome.keysMissing.lead')}
+        testID="welcome-keys-missing"
+        actions={
+          <>
+            <Button label={t('welcome.keysMissing.restore')} onPress={() => router.push('/welcome/device?way=phrase')} testID="keys-missing-restore" />
+            <Button kind="secondary" label={t('welcome.haveDevice')} onPress={() => router.push('/welcome/device')} testID="keys-missing-device" />
+          </>
+        }
+      >
+        <Banner tone="warning">{t('welcome.keysMissing.help')}</Banner>
+      </Frame>
     );
   }
   return (

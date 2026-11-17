@@ -65,6 +65,7 @@ export const en: Messages = {
   'osm.offline': 'Can’t reach OpenStreetMap right now. Showing the places saved on this device.',
   'osm.busy': 'OpenStreetMap services are busy. Try again in a moment.',
   'osm.unavailable': 'OpenStreetMap services are unavailable right now.',
+  'osm.searchUnavailable': 'Search unavailable: place the place on the map (long press, or drop a point at the center).',
   'osm.fixtureShort': 'Demo data (offline samples)',
   'osm.fixtureMode': 'Demo mode: OpenStreetMap answers come from built-in sample data.',
 

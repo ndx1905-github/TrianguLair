@@ -166,6 +166,17 @@ export function checkStoredIdentity(record: IdentityRecord, secrets: IdentitySec
   return { sharing, device };
 }
 
+/**
+ * What the app finds at launch (spec "Error cases", key missing from the phone's vault): no
+ * identity record (first launch), a record whose device or sharing key is gone (a system restore
+ * that brought the app's files back without the system vault's keys: blocked before any write, the
+ * recovery kit is asked), or both (checked further by checkStoredIdentity).
+ */
+export function storedIdentityKind(record: IdentityRecord | null, secrets: { deviceKeys: string | null; sharingKey: string | null }): 'none' | 'keys-missing' | 'present' {
+  if (!record) return 'none';
+  return secrets.deviceKeys && secrets.sharingKey ? 'present' : 'keys-missing';
+}
+
 /** Typed 12 words → primary blob, after checking they recreate this owner (turning "primary device" on later). */
 export function primaryFromPhrase(phrase: string, owner: string): string {
   const id = identityFromPhrase(phrase);

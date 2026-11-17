@@ -1,9 +1,12 @@
 /**
  * Settings › Sync status (spec "Error cases"): last successful sync of my storage and of each person
- * I follow ("Updated 12 days ago"), pending changes, the current problem in plain words with its
- * action, "Sync now", and the local technical log (no content, no keys).
+ * I follow ("Updated 12 days ago"; after 3 months without an answer, keep or remove their places),
+ * pending changes, the space used by content type (with suggestions when the storage is full), the
+ * current problem in plain words with its action, "Sync now", and the local technical log (no
+ * content, no keys).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { SpaceUsed } from '@triangulair/sync';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +20,7 @@ import { useI18n } from '../i18n';
 import { useStorage } from '../storage/StorageProvider';
 import { Avatar } from '../sync/FriendsPicker';
 import { agoText, friendNoteText, noteHelpKey, noteText } from '../sync/noteText';
-import { friendNote, ownNote } from '../sync/problems';
+import { formatBytes, friendNote, noteHref, ownNote, quotaTips, spaceRows } from '../sync/problems';
 import { usePullToRefresh } from '../sync/usePullToRefresh';
 import { useSync } from '../sync/SyncProvider';
 
@@ -31,6 +34,7 @@ function SyncScreen() {
   const storage = useStorage();
   const pull = usePullToRefresh();
   const [showLog, setShowLog] = useState(false);
+  const [space, setSpace] = useState<SpaceUsed | null>(null);
   // "Sync now" waits for its pass (and the one queued after it, if any) before it can be pressed again.
   const [running, setRunning] = useState(false);
   const syncNow = () => {
@@ -44,6 +48,18 @@ function SyncScreen() {
   const help = note ? noteHelpKey(note) : null;
   const cfg = storage.state.current;
   const lastOk = Math.max(status?.lastSuccess ?? 0, snap?.lastOwnSuccess ?? 0) || null;
+  const ctl = sync.controller();
+  // Space used: listed once the engine is ready, again after each successful pass of my storage.
+  const spaceKey = `${snap?.publishes ? 1 : 0}:${lastOk ?? 0}:${note?.id ?? ''}`;
+  useEffect(() => {
+    let alive = true;
+    if (!ctl || !snap?.publishes) return;
+    void ctl.spaceUsed().then((s) => alive && setSpace(s));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctl, spaceKey]);
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -85,13 +101,36 @@ function SyncScreen() {
                       {t(help)}
                     </Text>
                   )}
+                  {note.id === 'quota' &&
+                    quotaTips(space).map((k) => (
+                      <Text key={k} style={[styles.muted, { color: c.text }]} maxFontSizeMultiplier={2} testID="sync-quota-tip">
+                        {`• ${t(k, space ? { size: formatBytes(k === 'sync.space.tipPhotos' ? space.photos : space.other, locale) } : {})}`}
+                      </Text>
+                    ))}
+                </View>
+              )}
+              {space && space.total > 0 && (
+                <View style={{ gap: 2 }} testID="sync-space">
+                  <Text style={{ color: c.text, fontSize: 14, fontWeight: '600' }} maxFontSizeMultiplier={2}>
+                    {t('sync.space.title', { size: formatBytes(space.total, locale) })}
+                  </Text>
+                  {spaceRows(space).map((r) => (
+                    <Text key={r.kind} style={[styles.muted, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID={`sync-space-${r.kind}`}>
+                      {t('sync.space.row', { what: t(`sync.space.${r.kind}`), size: formatBytes(r.bytes, locale) })}
+                    </Text>
+                  ))}
                 </View>
               )}
             </View>
           )}
           <View style={styles.actions}>
             <Button label={running ? t('sync.state.syncing') : t('sync.now')} onPress={syncNow} disabled={running} testID="sync-now" />
-            <Button kind={note?.action === 'storage' ? 'primary' : 'secondary'} label={t('sync.openStorage')} onPress={() => router.push('/storage')} testID="sync-storage" />
+            <Button
+              kind={note?.action === 'storage' ? 'primary' : 'secondary'}
+              label={note?.id === 'reconnect' ? t('sync.note.fix') : t('sync.openStorage')}
+              onPress={() => router.push(note?.id === 'reconnect' ? noteHref(note) : '/storage')}
+              testID="sync-storage"
+            />
           </View>
 
           <SectionTitle>{t('sync.people')}</SectionTitle>
@@ -101,7 +140,7 @@ function SyncScreen() {
             </Text>
           ) : (
             snap!.friends.map((f) => {
-              const n = friendNote(f.problem, f.lastSuccess, now);
+              const n = friendNote(f.problem, f.lastSuccess, now, f.keptAt);
               const name = f.name || t('card.aFriend');
               return (
                 <View key={f.owner} style={[styles.person, { borderColor: c.border, backgroundColor: c.surface }]} testID={`sync-person-${name}`}>
@@ -116,6 +155,12 @@ function SyncScreen() {
                     <Text style={{ color: c.textMuted, fontSize: 13 }} maxFontSizeMultiplier={2}>
                       {[f.follow ? t('friends.picker.places', { count: f.places }) : null, f.share ? t('sync.friend.shares') : t('sync.friend.noShare')].filter(Boolean).join(' · ')}
                     </Text>
+                    {f.follow && n.action === 'keep-or-remove' && ctl && (
+                      <View style={styles.actions} testID="sync-person-stale">
+                        <Button kind="secondary" label={t('sync.friend.keep')} onPress={() => ctl.keepFriend(f.owner)} testID="sync-person-keep" />
+                        <Button kind="secondary" label={t('sync.friend.remove')} onPress={() => void ctl.setPolicy(f.owner, { follow: false })} testID="sync-person-remove" />
+                      </View>
+                    )}
                   </View>
                 </View>
               );
