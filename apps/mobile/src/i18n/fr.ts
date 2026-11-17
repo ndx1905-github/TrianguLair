@@ -5,6 +5,7 @@ import { zonesListsFr } from './zonesLists.fr';
 import { storageFr } from './storage.fr';
 import { syncFr } from './sync.fr';
 import { contactsFr } from './contacts.fr';
+import { sharedListsFr } from './sharedLists.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -18,6 +19,8 @@ export const fr: Messages = {
   ...syncFr,
   // Invitations, contacts and access (T-208, T-209), kept in their own file.
   ...contactsFr,
+  // Sharing lists, following a list by link (T-211, T-212), kept in their own file.
+  ...sharedListsFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

@@ -40,6 +40,8 @@ export interface SyncApi {
   log(): string[];
   /** A name given on the contacts screens: their person row. */
   nameContact(owner: string, name: string): void;
+  /** The controller (list sharing and followed lists, T-211/T-212); null until the identity and data are ready. */
+  controller(): SyncController | null;
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
@@ -181,6 +183,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       },
       log: () => ctl.current?.log() ?? [],
       nameContact,
+      controller: () => ctl.current,
     }),
     [snapshot, refresh, nameContact],
   );

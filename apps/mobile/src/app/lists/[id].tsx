@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DataGate } from '../../components/DataGate';
 import { ScreenHeader } from '../../components/ScreenHeader';
-import { Banner, Button, Segmented } from '../../components/ui';
+import { Button, Segmented } from '../../components/ui';
 import { useData } from '../../data/DataProvider';
 import { useTags } from '../../data/usePlaces';
 import { useLayout } from '../../hooks/useLayout';
@@ -104,7 +104,9 @@ function ListScreen() {
       <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2} testID="list-summary">
         {[t('filters.places', { count: places.length }), t(`lists.kind.${list.kind}`), t(`lists.visibility.${list.visibility}`)].join(' · ')}
       </Text>
-      <Banner>{t('lists.sharingLater')}</Banner>
+      <View style={{ alignSelf: 'flex-start' }}>
+        <Button label={t('sharing.open')} onPress={() => router.push({ pathname: '/lists/share', params: { id: list.id } })} testID="share-list" />
+      </View>
     </View>
   );
 

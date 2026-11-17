@@ -100,6 +100,8 @@ export interface OwnItem {
   lon: number;
   /** OSM side status of the place (closed places leave public lists). */
   placeStatus: string;
+  /** Postal address known for the place ("looks like a home", home.ts); never published. */
+  address: string | null;
   tags: TagOut[];
 }
 
@@ -142,10 +144,10 @@ export function readOwnItems(repo: Repository): OwnItem[] {
       id: string; place_id: string; comment: string; comment_visibility: CommentVisibility; status: SaveStatus | null;
       price_level: PriceLevel | null; sharing: 'private' | 'friends'; created_at: number; updated_at: number;
       snap: string | null; osm_fields: string; name: string; category: string | null; kind: 'place' | 'zone';
-      edge: 'sharp' | 'blurred'; geom: string; pstatus: string;
+      edge: 'sharp' | 'blurred'; geom: string; pstatus: string; address: string | null;
     }>(
       `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.created_at,
-         s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus
+         s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus, p.address
        FROM saves s JOIN places p ON p.id = s.place_id
        WHERE s.owner_id = ? AND s.deleted_at IS NULL ORDER BY s.place_id`,
       [me],
@@ -174,18 +176,30 @@ export function readOwnItems(repo: Repository): OwnItem[] {
         lat,
         lon,
         placeStatus: r.pstatus,
+        address: r.address,
         tags: byS.get(r.id) ?? [],
       };
     });
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+const DAY_MS = 24 * 3600 * 1000;
+/** A date rounded down to its UTC day (what forwardable lists publish: review L-03). */
+export const dayOf = (ms: number): string => iso(Math.floor(ms / DAY_MS) * DAY_MS);
+
+export interface PublicFeatureOptions {
+  /** Publish my tag names (and parents): only when I opted in (`ContactBook.publicTagNames`). */
+  tagNames?: boolean;
+}
 
 /**
  * The feature of one of my saves for an audience: "friends" (packs) sees
- * comments marked friends or public, "public" (public lists) only public ones.
+ * comments marked friends or public, "public" (public lists and link-only
+ * lists, which can be forwarded) only public ones. For "public", dates are
+ * rounded to the day (they would show my habits) and tags are left out unless
+ * I opted in to publishing their names (personal names: review L-03).
  */
-export function featureFor(item: OwnItem, audience: 'friends' | 'public'): PlaceFeature {
+export function featureFor(item: OwnItem, audience: 'friends' | 'public', opts: PublicFeatureOptions = {}): PlaceFeature {
   const props = { name: clean(item.name, 500) } as PlaceFeature['properties'];
   if (item.category) props.category = clean(item.category, 200);
   if (item.kind === 'zone') props.kind = 'zone';
@@ -197,15 +211,15 @@ export function featureFor(item: OwnItem, audience: 'friends' | 'public'): Place
   }
   if (item.status) props.status = item.status;
   if (item.priceLevel) props.price_level = item.priceLevel;
-  if (item.tags.length) {
+  if (item.tags.length && (audience === 'friends' || opts.tagNames)) {
     props.tags = item.tags.map((t) => {
       const o: TagOut = { ...t, name: clean(t.name, 100) };
       if (t.parent !== undefined) o.parent = clean(t.parent, 100);
       return o;
     });
   }
-  props.created = iso(item.createdAt);
-  props.updated = iso(item.updatedAt);
+  props.created = audience === 'public' ? dayOf(item.createdAt) : iso(item.createdAt);
+  props.updated = audience === 'public' ? dayOf(item.updatedAt) : iso(item.updatedAt);
   return { type: 'Feature', id: item.placeId, geometry: item.geometry, properties: props };
 }
 
@@ -280,8 +294,16 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
   const lenient = minor > PLACES_MINOR;
   for (const k of Object.keys(doc)) if (!['type', 'triangulair', 'features'].includes(k) && !lenient) fail(`unknown field ${k}`);
   for (const k of Object.keys(meta)) if (!['kind', 'version', 'minor'].includes(k) && !lenient) fail(`unknown field triangulair.${k}`);
-  if (!Array.isArray(doc.features) || doc.features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
-  return doc.features.map((f: unknown) => {
+  return parseFeatureArray(doc.features, lenient);
+}
+
+/**
+ * Validates the `features` of a places (or lists) payload: the same strict rules (see the module
+ * comment). `lenient`: the document declares a higher minor than this reader's (unknown fields ignored).
+ */
+export function parseFeatureArray(features: unknown, lenient: boolean): ParsedFeature[] {
+  if (!Array.isArray(features) || features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
+  return features.map((f: unknown) => {
     if (!isObj(f) || f.type !== 'Feature') fail('feature expected');
     for (const k of Object.keys(f)) if (!['type', 'id', 'geometry', 'properties'].includes(k) && !lenient) fail(`unknown feature field ${k}`);
     const id = str(f.id, 100, 'id');

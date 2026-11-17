@@ -34,8 +34,12 @@ function ListsScreen() {
         style={{ alignSelf: 'center', width: '100%', maxWidth: wide ? 720 : undefined }}
         contentContainerStyle={{ padding: gutter, paddingBottom: insets.bottom + 24, gap: 8 }}
         ListHeaderComponent={
-          <View style={{ marginBottom: 8 }}>
+          <View style={{ marginBottom: 8, gap: 8 }}>
             <Banner>{t('lists.intro')}</Banner>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <Button kind="secondary" label={t('followed.open')} onPress={() => router.push('/lists/followed')} testID="lists-followed" />
+              <Button kind="secondary" label={t('follow.title')} onPress={() => router.push('/lists/follow')} testID="lists-follow" />
+            </View>
           </View>
         }
         renderItem={({ item }) => {

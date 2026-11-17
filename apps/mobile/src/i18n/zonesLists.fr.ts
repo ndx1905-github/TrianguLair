@@ -81,7 +81,6 @@ export const zonesListsFr: Messages = {
   'lists.kind.manual': 'Sélection à la main',
   'lists.visibility.link': 'Par lien seulement',
   'lists.visibility.public': 'Publique',
-  'lists.sharingLater': 'Le partage des listes par lien arrive plus tard : pour l’instant la liste reste sur cet appareil.',
   'lists.edit': 'Modifier',
   'lists.delete': 'Supprimer la liste',
   'lists.view.map': 'Carte',

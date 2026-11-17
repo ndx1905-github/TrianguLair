@@ -93,6 +93,63 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   created; deliberate copies (screenshots, a modified app) are out of reach, as the spec says.
 - Coarse ETags on a friend's server can delay an update until the next full read (10 minutes while the app is open).
 
+## Shared lists (T-211, T-212)
+
+- **Holder of a list link** (spec threat model): the link holds the list's X25519 secret; anyone it is forwarded to
+  reads the list until a new link is made. "New link" re-seals the list pack to a new key (new batch key, new file)
+  and deletes the old file: an old holder keeps only what they already copied. The list key is a direct recipient
+  of the list pack only (never a group member, never wrapped inside any other pack), so it opens nothing else of
+  mine; link packs carry only public comments and never a private place.
+- **Forwardable lists and habits** (L-03): link-only packs and the public file give save, edit and list dates to
+  the day only, and tag names only on opt-in (a tag's color still styles uMap). Friends' packs keep exact dates
+  (friends already see my places as they change).
+- **What a link holder learns** besides the list: my master key and read address (they can read my public index
+  like anyone), the number and sizes of my packs, and when I publish. They cannot tell which other packs exist for
+  whom (wraps are anonymous); they download each `packs/` file once to find theirs.
+- **Forged links**: a link naming my key with someone else's address is refused (the index must be signed for the
+  master key in the link and certify the address it was read from); a list pack re-listed in another index does not
+  open (owner bound in the AEAD). After the first read, an older index is refused (anchor per followed list).
+- **Cost of a link** (L-07): following needs no consent, so its bounds are smaller than a friend's: one file tried at
+  most `listPackBytes` (1 MiB; a list pack is about 100 KB), one list's read `listReadBytes` (8 MiB), a preview
+  `listPreviewBytes` (4 MiB), at most 200 followed lists, and friends and followed lists share one pass budget. The
+  app downloads nothing when a link is opened, only when the user asks for the preview. A follower still downloads
+  each `packs/` file of the author once (no hint which one is theirs: README open question 9).
+- **Malicious public list or link-only list author**: their places land in my cache like a friend's (same strict
+  payload checks, sizes bounded, under their own `list:` owner, never merged into another cache); a public list may
+  expose someone's private address: the app warns the author before a place that looks like a home enters a public
+  list (going public, the place card, the editor), and a public filter list holds such places out of the public file
+  until the author confirms them (M-02); the reader only sees what was published.
+- **Friends' lists**: a lists pack is sealed only to the contacts given access to those lists; a friend who sees
+  everything does not learn my list names unless picked. Membership never names a place they cannot read: picks
+  count only while the contact sees everything and are dropped at any change of scope, and a lists pack keeps only
+  the places every one of its viewers can read (audiences of the places packs), whatever the policies say (M-01).
+- **Impersonation by name** (L-06): the `author` of a link pack or public file is self-declared. The app never
+  shows it as an identity: a followed list shows the author's master key as a short code, the name from my contacts
+  when that key is a contact of mine, and otherwise the declared name in quotes with "not in your contacts". Lists
+  are grouped by master key, so two authors who declare the same name stay apart. An 8-character short code can be
+  ground (about 48 bits): compare the safety code to be sure.
+- **My vault and followed lists**: the vault holds the link (and so the key) of every list I follow; an unfollowed
+  list keeps only its id and the time (L-02), and the entry goes after 180 days. Whoever opens my vault (recovery
+  phrase, an unlocked stolen device) learns the lists I follow now, not the ones I followed before.
+- **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must never send
+  `location.hash` anywhere (the app's own web export reads it on `/l` by design and removes it from the address bar
+  at once; Info 4), links are never logged.
+- **Replay to a new holder** (Info 5): indexes do not expire, so a storage host that kept an old index and its old
+  pack files can serve them to someone who opens an old link and has no anchor for that list yet. They then see the
+  list as it was when that link was current; this never reveals content sealed after "new link", and an anchor
+  refuses the rollback once a newer index was seen.
+- **A public list made link-only** (Info 6): its public link then says "This list no longer exists" (the public file
+  no longer names it), where a renewed link-only list says "This link no longer works". Accepted wording: both mean
+  "ask the author for a new link".
+- **Key handling outside the crypto package** (Info 2, not changed now: the crypto package is frozen): the list
+  key's public half is derived in this package with `crypto_scalarmult_base` from `libsodium-wrappers-sumo`
+  (`lists.ts`, `listKeyPair`). The derivation is correct (same public key as `crypto_box_keypair`, clamping inside
+  libsodium, any 32 bytes are a valid secret), but it is a second sodium instance and `ready` promise, and Metro's
+  hierarchical lookup could bundle a second copy from `packages/sync/node_modules`. To do when the crypto package
+  next opens: export `x25519PublicKeyOf(secret)` there and drop the direct dependency.
+- **Android app links** (Info 3): exact paths `/i`, `/r`, `/l` (`path`, not `pathPrefix`), so other pages of the
+  site stay in the browser.
+
 ## Concurrency
 
 - Compare-and-swap is best effort on some servers; the read-back check and the recomputation of the remote
@@ -107,8 +164,9 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 
 ## Known limits (review notes not fixed in this round)
 
-- **N-1 Public file content**: the public lists file carries every `featureFor(…, 'public')` property, including
-  my tag names, status, price level and dates. To narrow, or to show exactly in the "make public" preview (T-212).
+- **N-1 Public file content** (fixed with review L-03): forwardable lists (the public file and link-only list
+  packs) carry dates rounded to the day and no tag names unless I opt in (`setPublicTagNames`, kept in my vault so
+  all my devices publish the same); they still carry status and price level, which the preview shows.
 - **N-2** Removing a contact or `share: false` takes effect at the next publication the app triggers
   (`localChange()`); the engine does not schedule one by itself.
 - **N-3** A friend whose index disappears keeps their cache (no signed "content deleted" marker yet, T-213).

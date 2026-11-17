@@ -953,7 +953,8 @@ export class DocTx {
 
   /**
    * Edits a list. Changing `kind` keeps both the saved filter and the manual
-   * selection, so switching back restores the previous definition.
+   * selection, so switching back restores the previous definition. Changing
+   * `visibility` away from `link` clears `linkKey` (unless the patch sets it).
    */
   updateList(id: string, patch: ListPatch): void {
     const l = this.list(id);
@@ -962,8 +963,12 @@ export class DocTx {
     if (patch.name !== undefined) l.set('name', patch.name.trim());
     if (kind !== undefined && getStr(l, 'kind') !== kind) l.set('kind', kind);
     if (patch.description !== undefined) updateText(textOf(l, 'description'), patch.description);
+    // Leaving link-only takes the link away for good (sync review L-01): the list key is dropped,
+    // so coming back to link-only needs a new link (a new key) and the old one stays dead.
+    const leavesLink = visibility !== undefined && visibility !== 'link' && getStr(l, 'visibility') === 'link';
     if (visibility !== undefined) l.set('visibility', visibility);
     if (patch.linkKey !== undefined) l.set('linkKey', patch.linkKey);
+    else if (leavesLink && l.has('linkKey')) l.set('linkKey', null);
     this.touch(l);
   }
 

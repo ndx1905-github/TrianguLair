@@ -7,6 +7,8 @@
  *   5  1  kind: 1 = places (GeoJSON FeatureCollection, JSON)
  *               2 = own document (Yjs update, own devices only)
  *               3 = manifest (JSON, own devices only)
+ *               4 = lists (GeoJSON FeatureCollection, JSON: list definitions, and the places of a
+ *                   link-only list; lists.ts)
  *   6  1  codec: 0 = stored, 1 = raw DEFLATE (RFC 1951, fflate, pure JavaScript)
  *   7  4  body length (u32 big-endian, as stored: compressed with the codec)
  *  11  …  body
@@ -20,6 +22,9 @@
  * padding is zeros. Decompression is bounded (`maxBytes`, by default per
  * kind) so that a hostile pack cannot exhaust memory.
  *
+ * (Pre-release change, T-211/T-212: kind 4 was added before any app shipped; a reader of
+ * envelope version 1 that predates it would refuse the pack as "unsupported".)
+ *
  * (Pre-release change, T-204 review: the length field and the padding were
  * added before any app shipped; envelope version 1 has only ever had this
  * layout in a release.)
@@ -31,9 +36,9 @@ import { LimitError, type ByteBudget } from './util.ts';
 
 const MAGIC = [0x54, 0x4c, 0x53, 0x59]; // "TLSY"
 export const PAYLOAD_VERSION = 1;
-export type PayloadKind = 'places' | 'own-doc' | 'manifest';
-const KIND_BYTE: Record<PayloadKind, number> = { places: 1, 'own-doc': 2, manifest: 3 };
-const BYTE_KIND: Record<number, PayloadKind> = { 1: 'places', 2: 'own-doc', 3: 'manifest' };
+export type PayloadKind = 'places' | 'own-doc' | 'manifest' | 'lists';
+const KIND_BYTE: Record<PayloadKind, number> = { places: 1, 'own-doc': 2, manifest: 3, lists: 4 };
+const BYTE_KIND: Record<number, PayloadKind> = { 1: 'places', 2: 'own-doc', 3: 'manifest', 4: 'lists' };
 const HEADER = 11;
 
 /** Smallest payload written (header, body and zero padding): 4 KiB. */
@@ -45,6 +50,7 @@ export const MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
 /** Default decompressed limit for each kind (SyncLimits overrides them). */
 export const PAYLOAD_LIMITS: Readonly<Record<PayloadKind, number>> = Object.freeze({
   places: DEFAULT_LIMITS.placesPayloadBytes,
+  lists: DEFAULT_LIMITS.placesPayloadBytes,
   manifest: DEFAULT_LIMITS.manifestPayloadBytes,
   'own-doc': DEFAULT_LIMITS.ownDocPayloadBytes,
 });

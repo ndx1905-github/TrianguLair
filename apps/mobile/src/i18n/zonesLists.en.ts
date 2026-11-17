@@ -81,7 +81,6 @@ export const zonesListsEn: Messages = {
   'lists.kind.manual': 'Manual selection',
   'lists.visibility.link': 'Link only',
   'lists.visibility.public': 'Public',
-  'lists.sharingLater': 'Sharing lists by link comes later: for now the list stays on this device.',
   'lists.edit': 'Edit',
   'lists.delete': 'Delete the list',
   'lists.view.map': 'Map',

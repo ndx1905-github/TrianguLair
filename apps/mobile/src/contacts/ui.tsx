@@ -266,10 +266,7 @@ export function Strong({ children, testID }: { children: ReactNode; testID?: str
 }
 
 /** Short display of an owner key when no name is known yet. */
-export function shortKey(owner: string): string {
-  const k = owner.replace(/^ed25519:/, '');
-  return `${k.slice(0, 4)}…${k.slice(-4)}`;
-}
+export { shortKey } from './model';
 
 const styles = StyleSheet.create({
   qr: { alignSelf: 'center', backgroundColor: '#FFFFFF', borderRadius: 8, overflow: 'hidden' },

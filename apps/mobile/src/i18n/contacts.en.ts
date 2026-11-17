@@ -106,8 +106,7 @@ export const contactsEn: Messages = {
   'face.note': 'Face to face uses the same invitation and answer as links, shown as QR codes. A dedicated format will make it one step.',
 
   'follow.title': 'Follow a list by link',
-  'follow.lead': 'A link-only list can be followed without following its author: the link is enough.',
-  'follow.coming': 'Coming with link-only lists: lists are not shared yet.',
+  'follow.lead': 'A list can be followed without following its author: its link is enough. No request, no account.',
   'follow.link': 'List link',
 
   'contacts.title': 'Friends',

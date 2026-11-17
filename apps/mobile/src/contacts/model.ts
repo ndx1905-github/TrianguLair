@@ -280,3 +280,9 @@ export function safetyRows(groups: readonly string[], perRow: number): string[][
   for (let i = 0; i < groups.length; i += perRow) rows.push(groups.slice(i, i + perRow));
   return rows;
 }
+
+/** The short code of an identity (its master key): what the app shows next to a name it cannot vouch for. */
+export function shortKey(owner: string): string {
+  const k = owner.replace(/^ed25519:/, '');
+  return `${k.slice(0, 4)}…${k.slice(-4)}`;
+}

@@ -20,6 +20,8 @@ describe('no WebAssembly', () => {
     const js = files.filter((f) => /\.(c|m)?js$|\.ts$/.test(f));
     expect(js.filter((f) => readFileSync(f, 'utf8').includes('WebAssembly.'))).toEqual([]);
     const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
-    expect(Object.keys(pkg.dependencies).sort()).toEqual(['@triangulair/crypto', '@triangulair/data', '@triangulair/storage', 'fflate']);
+    // libsodium-wrappers-sumo: the crypto package's own copy (list keys, lists.ts), which falls back to asm.js
+    // where WebAssembly is missing (Hermes); the app bundles one copy for both.
+    expect(Object.keys(pkg.dependencies).sort()).toEqual(['@triangulair/crypto', '@triangulair/data', '@triangulair/storage', 'fflate', 'libsodium-wrappers-sumo']);
   });
 });

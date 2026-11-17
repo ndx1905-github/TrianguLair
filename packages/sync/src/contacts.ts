@@ -38,8 +38,58 @@ export interface ContactPolicy {
   /** "I see their places". */
   follow: boolean;
   removed?: boolean;
+  /**
+   * Lists whose definition (name, description, membership) this contact also receives, besides
+   * those of a `share: { lists }` restriction (which always come with it): the "pick who" of a
+   * list's share sheet, for a contact who sees everything I share with friends. Only used while
+   * `share` is true (review M-01): a restricted contact sees exactly the lists of the restriction,
+   * and `setPolicy` drops the picks whenever `share` changes, so a stale pick never comes back.
+   */
+  lists?: string[];
   /** Time of the last change (ms), for the merge. */
   at: number;
+}
+
+/**
+ * The lists a contact sees the definition of: those of a "some lists" restriction, or, for a
+ * contact who sees everything, the ones picked in a list's share sheet (never both: M-01).
+ */
+export function listsSeenBy(p: ContactPolicy): string[] {
+  if (p.removed || p.share === false) return [];
+  return [...new Set(p.share === true ? (p.lists ?? []) : p.share.lists)].sort();
+}
+
+const sameShare = (a: SharePolicy, b: SharePolicy): boolean =>
+  typeof a === 'boolean' || typeof b === 'boolean' ? a === b : canonicalize([...new Set(a.lists)].sort() as never) === canonicalize([...new Set(b.lists)].sort() as never);
+
+/**
+ * A list followed by its link (spec "Following a list without following the person"), kept in the
+ * vault so that all my devices follow it: the link fragment (it holds the list key of a link-only
+ * list) and the time of the change. An unfollowed list keeps only `{ at, removed: true }` (never
+ * its link, so the vault does not keep the list's key: review L-02) so that a merge never brings
+ * it back, for FOLLOWED_REMOVED_KEEP_MS; then the entry is dropped.
+ */
+export interface FollowedListEntry {
+  link?: string;
+  at: number;
+  removed?: boolean;
+}
+
+/** At most this many lists followed by link (review L-02, L-07). */
+export const MAX_FOLLOWED_LISTS = 200;
+/** An unfollowed list's entry stays this long (like the tombstones), then it is dropped. */
+export const FOLLOWED_REMOVED_KEEP_MS = 180 * 24 * 3600 * 1000;
+
+export class TooManyFollowedListsError extends Error {
+  constructor() {
+    super(`you already follow ${MAX_FOLLOWED_LISTS} lists`);
+    this.name = 'TooManyFollowedListsError';
+  }
+}
+
+/** The stored form of an entry: a removed one never keeps its link. */
+function cleanEntry(e: FollowedListEntry): FollowedListEntry {
+  return e.removed ? { at: e.at, removed: true } : e;
 }
 
 export interface Contact {
@@ -61,7 +111,20 @@ const DEFAULT_POLICY: ContactPolicy = { share: false, follow: false, at: 0 };
  * or every OWN_ANCHOR_STEP publications) so it does not cost a vault write
  * per publication; it is a floor, never ahead of the truth.
  */
-type AppPart = { version: 1; contacts: Record<string, ContactPolicy>; own?: IndexAnchor };
+type AppPart = {
+  version: 1;
+  contacts: Record<string, ContactPolicy>;
+  own?: IndexAnchor;
+  lists?: Record<string, FollowedListEntry>;
+  /** What forwardable lists (link-only, public) publish: tag names only on opt-in (review L-03). */
+  publish?: PublishPrefs;
+};
+
+/** Shared by all my devices (they must publish the same packs and public file). */
+export interface PublishPrefs {
+  tagNames: boolean;
+  at: number;
+}
 
 /** The vault's own anchor is rewritten after this many publications (or at a rotation). */
 export const OWN_ANCHOR_STEP = 16;
@@ -94,8 +157,20 @@ export function laterAnchor(a: IndexAnchor | undefined, b: IndexAnchor | undefin
   return b.seq >= a.seq ? b : a;
 }
 
+function checkedPrefs(p: unknown): PublishPrefs | undefined {
+  const x = p as PublishPrefs | undefined;
+  return x && typeof x === 'object' && typeof x.tagNames === 'boolean' && Number.isSafeInteger(x.at) ? { tagNames: x.tagNames, at: x.at } : undefined;
+}
+
 function withApp(r: VaultRecords, part: AppPart): VaultRecords {
   return { ...r, app: { ...(r.app ?? {}), [APP_KEY]: part } };
+}
+
+function laterEntry<T extends { at: number }>(a: T | undefined, b: T | undefined): T | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  return canonicalize(a as never) >= canonicalize(b as never) ? a : b;
 }
 
 function laterPolicy(a: ContactPolicy | undefined, b: ContactPolicy | undefined): ContactPolicy | undefined {
@@ -113,7 +188,12 @@ export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
   const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
-  return withApp(merged, { version: 1, contacts, ...(own && { own }) });
+  const la = appPart(a).lists ?? {};
+  const lb = appPart(b).lists ?? {};
+  const lists: Record<string, FollowedListEntry> = {};
+  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = cleanEntry(laterEntry(la[k], lb[k])!);
+  const publish = laterEntry(checkedPrefs(appPart(a).publish), checkedPrefs(appPart(b).publish));
+  return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }), ...(publish && { publish }) });
 }
 
 /**
@@ -197,7 +277,108 @@ export class ContactBook {
     const cur = part.contacts[owner] ?? DEFAULT_POLICY;
     const next: ContactPolicy = { share: patch.share ?? cur.share, follow: patch.follow ?? cur.follow, at: Math.max(now, cur.at + 1) };
     if (patch.removed ?? cur.removed) next.removed = true;
-    this.r = withApp(this.r, { version: 1, contacts: { ...part.contacts, [owner]: next } });
+    // The picks only mean something for a contact who sees everything, and only for the scope they
+    // were made in: a change of scope drops them (M-01).
+    const kept = patch.share === undefined || sameShare(patch.share, cur.share) ? cur.lists : undefined;
+    const lists = [...new Set(patch.lists ?? kept ?? [])].sort();
+    if (lists.length && !next.removed && next.share === true) next.lists = lists;
+    this.r = withApp(this.r, { ...part, contacts: { ...part.contacts, [owner]: next } });
+  }
+
+  /** Owners of the live contacts who receive the definition of `listId`. */
+  listViewers(listId: string): string[] {
+    return this.contacts().filter((c) => listsSeenBy(c.policy).includes(listId)).map((c) => c.owner);
+  }
+
+  /**
+   * Gives or takes a contact's access to one list ("pick who" in the list's share sheet):
+   * a contact who sees nothing gets `share: { lists: [id] }` (the list's places and definition); a
+   * contact restricted to some lists gets it added or removed (none left = nothing); a contact who
+   * sees everything keeps that and receives or stops receiving the list's definition.
+   */
+  setListAccess(owner: string, listId: string, on: boolean, now = Date.now()): void {
+    const p = this.policy(owner);
+    if (p.removed) return;
+    if (p.share === true) {
+      const lists = new Set(p.lists ?? []);
+      if (on) lists.add(listId);
+      else lists.delete(listId);
+      this.setPolicy(owner, { lists: [...lists] }, now);
+      return;
+    }
+    const cur = new Set(p.share === false ? [] : p.share.lists);
+    if (on) cur.add(listId);
+    else cur.delete(listId);
+    this.setPolicy(owner, { share: cur.size ? { lists: [...cur].sort() } : false }, now);
+  }
+
+  // ---------------------------------------------------------------- followed lists
+
+  /** Lists I follow by link (not unfollowed), by followed-list id, oldest first (at most MAX_FOLLOWED_LISTS). */
+  followedLists(): { id: string; link: string; at: number }[] {
+    const l = appPart(this.r).lists ?? {};
+    return Object.entries(l)
+      .flatMap(([id, e]) => (!e.removed && typeof e.link === 'string' ? [{ id, link: e.link, at: e.at }] : []))
+      .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
+      .slice(0, MAX_FOLLOWED_LISTS);
+  }
+
+  /** Throws TooManyFollowedListsError when `id` is not followed yet and MAX_FOLLOWED_LISTS are. */
+  checkCanFollow(id: string): void {
+    const live = this.followedLists();
+    if (!live.some((e) => e.id === id) && live.length >= MAX_FOLLOWED_LISTS) throw new TooManyFollowedListsError();
+  }
+
+  /** Follows a list (throws TooManyFollowedListsError beyond MAX_FOLLOWED_LISTS). */
+  followList(id: string, link: string, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = part.lists?.[id];
+    this.checkCanFollow(id);
+    const lists = { ...this.prunedLists(now), [id]: { link, at: Math.max(now, (cur?.at ?? 0) + 1) } };
+    this.r = withApp(this.r, { ...part, lists });
+  }
+
+  /** Unfollows a list: only `{ at, removed }` is kept (no link, no list key). */
+  unfollowList(id: string, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = part.lists?.[id];
+    if (!cur) return;
+    const lists = { ...this.prunedLists(now), [id]: { at: Math.max(now, cur.at + 1), removed: true } };
+    this.r = withApp(this.r, { ...part, lists });
+  }
+
+  /**
+   * Drops the entries of lists unfollowed more than FOLLOWED_REMOVED_KEEP_MS ago, and the link of
+   * any removed entry (vaults written by older code kept it). Returns whether anything changed.
+   */
+  pruneFollowedLists(now = Date.now()): boolean {
+    const part = appPart(this.r);
+    if (!part.lists) return false;
+    const lists = this.prunedLists(now);
+    if (canonicalize(lists as never) === canonicalize(part.lists as never)) return false;
+    const { lists: _old, ...rest } = part;
+    this.r = withApp(this.r, Object.keys(lists).length ? { ...rest, lists } : rest);
+    return true;
+  }
+
+  private prunedLists(now: number): Record<string, FollowedListEntry> {
+    const out: Record<string, FollowedListEntry> = {};
+    for (const [id, e] of Object.entries(appPart(this.r).lists ?? {})) {
+      if (e.removed && e.at < now - FOLLOWED_REMOVED_KEEP_MS) continue;
+      out[id] = cleanEntry(e);
+    }
+    return out;
+  }
+
+  /** Whether link-only lists and the public file carry my tag names (off unless I opted in). */
+  publicTagNames(): boolean {
+    return checkedPrefs(appPart(this.r).publish)?.tagNames ?? false;
+  }
+
+  setPublicTagNames(on: boolean, now = Date.now()): void {
+    const part = appPart(this.r);
+    const cur = checkedPrefs(part.publish);
+    this.r = withApp(this.r, { ...part, publish: { tagNames: on, at: Math.max(now, (cur?.at ?? 0) + 1) } });
   }
 
   /** Removes a contact: they no longer see my places and I stop reading theirs (spec "Remove a friend"). */
