@@ -3,7 +3,7 @@
 // The app consumes the workspace packages (@triangulair/data, @triangulair/osm,
 // @triangulair/import, @triangulair/crypto, @triangulair/storage, @triangulair/sync)
 // straight from their TypeScript sources in ../../packages. Each package keeps
-// its own lockfile, so their runtime dependencies (yjs, opening_hours, fflate, libsodium-wrappers-sumo, @scure/bip39, aws4fetch) are also
+// its own lockfile, so their runtime dependencies (yjs, opening_hours, fflate, libsodium-wrappers-sumo, @scure/bip39, @noble/hashes) are also
 // dependencies of this app and are resolved from apps/mobile/node_modules, even when a package has no node_modules of its own.
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
