@@ -10,6 +10,7 @@ import { OSM_FIXTURES } from '../config';
 import { useI18n } from '../i18n';
 import { useIdentity } from '../identity/IdentityProvider';
 import { movedFrom } from '../devices/local';
+import { purgeExpired } from '../trash/model';
 import { seedDemoData } from './demo';
 import { getSetting, setSetting } from './deviceSettings';
 import { openAppStore, type AppStore } from './openStore';
@@ -77,6 +78,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           setSetting('demo-seeded', '1');
         }
+        // Items in the trash for more than 30 days leave for good (spec "Editing and deleting"; the launch pass
+        // publishes the purge to my other devices).
+        purgeExpired(app.store);
         setStatus({ kind: 'ready', app });
       })
       .catch((error: unknown) => {

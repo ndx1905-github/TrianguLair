@@ -16,6 +16,12 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
   reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
   comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
+- **Trash** (`/trash`, Settings › My content, gap #8; logic in `src/trash/model.ts`): places, zones, tags and lists
+  I deleted (they live in my document, so the trash is the same on all my devices), newest first, with the date and
+  the days left before the purge; "Restore" (a place comes back with its tags, comment and lists), "Delete forever"
+  (confirmed; `DataStore.purgeTrash({ kind, id })`, a tombstone remains) and "Empty the trash" (confirmed). At every
+  launch the DataProvider purges what was deleted more than 30 days ago (`purgeTrash()`), before the launch pass
+  publishes it. A deleted comment is an edit, not a trash item (the card's 15 s "Undo" stays).
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
 - **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a

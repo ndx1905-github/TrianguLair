@@ -21,6 +21,7 @@ import {
   type SaveInput,
   type SavePatch,
   type TagInput,
+  type TrashItemRef,
 } from './crdt/doc.ts';
 import { emptyTouched, projectAll, projectChanges, saveIdFor, trackChanges, type Touched } from './crdt/project.ts';
 import { Repository } from './sqlite/repository.ts';
@@ -399,7 +400,8 @@ export class DataStore {
   restoreList(id: string): void {
     this.change((tx) => tx.restoreList(id));
   }
-  purgeTrash(): number {
-    return this.change((tx) => tx.purgeTrash());
+  /** Purges the trash (items older than 30 days); with `only`, that one item now ("Delete forever"). */
+  purgeTrash(only?: TrashItemRef): number {
+    return this.change((tx) => tx.purgeTrash(only));
   }
 }
