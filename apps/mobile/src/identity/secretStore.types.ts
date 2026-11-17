@@ -20,7 +20,8 @@ export interface SecretStore {
  * `invitations-received`: invitation links I answered, whose key reads the inviter's places until they accept;
  * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208;
  * `recovery-copy`: my current sharing key sealed with the phrase-derived key (TLSK mode 2), uploaded by the sync
- * controller to `keys/<owner>.bin` for a restore with the 12 words; T-206).
+ * controller to `keys/<owner>.bin` for a restore with the 12 words; T-206; `pending-move`: an identity move under way,
+ * finished at the next launch if interrupted, devices review F-08).
  */
 export type SecretKey =
   | 'identity'
@@ -33,7 +34,8 @@ export type SecretKey =
   | 'sync-keys'
   | 'invitations-received'
   | 'pending-invitation'
-  | 'recovery-copy';
+  | 'recovery-copy'
+  | 'pending-move';
 
 export const SECRET_KEYS: readonly SecretKey[] = [
   'identity',
@@ -47,4 +49,5 @@ export const SECRET_KEYS: readonly SecretKey[] = [
   'invitations-received',
   'pending-invitation',
   'recovery-copy',
+  'pending-move',
 ];

@@ -186,6 +186,8 @@ export class SyncController implements StorageMoveHooks {
   private lastPassAt: number | null = null;
   /** No phrase copy of my current key could be written (only the 12 words can make it). */
   private copyMissing = false;
+  /** This identity came from a move (F-08): the old identity's index is replaced before publishing. */
+  private movedFrom: string | null = null;
   private readonly friendProblems = new Map<string, SyncProblem | null>();
   private keysFor: (owner: string) => KeyPair[] = () => [];
   private portCache: { engine: SyncEngine; port: SyncPort } | null = null;
@@ -224,6 +226,8 @@ export class SyncController implements StorageMoveHooks {
   private async build(storage?: StorageAdapter | null): Promise<SyncEngine> {
     await ready();
     const k = await this.d.loadKeys();
+    if (k.move) this.migrateMovedBook(k.sharing.cert.owner, k.move);
+    this.movedFrom = k.move?.from ?? null;
     const cfg = this.d.access.config();
     const mine = storage !== undefined ? storage : cfg && cfg.kind !== 'https' ? this.d.access.writeAdapter() : null;
     // My storage is used only once its read address is certified (connect / move issue the certificate).
@@ -307,6 +311,7 @@ export class SyncController implements StorageMoveHooks {
         }
       }
       await this.loadFriendKeys();
+      if (opts.publish && engine.own && this.movedFrom) await this.clearMovedIndex(engine, this.movedFrom);
       if (opts.publish && engine.own) await this.beforePublish(engine);
       // People with nothing in my cache yet: their first places are one grouped entry.
       const firstRead = this.unread(engine.book.following().map((c) => c.owner));
@@ -565,53 +570,62 @@ export class SyncController implements StorageMoveHooks {
 
   /**
    * "Declare the primary device lost" (T-207), before this device switches to the new identity:
-   * the vault records continue under the new owner (friends, their switches, app values; no
-   * invitation: the identity change cancels them all; only this device listed, re-certified), the
-   * old identity's index and files are removed from my storage (the new identity publishes there
-   * with the move at its first pass), and this controller stops: the app builds a new one for the
-   * new identity.
+   * this controller (old identity) stops; nothing is deleted yet (devices review F-08: the old
+   * index stays until the new identity is stored). The new identity's controller carries the vault
+   * records over (`migrateMovedBook`) and replaces the old identity's index at its first pass
+   * (`clearMovedIndex`); both are resumable.
    */
-  prepareIdentityMove(next: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void> {
+  prepareIdentityMove(_next?: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void> {
     return this.exclusive(async () => {
-      await ready();
-      const engine = await this.engineReady();
-      const own = engine.own;
-      if (!own) throw new Error('sync: no storage to publish to');
-      const old = engine.book.records;
-      const app = { ...(old.app ?? {}) } as Record<string, unknown>;
-      delete app[DEVICES_KEY];
-      const part = app['triangulair_sync'] as Record<string, unknown> | undefined;
-      if (part && typeof part === 'object') {
-        const rest = { ...part };
-        delete rest['own'];
-        app['triangulair_sync'] = rest;
-      }
-      const records = JSON.parse(JSON.stringify({ ...emptyVault(next.owner), contacts: old.contacts, retired_owners: old.retired_owners, app })) as VaultRecords;
-      const book = new ContactBook(records);
-      // This device's certificate under the new identity; its display entry is signed at its first pass.
-      book.putDeviceCert(next.deviceCert);
-      // The old identity's index and the files it lists.
-      const g = await own.storage.get(INDEX, { maxBytes: INDEX_MAX }).catch(() => null);
-      let files: string[] = [];
-      if (g) {
-        try {
-          files = verifyIndex(g.data, { expectedOwner: engine.owner }).packs.map((p) => p.file);
-        } catch {
-          files = [];
-        }
-        await own.storage.delete(INDEX);
-      }
-      for (const f of files) await own.storage.delete(f).catch(() => {});
-      await own.storage.delete(keyPath(engine.owner)).catch(() => {});
-      for (const k of this.d.state.keys('own:')) this.d.state.delete(k);
-      for (const k of [RECOVERY_KEY, WRITTEN_KEY, SELF_KEY]) this.d.state.delete(k);
-      this.d.state.set(BOOK_KEY, book.records);
       this.scheduler.stop();
       this.engine = null;
       this.moving = true;
     });
   }
 
+  /**
+   * After an identity move (this device's identity carries `move`): the vault records kept for the
+   * old owner continue under the new one (friends, their switches, app values; no invitation: the
+   * identity change cancels them all; no device list: this device lists itself at its first pass),
+   * and the old identity's sync state is dropped. Runs once, at the first build.
+   */
+  private migrateMovedBook(owner: string, move: { from: string }): void {
+    const old = this.d.state.get<VaultRecords>(BOOK_KEY);
+    if (!old || old.owner !== move.from) return;
+    const app = { ...(old.app ?? {}) } as Record<string, unknown>;
+    delete app[DEVICES_KEY];
+    const part = app['triangulair_sync'] as Record<string, unknown> | undefined;
+    if (part && typeof part === 'object') {
+      const rest = { ...part };
+      delete rest['own'];
+      app['triangulair_sync'] = rest;
+    }
+    const records = JSON.parse(JSON.stringify({ ...emptyVault(owner), contacts: old.contacts, retired_owners: old.retired_owners, app })) as VaultRecords;
+    for (const k of this.d.state.keys('own:')) this.d.state.delete(k);
+    for (const k of [RECOVERY_KEY, WRITTEN_KEY, SELF_KEY]) this.d.state.delete(k);
+    this.d.state.set(BOOK_KEY, new ContactBook(records).records);
+  }
+
+  /**
+   * After an identity move: an index of the old identity at my storage (left by the move, or put
+   * back by whoever still has the storage access) is removed with its files before the new identity
+   * publishes there. At every publishing pass, so a stale one never stays.
+   */
+  private async clearMovedIndex(engine: SyncEngine, from: string): Promise<void> {
+    const own = engine.own!;
+    const g = await own.storage.get(INDEX, { maxBytes: INDEX_MAX }).catch(() => null);
+    if (!g) return;
+    let files: string[];
+    try {
+      files = verifyIndex(g.data, { expectedOwner: from }).packs.map((p) => p.file);
+    } catch {
+      return; // the new identity's index (or not mine): nothing to do
+    }
+    await own.storage.delete(INDEX);
+    for (const f of files) await own.storage.delete(f).catch(() => {});
+    await own.storage.delete(keyPath(from)).catch(() => {});
+    this.d.state.delete('own:index');
+  }
 
   private afterPass(engine: SyncEngine, report: SyncReport, firstRead: ReadonlySet<string>): void {
     this.lastPassAt = this.now();

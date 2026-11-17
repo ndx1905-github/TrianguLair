@@ -21,7 +21,7 @@ import type { StorageAccess } from '../storage/interfaces';
 import { encodeRecoveryCopy, recoveryCopyFor } from '../identity/recovery';
 import { SyncController } from '../sync/controller';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from '../sync/keys';
-import { joinedIdentity, moveIdentity } from './identity';
+import { decodePendingMove, encodePendingMove, joinedIdentity, moveIdentity } from './identity';
 import { changesSince } from './journal';
 import { LinkReceiver, LinkSender, lastDigits } from './sessions';
 
@@ -247,7 +247,14 @@ describe('adding a device and declaring it lost', () => {
     // On another device of hers (here: the same one, its master key considered stolen), the 12 words.
     const keys = openSyncKeys(a1.record, { deviceKeys: a1.deviceKeys, sharingKey: a1.sharingKey, syncKeys: null });
     const moved = moveIdentity(anna.created.phrase, a1.record, parseDeviceKeys(a1.deviceKeys), keys.sharing, Date.now());
-    await a1.ctl.prepareIdentityMove({ owner: moved.record.owner, deviceCert: moved.record.deviceCert, deviceName: 'anna', added: 1 });
+    // Recorded first (resumable), then the old controller stops: the old index stays until the
+    // new identity is stored and publishes (review F-08).
+    const pending = decodePendingMove(encodePendingMove(moved, oldOwner))!;
+    expect(pending.record.owner).toBe(moved.record.owner);
+    expect(pending.previousSharing.secretKey).toEqual(moved.previousSharing.secretKey);
+    const oldIndex = (await anna.storage.get('index.json'))!.data;
+    await a1.ctl.prepareIdentityMove();
+    expect(verifyIndex((await anna.storage.get('index.json'))!.data, { expectedOwner: oldOwner }).owner).toBe(oldOwner);
     // The app then switches this device to the new identity (new controller, database reassigned).
     a1.ctl.stop();
     reassignOwner(a1.driver, oldOwner, moved.record.owner);
@@ -267,5 +274,10 @@ describe('adding a device and declaring it lost', () => {
     expect(theirs(ben.d, oldOwner)).toEqual([]);
     expect(theirs(ben.d, moved.record.owner).map((x) => x.place_id)).toEqual(['osm:node/1']);
     expect(ben.d.ctl.whatsNew.entries().some((e) => e.kind === 'identity' && e.owner === moved.record.owner)).toBe(true);
+    // Whoever still holds the storage access puts the old identity's index back: the next pass replaces it.
+    await anna.storage.put('index.json', oldIndex);
+    a1b.store.putSave({ place: place(5, 'After the move') });
+    await a1b.ctl.refresh();
+    expect(verifyIndex((await anna.storage.get('index.json'))!.data, { expectedOwner: moved.record.owner, retiredOwners: [oldOwner] }).move?.from).toBe(oldOwner);
   });
 });

@@ -234,6 +234,12 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     index and files are removed, the vault records continue under the new owner (no invitation, only this device), the
     database is reassigned (`identity-moved-from`), every index carries the move, and the new kit is shown. Friends
     follow the move ("… changed their identity" in What's new and contacts, verified mark removed).
+    Devices review F-08: the screen shows the storage access guide first and the button works only once the user
+    confirms the access was changed (the thief still holds it); it says that the stolen device is not erased and the
+    other devices stop. The move is recorded first (`pending-move` secret; an interrupted move finishes at the next
+    launch), the old controller only stops, and the new identity's controller carries the vault records over
+    (`migrateMovedBook`) and replaces any index of the old identity at each publishing pass (`clearMovedIndex`: an
+    old index put back by whoever still has the access does not stay).
   - *Lock if no sync for N days* (Settings › App lock: off, 3, 7, 14, 30 days, optional erase): after N days without
     reaching my storage the app is covered until a sync succeeds (which wipes it if it was declared lost), or erased.
     Devices review F-07: the days count up to the latest time this device ever saw (`clock-mark` device setting,

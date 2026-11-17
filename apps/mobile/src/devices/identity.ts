@@ -21,6 +21,7 @@ import {
   issueDeviceCert,
   issueIdentityMove,
   issueSharingCert,
+  fromB64Url,
   sealSharingKey,
   toB64Url,
   type DeviceKeys,
@@ -101,5 +102,52 @@ export function moveIdentity(oldPhrase: string, record: IdentityRecord, device: 
   } finally {
     wipeIdentity(old);
     wipeIdentity(next);
+  }
+}
+
+/**
+ * An identity move under way (devices review F-08), kept in the secret store (`pending-move`) before
+ * anything changes on this device or the storage, so that an interrupted move is finished at the
+ * next launch (IdentityProvider) instead of leaving this device with neither identity.
+ */
+export interface PendingMove {
+  from: string;
+  phrase: string;
+  record: IdentityRecord;
+  secrets: IdentitySecrets & { primaryIdentity: string };
+  vaultCopy: Uint8Array;
+  cert: SharingKey['cert'];
+  previousSharing: KeyPair;
+}
+
+export function encodePendingMove(m: MovedIdentity, from: string): string {
+  return JSON.stringify({
+    v: 1,
+    from,
+    phrase: m.phrase,
+    record: m.record,
+    secrets: m.secrets,
+    vaultCopy: toB64Url(m.vaultCopy),
+    cert: m.sharing.cert,
+    previous: { publicKey: toB64Url(m.previousSharing.publicKey), secretKey: toB64Url(m.previousSharing.secretKey) },
+  });
+}
+
+export function decodePendingMove(s: string | null): PendingMove | null {
+  if (!s) return null;
+  try {
+    const o = JSON.parse(s) as Record<string, unknown> & { previous: { publicKey: string; secretKey: string } };
+    if (o['v'] !== 1 || typeof o['from'] !== 'string' || typeof o['phrase'] !== 'string') return null;
+    return {
+      from: o['from'],
+      phrase: o['phrase'],
+      record: o['record'] as IdentityRecord,
+      secrets: o['secrets'] as PendingMove['secrets'],
+      vaultCopy: fromB64Url(o['vaultCopy'], 'vaultCopy'),
+      cert: o['cert'] as PendingMove['cert'],
+      previousSharing: { publicKey: fromB64Url(o.previous.publicKey, 'pk', 32), secretKey: fromB64Url(o.previous.secretKey, 'sk', 32) },
+    };
+  } catch {
+    return null;
   }
 }

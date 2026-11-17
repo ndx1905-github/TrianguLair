@@ -6,11 +6,11 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { fromB64Url, issueDeviceCert, openSharingKey, ready, type DeviceCert, type Identity, type SharingCert, type SharingKey } from '@triangulair/crypto';
+import { fromB64Url, issueDeviceCert, openSharingKey, ready, toB64Url, type DeviceCert, type Identity, type SharingCert, type SharingKey } from '@triangulair/crypto';
 
 import { OSM_FIXTURES } from '../config';
 import { getSetting, setSetting } from '../data/deviceSettings';
-import { joinedIdentity, moveIdentity, type MovedIdentity } from '../devices/identity';
+import { decodePendingMove, encodePendingMove, joinedIdentity, moveIdentity, type MovedIdentity, type PendingMove } from '../devices/identity';
 import { DEVICE_NAME_KEY, MOVED_FROM_KEY, movedFrom } from '../devices/local';
 import type { Joined } from '../devices/sessions';
 import { masterIdentity, rotateStoredSharingKey, type CertChange, type MasterKeySource, type RotationResult, type SharingCertRotation } from '../storage/certify';
@@ -73,6 +73,8 @@ export interface IdentityApi extends SharingCertRotation {
   adoptJoined(joined: Joined, opts: { deviceName: string; profileName: string }): Promise<void>;
   /** "Declare the primary device lost": the 12 words of my identity → the new identity (nothing stored yet). Throws "phrase-mismatch". */
   prepareMove(phrase: string): Promise<MovedIdentity>;
+  /** Records the move before anything changes (an interrupted move is finished at the next launch). */
+  beginMove(moved: MovedIdentity): Promise<void>;
   /** Then switch this device to it (the new kit is pending). */
   adoptMovedIdentity(moved: MovedIdentity): Promise<void>;
 }
@@ -114,6 +116,26 @@ async function keepRecoveryCopy(store: SecretStore, sharing: SharingKey, id: Ide
   await store.set('recovery-copy', sealRecoveryCopy(sharing, id).store);
 }
 
+/**
+ * Switches this device to the new identity of a move (devices review F-08). Resumable: the move is
+ * in `pending-move` from before anything changed, and the identity record is written last; a
+ * launch that finds `pending-move` with the old record finishes it.
+ */
+async function writeMovedIdentity(store: SecretStore, p: PendingMove): Promise<void> {
+  const prev = parseSyncKeys(await store.get('sync-keys'));
+  const known = prev.previousSharingKeys.some((k) => toB64Url(k.publicKey) === toB64Url(p.previousSharing.publicKey));
+  await store.set('sync-keys', serializeSyncKeys({ previousSharingKeys: known ? prev.previousSharingKeys : [p.previousSharing, ...prev.previousSharingKeys], previousVaultKeys: [] }));
+  await store.set('device-keys', p.secrets.deviceKeys);
+  await store.set('sharing-key', p.secrets.sharingKey);
+  await store.set('primary-identity', p.secrets.primaryIdentity);
+  await store.set('recovery-copy', encodeRecoveryCopy(p.vaultCopy, p.cert));
+  await store.set('pending-phrase', p.phrase);
+  // The local database moves to the new owner id when it is opened again (DataProvider).
+  setSetting(MOVED_FROM_KEY, JSON.stringify([...new Set([...movedFrom(), p.from])]));
+  await store.set('identity', JSON.stringify(p.record));
+  await store.remove('pending-move');
+}
+
 async function persist(store: SecretStore, created: CreatedIdentity): Promise<void> {
   await store.set('device-keys', created.secrets.deviceKeys);
   await store.set('sharing-key', created.secrets.sharingKey);
@@ -137,6 +159,12 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       const store = await openSecretStore();
       await ready();
       let record = parseIdentityRecord(await store.get('identity'));
+      // An identity move interrupted after it began (F-08): finish it.
+      const pendingMove = decodePendingMove(await store.get('pending-move'));
+      if (pendingMove && record?.owner === pendingMove.from) {
+        await writeMovedIdentity(store, pendingMove);
+        record = pendingMove.record;
+      } else if (pendingMove) await store.remove('pending-move');
       if (!record) {
         const auto = autostartName();
         if (auto !== null) {
@@ -356,19 +384,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         const current = openSharingKey(fromB64Url(sharingKey, 'sharingKey'), device, { expectedOwner: state.record.owner });
         return moveIdentity(phrase, state.record, device, current, Date.now());
       },
+      async beginMove(moved) {
+        if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
+        await secrets.set('pending-move', encodePendingMove(moved, state.record.owner));
+      },
       async adoptMovedIdentity(moved) {
         if (!secrets || state.kind !== 'ready') throw new Error('identity not ready');
-        const previous = state.record.owner;
-        const prev = parseSyncKeys(await secrets.get('sync-keys'));
-        await secrets.set('sync-keys', serializeSyncKeys({ previousSharingKeys: [moved.previousSharing, ...prev.previousSharingKeys], previousVaultKeys: [] }));
-        await secrets.set('device-keys', moved.secrets.deviceKeys);
-        await secrets.set('sharing-key', moved.secrets.sharingKey);
-        await secrets.set('primary-identity', moved.secrets.primaryIdentity);
-        await secrets.set('recovery-copy', encodeRecoveryCopy(moved.vaultCopy, moved.sharing.cert));
-        await secrets.set('pending-phrase', moved.phrase);
-        // The local database moves to the new owner id when it is opened again (DataProvider).
-        setSetting(MOVED_FROM_KEY, JSON.stringify([...new Set([...movedFrom(), previous])]));
-        await secrets.set('identity', JSON.stringify(moved.record));
+        const p = decodePendingMove(encodePendingMove(moved, state.record.owner))!;
+        await writeMovedIdentity(secrets, p);
         setState((cur) => (cur.kind === 'ready' ? { ...cur, record: moved.record, kitPending: true } : cur));
       },
       async checkPhrase(phrase: string): Promise<boolean> {
