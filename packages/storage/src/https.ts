@@ -8,12 +8,18 @@ import type {
   ListEntry,
   StorageAdapter,
 } from './types.ts';
-import { checkMaxBytes, checkPath, doFetch, encodePath, httpError, normEtag, readBody, resolveFetch, withSlash } from './util.ts';
+import { checkMaxBytes, checkPath, checkTimeout, doFetch, encodePath, httpError, normEtag, readBody, resolveFetch, timedFetch, withSlash } from './util.ts';
 
 export interface HttpsReadOnlyOptions {
   /** Base URL of the published folder; files are fetched at `baseUrl + path`. */
   baseUrl: string;
   fetch?: FetchLike;
+  /**
+   * Time to wait for the response headers of each request, in ms (default
+   * 120 000; 0: no limit). Past it the request is aborted and `TimeoutError`
+   * (a retryable `NetworkError`) is thrown.
+   */
+  timeoutMs?: number;
   /** Extra headers (e.g. a share-link token). */
   headers?: Record<string, string>;
 }
@@ -35,7 +41,7 @@ export class HttpsReadOnlyAdapter implements StorageAdapter {
 
   constructor(opts: HttpsReadOnlyOptions) {
     this.base = withSlash(opts.baseUrl);
-    this.fetch = resolveFetch(opts.fetch);
+    this.fetch = timedFetch(resolveFetch(opts.fetch), checkTimeout(opts.timeoutMs));
     this.headers = opts.headers ?? {};
     this.capabilities = {
       readOnly: true,

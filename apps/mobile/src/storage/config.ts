@@ -10,9 +10,10 @@
  *   that the master key certifies in the sharing certificate (`location`). The
  *   index is the file `index.json` right under it, so it always ends with "/".
  *
- * SFTP is not configurable here: `ssh2` needs Node (storage README "SFTP on
- * mobile"), so on a phone it is "desktop only" and the HTTPS mode is offered
- * instead (a sync tool copies the folder, friends read it over HTTPS).
+ * SFTP is not configurable here (decided in T-202): `ssh2` needs Node and no native
+ * SFTP module is shipped (storage README "SFTP on mobile"), so on a phone it is "desktop
+ * only" and the HTTPS mode is offered instead (a sync tool or the desktop app writes the
+ * folder, friends and the phone read it over HTTPS).
  */
 import { checkLocation } from '@triangulair/crypto';
 
@@ -36,8 +37,11 @@ export interface WebDavConfig {
   readUrl: string;
   /** Result of the conditional-write probe; false: the adapter emulates If-Match (racy). */
   conditionalWrites: boolean;
-  /** Nextcloud helper fields, to show the form again. */
-  nextcloud?: { server: string; user: string; shareLink: string };
+  /**
+   * Nextcloud helper fields, to show the form again. `userId`: the account id of the WebDAV path
+   * when it differs from the login name `user` (Login Flow v2 with an email login, LDAP).
+   */
+  nextcloud?: { server: string; user: string; shareLink: string; userId?: string };
 }
 
 export interface S3Config {
@@ -70,6 +74,8 @@ export interface StorageDraft {
   ncUser: string;
   ncPassword: string;
   ncShareLink: string;
+  /** Set by the Login Flow when the account id differs from the login name ("" otherwise). */
+  ncUserId: string;
   // Generic WebDAV
   davUrl: string;
   davUser: string;
@@ -92,6 +98,7 @@ export const EMPTY_DRAFT: StorageDraft = {
   ncUser: '',
   ncPassword: '',
   ncShareLink: '',
+  ncUserId: '',
   davUrl: '',
   davUser: '',
   davPassword: '',
@@ -106,7 +113,7 @@ export const EMPTY_DRAFT: StorageDraft = {
 };
 
 /** Field names of the draft that can carry a problem. */
-export type DraftField = Exclude<keyof StorageDraft, 'choice' | 's3PathStyle'>;
+export type DraftField = Exclude<keyof StorageDraft, 'choice' | 's3PathStyle' | 'ncUserId'>;
 
 /** A validation problem: i18n key `storage.problem.<code>`. Warnings do not block. */
 export interface DraftProblem {
@@ -276,7 +283,8 @@ export function buildConfig(d: StorageDraft): { config: StorageConfig | null; pr
     }
     required('ncUser', d.ncUser, problems);
     required('ncPassword', d.ncPassword, problems);
-    const url = nextcloudDavUrl(d.ncServer, d.ncUser);
+    const userId = d.ncUserId.trim();
+    const url = nextcloudDavUrl(d.ncServer, userId || d.ncUser);
     if (url) {
       config = {
         kind: 'webdav',
@@ -286,7 +294,12 @@ export function buildConfig(d: StorageDraft): { config: StorageConfig | null; pr
         password: d.ncPassword.trim(),
         readUrl,
         conditionalWrites: true,
-        nextcloud: { server: nextcloudBase(d.ncServer) ?? d.ncServer.trim(), user: d.ncUser.trim(), shareLink: d.ncShareLink.trim() },
+        nextcloud: {
+          server: nextcloudBase(d.ncServer) ?? d.ncServer.trim(),
+          user: d.ncUser.trim(),
+          shareLink: d.ncShareLink.trim(),
+          ...(userId && userId !== d.ncUser.trim() ? { userId } : {}),
+        },
       };
     }
   } else if (d.choice === 'webdav') {
@@ -343,7 +356,7 @@ export function draftFromConfig(c: StorageConfig): StorageDraft {
     };
   }
   if (c.flavor === 'nextcloud' && c.nextcloud) {
-    return { ...EMPTY_DRAFT, choice: 'nextcloud', ncServer: c.nextcloud.server, ncUser: c.nextcloud.user, ncPassword: c.password, ncShareLink: c.nextcloud.shareLink, readUrl: c.readUrl };
+    return { ...EMPTY_DRAFT, choice: 'nextcloud', ncServer: c.nextcloud.server, ncUser: c.nextcloud.user, ncPassword: c.password, ncShareLink: c.nextcloud.shareLink, ncUserId: c.nextcloud.userId ?? '', readUrl: c.readUrl };
   }
   return { ...EMPTY_DRAFT, choice: 'webdav', davUrl: c.url, davUser: c.username, davPassword: c.password, readUrl: c.readUrl };
 }
@@ -407,7 +420,9 @@ export function parseConfig(v: unknown): StorageConfig {
       password: str(o, 'password'),
       readUrl,
       conditionalWrites,
-      ...(nc && typeof nc === 'object' ? { nextcloud: { server: str(nc, 'server'), user: str(nc, 'user'), shareLink: str(nc, 'shareLink') } } : {}),
+      ...(nc && typeof nc === 'object'
+        ? { nextcloud: { server: str(nc, 'server'), user: str(nc, 'user'), shareLink: str(nc, 'shareLink'), ...(typeof nc['userId'] === 'string' && nc['userId'] ? { userId: nc['userId'] } : {}) } }
+        : {}),
     };
   }
   if (o['kind'] === 's3') {

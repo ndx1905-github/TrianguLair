@@ -138,8 +138,24 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   last test), the connection test, and the previous storages that keep a signed redirect. The wizard offers
   Nextcloud (server + user + app password → `<server>/remote.php/dav/files/<user>/TrianguLair/`; the public share link
   `…/s/<token>` → `…/public.php/dav/files/<token>/` as read address), generic WebDAV, S3 (endpoint, bucket, region,
-  keys, prefix, path or host style; read address suggested as `<endpoint>/<bucket>/<prefix>`), SFTP (shown, marked
-  "Desktop only": `ssh2` needs Node) and HTTPS only (published by other means). Fields are validated as typed
+  keys, prefix, path or host style; read address suggested as `<endpoint>/<bucket>/<prefix>`), SFTP (marked
+  "Desktop only"; tapping it explains why and offers HTTPS only, see below) and HTTPS only (published by other means).
+  - **Nextcloud Login Flow v2** (T-202, `src/storage/nextcloud.ts`, `NextcloudConnect.tsx`): after the server address,
+    *Connect in the browser* posts to `<server>/index.php/login/v2`, opens the returned login page (`Linking.openURL`),
+    polls the poll endpoint every 2 s (20 min at most, cancellable; the token only goes back to the same origin) and
+    fills user name and app password. The account id (`GET /ocs/v2.php/cloud/user`) is kept as `nextcloud.userId` when
+    it differs from the login name (email or LDAP logins), and the WebDAV folder uses it. Then, **only when the user
+    taps** *Create the read-only public link for me*, the app creates the TrianguLair folder (MKCOL) and reuses a
+    read-only public link without password or creates one through the OCS Share API (`POST
+    /ocs/v2.php/apps/files_sharing/api/v1/shares`, `shareType=3`, `permissions=1`), and fills the share-link field.
+    Problems are typed (unreachable, not a Nextcloud, expired, refused, public links disabled, password enforced; an
+    admin-set expiry date is shown). The manual fields stay below as the fallback. Tested against a mock of the
+    endpoints (`nextcloud.test.ts`, `e2e/nextcloud.spec.ts`), not against a real Nextcloud.
+  - **SFTP on a phone: desktop only** (decided in T-202). `ssh2` needs Node, and no native SFTP module is shipped
+    (it would need an Expo dev build and host-key handling). The card explains it and offers *Use HTTPS only*: the
+    desktop app or a sync tool writes the folder on the SFTP server, the server publishes it over HTTPS.
+  - **S3 on a phone** works: the storage package signs with a pure-JS SigV4 (`@noble/hashes`), no WebCrypto needed
+    on Hermes. Fields are validated as typed
   (http write URL: warning; the read address must pass the crypto package's `checkLocation`: public https, no query,
   no credentials). Credentials live in the secret store (`storage` entry; web: the test-only store).
   - **Test connection** (`connectionTest.ts`): reach (HEAD `index.json` with the credentials; on the web a transport
@@ -796,12 +812,10 @@ Sync open questions:
 
 Storage open questions:
 
-- **S3 on a phone**: `aws4fetch` signs with WebCrypto `crypto.subtle`, which Hermes lacks; S3 works in the web build
-  only until a SubtleCrypto polyfill (or another signer) is chosen.
-- **Nextcloud Login Flow v2** (spec: connection through the browser creating the app password, and the share link made
-  automatically through the OCS API) is not done: an app password and a pasted share link for now. The public DAV URL
-  (`public.php/dav/files/<token>/`, Nextcloud 29+) is still to be checked against a real instance; older servers need
-  another form.
+- **Nextcloud Login Flow v2 and the OCS share link** are tested against mocks only; to check on a real instance,
+  with the public DAV URL (`public.php/dav/files/<token>/`, Nextcloud 29+; older servers need another form). In the web
+  build these endpoints need CORS headers (a reverse-proxy rule), otherwise the wizard says so and the manual form is
+  used. On a phone, the browser tab stays open after approval (no redirect back into the app with Login Flow v2).
 - **Back to local only** from a storage is not offered (it would need a certificate without `location`, and friends
   would lose access): to decide.
 - **Redirect period**: 180 days chosen for "a few months"; the old storage's packs are kept as they are (nothing is

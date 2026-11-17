@@ -220,6 +220,18 @@ export interface PublishReport {
 
 const MANIFEST = 'manifest';
 
+/** My index on the storage is not even JSON (a truncated upload). */
+class DamagedIndex extends Error {}
+
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class OwnSync {
   readonly store: DataStore;
   readonly storage: StorageAdapter;
@@ -341,9 +353,17 @@ export class OwnSync {
       const anchor = this.anchor();
       const vo = { expectedOwner: this.owner, location: this.sharing.cert.location!, now: this.now(), retiredOwners: this.book.retiredOwners() };
       try {
+        if (!isJson(text)) throw new DamagedIndex();
         index = verifyIndex(text, anchor ? { ...vo, lastSeen: anchor } : vo);
       } catch (e) {
-        if (e instanceof RollbackError) {
+        if (e instanceof DamagedIndex) {
+          // Not even JSON: an index upload cut in the middle on a server that streams PUT bodies
+          // into the target file (WsgiDAV, Nephele: T-202 fault tests). Nothing in it can be
+          // trusted or used; publish again above the anchor, as for a stale index (my other
+          // devices merge their own changes back from their local state when they next publish).
+          stale = 'rolledBack';
+          index = null;
+        } else if (e instanceof RollbackError) {
           // An older index of mine (a restored backup, a stale copy, an index of an older rotation
           // signed by a device declared lost), or the loser of a non-atomic compare-and-swap (same
           // seq): it only tells us to publish again above our anchor. Still check it is mine.

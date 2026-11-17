@@ -1,5 +1,5 @@
-import { AwsClient } from 'aws4fetch';
-import { PreconditionFailed, ProtocolError } from './errors.ts';
+import { PreconditionFailed, ProtocolError, QuotaExceeded, type StorageError } from './errors.ts';
+import { signV4, type SigV4Options } from './sigv4.ts';
 import type {
   Capabilities,
   DeleteOptions,
@@ -20,8 +20,9 @@ import {
   httpError,
   normEtag,
   resolveFetch,
+  timedFetch,
+  checkTimeout,
   sortEntries,
-  toHex,
   xmlElements,
   xmlText,
   checkMaxBytes,
@@ -54,6 +55,34 @@ export interface S3Options {
    */
   conditionalWrites?: boolean;
   fetch?: FetchLike;
+  /**
+   * Time to wait for the response headers of each request, in ms (default
+   * 120 000; 0: no limit). Past it the request is aborted and `TimeoutError`
+   * (a retryable `NetworkError`) is thrown.
+   */
+  timeoutMs?: number;
+}
+
+/** S3 error codes meaning "no space" or "upload refused for its size" (AWS, MinIO, Ceph RGW, Garage). */
+const QUOTA_CODES = new Set([
+  'QuotaExceeded',
+  'EntityTooLarge',
+  'XMinioStorageFull',
+  'XMinioAdminBucketQuotaExceeded',
+  'InsufficientStorage',
+  'StorageFull',
+]);
+
+/** Like `httpError`, but reads the S3 XML `<Code>` first (quota errors come as 400/403 on some providers). */
+async function s3Error(res: Response, what: string, path: string): Promise<StorageError> {
+  let code: string | undefined;
+  try {
+    code = xmlText((await res.text()).slice(0, 8192), 'Code');
+  } catch {
+    code = undefined;
+  }
+  if (code && QUOTA_CODES.has(code)) return new QuotaExceeded(`${what}: ${code}`, { status: res.status, path, serverCode: code });
+  return httpError(res, what, path);
 }
 
 function rfc3986(s: string): string {
@@ -61,27 +90,27 @@ function rfc3986(s: string): string {
 }
 
 /**
- * S3 adapter over `fetch` + SigV4 (aws4fetch, which uses WebCrypto
- * `crypto.subtle`). Conditional PUT via `If-Match` / `If-None-Match: *`.
+ * S3 adapter over `fetch` + SigV4 (`sigv4.ts`: pure JS on `@noble/hashes`,
+ * so it also runs on Hermes, which has no WebCrypto). Conditional PUT via
+ * `If-Match` / `If-None-Match: *`.
  */
 export class S3Adapter implements StorageAdapter {
   readonly capabilities: Capabilities;
-  private readonly client: AwsClient;
+  private readonly signing: Omit<SigV4Options, 'datetime'>;
   private readonly fetch: FetchLike;
   private readonly bucketUrl: string;
   private readonly keyPrefix: string;
   private readonly nativeConditional: boolean;
 
   constructor(opts: S3Options) {
-    this.client = new AwsClient({
+    this.signing = {
       accessKeyId: opts.accessKeyId,
       secretAccessKey: opts.secretAccessKey,
       ...(opts.sessionToken ? { sessionToken: opts.sessionToken } : {}),
       service: 's3',
       region: opts.region,
-      retries: 0,
-    });
-    this.fetch = resolveFetch(opts.fetch);
+    };
+    this.fetch = timedFetch(resolveFetch(opts.fetch), checkTimeout(opts.timeoutMs));
     const ep = new URL(opts.endpoint);
     const epBase = `${ep.protocol}//${ep.host}${ep.pathname.replace(/\/$/, '')}`;
     this.bucketUrl =
@@ -110,16 +139,14 @@ export class S3Adapter implements StorageAdapter {
     headers: Record<string, string> = {},
     body?: Uint8Array<ArrayBuffer>,
   ): Promise<Response> {
-    let signed: Request;
+    let signed: ReturnType<typeof signV4>;
     try {
-      if (body) {
-        headers['x-amz-content-sha256'] = toHex(await crypto.subtle.digest('SHA-256', body));
-      }
-      signed = await this.client.sign(url, { method, headers, ...(body ? { body } : {}) });
+      // The payload hash is signed (x-amz-content-sha256); no body: UNSIGNED-PAYLOAD, as aws4fetch did.
+      signed = signV4({ method, url, headers, ...(body ? { body } : {}) }, this.signing);
     } catch (e) {
       throw new ProtocolError(`SigV4 signing failed: ${(e as Error).message}`, { path, cause: e });
     }
-    return doFetch(this.fetch, url, signed, path);
+    return doFetch(this.fetch, url, { method, headers: signed.headers, ...(body ? { body } : {}) }, path);
   }
 
   async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
@@ -127,7 +154,7 @@ export class S3Adapter implements StorageAdapter {
     checkPath(path);
     const res = await this.send(this.objectUrl(path), 'GET', path);
     if (res.status === 404) return null;
-    if (!res.ok) throw httpError(res, `GET ${path}`, path);
+    if (!res.ok) throw await s3Error(res, `GET ${path}`, path);
     const data = await readBody(res, path, max);
     const etag = res.headers.get('etag');
     if (!etag) throw new ProtocolError(`GET ${path}: no ETag`, { path });
@@ -138,7 +165,7 @@ export class S3Adapter implements StorageAdapter {
     checkPath(path);
     const res = await this.send(this.objectUrl(path), 'HEAD', path);
     if (res.status === 404) return null;
-    if (!res.ok) throw httpError(res, `HEAD ${path}`, path);
+    if (!res.ok) throw await s3Error(res, `HEAD ${path}`, path);
     const etag = res.headers.get('etag');
     if (!etag) throw new ProtocolError(`HEAD ${path}: no ETag`, { path });
     return { etag: normEtag(etag), size: Number(res.headers.get('content-length') ?? 0) };
@@ -163,7 +190,7 @@ export class S3Adapter implements StorageAdapter {
       throw new PreconditionFailed(path, { status: res.status });
     if (res.status === 404 && opts.ifMatch !== undefined)
       throw new PreconditionFailed(path, { status: 404, detail: 'missing' });
-    if (!res.ok) throw httpError(res, `PUT ${path}`, path);
+    if (!res.ok) throw await s3Error(res, `PUT ${path}`, path);
     const etag = res.headers.get('etag');
     if (etag) return { etag: normEtag(etag) };
     const h = await this.head(path);
@@ -184,7 +211,7 @@ export class S3Adapter implements StorageAdapter {
     if (res.status === 412 || (res.status === 404 && opts.ifMatch !== undefined))
       throw new PreconditionFailed(path, { status: res.status });
     if (res.status === 404) return;
-    if (!res.ok) throw httpError(res, `DELETE ${path}`, path);
+    if (!res.ok) throw await s3Error(res, `DELETE ${path}`, path);
   }
 
   async list(prefix: string): Promise<ListEntry[]> {
@@ -196,7 +223,7 @@ export class S3Adapter implements StorageAdapter {
       if (token) q.set('continuation-token', token);
       const url = `${this.bucketUrl}?${q.toString().replace(/\+/g, '%20')}`;
       const res = await this.send(url, 'GET', prefix);
-      if (!res.ok) throw httpError(res, `LIST ${prefix}`, prefix);
+      if (!res.ok) throw await s3Error(res, `LIST ${prefix}`, prefix);
       const xml = await res.text();
       for (const c of xmlElements(xml, 'Contents')) {
         const key = xmlText(c, 'Key');

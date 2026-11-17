@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert, packEntry, sealPack, serialize, signIndex } from '@triangulair/crypto';
 import { HttpsReadOnlyAdapter, S3Adapter, WebDavAdapter, type StorageAdapter } from '@triangulair/storage';
 import { SftpAdapter } from '@triangulair/storage/sftp';
+import { startFaultProxy } from '@triangulair/storage/testing/faults';
 import { describe, expect, it } from 'vitest';
 import { encodePayload, utf8 } from '../src/payload.ts';
 import { addDevice, befriend, friendSaves, makeUser, point, readOnly, World } from './helpers.ts';
@@ -222,6 +223,59 @@ if (ON) {
         expect(a.store.repo.getMySaveForPlace('osm:node/666')).toBeNull();
         expect(await s.write.head(e.file)).toBeNull();
         await s.close?.();
+      });
+    });
+  }
+  // T-202 simulated failures on the real servers: an index upload cut in the middle (fault proxy
+  // between the adapter and the server). Apache and moto keep the previous index; WsgiDAV keeps
+  // a truncated one, which the next pass republishes. Friends never see a partial publication.
+  const cut: { name: string; upstream: () => Promise<string>; adapter: (url: string) => StorageAdapter }[] = [
+    { name: 'Apache mod_dav', upstream: async () => `http://127.0.0.1:8081/dav/c-${randomUUID()}/`, adapter: (url) => new WebDavAdapter({ baseUrl: url, auth, timeoutMs: 5000 }) },
+    { name: 'WsgiDAV', upstream: async () => `http://127.0.0.1:8082/dav/c-${randomUUID()}/`, adapter: (url) => new WebDavAdapter({ baseUrl: url, auth, conditionalWrites: false, timeoutMs: 5000 }) },
+    {
+      name: 'moto S3',
+      upstream: async () => (await fetch('http://127.0.0.1:5005/tl-sync', { method: 'PUT' }), 'http://127.0.0.1:5005'),
+      adapter: (url) => new S3Adapter({ endpoint: url, bucket: 'tl-sync', region: 'us-east-1', accessKeyId: 'test', secretAccessKey: 'test', prefix: `c-${randomUUID()}/`, timeoutMs: 5000 }),
+    },
+  ];
+  for (const c of cut) {
+    describe(`sync on ${c.name} with failures`, () => {
+      it('index upload cut in the middle, then a timeout: friends keep the last good state, the next pass publishes', async () => {
+        const proxy = await startFaultProxy(await c.upstream());
+        try {
+          const w = new World();
+          const write = c.adapter(proxy.url);
+          const user = makeUser(w, 'alice', { storage: write });
+          const a = addDevice(w, user, { concurrency: 4 });
+          const bob = addDevice(w, makeUser(w, 'bob'));
+          for (let i = 1; i <= 5; i++) a.store.putSave({ place: point(i, `P${i}`) });
+          expect((await a.engine.sync()).ok).toBe(true);
+          await bob.engine.sync();
+          await befriend(w, a, bob);
+          expect((await a.engine.sync()).ok).toBe(true);
+          await bob.engine.sync();
+          expect(friendSaves(bob, user.owner).size).toBe(5);
+
+          a.store.putSave({ place: point(6, 'P6') });
+          proxy.inject({ method: 'PUT', path: /index\.json$/, times: 1, action: { kind: 'drop-upload', afterBytes: 300 } });
+          const r = await a.engine.sync();
+          expect(r.ok).toBe(false);
+          expect(r.problems.find((p) => p.about === 'own')?.problem.kind).toBe('unreachable');
+          await bob.engine.sync();
+          expect(friendSaves(bob, user.owner).size).toBe(5);
+
+          proxy.inject({ times: 1, action: { kind: 'hang' } });
+          const t = await a.engine.sync();
+          expect(t.ok).toBe(false);
+          expect(t.problems.find((p) => p.about === 'own')?.problem.detail).toMatch(/no response/);
+
+          const ok = await a.engine.sync();
+          expect(ok.problems).toEqual([]);
+          expect((await bob.engine.sync()).ok).toBe(true);
+          expect(friendSaves(bob, user.owner).size).toBe(6);
+        } finally {
+          await proxy.close();
+        }
       });
     });
   }

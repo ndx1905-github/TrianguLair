@@ -28,7 +28,7 @@ jobs:
           - package: crypto
             test: test
           - package: storage
-            # Real-server tests stay skipped (TL_REAL_SERVERS / TL_WEBDAV_URL unset).
+            # Real-server tests run in the "storage (real servers)" job (TL_WEBDAV_URL: by hand).
             test: test
           - package: data
             # Without the performance suite (timings depend on the runner): npm run test:perf.
@@ -40,7 +40,7 @@ jobs:
             # Imports @triangulair/data and @triangulair/osm from their sources: install their dependencies too.
             deps: data osm
           - package: sync
-            # Without the performance suite; real-server tests stay skipped (TL_REAL_SERVERS unset).
+            # Without the performance suite; real-server tests run in the "storage (real servers)" job.
             test: test
             # Imports @triangulair/crypto, storage and data from their sources: install their dependencies too.
             deps: crypto storage data
@@ -83,6 +83,45 @@ jobs:
         run: |
           python -m pip install pynacl
           npm run reader
+
+  # T-202: the storage conformance suite, the simulated failures and the sync scenarios against
+  # real servers started on the runner by packages/storage/scripts/real-servers.sh: Apache httpd
+  # mod_dav, WsgiDAV, moto (S3 API) and OpenSSH sftp. apt and pip only (no containers: MinIO no
+  # longer publishes community images).
+  real-servers:
+    name: storage (real servers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: packages/*/package-lock.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      # Same versions as scripts/real-servers.sh, installed as the runner user.
+      - name: Install moto and WsgiDAV
+        run: python -m pip install "moto[server]==5.2.5" "wsgidav==4.4.1" "cheroot==11.1.2"
+      - name: Start the real servers
+        run: sudo env "PATH=$PATH" TL_PIP_INSTALL=0 bash packages/storage/scripts/real-servers.sh
+      - name: Install the packages (storage, and what sync imports from source)
+        run: for d in storage crypto data sync; do (cd "packages/$d" && npm ci --workspaces=false); done
+      - name: Storage conformance and failures on real servers
+        working-directory: packages/storage
+        env:
+          TL_REAL_SERVERS: '1'
+        run: npx vitest run test/integration
+      - name: Sync scenarios on real servers
+        working-directory: packages/sync
+        run: npm run test:real
+      - name: Server logs
+        if: failure()
+        run: sudo tail -n 100 /tmp/wsgidav.log /tmp/moto.log /var/log/apache2/error.log || true
 
   app:
     name: app (mobile)
