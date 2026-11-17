@@ -60,7 +60,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | T-210 | Friends' places, counters and What's new view | app, sync | T-204 | done |
 | T-211 | Public lists (GeoJSON) and "View on uMap" link | sharing | T-112, T-204 | done |
 | T-212 | Link-only lists (key in the URL fragment) | sharing, crypto | T-211 | done |
-| T-213 | Error cases from the spec | app, sync | T-204 | to do |
+| T-213 | Error cases from the spec | app, sync | T-204 | done |
 | T-214 | External security audit | crypto, maintainer | T-209 | to do |
 
 ## Phase 3 — opening up
@@ -478,7 +478,7 @@ Implement every row of the "Error cases" table.
 
 Acceptance criteria:
 
-- [x] One test per row (mapped in [`error-cases.md`](error-cases.md); the map tiles' fallback address is an open question there)
+- [x] One test per row (mapped in [`error-cases.md`](error-cases.md))
 
 Depends on: T-204
 
