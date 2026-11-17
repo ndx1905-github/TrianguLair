@@ -8,6 +8,10 @@ import { autostart, expect, NOW, test } from './helpers';
 const NAME = 'Du Pain et des Idées';
 const OTHER = 'Musée d’Orsay';
 const DAY = 24 * 3600 * 1000;
+const SHOTS = !!process.env['E2E_SHOTS'];
+const shot = async (page: Page, name: string) => {
+  if (SHOTS) await page.screenshot({ path: `docs/${name}.png`, fullPage: true });
+};
 
 async function trashFromList(page: Page, name: string) {
   const row = page.getByTestId(`row-${name}`);
@@ -42,6 +46,7 @@ test('trash: restore, delete forever, purge after 30 days', async ({ page }) => 
   const bakery = items.filter({ hasText: NAME });
   await expect(bakery).toContainText('Place');
   await expect(bakery).toContainText('Deleted for good in 30 days');
+  await shot(page, 'phone-trash');
 
   // Restore: back in the list with its status.
   await bakery.getByTestId('trash-restore').click();
@@ -56,6 +61,7 @@ test('trash: restore, delete forever, purge after 30 days', async ({ page }) => 
   const museum = items.filter({ hasText: OTHER });
   await museum.getByTestId('trash-delete').click();
   await expect(museum.getByTestId('trash-delete-confirm')).toContainText('cannot be restored');
+  await shot(page, 'phone-trash-delete-confirm');
   await museum.getByTestId('trash-delete-go').click();
   await expect(page.getByTestId('trash-empty')).toBeVisible();
   await page.waitForTimeout(1500);
@@ -82,4 +88,9 @@ test('trash: dark mode and French', async ({ page }) => {
   await expect(page.getByTestId('trash-screen')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Supprimé définitivement dans 30 jours')).toBeVisible();
   await expect(page.getByTestId('trash-restore')).toHaveText('Restaurer');
+  await shot(page, 'phone-dark-fr-trash');
+  await page.goto(autostart('/settings?lang=fr'));
+  await expect(page.getByTestId('settings-my-content')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('settings-my-content').scrollIntoViewIfNeeded();
+  if (SHOTS) await page.getByTestId('settings-my-content').screenshot({ path: 'docs/phone-dark-fr-settings-my-content.png' });
 });

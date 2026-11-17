@@ -647,6 +647,19 @@ photos with a placeholder image; pins, clusters, UI, data and credit lines are r
 | `docs/phone-dark-card.png` | Dark mode |
 | `docs/phone-fr-add.png` | French UI |
 
+Trash, store rules and map attribution (gaps #6, #8, #10; `E2E_SHOTS=1 npm run e2e -- trash privacy map-filters`,
+the storage scenarios against Apache WebDAV):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-map-attribution.png` | "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors · Report an error" |
+| `docs/phone-trash.png`, `docs/phone-trash-delete-confirm.png` | Trash with the days left; "Delete forever" confirmation |
+| `docs/phone-dark-fr-trash.png`, `docs/phone-dark-fr-settings-my-content.png` | French, dark: trash; Settings › My content (database not encrypted on web) |
+| `docs/phone-delete-all.png`, `docs/phone-delete-all-done.png` | "Delete all my content": what happens and the confirmations; the summary |
+| `docs/phone-dark-fr-delete-all.png` | French, dark: "Tapez SUPPRIMER pour confirmer" |
+| `docs/phone-block-confirm.png`, `docs/phone-blocked.png` | Blocking a contact; blocked people with "Unblock" |
+| `docs/phone-report-list.png` | Reporting a public list: who can act, the report text, hide, block |
+
 Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHOTS_BASE` picks the server):
 
 | File | Shows |

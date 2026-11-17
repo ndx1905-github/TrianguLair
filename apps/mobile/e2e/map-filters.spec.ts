@@ -20,6 +20,7 @@ test('first launch shows the demo map', async ({ page }) => {
   const attribution = page.getByTestId('map-attribution');
   await expect(attribution).toContainText('OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors');
   await expect(attribution.getByRole('link', { name: 'Report an error' })).toBeVisible();
+  if (process.env['E2E_SHOTS']) await page.screenshot({ path: 'docs/phone-map-attribution.png' });
 });
 
 test('filter by tag', async ({ page }) => {
