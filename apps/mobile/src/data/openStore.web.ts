@@ -20,7 +20,7 @@ export class ForeignDatabaseError extends Error {
 }
 
 /** `movedFrom`: identities this device left (theft of the primary device): their database moves to `meId`. */
-export async function openAppStore(meId: string, movedFrom: readonly string[] = []): Promise<AppStore> {
+export async function openAppStore(meId: string, movedFrom: readonly string[] = [], _secrets?: unknown): Promise<AppStore> {
   const [SQL, files] = await Promise.all([initSqlJs(), openWebFileStore()]);
   let bytes: Uint8Array | null = null;
   try {
@@ -92,6 +92,8 @@ export async function openAppStore(meId: string, movedFrom: readonly string[] = 
       persistent = false;
       await files.remove();
     },
+    // The web test build is not encrypted (sql.js has no SQLCipher); the settings say so.
+    encryption: 'web-test' as const,
     get persistence() {
       if (erased) return 'memory' as const;
       return persistent ? ('indexeddb' as const) : ('memory' as const);

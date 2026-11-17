@@ -23,6 +23,8 @@ async function trashFromList(page: Page, name: string) {
 async function openTrash(page: Page) {
   await page.goto(autostart('/settings'));
   await expect(page.getByTestId('settings-my-content')).toBeVisible({ timeout: 30_000 });
+  // Gap #7: the web test build's database is not encrypted, and says so.
+  await expect(page.getByTestId('settings-db-encryption')).toContainText('not encrypted');
   await page.getByTestId('settings-trash').click();
   await expect(page.getByTestId('trash-screen')).toBeVisible();
 }

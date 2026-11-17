@@ -409,6 +409,17 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 
 - **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
   `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
+  **Encrypted** (gap #7, spec "Protections on the device"; logic in `src/data/dbEncryption.ts`): `app.json` sets
+  `useSQLCipher: true`, and the database `triangulair-sealed.db` is opened with `PRAGMA key = "x'…'"`, a raw 256-bit
+  key from the secret store (`db-key`, Keychain / Keystore, this device only). An older unencrypted `triangulair.db`
+  is moved once with `ATTACH … KEY` + `sqlcipher_export` (and its `user_version`); the plaintext file is deleted only
+  after the encrypted copy opened with the key, and an interrupted move starts again from it. The remote wipe (and
+  "Delete all my content") erases `db-key` with the other secrets before the files, so the database is unreadable at
+  once; an encrypted file whose key is gone is deleted and a new empty one created (the places come back from the
+  storage with the kit); a key that does not open the file is an error, never a reset; a locked vault leaves the file
+  alone. A build without SQLCipher (`PRAGMA cipher_version` empty) keeps the plaintext file, labelled in Settings ›
+  My content. Not run on a device yet. The web test build (sql.js) is not encrypted, and Settings says so.
+  Device settings and the document actor stay in expo-sqlite's kv-store (not encrypted: no places, no keys).
   Type-checked, not run on a device yet (the document is Yjs, pure JavaScript, so Hermes is no
   longer a blocker).
 - **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
