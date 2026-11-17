@@ -294,6 +294,10 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   await expect(b.getByTestId('whatsnew-highlight')).toBeVisible();
   await expect(b.locator('[data-pin-id][data-greyed]').first()).toBeAttached({ timeout: 15_000 });
   expect(await b.locator('[data-pin-id]:not([data-greyed])').count()).toBeLessThanOrEqual(2);
+  // A single place: "See on the map" also opens its card, which covers the bar once it has slid
+  // in (clicking the bar before that was a race the test only won while the sheet was moving).
+  await b.getByTestId('card-close').click();
+  await expect(b.getByTestId('whatsnew-highlight')).toBeVisible();
 
   // The friends panel: show nobody's places, then all again.
   await b.getByTestId('whatsnew-highlight').getByRole('button').click();

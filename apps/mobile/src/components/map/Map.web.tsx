@@ -13,8 +13,17 @@ import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
  * Web map (testing only): MapLibre GL JS. Pins and cluster bubbles are HTML
  * markers; pins use the same inline SVG as native. maplibre-gl is imported
  * lazily so it never runs during any server-side/static rendering.
+ *
+ * maplibre-gl 6 is ESM only (no default export) and loads its worker from a
+ * file of its own, which Metro does not bundle: scripts/maplibre-worker.mjs
+ * copies it into public/, served at the root of the site.
  */
 type MapLibreModule = typeof import('maplibre-gl');
+
+function workerUrl(lib: MapLibreModule): string {
+  // The version keeps a browser from reusing the worker of another maplibre-gl (as maplibre-gl does).
+  return `${process.env.EXPO_BASE_URL ?? ''}/maplibre-gl-worker.mjs?v=${lib.getVersion()}`;
+}
 
 function pinKey(pin: MapPin, selected: boolean): string {
   return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, pin.badge, selected].join('|');
@@ -115,10 +124,10 @@ export default function Map({
     let cancelled = false;
     let map: GLMap | null = null;
     (async () => {
-      const mod = (await import('maplibre-gl')) as MapLibreModule & { default?: MapLibreModule };
-      const lib = mod.default ?? mod;
+      const lib: MapLibreModule = await import('maplibre-gl');
       if (cancelled || !containerRef.current) return;
       libRef.current = lib;
+      if (!lib.getWorkerUrl()) lib.setWorkerUrl(workerUrl(lib));
       map = new lib.Map({
         container: containerRef.current,
         style: styleUrl,

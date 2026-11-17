@@ -5,7 +5,8 @@
  * aloud (label, title, placeholder, accessibilityLabel…). Symbols (✓, ✕, ‹, +)
  * and URL placeholders are allowed.
  */
-import ts from 'typescript';
+import { parse } from '@babel/parser';
+import * as t from '@babel/types';
 import { describe, expect, it } from 'vitest';
 
 declare global {
@@ -22,31 +23,34 @@ const LETTER = /\p{L}/u;
 const ALLOWED = [/^https?:\/\/\S*$/];
 
 export function hardcodedStrings(source: string, fileName = 'x.tsx'): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // Babel's parser (the one Metro uses): TypeScript 7 no longer ships the JavaScript compiler API.
+  const file = parse(source, { sourceType: 'module', plugins: ['jsx', 'typescript'] });
   const found: string[] = [];
-  const flag = (text: string, node: ts.Node) => {
+  const flag = (text: string, node: t.Node) => {
     const v = text.trim();
     if (!v || !LETTER.test(v) || ALLOWED.some((r) => r.test(v))) return;
-    const { line } = sf.getLineAndCharacterOfPosition(node.getStart());
-    found.push(`${fileName}:${line + 1}: ${v.slice(0, 60)}`);
+    found.push(`${fileName}:${node.loc?.start.line ?? 0}: ${v.slice(0, 60)}`);
   };
-  const visit = (node: ts.Node) => {
-    if (ts.isJsxText(node)) flag(node.text, node);
+  /** The text of a string literal or of a template literal without substitutions, else null. */
+  const literal = (e: t.Node): string | null =>
+    t.isStringLiteral(e) ? e.value : t.isTemplateLiteral(e) && e.expressions.length === 0 ? (e.quasis[0]?.value.cooked ?? null) : null;
+  t.traverse(file, (node, ancestors) => {
+    if (t.isJSXText(node)) flag(node.value, node);
     // {'Literal'} as a child.
-    if (ts.isJsxExpression(node) && node.parent && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent)) && node.expression) {
-      const e = node.expression;
-      if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) flag(e.text, e);
+    const parent = ancestors[ancestors.length - 1]?.node;
+    if (t.isJSXExpressionContainer(node) && (t.isJSXElement(parent) || t.isJSXFragment(parent))) {
+      const text = literal(node.expression);
+      if (text !== null) flag(text, node.expression);
     }
-    if (ts.isJsxAttribute(node) && VISIBLE_PROPS.has(node.name.getText(sf)) && node.initializer) {
-      const init = node.initializer;
-      if (ts.isStringLiteral(init)) flag(init.text, init);
-      else if (ts.isJsxExpression(init) && init.expression && (ts.isStringLiteral(init.expression) || ts.isNoSubstitutionTemplateLiteral(init.expression))) {
-        flag(init.expression.text, init.expression);
+    if (t.isJSXAttribute(node) && t.isJSXIdentifier(node.name) && VISIBLE_PROPS.has(node.name.name) && node.value) {
+      const init = node.value;
+      if (t.isStringLiteral(init)) flag(init.value, init);
+      else if (t.isJSXExpressionContainer(init)) {
+        const text = literal(init.expression);
+        if (text !== null) flag(text, init.expression);
       }
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
+  });
   return found;
 }
 
