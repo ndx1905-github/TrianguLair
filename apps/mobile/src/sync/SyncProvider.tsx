@@ -34,6 +34,7 @@ import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
 import { watchNetwork } from './network';
+import { inBackgroundGrace } from './backgroundGrace';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
 import type { WhatsNewEntry } from './whatsNew';
 
@@ -160,7 +161,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') void c.foreground('foreground');
-      else if (s === 'background') void c.background();
+      // The last pass, inside the grace period iOS allows (gap #5); nothing after it.
+      else if (s === 'background') void inBackgroundGrace(() => c.background());
     });
     const offEdit = onLocalEdit(() => c.localChange());
     return () => {

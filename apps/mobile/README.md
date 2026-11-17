@@ -179,12 +179,19 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   (`StorageAccess`; HTTPS-only mode and local only publish nothing but still read friends) and the data store (state in
   the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
   launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
-  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
-  nothing after that. Network status (`src/sync/network.*.ts`, logic in `netState.ts`): the browser's `online` /
+  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background
+  (on iOS inside the grace period the system allows, below); nothing after that. Network status (`src/sync/network.*.ts`, logic in `netState.ts`): the browser's `online` /
   `offline` events on web, `expo-network` on phones (offline only when the system says there is no connection or no
   internet behind it; unknown counts as online), so "Offline · N changes pending" shows natively too and a failure
   without network is not counted as "storage unreachable". `expo-network` is a new native module (new development
   build); it uses no Google service.
+  - **Last pass in the background** (gap #5, `src/sync/grace.ts`, `backgroundGrace.ts`): on AppState "background" the
+    last pass runs inside `UIApplication.beginBackgroundTask` (about 30 s on current iOS) through a local Expo module,
+    `modules/background-grace` (iOS only, autolinked from `modules/`; a new development build is needed). The grace
+    period always ends: when the pass ends, or when iOS says time is up (the pass is then left as is: packs are
+    written first and the index last, so the next launch resumes it). No `expo-background-task` /
+    `BGTaskScheduler`, no `UIBackgroundModes`: the spec allows no periodic work or scheduled wake-up. Android: no
+    module (see the open questions); web: nothing to do.
   - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
     old index at the new storage (it certifies the old address), publishes there with the new certificate, then
     writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
@@ -526,6 +533,7 @@ src/closure/          closed-place glue (pure), runner, useClosureCheck, signal 
 src/state/            AppState (filter, last map area, focus) shared by the screens
 src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
 src/config.ts         map style URLs, attribution, initial camera, fixture flag
+modules/              local Expo modules (autolinked): background-grace (iOS beginBackgroundTask for the last pass)
 ```
 
 ## Pins
@@ -793,8 +801,10 @@ Sync open questions:
   device. Contacts added on another device (through the vault) show "A friend" until renamed here.
 - **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
   without expo-updates).
-- **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task
-  (`expo-background-task` or `beginBackgroundTask`) to be sure to finish; not added.
+- **Background grace period on Android**: nothing asks Android for time (no WorkManager job with a headless JS task):
+  the process usually keeps running long enough after its activity stops, but the cached-app freezer (Android 14+)
+  or a low-memory kill can stop the last pass; it then resumes at the next launch (packs first, index last, nothing
+  lost). The iOS module is written against `UIApplication.beginBackgroundTask` but not yet built or run on a device.
 - Previous sharing keys are persisted only when the engine adopts a new key from another device; a local rotation
   (storage move) keeps the same key pair.
 
