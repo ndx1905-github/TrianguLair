@@ -7,13 +7,14 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client",
-    "web": "expo start --web",
+    "postinstall": "node scripts/maplibre-worker.mjs",
+    "web": "node scripts/maplibre-worker.mjs && expo start --web",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "export:web": "expo export --platform web",
+    "export:web": "node scripts/maplibre-worker.mjs && expo export --platform web",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
     "test": "vitest run",
-    "export:web:fixtures": "EXPO_PUBLIC_OSM_FIXTURES=1 expo export --platform web --output-dir dist",
+    "export:web:fixtures": "node scripts/maplibre-worker.mjs && EXPO_PUBLIC_OSM_FIXTURES=1 expo export --platform web --output-dir dist",
     "e2e": "playwright test"
   },
   "dependencies": {
@@ -43,7 +44,7 @@
     "expo-system-ui": "~57.0.4",
     "fflate": "^0.8.3",
     "libsodium-wrappers-sumo": "^0.8.4",
-    "maplibre-gl": "^5.24.0",
+    "maplibre-gl": "^6.16.0",
     "opening_hours": "^3.15.0",
     "qrcode-generator": "^2.0.4",
     "react": "19.2.3",
