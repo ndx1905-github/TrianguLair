@@ -191,10 +191,15 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     removed" (`DeviceRemoved.tsx`).
   - **Status** (`problems.ts`, `noteText.ts`, the spec's error table): a note under the map's filter bar ("Offline · 3
     changes pending", "Your storage hasn't responded since yesterday" after 24 h, "Reconnect your storage" leading to
-    Settings › Storage, quota, missing key, content of mine that does not verify); nothing for transient problems.
-    Settings › Sync status (`/sync`): my storage (state, last success, pending, the problem with what to do), each
+    the storage connection form filled with the current settings, quota, missing key, content of mine that does not
+    verify); nothing for transient problems. Settings › Sync status (`/sync`): my storage (state, last success,
+    pending, the problem with what to do, the space used by content type with suggestions when it is full), each
     person I follow ("Updated 12 days ago", "Léa's content could not be verified", "Update the app to see Léa's
-    places"), "Sync now" (resumes after reconnecting), and the local technical log (error names and paths only).
+    places"; after 3 months without an answer, keep or remove their places), "Sync now" (resumes after
+    reconnecting), and the local technical log (error names, paths and counts only). An identity whose keys are
+    missing from the secret store (system restore) opens nothing and asks for the recovery kit
+    (`welcome/index.tsx`). Every row of the spec's error table is mapped in `docs/error-cases.md`;
+    `src/errorCases.test.ts` has one test per row of what the user sees.
   - **Contacts** (T-208/T-209 wiring): `controller.port()` is the contacts screens' `SyncPort` over the controller's
     own engine (`engineSyncPort`); the SyncProvider registers it with `registerSyncPort` (`src/contacts/registry.ts`),
     again after each new engine (storage connected or moved), so there is one engine and one publisher per database.

@@ -478,7 +478,7 @@ Implement every row of the "Error cases" table.
 
 Acceptance criteria:
 
-- [ ] One test per row
+- [x] One test per row (mapped in [`error-cases.md`](error-cases.md); the map tiles' fallback address is an open question there)
 
 Depends on: T-204
 
