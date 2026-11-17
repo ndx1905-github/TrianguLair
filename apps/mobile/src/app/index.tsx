@@ -7,13 +7,15 @@ import type { BBox } from '@triangulair/data';
 import { ClosureNotice } from '../components/ClosureNotice';
 import { FilterBar } from '../components/FilterBar';
 import Map from '../components/map/Map';
+import { baseMapFor } from '../components/map/baseMap';
+import { BaseMapNote } from '../components/map/BaseMapNote';
 import type { CameraTarget, LatLon, MapRegion } from '../components/map/types';
 import { MapAttribution } from '../components/MapAttribution';
 import { PlaceSheet } from '../components/PlaceSheet';
 import { DataGate } from '../components/DataGate';
 import { TrashUndo } from '../components/TrashUndo';
 import { Banner } from '../components/ui';
-import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK, OSM_FIXTURES } from '../config';
+import { INITIAL_CENTER, INITIAL_ZOOM, OSM_FIXTURES } from '../config';
 import { useData } from '../data/DataProvider';
 import { getSetting, setSetting } from '../data/deviceSettings';
 import { useReadyIdentity } from '../identity/IdentityProvider';
@@ -186,7 +188,7 @@ function MapScreen() {
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       <Map
-        styleUrl={dark ? MAP_STYLE_URL_DARK : MAP_STYLE_URL}
+        baseMap={baseMapFor(dark)}
         center={initial.center}
         zoom={initial.zoom}
         camera={camera}
@@ -249,6 +251,7 @@ function MapScreen() {
         <View style={{ marginHorizontal: gutter, marginTop: 8 }} pointerEvents="box-none">
           <SyncBar />
         </View>
+        <BaseMapNote style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }} />
         <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }}>
           <TrashUndo />
         </View>

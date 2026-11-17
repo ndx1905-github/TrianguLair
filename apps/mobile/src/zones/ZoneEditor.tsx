@@ -22,11 +22,12 @@ import { newLocalPlaceId, placeIdFromOsm, type FilterZone, type PlaceGeometry } 
 import type { LineString, MultiLineString, MultiPolygon, Polygon } from 'geojson';
 
 import Map from '../components/map/Map';
+import { baseMapFor } from '../components/map/baseMap';
 import type { LatLon, MapRegion } from '../components/map/types';
 import { MapAttribution } from '../components/MapAttribution';
 import type { SaveFields } from '../components/SaveEditor';
 import { Banner, Button, Pill, Segmented } from '../components/ui';
-import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK, OSM_FIXTURES } from '../config';
+import { INITIAL_CENTER, INITIAL_ZOOM, OSM_FIXTURES } from '../config';
 import { useData } from '../data/DataProvider';
 import { useLayout } from '../hooks/useLayout';
 import { useIsDark, useUiColors } from '../hooks/useUiColors';
@@ -603,7 +604,7 @@ export function ZoneEditor({ purpose = 'save' }: { purpose?: 'save' | 'list' }) 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]} onLayout={(e: LayoutChangeEvent) => setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}>
       <Map
-        styleUrl={dark ? MAP_STYLE_URL_DARK : MAP_STYLE_URL}
+        baseMap={baseMapFor(dark)}
         center={initial.center}
         zoom={initial.zoom}
         camera={camera}

@@ -477,6 +477,15 @@ fixtures; `SHOTS_BASE` overrides the server address).
 |---|---|
 | `EXPO_PUBLIC_MAP_STYLE_URL` | `https://tiles.openfreemap.org/styles/positron` |
 | `EXPO_PUBLIC_MAP_STYLE_URL_DARK` | `https://tiles.openfreemap.org/styles/dark` |
+| `EXPO_PUBLIC_MAP_STYLE_FALLBACK_URLS` | none (fixture build: `https://tiles.fallback.invalid/styles/positron`) |
+| `EXPO_PUBLIC_MAP_STYLE_FALLBACK_URLS_DARK` | the light list (fixture build: `…/styles/dark`) |
+
+The fallback lists (comma or space separated, same OpenMapTiles schema, e.g. a mirror or
+self-hosted copy) are tried in order when the style, its TileJSON or a run of its tiles fails and
+MapLibre's cache has nothing for the area (`src/components/map/baseMap.ts`); after the last one the
+map shows a plain background, so pins and zones keep working. The home screen then says "Map
+possibly less detailed" (a fallback address) or "Map background unavailable for now" (none). The
+address reached is kept for the session; the next launch tries the configured style first again.
 
 The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own overlay
 (`MapAttribution`), so it is always visible. When a place sheet is open, the overlay moves above it.

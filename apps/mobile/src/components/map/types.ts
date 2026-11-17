@@ -1,6 +1,7 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import type { MapShape } from '../../zones/shapes';
+import type { BaseMapSpec } from './baseMap';
 
 export type { MapShape };
 
@@ -58,7 +59,8 @@ export interface CameraTarget {
  * the map later (cluster taps, "show on map").
  */
 export interface MapViewProps {
-  styleUrl: string;
+  /** Base map addresses to try in order (`baseMapFor(dark)`), then a built-in blank style. */
+  baseMap: BaseMapSpec;
   center: LatLon;
   zoom: number;
   camera?: CameraTarget | null;

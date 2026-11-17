@@ -9,6 +9,7 @@ import { ExpiredError, SignatureError, UnsupportedVersionError } from '@triangul
 import { AuthError, NetworkError, PreconditionFailed, ProtocolError, NotFound } from '@triangulair/storage';
 import { classifyError, type SpaceUsed, type SyncProblem, type SyncStatus } from '@triangulair/sync';
 
+import { BaseMapFallback, baseMapFor, baseMapNoteKey, resetBaseMapSession } from './components/map/baseMap';
 import { answerSet } from './contacts/model';
 import { isRetryable, linkProblemOf } from './contacts/problems';
 import { translate, type Params } from './i18n/core';
@@ -162,9 +163,20 @@ describe('spec "Error cases": what the user sees, one test per row', () => {
     expect(ownText({ ...base })).toBeNull();
   });
 
-  it('Map tiles unavailable: no message as long as the cache is sufficient', () => {
-    // No note of the sync bar or the map is about tiles: MapLibre serves the areas viewed from its cache.
-    for (const k of Object.keys(en)) expect(k).not.toMatch(/^map\.tiles/);
+  it('Map tiles unavailable: no message as long as the cache is sufficient, then the fallback address, "Map possibly less detailed"', () => {
+    // The cache is MapLibre's own: only a load error it could not answer reaches the fallback.
+    resetBaseMapSession();
+    const fb = new BaseMapFallback(baseMapFor(false, { primary: 'https://tiles.openfreemap.org/styles/positron', fallbacks: ['https://mirror.example/styles/positron'] }));
+    expect(baseMapNoteKey(fb.status())).toBeNull();
+    expect(fb.error({})).toBe(true);
+    expect(fb.current()).toBe('https://mirror.example/styles/positron');
+    expect(T.en(baseMapNoteKey(fb.status())!)).toBe('Map possibly less detailed');
+    expect(T.fr(baseMapNoteKey(fb.status())!)).toBe('Carte peut-être moins détaillée');
+    // No address answers: a plain background, the places still shown.
+    fb.styleError();
+    expect(T.en(baseMapNoteKey(fb.status())!)).toBe('Map background unavailable for now: your places are still shown');
+    expect(T.fr(baseMapNoteKey(fb.status())!)).toBe('Fond de carte indisponible pour le moment : vos lieux restent affichés');
+    resetBaseMapSession();
   });
 
   it('OSM search or data unavailable: "Search unavailable, place the place on the map"', () => {

@@ -61,6 +61,8 @@ export const fr: Messages = {
   'map.cluster': { one: '{count} lieu, zoomer', other: '{count} lieux, zoomer' },
 
   'map.unavailable': 'La carte n’est pas disponible sur cette plateforme.',
+  'map.tiles.fallback': 'Carte peut-être moins détaillée',
+  'map.tiles.unavailable': 'Fond de carte indisponible pour le moment : vos lieux restent affichés',
 
   'osm.offline': 'OpenStreetMap est injoignable pour le moment. Voici les lieux enregistrés sur cet appareil.',
   'osm.busy': 'Les services OpenStreetMap sont saturés. Réessayez dans un instant.',

@@ -4,9 +4,10 @@ import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import type { PlaceFeature } from '@triangulair/sync';
 
 import Map from '../components/map/Map';
+import { baseMapFor } from '../components/map/baseMap';
 import type { CameraTarget } from '../components/map/types';
 import { MapAttribution } from '../components/MapAttribution';
-import { INITIAL_CENTER, INITIAL_ZOOM, MAP_STYLE_URL, MAP_STYLE_URL_DARK } from '../config';
+import { INITIAL_CENTER, INITIAL_ZOOM } from '../config';
 import { useIsDark, useUiColors } from '../hooks/useUiColors';
 import { fitCamera } from '../places/camera';
 import { featurePins } from './sharing';
@@ -31,7 +32,7 @@ export function PreviewMap({ features, selectedId, onSelect }: { features: reado
     <View style={[styles.box, { borderColor: c.border, backgroundColor: c.surfaceAlt }]} onLayout={(e: LayoutChangeEvent) => setSize(e.nativeEvent.layout)} testID="preview-map">
       {size.width > 0 && camera && (
         <Map
-          styleUrl={dark ? MAP_STYLE_URL_DARK : MAP_STYLE_URL}
+          baseMap={baseMapFor(dark)}
           center={camera.center}
           zoom={camera.zoom}
           camera={camera}

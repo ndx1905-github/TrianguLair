@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map as MLMap, Marker, type CameraRef, type LayerProps } from '@maplibre/maplibre-react-native';
 import { SvgXml } from 'react-native-svg';
@@ -6,6 +6,7 @@ import { SvgXml } from 'react-native-svg';
 import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
 import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
 import { SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
+import { BaseMapFallback, specKey } from './baseMap';
 import { clusterBubbleSize, clusterColors } from './cluster';
 import type { MapCluster, MapPin, MapViewProps } from './types';
 
@@ -16,6 +17,11 @@ import type { MapCluster, MapPin, MapViewProps } from './types';
  * react-native-svg), pixel-identical to web. Clustering is computed in JS on
  * the viewport's pins, so only a few dozen markers exist at a time. For large
  * datasets, move to a GeoJSONSource + SymbolLayer with pre-rendered images.
+ *
+ * Base map fallback (baseMap.ts): MapLibre Native serves the areas viewed from its ambient cache;
+ * when the style cannot be loaded (`onDidFailLoadingMap`), the next configured address is used,
+ * then a built-in blank style. MapLibre React Native 11 reports no per-tile error, so a tile host
+ * that fails while its style loads is only covered by the cache.
  */
 /** Ignore a map press right after a pin press (both can fire on some platforms). */
 const PIN_PRESS_GUARD_MS = 350;
@@ -67,7 +73,7 @@ function ClusterMarker({ cluster, onPress }: { cluster: MapCluster; onPress: (id
 }
 
 export default function Map({
-  styleUrl,
+  baseMap,
   center,
   zoom,
   camera,
@@ -86,6 +92,13 @@ export default function Map({
 }: MapViewProps) {
   const lastPinPress = useRef(0);
   const cameraRef = useRef<CameraRef>(null);
+
+  // Base map addresses to try; a new list when the theme changes.
+  const baseKey = specKey(baseMap);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fallback = useMemo(() => new BaseMapFallback(baseMap), [baseKey]);
+  const [, setStyleIndex] = useState(fallback.index);
+  const mapStyle = fallback.current() as ComponentProps<typeof MLMap>['mapStyle'];
 
   const handlePinPress = useCallback(
     (id: string) => {
@@ -115,7 +128,11 @@ export default function Map({
     <View style={[styles.fill, style]}>
       <MLMap
         style={styles.fill}
-        mapStyle={styleUrl}
+        mapStyle={mapStyle}
+        onDidFinishLoadingStyle={() => fallback.styleLoad()}
+        onDidFailLoadingMap={() => {
+          if (fallback.styleError()) setStyleIndex(fallback.index);
+        }}
         // Attribution is drawn by our own always-visible overlay (MapAttribution).
         attribution={false}
         logo={false}
