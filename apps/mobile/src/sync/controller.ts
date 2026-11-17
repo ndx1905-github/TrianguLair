@@ -49,6 +49,16 @@ import {
   type SyncStatus,
   type FriendReport,
   type Timers,
+  type FollowedListInfo,
+  type ListDef,
+  type ListPreview,
+  type ListReport,
+  heldPublicPlaces,
+  listLinkFragment,
+  listSecretOf,
+  readOwnItems,
+  newListKey,
+  publicListsUrl,
 } from '@triangulair/sync';
 
 import { engineSyncPort, type SyncPort } from '../contacts/port';
@@ -58,6 +68,7 @@ import { VALUE_PROFILE, VALUE_STORAGE } from '../devices/sessions';
 import { parseConfig, sameWriteTarget, type StorageConfig } from '../storage/config';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
+import { confirmInFilter } from '../lists/sharing';
 import { logLine } from './problems';
 import { WhatsNewLog } from './whatsNew';
 
@@ -313,8 +324,8 @@ export class SyncController implements StorageMoveHooks {
       await this.loadFriendKeys();
       if (opts.publish && engine.own && this.movedFrom) await this.clearMovedIndex(engine, this.movedFrom);
       if (opts.publish && engine.own) await this.beforePublish(engine);
-      // People with nothing in my cache yet: their first places are one grouped entry.
-      const firstRead = this.unread(engine.book.following().map((c) => c.owner));
+      // People (and followed lists) with nothing in my cache yet: their first places are one grouped entry.
+      const firstRead = this.unread([...engine.book.following().map((c) => c.owner), ...engine.book.followedLists().map((l) => l.id)]);
       const before = this.journalBase(engine);
       const report = await engine.sync({ publish: opts.publish });
       this.recordJournal(before, report);
@@ -517,16 +528,24 @@ export class SyncController implements StorageMoveHooks {
    * cancelled (declaration of loss), the key goes to my remaining devices, everything is
    * re-encrypted and the index published with the new certificate (the lost device reads its
    * revocation there and erases itself). Returns the people invited who had not answered.
+   *
+   * A declaration of loss (`cancelInvitations`) also draws a new key for every link-only list of
+   * mine (devices review, "Declaration completeness"): the lost device holds their keys (my Yjs
+   * document), so it could keep reading them through the old links. The publication that follows
+   * seals them to the new keys and deletes the old files (the old links say "This link no longer
+   * works"); the lists are returned so the screen asks to share the new links again. "Remove a
+   * device" (a device erased and given away) keeps the links.
    */
   declareLost(
     r: { sharing: SharingKey; vaultCopy: Uint8Array; previous: SharingCert },
     opts: { cancelInvitations: boolean },
-  ): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[] }> {
+  ): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[]; renewedLinks: { id: string; name: string }[] }> {
     return this.exclusive(async () => {
       await ready();
       const engine = await this.engineReady();
       if (!engine.own) throw new Error('sync: no storage to publish to');
       const open = this.openNow(engine, r.previous);
+      const renewedLinks = opts.cancelInvitations ? this.renewListLinks() : [];
       // The app values are reset to this device's (devices review F-01): what a lost device planted goes.
       const values: Record<string, unknown> = {};
       const cfg = this.d.access.config();
@@ -540,8 +559,16 @@ export class SyncController implements StorageMoveHooks {
       this.afterPass(engine, report, new Set());
       const own = report.problems.find((p) => p.about === 'own');
       if (own) throw new Error(`sync: ${own.problem.kind}`);
-      return { cancelled: open, delivered: res.delivered };
+      return { cancelled: open, delivered: res.delivered, renewedLinks };
     });
+  }
+
+  /** New keys for my link-only lists (a declaration of loss): the old links stop working at the next publication. */
+  private renewListLinks(): { id: string; name: string }[] {
+    const lists = this.d.store.repo.lists().filter((l) => l.visibility === 'link' && l.linkKey && l.deletedAt === null);
+    for (const l of lists) this.d.store.updateList(l.id, { linkKey: newListKey() });
+    if (lists.length) this.d.onData();
+    return lists.map((l) => ({ id: l.id, name: l.name }));
   }
 
   private openNow(engine: SyncEngine, previous: SharingCert): OpenInvitationSummary[] {
@@ -643,13 +670,16 @@ export class SyncController implements StorageMoveHooks {
       const before = this.d.store.repo.getPerson(m.from);
       if (before?.displayName && !this.d.store.repo.getPerson(m.to)?.displayName) this.d.store.repo.upsertPerson({ id: m.to, publicKey: m.to, displayName: before.displayName });
     }
-    this.recordNews(report.friends, firstRead);
+    this.recordNews([...report.friends, ...(report.lists ?? []).map(asFriendReport)], firstRead);
     this.syncPeople(engine);
     if (report.problems.length) {
       const log = this.d.state.get<string[]>(LOG_KEY) ?? [];
       this.d.state.set(LOG_KEY, [...report.problems.map((p) => logLine(p.about, p.problem, report.startedAt)), ...log].slice(0, LOG_MAX));
     }
-    const changed = report.friends.some((f) => f.status === 'updated') || (report.own?.pull.imported ?? 0) > 0;
+    const changed =
+      report.friends.some((f) => f.status === 'updated') ||
+      (report.lists ?? []).some((l) => l.status === 'updated' || (l.status === 'gone' && l.whatsNew.removed.length > 0)) ||
+      (report.own?.pull.imported ?? 0) > 0;
     if (changed) this.d.onData();
     this.d.onChange();
   }
@@ -839,6 +869,182 @@ export class SyncController implements StorageMoveHooks {
     return this.engine?.owner ?? null;
   }
 
+  // ------------------------------------------------------------------ lists (T-211, T-212)
+
+  /** My certified read address (null before a storage is connected and certified). */
+  readAddress(): string | null {
+    const e = this.engine;
+    if (!e) return null;
+    return e.own?.sharing.cert.location ?? this.built.get(e)?.sharing.cert.location ?? null;
+  }
+
+  /** The fragment of a link-only list's link (null: no link yet, or no storage). */
+  listLink(listId: string): string | null {
+    const owner = this.owner();
+    const location = this.readAddress();
+    const secret = listSecretOf(this.d.store.repo.getList(listId)?.linkKey);
+    if (!owner || !location || !secret) return null;
+    return listLinkFragment({ kind: 'link', owner, location, secret });
+  }
+
+  /** The fragment of a public list's link (followed in the app), and its file for uMap. */
+  publicList(listId: string): { fragment: string; file: string } | null {
+    const owner = this.owner();
+    const location = this.readAddress();
+    if (!owner || !location) return null;
+    return { fragment: listLinkFragment({ kind: 'public', owner, location, listId }), file: publicListsUrl(location) };
+  }
+
+  /** Publishes now (vault, packs, index), without reading friends; throws when my storage failed. */
+  publishNow(): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      if (!engine.own) throw new Error('sync: no storage to publish to');
+      await this.loadFriendKeys();
+      const report = await engine.sync({ readFriends: false });
+      this.afterPass(engine, report, new Set());
+      const own = report.problems.find((p) => p.about === 'own');
+      if (own) throw new Error(`sync: publishing failed (${own.problem.kind})`);
+    });
+  }
+
+  /**
+   * Makes (or renews: "New link") a link-only list's link, then publishes so the link works the
+   * moment it is handed out. A new key cuts the previous link (its pack is re-sealed and deleted).
+   */
+  async newListLink(listId: string): Promise<string> {
+    const list = this.d.store.repo.getList(listId);
+    if (!list) throw new Error('lists: no such list');
+    this.d.store.updateList(listId, { linkKey: newListKey(), ...(list.visibility !== 'link' && { visibility: 'link' as const }) });
+    this.d.onData();
+    try {
+      await this.publishNow();
+    } catch (e) {
+      // Not published (offline, storage down): never show a link that does not work yet (review
+      // Info 7). Back to what is published; the user tries again.
+      this.d.store.updateList(listId, { linkKey: list.linkKey, ...(list.visibility !== 'link' && { visibility: list.visibility }) });
+      this.d.onData();
+      throw e;
+    }
+    const f = this.listLink(listId);
+    if (!f) throw new Error('lists: no link');
+    return f;
+  }
+
+  /** Stops sharing a list by link (holders get "This link no longer works"). */
+  async removeListLink(listId: string): Promise<void> {
+    this.d.store.updateList(listId, { linkKey: null });
+    this.d.onData();
+    await this.publishNow();
+  }
+
+  /**
+   * Public or link-only; publishes (the public file appears or goes). Leaving link-only drops the
+   * list key (data package), so coming back needs "Create the link": the old link stays dead.
+   */
+  async setListVisibility(listId: string, visibility: 'link' | 'public'): Promise<void> {
+    this.d.store.updateList(listId, { visibility });
+    this.d.onData();
+    await this.publishNow();
+  }
+
+  /**
+   * Places that a public filter list of mine keeps out of the public file because they look like a
+   * home, until I decide (sync package `heldPublicPlaces`, review M-02).
+   */
+  heldPublic(listId: string): { id: string; name: string }[] {
+    const repo = this.d.store.repo;
+    return safe(() => (heldPublicPlaces(repo, readOwnItems(repo)).get(listId) ?? []).map((i) => ({ id: i.placeId, name: i.name })), []);
+  }
+
+  /**
+   * Decides about places a public filter list holds back: publish them (an explicit "include" of
+   * the filter) or leave them out ("exclude"); then publishes.
+   */
+  async decideHeld(listId: string, placeIds: readonly string[], publish: boolean): Promise<void> {
+    const list = this.d.store.repo.getList(listId);
+    if (!list || placeIds.length === 0) return;
+    this.d.store.setListFilter(listId, confirmInFilter(list.filter, placeIds, publish));
+    this.d.onData();
+    await this.publishNow();
+  }
+
+  /** Whether my link-only lists and public file carry my tag names (opt-in, kept in my vault). */
+  publicTagNames(): boolean {
+    return this.engine && !this.wiped ? this.engine.book.publicTagNames() : false;
+  }
+
+  /** Opt in or out of publishing my tag names in forwardable lists, then publishes (best effort). */
+  setPublicTagNames(on: boolean): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      engine.setPublicTagNames(on);
+      this.d.onChange();
+    }).then(() => this.publishNow().catch(() => this.localChange()));
+  }
+
+  /** Owners of my contacts who see this list (its name, description and places). */
+  listViewers(listId: string): string[] {
+    return this.engine && !this.wiped ? this.engine.book.listViewers(listId) : [];
+  }
+
+  /** "Pick who": gives or takes a contact's access to one list, then publishes (best effort). */
+  setListAccess(listId: string, owner: string, on: boolean): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      engine.setListAccess(owner, listId, on);
+      this.d.onChange();
+    }).then(() => this.publishNow().catch(() => this.localChange()));
+  }
+
+  /** Reads a list from its link, without following it (throws ListGoneError when it is gone). */
+  async previewList(fragment: string): Promise<ListPreview> {
+    await ready();
+    const engine = await this.engineReady();
+    return engine.previewList(fragment);
+  }
+
+  /** Follows a list by link: kept in my vault (all my devices), read now; its places show like friends'. */
+  followList(fragment: string): Promise<ListReport> {
+    return this.exclusive(async () => {
+      await ready();
+      const engine = await this.engineReady();
+      const r = await engine.followList(fragment);
+      this.recordNews([asFriendReport(r)], new Set([r.id]));
+      this.d.onData();
+      this.d.onChange();
+      return r;
+    }).then((r) => {
+      this.localChange(); // the vault (followed lists) goes to my storage
+      return r;
+    });
+  }
+
+  unfollowList(id: string): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      engine.unfollowList(id);
+      this.whatsNew.forget(id);
+      this.d.onData();
+      this.d.onChange();
+    }).then(() => this.localChange());
+  }
+
+  followedLists(): FollowedListInfo[] {
+    if (!this.engine || this.wiped) return [];
+    return safe(() => this.engine!.followedLists(), []);
+  }
+
+  /** Lists my friends shared with me, per friend (as of their last read). */
+  friendLists(): { owner: string; lists: ListDef[] }[] {
+    const e = this.engine;
+    if (!e || this.wiped) return [];
+    return e.book
+      .following()
+      .map((c) => ({ owner: c.owner, lists: safe(() => e.reader.friendLists(c.owner), []) }))
+      .filter((x) => x.lists.length > 0);
+  }
+
   // ------------------------------------------------------------------ port for the contacts screens
 
   /**
@@ -957,6 +1163,11 @@ export class SyncController implements StorageMoveHooks {
       recoveryCopyMissing: !this.wiped && !!e?.own && this.copyMissing,
     };
   }
+}
+
+/** A followed list's report, in the shape What's new records (its places' owner is the list's id). */
+function asFriendReport(l: ListReport): FriendReport {
+  return { owner: l.id, status: l.status === 'gone' ? 'updated' : l.status, whatsNew: l.whatsNew, downloaded: { packs: 0, bytes: 0 }, ...(l.problem && { problem: l.problem }) };
 }
 
 function safe<T>(fn: () => T, fallback: T): T {

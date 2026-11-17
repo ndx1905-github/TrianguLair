@@ -181,7 +181,11 @@ test.describe('without a storage', () => {
     await page.goto('/contacts');
     await expect(page.getByTestId('contacts-empty')).toBeVisible();
     await page.getByTestId('contacts-follow-list').click();
-    await expect(page.getByTestId('follow-coming')).toBeVisible();
+    await expect(page.getByTestId('follow-list-screen')).toBeVisible();
+    // An invitation pasted where a list link goes is refused in plain words (T-212).
+    await page.getByTestId('follow-input').fill('https://triangulair.app/i#SQU');
+    await page.getByTestId('follow-open').click();
+    await expect(page.getByTestId('follow-problem-not-a-list')).toBeVisible();
 
     await page.goto('/settings');
     await page.getByTestId('settings-contacts').click();

@@ -45,6 +45,7 @@ import { classifyError, type SyncProblem } from './errors.ts';
 import { parsePlaces, toForeignSave, type PlaceFeature } from './features.ts';
 import { resolveLimits, type SyncLimits } from './limits.ts';
 import { decodePayload } from './payload.ts';
+import { isTombstone, parseLists, type ListDef } from './lists.ts';
 import type { SyncStateStore } from './state.ts';
 import { ByteBudget, Semaphore, mapLimit } from './util.ts';
 
@@ -115,6 +116,8 @@ export interface FriendReport {
 interface PackSeen {
   /** Readable: item id → item hash. */
   items?: Record<string, string>;
+  /** A readable lists pack: the list definitions it holds (lists.ts). */
+  lists?: ListDef[];
   /** Not readable with the keys of this fingerprint. */
   notFor?: string;
 }
@@ -130,6 +133,8 @@ interface FriendState {
   items: Record<string, [string, string]>;
   lastSuccess: number | null;
   lastError: number | null;
+  /** Their lists I can see (definitions, membership limited to the places I can read). */
+  lists?: ListDef[];
 }
 
 const empty = (): WhatsNew => ({ added: [], changed: [], removed: [] });
@@ -158,6 +163,11 @@ export class FriendReader {
   /** Last successful read (ms) of a friend, for "Updated 12 days ago". */
   lastSuccess(owner: string): number | null {
     return this.stateOf(owner)?.lastSuccess ?? null;
+  }
+
+  /** The lists of a friend that they shared with me (as of the last successful read). */
+  friendLists(owner: string): ListDef[] {
+    return this.stateOf(owner)?.lists ?? [];
   }
 
   /** Erases a friend's content from my cache (removed contact, "I see their places" off, 3-month cleanup). */
@@ -264,6 +274,11 @@ export class FriendReader {
           return;
         }
         const { kind, body } = decodePayload(opened.payload, { maxBytes: L.placesPayloadBytes, budget });
+        if (kind === 'lists') {
+          // List definitions shared with me (the places are in places packs).
+          st.packs[p.hash] = { items: {}, lists: parseLists(body).lists.filter((l): l is ListDef => !isTombstone(l)) };
+          return;
+        }
         if (kind !== 'places') {
           st.packs[p.hash] = { notFor: kfp };
           return;
@@ -332,6 +347,17 @@ export class FriendReader {
         prunePlaces(this.o.store, removedPlaces);
       });
       st.items = next;
+      // Their lists: the newest definition of each id among the readable packs, places I can read only.
+      const lists = new Map<string, ListDef>();
+      for (const p of listed) {
+        for (const l of st.packs[p.hash]?.lists ?? []) {
+          const cur = lists.get(l.id);
+          if (!cur || l.updated > cur.updated) lists.set(l.id, l);
+        }
+      }
+      st.lists = [...lists.values()]
+        .map((l) => ({ ...l, items: l.items.filter((id) => next[id]) }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));
       st.hash = hash;
       st.lastSuccess = this.nowMs();
       st.lastError = null;
@@ -354,14 +380,13 @@ export class FriendReader {
    * Reads several friends in parallel (bounded: `concurrency` index checks at once; their pack work
    * shares the reader's `concurrency` slots), within one pass budget (SyncLimits.passBytes).
    */
-  async readAll(targets: readonly FriendTarget[], concurrency = 8): Promise<FriendReport[]> {
-    const pass = new ByteBudget(this.limits.passBytes, 'pass');
+  async readAll(targets: readonly FriendTarget[], concurrency = 8, pass = new ByteBudget(this.limits.passBytes, 'pass')): Promise<FriendReport[]> {
     return mapLimit(targets, concurrency, (t) => this.read(t, { pass }));
   }
 }
 
 /** Removes cached places that a friend's removed saves leave without any save (their name and shape came from that friend). */
-function prunePlaces(store: DataStore, placeIds: readonly string[]): void {
+export function prunePlaces(store: DataStore, placeIds: readonly string[]): void {
   for (const id of placeIds) {
     store.repo.db.run(`DELETE FROM places WHERE id = ? AND NOT EXISTS (SELECT 1 FROM saves s WHERE s.place_id = places.id)`, [id]);
   }

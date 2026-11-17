@@ -4,8 +4,10 @@
  * in or out ("Does not match: tags") and offer "Add by hand" / "Leave out" /
  * "Follow the filter" (the list's exceptions). Membership comes from the data
  * package (`listItems`); the reasons from the same rules (`explain`).
+ * Adding a place that looks like a home to a public list asks first (spec
+ * "Privacy", review M-02).
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { SaveRecord } from '@triangulair/data';
@@ -15,6 +17,8 @@ import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { reasonText } from '../lists/ListEditor';
 import { cardListAction, draftFromList, explain, filterWithoutException, type CardListAction } from '../lists/listLogic';
+import { HomeConfirm } from '../lists/PublicWarning';
+import { homesToConfirm } from '../lists/sharing';
 import { useLists } from '../lists/useListData';
 import { Button, SectionTitle } from './ui';
 
@@ -37,9 +41,17 @@ export function ListsSection({ placeId, save }: { placeId: string; save: SaveRec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo, version, lists, placeId, save]);
 
-  const run = (listId: string, action: CardListAction) => {
+  const [confirm, setConfirm] = useState<{ listId: string; action: CardListAction } | null>(null);
+  const place = useMemo(() => repo.getPlace(placeId), [repo, placeId, version]);
+
+  const run = (listId: string, action: CardListAction, confirmed = false) => {
     const l = lists.find((x) => x.id === listId);
     if (!l || !action) return;
+    if (action === 'add' && !confirmed && place && homesToConfirm(l, [place]).length > 0) {
+      setConfirm({ listId, action });
+      return;
+    }
+    setConfirm(null);
     mutate((s) => {
       if (action === 'add') s.addToList(listId, placeId);
       else if (action === 'remove') s.removeFromList(listId, placeId);
@@ -99,6 +111,14 @@ export function ListsSection({ placeId, save }: { placeId: string; save: SaveRec
                 <View style={styles.rowMain} accessible accessibilityLabel={`${t(inList ? 'card.listInA11y' : 'card.listOutA11y', { name: list.name })}. ${reasonText(reason, t)}`}>
                   {body}
                 </View>
+              )}
+              {confirm?.listId === list.id && place && (
+                <HomeConfirm
+                  places={[place]}
+                  onConfirm={() => run(list.id, confirm.action, true)}
+                  onCancel={() => setConfirm(null)}
+                  testID={`card-list-home-${list.name}`}
+                />
               )}
               {!manual && action && (
                 <View style={styles.action}>

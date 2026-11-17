@@ -1,0 +1,349 @@
+// SPDX-License-Identifier: MPL-2.0
+/**
+ * Review of PR #85 (T-211/T-212: shared lists, link-only lists, following by link).
+ * docs/reviews/2026-11-10-lists-review.md. Each test was an `it.fails` reproduction that states
+ * the desired behaviour; the fixes made them plain tests, with extra ones for the new behaviour.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { audienceOf, ContactBook, DEFAULT_LIMITS, LimitError, FOLLOWED_REMOVED_KEEP_MS, MAX_FOLLOWED_LISTS, mergeBooks, TooManyFollowedListsError, desiredListPacks, followIdOf, listLinkFragment, listsReady, newListKey, parseListLinkFragment, parseLists, readOwnItems, heldPublicPlaces, looksLikeHome, type Audience, type ListDef } from '../src/index.ts';
+import { generateVaultDataKey, generateX25519KeyPair, issueSharingCert, type SharingKey } from '@triangulair/crypto';
+import { addDevice, befriend, friendSaves, makeUser, point, World, type Device } from './helpers.ts';
+
+await listsReady();
+
+function linkOf(d: Device, listId: string): string {
+  const l = d.store.repo.getList(listId)!;
+  return listLinkFragment({ kind: 'link', owner: d.user.owner, location: d.user.location, secret: Buffer.from(l.linkKey!, 'base64url') });
+}
+
+function anna(w: World) {
+  const a = addDevice(w, makeUser(w, 'anna'), { author: 'Anna' });
+  const s = a.store;
+  s.putSave({ place: point(1, 'Chez Lili'), comment: 'Public note', commentVisibility: 'public', status: 'favorite' });
+  s.putSave({ place: point(2, 'Bistro'), comment: 'Friends only' });
+  const list = s.createList({ name: 'Brunch', kind: 'manual', visibility: 'link', linkKey: newListKey() });
+  for (const id of ['osm:node/1', 'osm:node/2']) s.addToList(list, id);
+  return { a, list };
+}
+
+describe('review PR #85: lists', () => {
+  // M-01 (Medium): a contact picked for a list while seeing everything, then restricted to "some
+  // lists", keeps the stale `policy.lists` entry: listsSeenBy() still names the old list, so its
+  // definition (name, description, place ids of places she can no longer read) is sealed to her.
+  it('M-01: a friend restricted to "some lists" never receives a list she was picked for earlier', async () => {
+    const w = new World();
+    const a = addDevice(w, makeUser(w, 'anna'));
+    const s = a.store;
+    for (let i = 1; i <= 4; i++) s.putSave({ place: point(i, `P${i}`) });
+    const trip = s.createList({ name: 'Trip', kind: 'manual', visibility: 'link' });
+    const secret = s.createList({ name: 'Secret dinners', kind: 'manual', visibility: 'link' });
+    for (const id of ['osm:node/1', 'osm:node/2']) s.addToList(trip, id);
+    for (const id of ['osm:node/3', 'osm:node/4']) s.addToList(secret, id);
+    const erin = addDevice(w, makeUser(w, 'erin'));
+    for (const d of [a, erin]) await d.engine.sync();
+    await befriend(w, a, erin); // sees everything
+    a.engine.setListAccess(erin.user.owner, secret, true); // picked for "Secret dinners"
+    // Later, from the contact screen: "she sees some lists: Trip" (contacts service → setPolicy).
+    a.engine.setPolicy(erin.user.owner, { share: { lists: [trip] } });
+    await a.engine.sync();
+    await erin.engine.sync();
+    expect([...friendSaves(erin, a.user.owner).keys()].sort()).toEqual(['osm:node/1', 'osm:node/2']); // places: OK
+    expect(a.engine.book.listViewers(secret)).toEqual([]);
+    expect(erin.engine.reader.friendLists(a.user.owner).map((l) => l.name)).toEqual(['Trip']);
+  });
+
+  it('M-01: a pick is dropped when the scope changes and does not come back (true → false → true)', () => {
+    const w = new World();
+    const book = ContactBook.empty(makeUser(w, 'me').owner);
+    book.setPolicy('ed25519:erin', { share: true, follow: false }, 1);
+    book.setListAccess('ed25519:erin', 'secret', true, 2);
+    expect(book.policy('ed25519:erin').lists).toEqual(['secret']);
+    book.setPolicy('ed25519:erin', { share: true }, 3); // same scope: kept
+    expect(book.policy('ed25519:erin').lists).toEqual(['secret']);
+    book.setPolicy('ed25519:erin', { share: false }, 4);
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+    book.setPolicy('ed25519:erin', { share: true }, 5);
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+    // Restricted: the restriction alone decides; picking adds to the restriction itself.
+    book.setPolicy('ed25519:erin', { share: { lists: ['trip'] } }, 6);
+    book.setListAccess('ed25519:erin', 'secret', true, 7);
+    expect(book.policy('ed25519:erin')).toMatchObject({ share: { lists: ['secret', 'trip'] } });
+    expect(book.policy('ed25519:erin').lists).toBeUndefined();
+  });
+
+  it('M-01: a friends\' lists pack only names places every viewer of the pack can read', () => {
+    const w = new World();
+    const a = addDevice(w, makeUser(w, 'anna'));
+    const s = a.store;
+    for (let i = 1; i <= 3; i++) s.putSave({ place: point(i, `P${i}`) });
+    const list = s.createList({ name: 'Mixed', kind: 'manual', visibility: 'link' });
+    for (const id of ['osm:node/1', 'osm:node/2', 'osm:node/3']) s.addToList(list, id);
+    const erin = makeUser(w, 'erin');
+    const me = a.user.sharing.cert.key;
+    const her = erin.sharing.cert.key;
+    // As if a policy slip named the list to Erin while she can only read place 1.
+    const contacts = [{ owner: erin.owner, sharingCert: erin.sharing.cert, anchor: undefined, verified: true, policy: { share: true, follow: false, lists: [list], at: 1 } }];
+    const audiences = new Map<string, Audience>([
+      ['osm:node/1', audienceOf([me, her])],
+      ['osm:node/2', audienceOf([me])],
+    ]);
+    const packs = desiredListPacks({ repo: s.repo, items: readOwnItems(s.repo), myCert: a.user.sharing.cert, contacts, audiences, now: new Date() });
+    const friends = packs.filter((p) => p.role === 'friends');
+    expect(friends).toHaveLength(1);
+    expect((parseLists(friends[0]!.body).lists[0] as ListDef).items).toEqual(['osm:node/1']);
+  });
+
+  // M-02 (Medium): a home-like place that a public filter list takes by itself is held out of the
+  // public file until the author confirms it (an explicit "include" of the filter).
+  it('M-02: a home-like place newly matching a public filter list waits for the author', async () => {
+    const w = new World();
+    const a = addDevice(w, makeUser(w, 'anna'));
+    const s = a.store;
+    const tag = s.createTag({ name: 'Brunch', color: '#16A34A' });
+    s.putSave({ place: point(1, 'Cafe') });
+    const list = s.createList({ name: 'Brunch', kind: 'filter', visibility: 'public', filter: { tags: [tag] } });
+    s.addSaveTag('osm:node/1', tag);
+    await a.engine.sync();
+    const names = async () => {
+      const geo = JSON.parse(new TextDecoder().decode((await w.readAdapter(a.user.location).get('public/lists.geojson'))!.data));
+      return (geo.features as { properties: { name: string } }[]).map((f) => f.properties.name).sort();
+    };
+    expect(await names()).toEqual(['Cafe']);
+
+    // A friend's house and a point placed by hand get the same tag: held.
+    s.putSave({ place: { ...point(2, "Marie's"), category: 'building=house' } });
+    s.putSave({ place: { id: 'local:pin00001', name: 'Pin', category: null, kind: 'place', geometry: { type: 'Point', coordinates: [2.3, 48.8] } } });
+    const pin = s.repo.queryPlaces({ source: 'mine' }).find((p) => p.name === 'Pin')!.id;
+    s.addSaveTag('osm:node/2', tag);
+    s.addSaveTag(pin, tag);
+    await a.engine.sync();
+    expect(await names()).toEqual(['Cafe']);
+    expect([...heldPublicPlaces(s.repo, readOwnItems(s.repo)).get(list)!.map((i) => i.name)].sort()).toEqual(["Marie's", 'Pin']);
+
+    // Confirmed (include): published; refused (exclude): out of the list for good.
+    s.setListFilter(list, { tags: [tag], include: ['osm:node/2'], exclude: [pin] });
+    await a.engine.sync();
+    expect(await names()).toEqual(['Cafe', "Marie's"]);
+    expect(heldPublicPlaces(s.repo, readOwnItems(s.repo)).size).toBe(0);
+  });
+
+  it('M-02: the home rule (dwellings, places without category, never zones)', () => {
+    expect(looksLikeHome({ kind: 'place', category: 'building=apartments', local: false, address: null })).toBe(true);
+    expect(looksLikeHome({ kind: 'place', category: 'amenity=cafe', local: false, address: '1 rue X' })).toBe(false);
+    expect(looksLikeHome({ kind: 'place', category: null, local: false, address: '1 rue X' })).toBe(true);
+    expect(looksLikeHome({ kind: 'place', category: null, local: false, address: null })).toBe(false);
+    expect(looksLikeHome({ kind: 'place', category: null, local: true, address: null })).toBe(true);
+    expect(looksLikeHome({ kind: 'zone', category: null, local: true, address: null })).toBe(false);
+  });
+
+  // L-01 (Low): switching a link-only list to public and back keeps `linkKey`, so the "dead" link
+  // silently works again for everyone who had it (README: "switching to public does the same" as
+  // "taking the link away").
+  it('L-01: a link cut by going public stays dead when the list becomes link-only again', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    const id = followIdOf(parseListLinkFragment(link));
+    await ben.engine.followList(link);
+
+    a.store.updateList(list, { visibility: 'public' });
+    await a.engine.sync();
+    expect((await ben.engine.sync()).lists!.find((x) => x.id === id)).toMatchObject({ gone: 'link-dead' });
+
+    a.store.updateList(list, { visibility: 'link' });
+    await a.engine.sync();
+    const r = await ben.engine.sync();
+    expect(r.lists!.find((x) => x.id === id)).toMatchObject({ status: 'gone', gone: 'link-dead' });
+    expect(friendSaves(ben, id).size).toBe(0);
+  });
+
+  // L-02 (Low): unfollowing keeps the whole link (the list's secret key) in the `removed` vault
+  // entry forever; the vault only needs the followed-list id to stop a merge from bringing it back.
+  it('L-02: an unfollowed list leaves no list key in my vault', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    await ben.engine.sync();
+    const link = linkOf(a, list);
+    await ben.engine.followList(link);
+    ben.engine.unfollowList(followIdOf(parseListLinkFragment(link)));
+    await ben.engine.sync();
+    expect(JSON.stringify(ben.engine.book.records)).not.toContain(link);
+  });
+
+  it('L-02: removed entries lose their link in a merge, are dropped after 180 days, and the number of followed lists is capped', () => {
+    const w = new World();
+    const owner = makeUser(w, 'me').owner;
+    const book = ContactBook.empty(owner);
+    // A vault written by older code: the removed entry still holds its link.
+    const old = ContactBook.empty(owner);
+    old.followList('list:a', 'SECRET', 1);
+    const part = (old.records.app as Record<string, { lists: Record<string, unknown> }>).triangulair_sync!;
+    part.lists['list:a'] = { link: 'SECRET', at: 2, removed: true };
+    book.records = mergeBooks(book.records, old.records);
+    expect(JSON.stringify(book.records)).not.toContain('SECRET');
+    expect(book.followedLists()).toEqual([]);
+    // Kept 180 days (a merge cannot bring the list back), then dropped.
+    expect(book.pruneFollowedLists(2 + FOLLOWED_REMOVED_KEEP_MS)).toBe(false);
+    expect(book.pruneFollowedLists(3 + FOLLOWED_REMOVED_KEEP_MS)).toBe(true);
+    expect(JSON.stringify(book.records)).not.toContain('list:a');
+
+    for (let i = 0; i < MAX_FOLLOWED_LISTS; i++) book.followList(`list:${i}`, `L${i}`, 10 + i);
+    expect(() => book.followList('list:more', 'M', 1000)).toThrow(TooManyFollowedListsError);
+    book.followList('list:0', 'L0', 1001); // already followed: fine
+    book.unfollowList('list:1', 1002);
+    book.followList('list:more', 'M', 1003);
+    expect(book.followedLists()).toHaveLength(MAX_FOLLOWED_LISTS);
+  });
+
+  // L-03 (Low): a forwardable list (link-only, public file) carries dates rounded to the day and no
+  // tag names unless the author opted in (shared by all their devices through the vault).
+  it('L-03: link-only lists and the public file carry day-rounded dates and no tag names unless opted in', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const tag = a.store.createTag({ name: "Mum's", color: '#16A34A', icon: 'heart' });
+    a.store.addSaveTag('osm:node/1', tag);
+    const pub = a.store.createList({ name: 'Pub', kind: 'manual', visibility: 'public' });
+    a.store.addToList(pub, 'osm:node/1');
+    const a2 = addDevice(w, a.user, { author: 'Anna' });
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const day = /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/;
+    const publicFile = async () => JSON.parse(new TextDecoder().decode((await w.readAdapter(a.user.location).get('public/lists.geojson'))!.data));
+    let p = await ben.engine.previewList(linkOf(a, list));
+    expect(p.updated).toMatch(day);
+    for (const f of p.features) {
+      expect(f.properties.created).toMatch(day);
+      expect(f.properties.updated).toMatch(day);
+      expect(f.properties.tags).toBeUndefined();
+    }
+    let geo = await publicFile();
+    expect(JSON.stringify(geo)).not.toContain("Mum's");
+    expect(geo.triangulair.lists[0].updated).toMatch(day);
+    expect(geo.features[0].properties.created).toMatch(day);
+    expect(geo.features[0].properties._umap_options.color).toBe('#16A34A'); // the color still styles uMap
+
+    // Opt-in on one device: every device publishes the names.
+    a.engine.setPublicTagNames(true);
+    await a.engine.sync();
+    await a2.engine.sync();
+    expect(a2.engine.book.publicTagNames()).toBe(true);
+    expect((await a2.engine.sync()).own!.packsWritten).toBe(0); // the same packs on both devices
+    p = await ben.engine.previewList(linkOf(a, list));
+    expect(p.features.find((f) => f.id === 'osm:node/1')!.properties.tags).toEqual([{ name: "Mum's", color: '#16A34A', icon: 'heart' }]);
+    geo = await publicFile();
+    expect(geo.features[0].properties.tags[0].name).toBe("Mum's");
+  });
+
+  // L-04 (Low): the tombstone of a list purged from my trash survives a sharing-key rotation.
+  it('L-04: a deleted list stays "no longer exists" after the list leaves the trash and the sharing key rotates', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const a2 = addDevice(w, a.user);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    await ben.engine.followList(link);
+    a.store.deleteList(list);
+    await a.engine.sync();
+    a.store.purgeTrash();
+    a.store.repo.db.run(`DELETE FROM lists WHERE id = ?`, [list]); // as after the 30 days
+    await a.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+
+    const kp = generateX25519KeyPair();
+    const next: SharingKey = { keyPair: kp, cert: issueSharingCert(a.user.identity, kp.publicKey, { rotation: 1, location: a.user.location }), vaultDataKey: generateVaultDataKey() };
+    await a.engine.own!.rotate(next, [a2.signer.cert]);
+    expect((await a.engine.sync()).own!.published).toBe(true);
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    // My other device adopts the key and keeps it too.
+    await a2.engine.sync();
+    await a2.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    expect((await ben.engine.sync()).lists![0]).toMatchObject({ status: 'gone', gone: 'deleted' });
+  });
+
+  it('L-04: a list still in my trash gets one tombstone, re-sealed for the new key', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    await ben.engine.followList(link);
+    a.store.deleteList(list);
+    await a.engine.sync();
+    const kp = generateX25519KeyPair();
+    await a.engine.own!.rotate({ keyPair: kp, cert: issueSharingCert(a.user.identity, kp.publicKey, { rotation: 1, location: a.user.location }), vaultDataKey: generateVaultDataKey() }, []);
+    await a.engine.sync();
+    await expect(ben.engine.previewList(link)).rejects.toMatchObject({ gone: 'deleted' });
+    const index = a.engine.own!.index!;
+    // places packs (2 saves, one pack), the tombstone, own document, manifest
+    expect(index.packs.filter((p) => p.file.startsWith('packs/'))).toHaveLength(2);
+  });
+
+  // L-05 (Low): a list is followed only once a first read worked.
+  it('L-05: a failed or gone first read follows nothing; a later try follows', async () => {
+    const w = new World();
+    const { a, list } = anna(w);
+    const ben = addDevice(w, makeUser(w, 'ben'));
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    const id = followIdOf(parseListLinkFragment(link));
+    const storage = w.storages.get(a.user.location)!;
+    const get = storage.get.bind(storage);
+    storage.get = async () => {
+      throw new Error('host down');
+    };
+    expect(await ben.engine.followList(link)).toMatchObject({ status: 'error' });
+    expect(ben.engine.followedLists()).toEqual([]);
+    expect(ben.engine.lists.known()).toEqual([]);
+    storage.get = get;
+    expect(await ben.engine.followList(link)).toMatchObject({ status: 'updated' });
+    expect(ben.engine.followedLists().map((l) => l.id)).toEqual([id]);
+
+    // A deleted list is not followed either.
+    const other = a.store.createList({ name: 'Gone', kind: 'manual', visibility: 'link', linkKey: newListKey() });
+    await a.engine.sync();
+    const goneLink = linkOf(a, other);
+    a.store.deleteList(other);
+    await a.engine.sync();
+    expect(await ben.engine.followList(goneLink)).toMatchObject({ status: 'gone', gone: 'deleted' });
+    expect(ben.engine.followedLists().map((l) => l.id)).toEqual([id]);
+  });
+
+  // L-07 (Low): previews and followed lists have their own, smaller bounds; one pass budget.
+  it('L-07: followed lists and previews have smaller bounds than friends, and share the pass budget', async () => {
+    expect(DEFAULT_LIMITS.listPreviewBytes).toBeLessThan(DEFAULT_LIMITS.friendReadBytes);
+    expect(DEFAULT_LIMITS.listReadBytes).toBeLessThan(DEFAULT_LIMITS.friendReadBytes);
+    expect(DEFAULT_LIMITS.listPackBytes).toBeLessThan(DEFAULT_LIMITS.packBytes);
+    const w = new World();
+    const { a, list } = anna(w);
+    for (let i = 10; i < 400; i++) a.store.putSave({ place: point(i, `Filler ${i}`), comment: 'x'.repeat(200) });
+    await a.engine.sync();
+    const link = linkOf(a, list);
+    const small = addDevice(w, makeUser(w, 'carl'), { limits: { listPreviewBytes: 1000 } });
+    await expect(small.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    const ok = addDevice(w, makeUser(w, 'dan'), { limits: { listPreviewBytes: 1000, listReadBytes: 1_000_000 } });
+    await expect(ok.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    expect(await ok.engine.followList(link)).toMatchObject({ status: 'updated' }); // reading has its own budget
+    const strict = addDevice(w, makeUser(w, 'gil'), { limits: { listReadBytes: 1000 } });
+    expect(await strict.engine.followList(link)).toMatchObject({ status: 'error' });
+
+    // A file over listPackBytes is not downloaded; when nothing readable is left, it is an error, not "link dead".
+    const tiny = addDevice(w, makeUser(w, 'eve'), { limits: { listPackBytes: 64 } });
+    await expect(tiny.engine.previewList(link)).rejects.toBeInstanceOf(LimitError);
+    const fine = addDevice(w, makeUser(w, 'fay'));
+    expect((await fine.engine.previewList(link)).count).toBe(2);
+
+    // One pass budget for friends and followed lists.
+    const friendsSpy = vi.spyOn(fine.engine.reader, 'readAll');
+    const listsSpy = vi.spyOn(fine.engine.lists, 'readAll');
+    await fine.engine.followList(link);
+    await fine.engine.sync();
+    expect(friendsSpy.mock.calls[0]![2]).toBeDefined();
+    expect(listsSpy.mock.calls[0]![2]).toBe(friendsSpy.mock.calls[0]![2]);
+  });
+});

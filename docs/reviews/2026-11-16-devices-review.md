@@ -334,6 +334,9 @@ Make the step resumable (a pending declaration in the state store).
     access.
   - Link-only list keys do not exist yet in the code (no list-link implementation). When they do, the
     declaration must renew them.
+    *After the merge with PR #85 (link-only lists): the app's `declareLost` draws a new key for every live
+    link-only list on a declaration (not on "Remove a device") and the result screen lists them
+    (`apps/mobile/src/devices/flow.test.ts`); see packages/sync THREATS.*
 - **Identity move for friends**:
   - `followMove` reads the new identity at the **same certified address**.
   - It verifies with `expectedOwner = to`, `from` retired, and `index.move.from === from`.

@@ -15,7 +15,7 @@ npm run test:perf                # 1,000 and 10,000 places (PERF_REPORT=1 prints
 npm run test:real                # against real servers: run packages/storage/scripts/real-servers.sh (root) first
 ```
 
-No UI here, and the app is not wired yet.
+No UI here (the app's screens are in apps/mobile).
 
 ## API
 
@@ -48,7 +48,8 @@ await scheduler.appBackground();     // AppState "background": last pass, then n
 | --- | --- |
 | `SyncEngine` | `sync({ publish?, readFriends? })` (one pass: pull my storage, read the people I follow, publish what changed; concurrent calls share the pass; a device found revoked stops the pass and wipes, `report.wiped`), `wipe()`, `isWiped`, `addContact(verifiedIndex, { share, follow, verified })`, `setPolicy(owner, { share, follow })`, `removeContact(owner)`, `addInvitation(invitation)`, `contacts()`, `keys()`; option `friendKeys(owner)` (extra keys for one friend at every pass, e.g. an invitation key before my answer is accepted); `own` (`OwnSync`), `reader` (`FriendReader`), `book` (`ContactBook`) |
 | `OwnSync` | `pull({ full? })` (my index, my other devices' document changes, a new sharing key from `keys/`, the vault), `publish({ force? })`, `rotate(newSharingKey, otherDeviceCerts)` (primary device), `pushVault()`, `index`, `previousVaultKeys`, `limits` |
-| `FriendReader` | `read({ owner, location, anchor?, extraKeys?, retiredOwners? }, { pass? })` → `FriendReport { status, whatsNew: { added, changed: [{ placeId, meaningful, fields }], removed }, index, keyChanged, movedTo, problem, downloaded }`, `readAll` (one pass budget), `forget(owner)`, `lastSuccess(owner)` |
+| `FriendReader` | `read({ owner, location, anchor?, extraKeys?, retiredOwners? }, { pass? })` → `FriendReport { status, whatsNew: { added, changed: [{ placeId, meaningful, fields }], removed }, index, keyChanged, movedTo, problem, downloaded }`, `readAll` (one pass budget), `forget(owner)`, `lastSuccess(owner)`, `friendLists(owner)` (their lists shared with me) |
+| Lists (T-211/T-212) | engine: `setListAccess(owner, listId, on)`, `previewList(fragment)` → `ListPreview` (throws `ListGoneError { gone: 'deleted' / 'link-dead' }`), `followList(fragment)`, `unfollowList(id)`, `followedLists()` → `FollowedListInfo[]`, `lists` (`ListReader`), `SyncReport.lists`; book: `listViewers(listId)`, `followedLists()`; links: `listLinkFragment`, `parseListLinkFragment`, `encodeListLink` / `decodeListLink`, `followIdOf`, `newListKey`, `listSecretOf`, `listKeyPair` (after `listsReady()`), `publicListsUrl(location)`, `umapUrl(fileUrl, { lang })` |
 | `SyncScheduler` | `run(reason, { publish })`; `appForeground`, `appBackground`, `localChange`, `pullToRefresh`, `setOnline`, `resume`, `getStatus()` → `{ state: idle / syncing / offline / blocked / background / wiped, pending, lastSuccess, failingSince, problem, banner }` |
 | `ContactBook`, `mergeBooks` | contacts and their switches in the recovery vault |
 | `classifyError(e, 'own' / 'friend', online)` | → `SyncProblem { kind, retryable, blocksWrites, situation, message, detail }` (table below) |
@@ -92,7 +93,8 @@ tombstones), so every device publishes the same audiences.
 | `index.json` | signed index (crypto 4.0), written last with `If-Match`, then read back | everyone |
 | `packs/b2b256-<hash>.bin` | **places packs**: GeoJSON, one or more per recipient set, my key included; content-addressed, never modified | friends (only the new ones) and my devices |
 | `media/b2b256-<hash>.bin` | **my Yjs document** (one full snapshot + up to 8 deltas, then a new snapshot) and a **manifest** (logical pack id → recipient-set fingerprint), sealed to my key only; photos later | my devices; friends fetch `media/` only on demand (photos), so never these |
-| `public/lists.geojson` | public lists in plaintext, ODbL attribution, listed in the index with its hash | anyone, uMap |
+| `packs/b2b256-<hash>.bin` | **lists packs** (payload kind 4, below): list definitions sealed to the friends with access; a link-only list (definition + places) sealed to its list key; tombstones of deleted link-only lists | those friends; whoever holds the link |
+| `public/lists.geojson` | public lists in plaintext, ODbL attribution, uMap styles, listed in the index with its hash | anyone, uMap, followers of a public list |
 | `vault.bin` | recovery vault (`TLVD`), written with `If-Match`, merged on conflict | my devices |
 | `keys/<device id>.bin` | the current sharing key sealed to each of my other devices (`TLSK`), written by `rotate` and before each publication | that device |
 | `keys/<owner id>.bin` | the current sharing key sealed with the phrase-derived key (`TLSK` mode 2), written by `rotateKey` and by the app | a device restored with the 12 words |
@@ -150,11 +152,78 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
   breaks only in comments) and bidi overrides; dates more than 24 h ahead are clamped. My own writer drops or
   cleans what readers would refuse. Decompression stops at the limit of each kind (see "Limits"). Version 2 would
   be refused ("Update the app").
+- Lists (kind 4, added before any release; T-211/T-212), version 1, again a GeoJSON FeatureCollection:
+  `{"type":"FeatureCollection","triangulair":{"kind":"lists","version":1,"author"?:…,"lists":[{"id","name","description"?,"updated","items":[place ids]} | {"id","deleted":true,"updated","until"}]},"features":[…]}`.
+  For friends: `features` is empty (the places are in their places packs) and `items` are places they can read; for a
+  link-only list: `features` are the list's places as in a places payload (public comments only), at most 500 per
+  pack, with the author's name. Same strict reading rules as places (written form, minor, bounded arrays, control
+  characters, place ids).
 - Own document (kind 2): `mode u8 (1 full, 2 delta) | Yjs update v1`. Manifest (kind 3):
   `{"kind":"manifest","packs":{"<logical id>":"<recipient fingerprint>"},"version":1}`. Both only for my key.
 - Public lists file: a FeatureCollection with `attribution` (ODbL notice), `license`, `triangulair: { kind:
   "public-lists", version, owner, author?, lists: [{ id, name, description?, updated }] }`, one feature per (list,
-  place) with `list`, `list_name`, `description` (the public comment) and `_umap_options.color` (main tag color).
+  place) with `list`, `list_name`, `description` (the public comment), `url` (openstreetmap.org page of an OSM place)
+  and `_umap_options` (uMap's per-feature style: main tag color, "Drop" marker for points, 20 % fill and thin outline
+  for zones, a 5 px line for streets); each list's `count`. Dates (places and lists) are rounded to the UTC day and
+  places carry no `tags` unless I opted in to publishing my tag names (`engine.setPublicTagNames(true)`, kept in the
+  vault: `app.triangulair_sync.publish`, latest change wins); the same holds for link-only list packs (review L-03). A place that looks like a home (`home.ts`: a dwelling
+  category, no category with an address, a point placed by hand; never a zone) that a *filter* list took by itself
+  stays out of the file until the author confirms it as an explicit `include` of the filter (`heldPublicPlaces` lists
+  the ones waiting; the app warns before a place enters a public list by hand: review M-02). "View on uMap" = `umapUrl(publicListsUrl(location))`:
+  `https://umap.openstreetmap.fr/<lang>/map/new/?dataUrl=<file>&dataFormat=geojson` (uMap's own query parameters,
+  read by `loadDataFromQueryString`; the instance fetches the file through its proxy, so no CORS rule is needed for
+  uMap). It opens a new uMap map with a copy of the file's current content, all my public lists in one layer.
+
+## Lists: friends, link-only, public (T-211, T-212)
+
+`lists.ts`, `list-packs.ts`, `followed.ts`. A list (data package: `visibility` link / public, `linkKey`) leaves my
+devices in three ways:
+
+- **Friends with access** ("they see some of my lists", or a contact who sees everything and was picked in the
+  list's share sheet: `ContactPolicy.lists`, set by `setListAccess`, kept in the vault like the other switches): one
+  lists pack per set of viewers with the definitions. Restricted contacts already receive the places of their lists
+  (`computeAudiences`); friends only learn the membership of places they can read. A friend's reader keeps them
+  (`reader.friendLists(owner)`). The picks only count while the contact sees everything: a restricted contact sees
+  exactly the lists of the restriction (`listsSeenBy`), and any change of `share` drops the picks, so they never come
+  back after true → some lists → true (review M-01). As a second barrier, each friends' lists pack only names the
+  places that every one of its viewers can read according to the places packs' audiences.
+- **Link-only**: the list's own random X25519 key pair, whose 32-byte secret is `ListRecord.linkKey` (base64url, in
+  my Yjs document, so all my devices publish the same packs). The list pack (definition and places, public comments
+  only: a link can be forwarded) is sealed with the frozen `sealPack` to my sharing key and the list's public key, a
+  plain direct recipient (never a group: re-sealing really cuts it), and listed in my signed index. The link
+  `https://triangulair.app/l#<b64url>` carries version, kind, my master key, the list secret and my read address
+  (`encodeListLink`, about 170 characters for a typical address). Whoever holds it reads my index at that address
+  (verified for that master key; a signed redirect is followed once, only to the address it certifies; then never
+  older than the last index accepted for this list), tries my `packs/` with the list key only, and checks every pack
+  against the verified index (`openPack`). **New link** = a new key in `linkKey`: the next publication seals the pack
+  to the new key (new batch key, new file) and deletes the old file; an old link opens nothing ("This link no longer
+  works"). Taking the link away (`linkKey: null`, or switching to public) does the same; leaving link-only clears
+  `linkKey` (data package `updateList`), so going back needs "Create the link" (a new key) and the old link stays
+  dead (review L-01). **Deleting** the list
+  publishes a tombstone sealed to its last key, kept 180 days (also after the list leaves the trash, by every device
+  that sees the tombstone in the index, and across a rotation of my sharing key: review L-04): "This list no longer exists".
+- **Public**: `public/lists.geojson` (above). A public list can also be followed by link (`kind: public`, the list id
+  instead of a key): the file is checked against the hash in the verified index, filtered by list id.
+
+**Why the key never reaches a server**: the fragment (after `#`) is not part of an HTTP request (RFC 3986 §3.5,
+RFC 9110 §7.1): the `triangulair.app` site gets `/l` only when the app is missing, and a phone with the app hands the
+whole URL to it without a request. The reader then contacts only my storage (index, packs), never with the link. What
+must hold: the site never sends `location.hash` anywhere (the app's web export reads it on its `/l` route, by design,
+and removes it from the address bar at once), links are
+never logged. The link stays forwardable until renewed (spec threat model, "Holder of a list link").
+
+**Following** (`followList`, no account, no request, no consent): the list is read first and recorded only when
+that read worked (a failed or gone read leaves nothing, review L-05); the followed list is kept in my vault
+(`app.triangulair_sync.lists`, per list, latest change wins, `removed` tombstones), so all my devices follow it. An
+unfollowed list keeps only `{ at, removed }`, never its link (the list key), and the entry is dropped 180 days later;
+at most `MAX_FOLLOWED_LISTS` (200) lists are followed (`TooManyFollowedListsError`; review L-02). Its
+places go to my cache as foreign saves whose owner is the followed-list id (`list:` + 22 characters of BLAKE2b over
+author, address and key): they show like friends' places, never mix with the author's own cache if I also follow
+them, feed What's new (`SyncReport.lists[].whatsNew`), and leave when the list is unfollowed or gone. Each pass reads
+the followed lists after the friends (one HEAD when nothing changed; packs already seen are not downloaded again;
+smaller byte limits than a friend: `listPackBytes` 1 MiB per file tried, a bigger one is skipped; `listReadBytes`
+8 MiB per list per read, `listPreviewBytes` 4 MiB for a preview; friends and followed lists share one `passBytes`
+budget per pass; review L-07). The author does not learn who follows; their host sees readers' IP addresses.
 
 ## Limits
 
@@ -204,7 +273,8 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
   refused when merging and reading; a new value is stamped after every valid one seen (a later change by the user
   wins), never past `MAX_SAFE_INTEGER`. Unsigned version 1 values are dropped.
 - Engine: `devices()`, `putDevice`, `updateDevice`, `value`, `setValue` (all signed by this device, judged against
-  the current certificate); `mergeBooks(a, b, { revoked, now })`.
+  the current certificate); `mergeBooks(a, b, { revoked, now })`. `now` also bounds the unsigned followed-list and
+  publish-preference entries of `app.triangulair_sync` (refused when more than `MAX_SKEW_MS` ahead).
 - **Key delivery**: before each publication the engine seals the current sharing key to every listed device that does
   not have it yet (`keys/<device>.bin`, marker per device in the state).
 - **`rotateKey(newKey, { cancelInvitations, recoveryCopy })`**: adopts a rotation made on this device with the master
@@ -260,7 +330,18 @@ T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vaul
   device from `keys/`, friend told and switching to the new key); a device without the new key stops
   (`needs-key`); a revoked device (`device-revoked`); an invitee reading with the invitation key; incremental
   publication of 1,000 places; listed packs deleted from the storage are rewritten; public lists file (verified through the index, ODbL, removed with the last public list).
-- `no-wasm.test.ts`: fflate and the sources use no WebAssembly.
+- `lists.test.ts` (T-211/T-212): list links (round trip, refusals), the public file address and the uMap link; a
+  link-only list previewed and followed without being a contact (public comments only, never a private place, What's
+  new on updates, unfollow); **"new link" cuts the old holder** ("This link no longer works", old files deleted, the
+  new link works, removing the link too); deletion gives "This list no longer exists", also after the trash is
+  purged on another device (tombstone kept); nothing re-sealed when idle, another device keeps the same packs; a link
+  naming another storage or a list pack re-listed in someone else's index is refused; a friend who sees everything
+  sees no list name until picked; **a friend with "some lists" sees only those** (definitions and places), renames
+  reach them, removing access removes both, access settings travel through the vault; the **public file** is valid
+  GeoJSON with ODbL attribution, uMap styles and OSM links, and a public list is followed by link and goes away when
+  deleted; followed lists shared between my devices through the vault; my own list cannot be followed.
+- `no-wasm.test.ts`: fflate and the sources use no WebAssembly (the package also depends on the crypto package's
+  `libsodium-wrappers-sumo`, for the list key's public half; asm.js where WebAssembly is missing).
 - `units.test.ts`: planner, payload (decompression bomb), strict places parsing, vault policy merge, state
   stores, the error table, the scheduler with fake timers (launch, interval, debounce, close then no timer,
   offline queue, backoff, banner, blocked and resume).
@@ -269,6 +350,12 @@ T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vaul
   anchor, OSM-synced rows, swapped and malformed own packs, the remote wipe and its hooks, size limits per file,
   per friend and per pass, shared concurrency, coarse-ETag races, vault order and previous vault keys, scheduler
   read-only passes and non-retryable problems, strict strings and dates, the padding floor, the injected clock).
+- `review-lists.test.ts`: the shared-lists review (docs/reviews/2026-11-10-lists-review.md), its reproductions now
+  normal tests, plus the fixes' behaviour: stale picks and the per-viewer membership filter (M-01), home-like places
+  held by a public filter list (M-02), the dead link after public and back (L-01), the vault without unfollowed links,
+  the 180-day pruning and the 200-list cap (L-02), day-rounded dates and the tag-name opt-in shared by my devices
+  (L-03), tombstones across a rotation (L-04), follow only after a first read (L-05), the list bounds and the shared
+  pass budget (L-07).
 - `real-servers.test.ts` (`TL_REAL_SERVERS=1`): the main scenarios, rollback and rotation, and the review fixes
   (a race under an unchanged ETag, a declared-lost device's injection) on **Apache mod_dav** (friends over its
   public HTTP folder), **WsgiDAV** (coarse ETags, emulated conditions), **moto S3** and **OpenSSH sftp**: 12/12
@@ -307,8 +394,10 @@ to a friend" is the publication after adding the friend (every places pack seale
    download every photo to classify `media/` files (keep photo hashes known from the Yjs media records).
 2. **More than 255 recipients** in one pack (MAX_WRAPS = 256 with my own key): `TooManyRecipientsError` for now;
    crypto groups (a group key in a group-key pack) would lift it, at the cost of re-keying the group on removal.
-3. **Friends' lists**: lists shared with friends (and link-only lists, T-212) are not in the packs yet; only the
-   public file. Should a friend see my list names, and which ones?
+3. **Friends' lists** (answered by T-211/T-212): a friend sees a list's name and membership only when given access
+   to it (restricted to it, or picked for it); seeing everything I share with friends does not reveal my list names.
+   Open: should a friend with access also get the list's link (so they can forward it)? Not done: no list key is
+   reachable from friends' content, so retiring an invitation never needs to renew one.
 4. **Version negotiation**: the index advertises `reads: ["4"]`; the places payload has its own version (1).
    Choosing the newest version every recipient reads (spec) needs the readers' `reads` to cover payload versions.
 5. **Refresh period** while the app is open (spec open question): 5 minutes by default here.
@@ -320,3 +409,10 @@ to a friend" is the publication after adding the friend (every places pack seale
 8. **Unlisted files**: files left by a device that crashed between upload and index are only deleted by that
    device; a sweep needs file dates (not in the adapter interface).
 9. **HTTP Range** on pack headers would let a friend learn that a pack is not for them without downloading it.
+   Followers of a link-only list download every `packs/` file once (then only new ones) to find theirs.
+10. **Comments in link-only lists**: only public comments travel with a link (like a public list), since the link
+    can be forwarded to anyone. Should "friends" comments be shown to link holders?
+11. **Author name** in link-only lists is the one given to `author` (my first name): devices with different names
+    rewrite the list pack in turn. The public file has the same rule.
+12. **uMap**: the query-string import is a copy, not uMap's "remote data" layer that follows file changes; a uMap
+    map made by the author with the file as remote data (dynamic) does follow it.

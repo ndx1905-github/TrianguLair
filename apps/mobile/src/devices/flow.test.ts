@@ -199,11 +199,22 @@ describe('adding a device and declaring it lost', () => {
     await a1.ctl.refresh();
     expect(mine(a1).find((x) => x.place_id === 'osm:node/1')!.comment).toBe('vandalised');
 
+    // A link-only list, whose key the stolen tablet holds (my document).
+    const list = a1.store.createList({ name: 'Brunch', kind: 'manual', visibility: 'link', items: ['osm:node/1'] });
+    const oldLink = await a1.ctl.newListLink(list);
+    expect((await ben.d.ctl.previewList(oldLink)).count).toBe(1);
+
     // Declared lost from a1 with the master key.
     const rot = rotateStoredSharingKey(a1.record, { deviceKeys: a1.deviceKeys, sharingKey: a1.sharingKey, primaryIdentity: a1.primaryIdentity }, { revokeDevices: [j.record.deviceId], newKey: true }, { kind: 'primary' });
     a1.sharingKey = rot.sealedForThisDevice;
     const res = await a1.ctl.declareLost(rot, { cancelInvitations: true });
     expect(res.delivered).toEqual([]);
+    // The link-only list got a new link: the old one (known to the thief) opens nothing any more.
+    expect(res.renewedLinks).toEqual([{ id: list, name: 'Brunch' }]);
+    const newLink = a1.ctl.listLink(list)!;
+    expect(newLink).not.toBe(oldLink);
+    await expect(ben.d.ctl.previewList(oldLink)).rejects.toMatchObject({ gone: 'link-dead' });
+    expect((await ben.d.ctl.previewList(newLink)).count).toBe(1);
     const idx = verifyIndex((await anna.storage.get('index.json'))!.data, { expectedOwner: a1.record.owner });
     expect(idx.revoked_devices).toEqual([j.record.deviceId]);
     expect(idx.sharing_cert.rotation).toBe(2);

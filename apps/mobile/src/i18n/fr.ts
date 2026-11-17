@@ -6,6 +6,7 @@ import { storageFr } from './storage.fr';
 import { syncFr } from './sync.fr';
 import { contactsFr } from './contacts.fr';
 import { devicesFr } from './devices.fr';
+import { sharedListsFr } from './sharedLists.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -21,6 +22,8 @@ export const fr: Messages = {
   ...contactsFr,
   // Ajout d’un appareil, Réglages › Appareils, perte et vol (T-206, T-207).
   ...devicesFr,
+  // Sharing lists, following a list by link (T-211, T-212), kept in their own file.
+  ...sharedListsFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

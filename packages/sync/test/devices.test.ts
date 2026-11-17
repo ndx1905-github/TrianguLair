@@ -278,3 +278,34 @@ describe('a friend changes identity (theft of their primary device)', () => {
     expect(r2.ok).toBe(true);
   });
 });
+
+describe('unsigned vault entries next to the signed ones (merge of PR #85 and PR #86)', () => {
+  // Followed lists and publish preferences are written by any device of mine, unsigned. A stolen
+  // device must not make one of them win every merge by dating it far in the future (the F-01
+  // "sticky value" of the devices review): such an entry is refused, as for the signed values.
+  it('a followed list or a publish preference dated beyond the clock is refused; a later unfollow sticks', () => {
+    const w = new World();
+    const owner = makeUser(w, 'me').owner;
+    const now = 1_800_000_000_000;
+    const thief = ContactBook.empty(owner);
+    thief.followList('list:planted', 'PLANTED', Number.MAX_SAFE_INTEGER);
+    thief.setPublicTagNames(true, Number.MAX_SAFE_INTEGER);
+    thief.followList('list:fine', 'FINE', now + MAX_SKEW_MS);
+    const mine = ContactBook.empty(owner);
+    mine.records = mergeBooks(mine.records, thief.records, { now });
+    expect(JSON.stringify(mine.records)).not.toContain('PLANTED');
+    expect(mine.publicTagNames()).toBe(false);
+    expect(mine.followedLists().map((e) => e.id)).toEqual(['list:fine']);
+    // An entry dated a little ahead (another device's clock) is kept, and an unfollow made later wins.
+    mine.unfollowList('list:fine', now + MAX_SKEW_MS + 1);
+    mine.records = mergeBooks(mine.records, thief.records, { now: now + MAX_SKEW_MS + 1 });
+    expect(mine.followedLists()).toEqual([]);
+    // Malformed entries are dropped too.
+    const bad = ContactBook.empty(owner);
+    bad.followList('list:z', 'Z', 1);
+    (bad.records.app as Record<string, { lists: Record<string, unknown> }>).triangulair_sync!.lists = { 'list:x': { link: 42, at: 1 }, 'list:y': { link: 'Y', at: 'soon' } };
+    mine.records = mergeBooks(mine.records, bad.records, { now });
+    expect(JSON.stringify(mine.records)).not.toContain('list:x');
+    expect(JSON.stringify(mine.records)).not.toContain('list:y');
+  });
+});

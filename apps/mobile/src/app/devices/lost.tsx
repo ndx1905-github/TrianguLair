@@ -31,7 +31,7 @@ import { useSync } from '../../sync/SyncProvider';
 type Step =
   | { kind: 'choose' }
   | { kind: 'working' }
-  | { kind: 'done'; name: string; cancelled: OpenInvitationSummary[]; delivered: number; device: string }
+  | { kind: 'done'; name: string; cancelled: OpenInvitationSummary[]; delivered: number; device: string; renewed: { id: string; name: string }[] }
   | { kind: 'failed'; reason: string };
 
 function Bullet({ children }: { children: string }) {
@@ -114,7 +114,7 @@ function LostScreen() {
     setStep({ kind: 'working' });
     try {
       const r = await sync.declareLost(rotation, { cancelInvitations: !remove });
-      setStep({ kind: 'done', name: target.name, cancelled: r.cancelled, delivered: r.delivered.length, device: target.id });
+      setStep({ kind: 'done', name: target.name, cancelled: r.cancelled, delivered: r.delivered.length, device: target.id, renewed: r.renewedLinks });
     } catch (e) {
       setStep({ kind: 'failed', reason: e instanceof Error ? e.message.replace(/^sync: /, '') : 'error' });
     }
@@ -150,6 +150,14 @@ function LostScreen() {
             ) : (
               <Muted testID="lost-cancelled-none">{t('lost.cancelledNone')}</Muted>
             )}
+          </Section>
+        )}
+        {step.renewed.length > 0 && (
+          <Section title={t('lost.links.title')}>
+            <Muted testID="lost-links">{t('lost.links.lead')}</Muted>
+            {step.renewed.map((l) => (
+              <Button key={l.id} kind="secondary" label={l.name} onPress={() => router.push({ pathname: '/lists/share', params: { id: l.id } })} testID="lost-link" />
+            ))}
           </Section>
         )}
         {guide.length > 0 && (
@@ -197,6 +205,7 @@ function LostScreen() {
           <Section title={t('lost.what.title')}>
             <Bullet>{t('lost.what.key')}</Bullet>
             {!remove && <Bullet>{t('lost.what.invites')}</Bullet>}
+            {!remove && <Bullet>{t('lost.what.links')}</Bullet>}
             {!rogue && <Bullet>{t('lost.what.wipe')}</Bullet>}
             {!remove && !rogue && <Bullet>{t('lost.what.access')}</Bullet>}
             {remove && <Bullet>{t('lost.what.removeNote')}</Bullet>}

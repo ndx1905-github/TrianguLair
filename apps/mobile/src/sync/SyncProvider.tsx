@@ -55,12 +55,14 @@ export interface SyncApi {
   /** A transfer slot (adding a device) whose files are deleted at expiry. */
   trackSlot(slot: string, expiresAt: number): void;
   /** T-207: after the master key issued the new certificate. */
-  declareLost(r: { sharing: SharingKey; vaultCopy: Uint8Array; previous: SharingCert }, opts: { cancelInvitations: boolean }): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[] }>;
+  declareLost(r: { sharing: SharingKey; vaultCopy: Uint8Array; previous: SharingCert }, opts: { cancelInvitations: boolean }): Promise<{ cancelled: OpenInvitationSummary[]; delivered: string[]; renewedLinks: { id: string; name: string }[] }>;
   /** What my other devices changed in my places (changes since a theft). */
   journal(): JournalEntry[];
   revert(entryAt: number, placeId: string): void;
   /** Before switching to a new identity (theft of the primary device). */
   prepareIdentityMove(next: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void>;
+  /** The controller (list sharing and followed lists, T-211/T-212); null until the identity and data are ready. */
+  controller(): SyncController | null;
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
@@ -233,6 +235,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (!ctl.current) throw new Error('sync not ready');
         await ctl.current.prepareIdentityMove(next);
       },
+      controller: () => ctl.current,
     }),
     [snapshot, refresh, nameContact],
   );

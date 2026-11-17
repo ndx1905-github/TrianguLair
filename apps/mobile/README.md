@@ -68,7 +68,39 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   exceptions added or removed by hand) or manual selection; live preview (map with the zones, members
   in color, others faded, count) and, for every place, why it is in or out ("Private: never in a
   list", "Does not match: tags, zones"…). Membership always comes from `Repository.evaluateList`.
-  Visibility (link / public) is stored; sharing itself is phase 2 (`src/lists/`).
+  Visibility (link / public) is stored and used by the share screen below (`src/lists/`). Going public from the
+  editor shows the warning (anyone can read it, the author's responsibility, places that may be a home) and asks to
+  tick "I understand" before saving. In a list that is already public, places that look like a home and are not in
+  it yet ask for their own confirmation; on a filter list, the confirmed ones become explicit "include"s (the public
+  file holds the others back, below). Adding such a place to a public list from the place card asks first too
+  (`HomeConfirm`, review M-02).
+- **Sharing a list** (`/lists/share?id=`, "Share" on a list, T-211/T-212; logic in `@triangulair/sync`, see its
+  README "Lists"): *link only*: "Create the link" makes the list's key (in my document, all my devices) and publishes
+  before showing `https://triangulair.app/l#…` with its QR code, share / copy; "New link" (confirmed: everyone with
+  the old link loses it) and "Stop sharing by link"; *public*: the warning first (`PublicWarning.tsx`, with the places
+  that look like a home: a dwelling category, no category, a point placed by hand, the sync package's
+  `looksLikeHome`; on a filter list, confirming includes them), the places a public filter list took by itself but
+  holds out of the public file because they look like a home ("Publish them" = include, "Leave them out" = exclude,
+  `heldPublicPlaces`), then the GeoJSON file's address
+  on my storage, "View on uMap" (`umapUrl`: a new uMap map importing the file) with its address shown, and the
+  in-app link to follow it; *friends*: pick who sees the list (its name and places) among my contacts
+  (`setListAccess`: a contact who sees nothing gets this list only, a restricted one gets it added, one who sees
+  everything also gets the list's name). Everything needs a storage: the "storage needed" card's button goes through
+  `useStorageForSharing().ensure()` and comes back to the share screen.
+- **Following a list by link** (`/lists/follow`, deep link `/l#…` in `src/app/l.tsx`: the fragment is taken from the
+  address bar, removed from it and handed over in memory; an opened link waits for "Show the list", so nothing is
+  downloaded by a single tap, review L-07): paste or open → preview (map with the author's tag colors,
+  places with public comments, author, date, number of places) → "Follow this list"; no account, no request, not a
+  contact. The author is shown by their key (`authorLabel`: "By Marie, in your contacts (AbCd…WxYz)" when the key is
+  a contact, else "Signs as “Marie” (AbCd…WxYz), not in your contacts": the name in a list is self-declared, review
+  L-06). The list is followed only once its first read worked; otherwise nothing is kept and the button stays to
+  try again (L-05). Problems in plain words: not a list link, "This link no longer works" / "This list no longer
+  exists" (ask for a new link), my own list, unreachable, 200 lists already followed.
+- **Followed lists** (`/lists/followed`, from My lists and Friends): by author, with places, date and the gone
+  message; a list's screen (`/lists/followed/[id]`, `ListPlacesView.tsx`: map + rows, card) with Refresh and Unfollow
+  (its places leave now, on all my devices through the vault). Lists friends shared with me
+  (`/lists/friend?owner=&list=`). Their places show on the map like friends' places, in What's new (a followed list's
+  first places as one item, named after the list) and on the card ("List “…”" among who saved it).
 - **First launch** (`/welcome/*`, T-205, local part): the spec's three entries. *Get started*: first
   name and optional photo (cropped, 256 px) while the keys are made in the background, app lock offer,
   location (explained before the system prompt, kept on the device to center the map), import or
@@ -131,8 +163,8 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     next start (`pendingMove`).
   - **Right moment** (`useStorageForSharing.tsx`): `ensure(reason, returnTo)` for the sharing flows (opens the wizard
     with `?reason=invite|link-list|public-list|backup&return=…` and returns false), `StorageNeeded` /
-    `StorageNeededIfMissing` cards (used in the list editor for link and public lists); the "Protect your places" card
-    now opens the wizard too.
+    `StorageNeededIfMissing` cards (used in the list editor and the list share screen; the card's button calls
+    `ensure()`); the "Protect your places" card now opens the wizard too.
   - **For the sync engine** (`interfaces.ts`): `StorageAccess` (current config, write and read adapters, certified read
     address, redirects with their adapters, `republishPending` / `markRepublished`), `SharingCertRotation`
     (`IdentityApi.currentSharingCert` / `rotateSharingCert({ location?, revokeDevices?, newKey? }, master)`, also meant
@@ -216,7 +248,9 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     (yes: identity change). Otherwise the master key (`rotateSharingCert({ revokeDevices, newKey })`:
     new random sharing key and vault data key, rotation + 1), then `SyncController.declareLost` (`rotateKey`: every open
     invitation cancelled for a declaration, key delivered to the remaining devices, recovery copy, re-encryption,
-    publication). The result lists the people invited who had not answered, guides the storage access change per
+    publication). A declaration (not a removal) also gives every live link-only list a new link (the lost device held
+    the keys); the result lists those lists, each opening its share sheet. The result lists the people invited who had
+    not answered, guides the storage access change per
     protocol for the current storage and every previous one still redirecting (`guide.ts`: Nextcloud Devices & sessions
     link, AWS access keys link, steps for WebDAV and HTTPS-only, "Type the new credentials"), and links to the changes.
     New credentials typed on one device reach the others through the vault value; a device whose credentials are
@@ -288,7 +322,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   - *Contacts*: two switches, share scope, safety code as 12 × 5 digits or QR (`tlsafe1:` payload compared with
     `matchSafetyQr`), the "verified" mark (local, never sent), rename, remove (wraps gone, pack keys renewed), notices
     "… changed their key" (higher rotation) and "… changed their identity" (retired owner: the mark is removed).
-  - *Follow a list by link*: placeholder until link-only lists are published by the sync package (T-212).
+  - *Follow a list by link*: see "Following a list by link" above (T-212).
   - New native module: `expo-camera` (camera permission text in `app.json`); `app.json` also declares the
     `applinks:triangulair.app` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
     matching `apple-app-site-association` and `assetlinks.json`).
@@ -459,7 +493,9 @@ src/data/             DataProvider, openStore.{web,native}, sqljsDriver, webPers
 src/osm/              client (one OSM client), fixtureFetch + fixtures (fixture mode), errors
 src/zones/            zone geometry (raster painting/buffer, simplify, streets graph, drawing), OSM zone
                       queries, map shapes and badges, zone editor and card
-src/lists/            list draft/filter building and "why in/out", list editor and map
+src/lists/            list draft/filter building and "why in/out", list editor and map; sharing helpers (links,
+                      "looks like a home", followed lists by author, preview pins), public warning, preview
+                      map, someone else's list view
 src/places/           pure logic: filters, clustering, model, card, add, list, camera
 src/pins/             bands.ts, pinSvg.ts, build.ts (pins from places and the filter)
 src/i18n/             core (plurals, placeholders), en, fr (+ filtersTags.en/fr), provider
@@ -606,6 +642,47 @@ Storage settings (`scripts/shots_storage.py`, against the Apache WebDAV server o
 | `docs/phone-storage-overview.png` | Settings › Storage after a move: previous storage kept as redirect |
 | `docs/tablet-fr-storage-s3.png` | Tablet, French: S3 form, empty prefix warning, key policy to copy |
 | `docs/tablet-fr-list-storage-needed.png` | The "right moment": a link-only list asks for a storage |
+
+Shared lists (`SHOTS=1 npm run e2e -- lists-sharing`, same Apache setup, two browser contexts: Anna with a storage,
+Ben without one and not her contact):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-list-share-link.png` | Share sheet, link only: the link, its QR code, share / copy, New link, Stop sharing |
+| `docs/phone-list-share-new-link.png` | "New link": the old link stops working for everyone who has it |
+| `docs/phone-list-follow-preview.png`, `docs/phone-fr-list-follow-preview.png` | Ben opens the link: preview (map, places, author, date), "Follow this list" |
+| `docs/phone-list-followed.png` | The followed list: its places (rows) |
+| `docs/phone-list-followed-gone.png` | After Anna's new link: "This link no longer works", places gone |
+| `docs/phone-lists-followed.png` | Followed lists by author: the dead link-only list and the public one |
+| `docs/phone-list-public-warning.png` | Before publishing: anyone can read it, author's responsibility, homes |
+| `docs/phone-list-share-public.png`, `docs/phone-dark-list-share-public.png` | Public: the GeoJSON file, "View on uMap" and its address, the in-app link (dark mode) |
+| `docs/tablet-fr-list-followed.png` | Tablet, French: a followed public list, map and card side by side |
+
+End-to-end: `e2e/lists-sharing.spec.ts` (the exchange is skipped without Apache): Anna connects a storage, saves a
+place, makes a manual list and creates its link (published first; the QR code holds the same link); Ben, with no
+storage and no contact, opens the `/l#…` deep link (the fragment leaves the address bar), sees the preview without
+Anna's friends-only comment, follows it, sees the places in the list screen and in his places, and has no contact;
+Anna makes a new link: after Ben's next pass the list says "This link no longer works" and its places are gone,
+pasting the old link says so, the new one opens; Anna makes the list public after the warning: the file at the read
+address is valid GeoJSON with the ODbL notice, list names and uMap colors, the uMap link is
+`https://umap.openstreetmap.fr/en/map/new/?dataUrl=<file>&dataFormat=geojson` and the button opens exactly it; Ben
+follows the public list by its link. Without a storage, going public asks to acknowledge the warning and "Share" asks
+for a storage with `?reason=public-list&return=/lists/share…`.
+
+Shared lists open questions:
+
+- **Universal links for `/l`**: `app.json` declares the Android intent filter (exact paths `/i`, `/r`, `/l`, so
+  `/lists`, `/legal` and the like stay on the site: review Info 3); the site must serve the matching
+  `apple-app-site-association` / `assetlinks.json`, and its `/l` page must never send the fragment anywhere (it only
+  sends people without the app to the store page; the app's own web export reads it and removes it from the address
+  bar).
+- **"Add places to my places" and "Ask to follow the author"** (spec, preview actions) are not done: the card's "Add to
+  my places" works on each place; asking to follow needs a return link without an invitation.
+- **A switch per followed list on the map** (spec "Followed lists panel") is not done: followed lists' places follow
+  the friends shown setting (all by default).
+- **A followed list that later turns out to be a contact's** is not attached to them automatically (spec: "attach it
+  to the author if they are followed later"): it stays a separate source.
+- Only public comments travel with a link-only list (sync README open question 10).
 
 Invitations and access (`E2E_SHOTS=1 npm run e2e -- e2e/invitations.spec.ts`, same Apache setup, links exchanged
 between browser contexts):

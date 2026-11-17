@@ -26,6 +26,20 @@ describe('list edits used by the app (T-112)', () => {
     expect(s.repo.listItems(id)).toEqual([s.saveId('osm:node/1'), s.saveId('osm:node/2')]);
   });
 
+  it('leaving link-only drops the list key, so coming back needs a new link (sync review L-01)', () => {
+    const s = openStore();
+    const id = s.createList({ name: 'L', kind: 'manual', visibility: 'link', linkKey: 'k1' });
+    s.updateList(id, { name: 'L2' });
+    expect(s.repo.getList(id)!.linkKey).toBe('k1');
+    s.updateList(id, { visibility: 'public' });
+    expect(s.repo.getList(id)!.linkKey).toBeNull();
+    s.updateList(id, { visibility: 'link' });
+    expect(s.repo.getList(id)!.linkKey).toBeNull();
+    s.updateList(id, { linkKey: 'k2' });
+    s.updateList(id, { visibility: 'link' }); // unchanged: kept
+    expect(s.repo.getList(id)!.linkKey).toBe('k2');
+  });
+
   it('refuses an unknown kind and leaves the list unchanged', () => {
     const s = openStore();
     const id = s.createList({ name: 'L', kind: 'manual' });

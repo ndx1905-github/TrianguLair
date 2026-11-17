@@ -205,6 +205,8 @@ async def tablet(p):
     await page.get_by_test_id('list-visibility').get_by_text('Public', exact=True).click()
     await page.wait_for_timeout(1500)
     await shot(page, 'tablet-list-editor')
+    # Going public asks to acknowledge the warning first (T-211).
+    await page.get_by_test_id('list-public-ok').click()
     await page.get_by_test_id('list-save').click()
     await page.wait_for_selector('[data-testid="list-summary"]', timeout=15000)
     await page.wait_for_timeout(800)

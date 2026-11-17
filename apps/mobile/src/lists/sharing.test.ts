@@ -1,0 +1,105 @@
+import { describe, expect, it } from 'vitest';
+import type { PlaceRecord } from '@triangulair/data';
+import type { FollowedListInfo, PlaceFeature } from '@triangulair/sync';
+
+import { authorLabel, buildListLink, confirmInFilter, featurePins, goneKey, groupByAuthor, homeLikePlaces, homesToConfirm, listFragmentOf } from './sharing';
+
+const placeRec = (p: Partial<PlaceRecord>): PlaceRecord => ({ id: 'osm:node/1', osmType: 'node', osmId: 1, name: 'X', category: 'amenity=cafe', kind: 'place', address: null, ...p }) as PlaceRecord;
+
+describe('list links', () => {
+  it('builds and finds list links in any text', () => {
+    const l = buildListLink('AQEabc_-');
+    expect(l).toBe('https://triangulair.app/l#AQEabc_-');
+    expect(listFragmentOf(`Look: ${l} (my brunch list)`)).toBe('AQEabc_-');
+    expect(listFragmentOf('triangulair://l#AQEabc')).toBe('AQEabc');
+    expect(listFragmentOf('https://triangulair.app/i#AQEabc')).toBeNull(); // an invitation
+    expect(listFragmentOf('nothing')).toBeNull();
+    expect(() => buildListLink('a b')).toThrow();
+  });
+});
+
+describe('before going public', () => {
+  it('flags places that may be a home: dwellings, addresses without category, points placed by hand', () => {
+    const homes = homeLikePlaces([
+      placeRec({ id: 'osm:node/1', name: 'Cafe' }),
+      placeRec({ id: 'osm:way/2', name: 'House', category: 'building=house' }),
+      placeRec({ id: 'osm:node/3', name: 'Address', category: null, address: '3 rue X' }),
+      placeRec({ id: 'local:abcdefgh', osmType: null, osmId: null, name: 'Pin', category: null }),
+      placeRec({ id: 'local:zzzzzzzz', osmType: null, osmId: null, name: 'Hand cafe', category: 'amenity=cafe' }),
+      placeRec({ id: 'local:zoneaaaa', osmType: null, osmId: null, name: 'Zone', category: null, kind: 'zone' }),
+    ]);
+    expect(homes.map((p) => p.name)).toEqual(['House', 'Address', 'Pin']);
+  });
+});
+
+describe('places entering a public list (M-02)', () => {
+  it('asks only for a public list, only about home-like places', () => {
+    const house = placeRec({ id: 'osm:way/2', name: 'House', category: 'building=house' });
+    const cafe = placeRec({ id: 'osm:node/1', name: 'Cafe' });
+    expect(homesToConfirm({ visibility: 'public' }, [house, cafe]).map((p) => p.name)).toEqual(['House']);
+    expect(homesToConfirm({ visibility: 'link' }, [house])).toEqual([]);
+    expect(homesToConfirm(null, [house])).toEqual([]);
+  });
+
+  it('publishing a held place includes it; leaving it out excludes it', () => {
+    const f = { tags: ['t'], include: ['a'], exclude: ['b'] };
+    expect(confirmInFilter(f, ['b', 'c'], true)).toEqual({ tags: ['t'], include: ['a', 'b', 'c'], exclude: [] });
+    expect(confirmInFilter(f, ['a', 'c'], false)).toEqual({ tags: ['t'], include: [], exclude: ['b', 'a', 'c'] });
+  });
+});
+
+describe('followed lists', () => {
+  const info = (id: string, owner: string, name: string, author?: string): FollowedListInfo => ({
+    id,
+    link: 'x',
+    kind: 'link',
+    owner,
+    location: 'https://a.example/',
+    name,
+    count: 1,
+    gone: null,
+    lastSuccess: null,
+    lastError: null,
+    ...(author && { author }),
+  });
+
+  it('groups by author, with my name for them first', () => {
+    const g = groupByAuthor([info('1', 'ed25519:b', 'Zinc'), info('2', 'ed25519:a', 'Brunch', 'Anna'), info('3', 'ed25519:b', 'Apéro', 'Ben')], (o) => (o === 'ed25519:b' ? 'Benoît' : undefined));
+    expect(g.map((x) => [x.name, x.lists.map((l) => l.name)])).toEqual([
+      ['Anna', ['Brunch']],
+      ['Benoît', ['Apéro', 'Zinc']],
+    ]);
+    // Benoît is a contact: his name; Anna only declares hers.
+    expect(g[0]).toMatchObject({ declared: 'Anna' });
+    expect(g[0]!.contactName).toBeUndefined();
+    expect(g[1]).toMatchObject({ contactName: 'Benoît', declared: 'Ben' });
+    expect(goneKey('deleted')).toBe('sharing.gone.deleted');
+    expect(goneKey('link-dead')).toBe('sharing.gone.linkDead');
+  });
+
+  it('the author is their key: a contact by name, anyone else by the declared name in quotes, never trusted (L-06)', () => {
+    const t = (k: string, p?: Record<string, string | number>) => `${k}|${p?.name ?? ''}|${p?.key ?? ''}`;
+    const owner = 'ed25519:ABCDefghijklmnopqrstuvwxyz0123456789-_ABCDE';
+    expect(authorLabel(t, { owner, contactName: 'Marie', declared: 'Someone' })).toBe('follow.byContact|Marie|ABCD…BCDE');
+    expect(authorLabel(t, { owner, declared: 'Marie' })).toBe('follow.signsAs|Marie|ABCD…BCDE');
+    expect(authorLabel(t, { owner })).toBe('follow.byStranger||ABCD…BCDE');
+    // Two authors declaring the same name stay two groups, the contact one named from my contacts.
+    const g = groupByAuthor([info('1', 'ed25519:x', 'L1', 'Marie'), info('2', 'ed25519:m', 'L2', 'Marie')], (o) => (o === 'ed25519:m' ? 'Marie' : undefined));
+    expect(g.map((x) => [x.owner, x.contactName ?? null])).toEqual([
+      ['ed25519:x', null],
+      ['ed25519:m', 'Marie'],
+    ]);
+  });
+
+  it('preview pins carry the author tag colors and a zone badge', () => {
+    const f = (id: string, kind?: 'zone'): PlaceFeature => ({
+      type: 'Feature',
+      id,
+      geometry: kind ? { type: 'Polygon', coordinates: [[[2, 48], [2.1, 48], [2.1, 48.1], [2, 48]]] } : { type: 'Point', coordinates: [2.35, 48.85] },
+      properties: { name: id, created: '2026-01-01T00:00:00.000Z', updated: '2026-01-01T00:00:00.000Z', ...(kind && { kind }), tags: [{ name: 'Pizza', color: '#EF4444', icon: 'pizza' }] },
+    });
+    const [p, z] = featurePins([f('osm:node/1'), f('local:zoneaaaa', 'zone')]);
+    expect(p).toMatchObject({ id: 'osm:node/1', lat: 48.85, lon: 2.35, colors: ['#EF4444'], faded: false });
+    expect(z!.badge).toBe(true);
+  });
+});

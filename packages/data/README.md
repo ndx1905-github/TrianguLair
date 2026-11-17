@@ -149,7 +149,7 @@ Tables follow the spec's data model; names in parentheses are additions.
 
 The shared `places` row (T-204 review R-02): my own save writes it (except OSM-sourced fields); a friend's save (`upsertForeignSave`) only creates it when missing, or updates it while every save on it is that friend's, so a friend never changes the name, geometry, kind or edge of a place I (or another friend) saved. What the sync step publishes comes from `place_snapshot`.
 | `tags`, `save_tags`, `tag_mappings` | tags: parent_id (cycle-free), name, color, icon, osm_categories JSON, deleted_at, (`active`: not in the trash and no ancestor in the trash); save_tags: position 0 for the main tag |
-| `lists`, `list_items` | lists: visibility (link/public), link_key, kind (filter/manual), filter JSON (canonical), (`manual` JSON), (`items_dirty`); list_items: materialized membership, recomputed lazily |
+| `lists`, `list_items` | lists: visibility (link/public), link_key (cleared when the list leaves `link`), kind (filter/manual), filter JSON (canonical), (`manual` JSON), (`items_dirty`); list_items: materialized membership, recomputed lazily |
 | `access` | save_id or list_id, person_id (schema only, for key wraps later) |
 | `media` | id, save_id, file, blurhash, width, height |
 | (`places_rtree`) | R*Tree on place bboxes, kept by triggers (if available) |

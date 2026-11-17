@@ -19,7 +19,7 @@ import { useStorage } from './StorageProvider';
 
 export type SharingReason = 'invite' | 'link-list' | 'public-list' | 'backup' | 'devices';
 
-/** The wizard's address for a reason and a screen to come back to. */
+/** The wizard's address for a reason and a screen to come back to. The card's button goes through `ensure()` too. */
 export function setupHref(reason: SharingReason, returnTo?: string): string {
   const q = new URLSearchParams({ reason });
   if (returnTo) q.set('return', returnTo);
@@ -50,7 +50,7 @@ export function useStorageForSharing() {
 export function StorageNeeded({ reason, returnTo }: { reason: SharingReason; returnTo?: string }) {
   const c = useUiColors();
   const { t } = useI18n();
-  const router = useRouter();
+  const { ensure } = useStorageForSharing();
   return (
     <View style={[styles.card, { backgroundColor: c.surfaceAlt, borderColor: c.border }]} testID="storage-needed">
       <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }} maxFontSizeMultiplier={2}>
@@ -59,7 +59,7 @@ export function StorageNeeded({ reason, returnTo }: { reason: SharingReason; ret
       <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2}>
         {t(`storage.needed.${reason}`)}
       </Text>
-      <Button label={t('storage.needed.connect')} onPress={() => router.push(setupHref(reason, returnTo) as Href)} testID="storage-needed-connect" />
+      <Button label={t('storage.needed.connect')} onPress={() => void ensure(reason, returnTo)} testID="storage-needed-connect" />
     </View>
   );
 }

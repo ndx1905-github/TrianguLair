@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SaveRecord } from '@triangulair/data';
+import { isFollowId } from '@triangulair/sync';
 
 import { Pill } from '../components/ui';
 import { useData } from '../data/DataProvider';
@@ -45,7 +46,8 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
     return m;
   }, [repo, placeId, version]);
   if (saves.length === 0) return null;
-  const nameOf = (id: string) => repo.getPerson(id)?.displayName || t('card.aFriend');
+  // A list followed by link (T-212) owns its places in my cache: named after the list.
+  const nameOf = (id: string) => (isFollowId(id) ? t('sharing.asSource', { name: repo.getPerson(id)?.displayName || t('sharing.unnamed') }) : repo.getPerson(id)?.displayName || t('card.aFriend'));
   const names = saves.map((s) => nameOf(s.ownerId));
   const date = (ms: number) => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms));
 

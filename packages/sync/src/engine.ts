@@ -31,7 +31,10 @@ import { DeviceRevokedError, classifyError, type SyncProblem } from './errors.ts
 import type { SyncLimits } from './limits.ts';
 import { OwnSync, keyPath, type OwnSyncOptions, type PreviousVaultKey, type PublishReport, type PullResult } from './own.ts';
 import { FriendReader, READ_MAJORS, type FriendReport } from './reader.ts';
+import { ListReader, type FollowedListInfo, type ListPreview, type ListReport } from './followed.ts';
+import { followIdOf, isFollowId, parseListLinkFragment } from './lists.ts';
 import type { SyncStateStore } from './state.ts';
+import { ByteBudget } from './util.ts';
 
 /** What the app erases on a remote wipe (both may be async). */
 export interface WipeHooks {
@@ -79,6 +82,8 @@ export interface SyncReport {
   /** The pull that starts the pass (my other devices' changes are imported there). */
   pulled?: PullResult;
   friends: FriendReport[];
+  /** Lists I follow by link (absent in reports made by older code). */
+  lists?: ListReport[];
   problems: { about: 'own' | string; problem: SyncProblem }[];
   /** Everything worked (friends' failures included). */
   ok: boolean;
@@ -94,6 +99,8 @@ export class SyncEngine {
   readonly book: ContactBook;
   readonly own: OwnSync | null;
   readonly reader: FriendReader;
+  /** Lists followed by link (no contact needed). */
+  readonly lists: ListReader;
   private readonly o: SyncEngineOptions;
   private running: Promise<SyncReport> | null = null;
   private wiped = false;
@@ -122,6 +129,12 @@ export class SyncEngine {
       store: o.store,
       state: o.state,
       keys: () => this.keys(),
+      readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
+      ...pick(o, ['concurrency', 'fullCheckMs', 'now', 'limits']),
+    });
+    this.lists = new ListReader({
+      store: o.store,
+      state: o.state,
       readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
       ...pick(o, ['concurrency', 'fullCheckMs', 'now', 'limits']),
     });
@@ -208,6 +221,67 @@ export class SyncEngine {
 
   contacts(): Contact[] {
     return this.book.contacts();
+  }
+
+  /** Gives or takes a contact's access to one of my lists (ContactBook.setListAccess); publish after. */
+  setListAccess(owner: string, listId: string, on: boolean): void {
+    this.book.setListAccess(owner, listId, on, this.nowMs());
+    this.saveBook();
+  }
+
+  /** Opt-in: link-only lists and the public file carry my tag names (kept in the vault: all my devices); publish after. */
+  setPublicTagNames(on: boolean): void {
+    this.book.setPublicTagNames(on, this.nowMs());
+    this.saveBook();
+  }
+
+  // ------------------------------------------------------------------ lists followed by link
+
+  /** Reads a list from its link fragment without following it. Throws ListGoneError, or the read's error. */
+  previewList(fragment: string): Promise<ListPreview> {
+    return this.lists.preview(fragment);
+  }
+
+  /**
+   * Follows a list by its link: reads it first, and records it in the vault (so my other devices
+   * follow it too) only when that read worked (review L-05). A failed read (`status: 'error'`) or a
+   * gone list (`status: 'gone'`) leaves nothing behind: not followed, nothing in my cache; the app
+   * says so and the user may try again. A list I already follow is only read again. Following my
+   * own list is refused; beyond MAX_FOLLOWED_LISTS, TooManyFollowedListsError (before any download).
+   * Do not run it concurrently with a sync pass (the app serializes both).
+   */
+  async followList(fragment: string): Promise<ListReport> {
+    const link = parseListLinkFragment(fragment);
+    if (link.owner === this.owner) throw new Error('this list is mine');
+    const id = followIdOf(link);
+    this.book.checkCanFollow(id);
+    const already = this.book.followedLists().some((e) => e.id === id);
+    const r = await this.lists.read({ id, link: fragment });
+    if (already) return r;
+    if (r.status === 'error' || r.status === 'gone') {
+      this.lists.forget(id);
+      return r;
+    }
+    this.book.followList(id, fragment, this.nowMs());
+    this.saveBook();
+    return r;
+  }
+
+  /** Stops following a list: its places leave my cache now. */
+  unfollowList(id: string): void {
+    this.book.unfollowList(id, this.nowMs());
+    this.saveBook();
+    this.lists.forget(id);
+  }
+
+  followedLists(): FollowedListInfo[] {
+    return this.book.followedLists().flatMap((e) => {
+      try {
+        return [this.lists.info(e.id, e.link)];
+      } catch {
+        return [];
+      }
+    });
   }
 
   // ------------------------------------------------------------------ my devices (devices.ts)
@@ -385,7 +459,7 @@ export class SyncEngine {
   sync(opts: { publish?: boolean; readFriends?: boolean } = {}): Promise<SyncReport> {
     if (this.wiped) {
       const problem = classifyError(new DeviceRevokedError(), 'own');
-      return Promise.resolve({ own: null, friends: [], problems: [{ about: 'own', problem }], ok: false, wiped: true, startedAt: Date.now(), durationMs: 0 });
+      return Promise.resolve({ own: null, friends: [], lists: [], problems: [{ about: 'own', problem }], ok: false, wiped: true, startedAt: Date.now(), durationMs: 0 });
     }
     if (this.running) return this.running;
     this.running = this.run(opts).finally(() => {
@@ -396,7 +470,7 @@ export class SyncEngine {
 
   private async run(opts: { publish?: boolean; readFriends?: boolean }): Promise<SyncReport> {
     const startedAt = Date.now();
-    const report: SyncReport = { own: null, friends: [], problems: [], ok: true, startedAt, durationMs: 0 };
+    const report: SyncReport = { own: null, friends: [], lists: [], problems: [], ok: true, startedAt, durationMs: 0 };
     const online = this.o.online?.() ?? true;
     const fail = (about: string, e: unknown, kind: 'own' | 'friend') => {
       report.problems.push({ about, problem: classifyError(e, kind, online) });
@@ -436,7 +510,9 @@ export class SyncEngine {
           ? [{ owner: c.owner, location: c.sharingCert.location, anchor: c.anchor, retiredOwners: this.book.retiredOwners(), ...this.friendKeys(c.owner) }]
           : [],
       );
-      report.friends = await this.reader.readAll(targets, this.o.friendConcurrency ?? 8);
+      // One byte budget for the whole pass: friends and lists followed by link (review L-07).
+      const pass = new ByteBudget(this.reader.limits.passBytes, 'pass');
+      report.friends = await this.reader.readAll(targets, this.o.friendConcurrency ?? 8, pass);
       // Friends who changed identity (theft of their primary device): follow the move, read them again.
       for (const f of [...report.friends]) {
         const index = f.identityMove ? await this.followMove(f) : null;
@@ -444,7 +520,7 @@ export class SyncEngine {
         f.identityMove = { ...f.identityMove!, followed: true };
         delete f.problem;
         const c = this.book.contact(index.owner)!;
-        report.friends.push(await this.reader.read({ owner: c.owner, location: c.sharingCert.location!, retiredOwners: this.book.retiredOwners(), ...this.friendKeys(c.owner) }));
+        report.friends.push(await this.reader.read({ owner: c.owner, location: c.sharingCert.location!, retiredOwners: this.book.retiredOwners(), ...this.friendKeys(c.owner) }, { pass }));
       }
       let touched = false;
       for (const f of report.friends) {
@@ -457,7 +533,19 @@ export class SyncEngine {
           report.ok = false;
         }
       }
+      if (this.book.pruneFollowedLists(this.nowMs())) touched = true;
       if (touched) this.saveBook();
+      // Lists followed by link (unfollowed on another device: their places leave).
+      const followed = this.book.followedLists().filter((e) => isFollowId(e.id));
+      const ids = new Set(followed.map((e) => e.id));
+      for (const id of this.lists.known()) if (!ids.has(id)) this.lists.forget(id);
+      report.lists = await this.lists.readAll(followed, this.o.friendConcurrency ?? 8, pass);
+      for (const l of report.lists ?? []) {
+        if (l.problem) {
+          report.problems.push({ about: l.id, problem: l.problem });
+          report.ok = false;
+        }
+      }
     }
     // 3. Publish.
     if (this.own && ownOk && opts.publish !== false) {
