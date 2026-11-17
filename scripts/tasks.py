@@ -109,9 +109,9 @@ t("T-204","P2","Sync: publishing and reading packs",["sync"],
   "While in use and right after closing, no periodic task; ETag, signed index, friends' cache. ETag compare-and-swap is best effort on some servers: after publishing, re-read the index and check it carries our `seq`; merge and republish otherwise. A real Nextcloud takes ~0.4 s per request: upload packs in parallel and avoid needless round trips.",["Headless multi-user simulation","A full sync against a real Nextcloud stays within the performance targets"],deps=["T-102","T-201","T-202"],status="done")
 t("T-205","P2","Recovery kit and first launch",["crypto","app"],
   "Three entry points, 12-word phrase, recovery kit, standard flow.",["End-to-end flow"],deps=["T-201"])
-t("T-206","P2","Adding a device (transfer code, QR)",["crypto","app"],"Argon2id code and QR code.",["Two devices in sync"],deps=["T-205","T-204"])
+t("T-206","P2","Adding a device (transfer code, QR)",["crypto","app"],"Argon2id code and QR code.",["Two devices in sync"],deps=["T-205","T-204"],status="done")
 t("T-207","P2","Loss and theft: key rotation, remote wipe",["crypto","sync"],
-  "Sharing key rotation, re-encryption, key deletion at sync on the removed device.",["\"Stolen device\" scenario simulated"],deps=["T-206"])
+  "Sharing key rotation, re-encryption, key deletion at sync on the removed device.",["\"Stolen device\" scenario simulated"],deps=["T-206"],status="done")
 t("T-208","P2","Invitation by link, QR code and return link",["crypto","app"],
   "7-day temporary invitation key, content visible immediately, return link, asymmetric relationships.",["Full scenario between two simulated users"],deps=["T-204"],status="done")
 t("T-209","P2","Access management and revocation",["crypto","sync"],
@@ -119,8 +119,8 @@ t("T-209","P2","Access management and revocation",["crypto","sync"],
 t("T-210","P2","Friends' places, counters and What's new view",["app","sync"],
   "\"Also saved by friends\" filters, choice of displayed friends, unknown tags keeping their original color, What's new view.",["Tests of tag matching"],deps=["T-204"],status="done")
 t("T-211","P2","Public lists (GeoJSON) and \"View on uMap\" link",["sharing"],
-  "Publish public/lists.geojson in clear, ODbL attribution, uMap link.",["List opened in uMap"],deps=["T-112","T-204"])
-t("T-212","P2","Link-only lists (key in the URL fragment)",["sharing","crypto"],"Follow a list without following the person.",["Link opened on a second device"],deps=["T-211"])
+  "Publish public/lists.geojson in clear, ODbL attribution, uMap link.",["List opened in uMap"],deps=["T-112","T-204"],status="done")
+t("T-212","P2","Link-only lists (key in the URL fragment)",["sharing","crypto"],"Follow a list without following the person.",["Link opened on a second device"],deps=["T-211"],status="done")
 t("T-213","P2","Error cases from the spec",["app","sync"],"Implement every row of the \"Error cases\" table.",["One test per row"],deps=["T-204"])
 t("T-214","P2","External security audit",["crypto","maintainer"],"Audit of encryption and sync before release.",["Report published and fixes made"],deps=["T-209"])
 
