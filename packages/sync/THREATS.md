@@ -129,3 +129,25 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   skew window passes (bounded).
 - Own packs are still opened with every key I hold (current and previous) once their index is trusted; the index
   rule above is what keeps a revoked device's content out.
+
+## Devices review (PR #86): what is left
+
+Fixed: F-01 to F-08 (signed device list and app values judged against the current certificate; link + code sends no
+key before approval; restore checks freshness; the primary device routes to the identity change; the stale-sync lock
+survives a clock set back; the identity move asks for the storage access change first and is resumable) and F-04 (a
+new device is listed only once it picked its keys up). Partly fixed or documented:
+
+- **F-09 Changes since the theft**: the list shows every change of my other devices since the date by default (the
+  device that signed the index is a hint: another device may have merged the lost one's edits and republished
+  first). Still not covered: contact policies (`share`/`follow`) in the vault, tags and lists (the storage's version
+  history lists them); "Revert" does not put back a place's name; the journal is per device and local.
+- **F-10 Remove a device**: rotates without cancelling invitations and without the storage access guide (the screen
+  says so: suited to a device erased and given away). Nothing reminds the user later that the access was not
+  changed after a declaration; the guide is shown once, on the result screen.
+- **F-11 An interrupted declaration**: the new key is stored before `declareLost` publishes. If the publication
+  fails, the lost device's `keys/` file is deleted and its slots dropped only at the retry, the screen does not list
+  the cancelled invitations, and a retry makes rotation r+2. Nothing leaks: the new certificate still cancels the
+  invitations and revokes the device at the next publication. A pending declaration in the state store would make it
+  resumable.
+- Link + code needs two links (the invitation, and the request link back): the new device has no storage access
+  before its approval.

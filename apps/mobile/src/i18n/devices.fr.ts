@@ -124,6 +124,7 @@ export const devicesFr: Messages = {
   'lost.what.invites': 'Toutes les invitations en attente sont annulées (l’appareil perdu pouvait les lire).',
   'lost.what.wipe': 'L’appareil efface ses clés et ses lieux dès qu’il se synchronise à nouveau.',
   'lost.what.access': 'Changez ensuite l’accès à votre stockage, pour qu’il ne puisse plus y écrire.',
+  'lost.what.removeNote': 'Vos invitations en attente sont gardées et l’accès à votre stockage ne change pas : cela convient à un appareil effacé puis donné. S’il peut être entre d’autres mains, déclarez-le plutôt perdu.',
   'lost.master': 'Votre clé maîtresse signe la nouvelle clé.',
   'lost.go': 'Le déclarer perdu',
   'lost.removeGo': 'Le retirer',

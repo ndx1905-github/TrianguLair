@@ -128,6 +128,7 @@ export const devicesEn: Messages = {
   'lost.what.invites': 'Every pending invitation is cancelled (the lost device could read them).',
   'lost.what.wipe': 'The device erases its keys and places as soon as it syncs again.',
   'lost.what.access': 'Then change your storage access, so it can no longer write there.',
+  'lost.what.removeNote': 'Your pending invitations are kept and your storage access is not changed: this suits a device you erased and gave away. If it may be in someone else’s hands, declare it lost instead.',
   'lost.master': 'Your master key signs the new key.',
   'lost.go': 'Declare it lost',
   'lost.removeGo': 'Remove it',

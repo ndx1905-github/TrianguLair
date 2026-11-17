@@ -199,6 +199,7 @@ function LostScreen() {
             {!remove && <Bullet>{t('lost.what.invites')}</Bullet>}
             {!rogue && <Bullet>{t('lost.what.wipe')}</Bullet>}
             {!remove && !rogue && <Bullet>{t('lost.what.access')}</Bullet>}
+            {remove && <Bullet>{t('lost.what.removeNote')}</Bullet>}
           </Section>
           <Muted>{t('lost.master')}</Muted>
           <MasterKeyPrompt onReady={(m) => void run(m)} actionLabel={remove ? t('lost.removeGo') : t('lost.go')} testID="lost-master" />

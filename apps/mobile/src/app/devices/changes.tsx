@@ -30,7 +30,8 @@ function ChangesScreen() {
   const devices = sync.devices();
   const lostName = lost ? (devices.find((d) => d.cert.device === lost)?.name ?? '') : '';
   const [days, setDays] = useState<number>(7);
-  const [onlyLost, setOnlyLost] = useState(!!lost);
+  // All changes by default (devices review F-09: another device may have merged the lost one's edits first).
+  const [onlyLost, setOnlyLost] = useState(false);
   const [version, setVersion] = useState(0);
   const since = days === 1 ? new Date(new Date().setHours(0, 0, 0, 0)).getTime() : Date.now() - days * DAY;
   const lines = useMemo(
