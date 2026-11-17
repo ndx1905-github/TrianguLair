@@ -7,6 +7,7 @@ import { syncFr } from './sync.fr';
 import { contactsFr } from './contacts.fr';
 import { devicesFr } from './devices.fr';
 import { sharedListsFr } from './sharedLists.fr';
+import { privacyFr } from './privacy.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -24,6 +25,8 @@ export const fr: Messages = {
   ...devicesFr,
   // Sharing lists, following a list by link (T-211, T-212), kept in their own file.
   ...sharedListsFr,
+  // Trash, delete all my content, blocking and reporting, map attribution, kept in their own file.
+  ...privacyFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

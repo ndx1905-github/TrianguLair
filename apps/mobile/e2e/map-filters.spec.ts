@@ -16,7 +16,10 @@ test('first launch shows the demo map', async ({ page }) => {
   await expect(page.getByTestId('filter-count')).toHaveText(/\b1[5-9] places\b/);
   // Zoomed in on the Marais: the demo pin of the Marché des Enfants Rouges is drawn.
   await expect(await pinAt(page, 12, 48.8628, 2.3618)).toBeVisible();
-  await expect(page.getByText('© OpenStreetMap contributors', { exact: false })).toBeVisible();
+  // Spec "Base map": "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors" and "Report an error".
+  const attribution = page.getByTestId('map-attribution');
+  await expect(attribution).toContainText('OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors');
+  await expect(attribution.getByRole('link', { name: 'Report an error' })).toBeVisible();
 });
 
 test('filter by tag', async ({ page }) => {

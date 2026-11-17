@@ -487,8 +487,10 @@ map shows a plain background, so pins and zones keep working. The home screen th
 possibly less detailed" (a fallback address) or "Map background unavailable for now" (none). The
 address reached is kept for the session; the next launch tries the configured style first again.
 
-The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own overlay
-(`MapAttribution`), so it is always visible. When a place sheet is open, the overlay moves above it.
+The attribution "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors" (spec "Base map", translated;
+opens the OSM copyright page) and its "Report an error" link (`MAP_REPORT_URL`, openstreetmap.org/fixthemap) are
+drawn by our own overlay (`MapAttribution`) on every map, web and native, so they are always visible. When a place
+sheet is open, the overlay moves above it.
 
 ## Layout
 
