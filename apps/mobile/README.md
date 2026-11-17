@@ -180,7 +180,11 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
   launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
   the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
-  nothing after that. Network status from the browser on web (`online` / `offline`); native assumes online for now.
+  nothing after that. Network status (`src/sync/network.*.ts`, logic in `netState.ts`): the browser's `online` /
+  `offline` events on web, `expo-network` on phones (offline only when the system says there is no connection or no
+  internet behind it; unknown counts as online), so "Offline · N changes pending" shows natively too and a failure
+  without network is not counted as "storage unreachable". `expo-network` is a new native module (new development
+  build); it uses no Google service.
   - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
     old index at the new storage (it certifies the old address), publishes there with the new certificate, then
     writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
@@ -785,8 +789,6 @@ Devices open questions:
 
 Sync open questions:
 
-- **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
-  only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
 - **Friends' names**: the protocol carries no display name; the name typed in the invitation flow is kept on this
   device. Contacts added on another device (through the vault) show "A friend" until renamed here.
 - **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API

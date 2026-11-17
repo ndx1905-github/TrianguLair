@@ -11,7 +11,7 @@
  * accept), and names contacts and invitations from the ContactsService.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import type { DeviceCert, SharingCert, SharingKey } from '@triangulair/crypto';
 import { SqliteStateStore, type DeviceEntry } from '@triangulair/sync';
 
@@ -33,6 +33,7 @@ import { recoveryCopyFor } from '../identity/recovery';
 import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
+import { watchNetwork } from './network';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
 import type { WhatsNewEntry } from './whatsNew';
 
@@ -66,10 +67,6 @@ export interface SyncApi {
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
-
-function webOnline(): boolean {
-  return Platform.OS !== 'web' || typeof navigator === 'undefined' || navigator.onLine !== false;
-}
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const identity = useIdentity();
@@ -155,7 +152,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     });
     ctl.current = c;
     registerStorageMoveHooks(c);
-    c.setOnline(webOnline());
+    // Network status before the first pass: the browser's events on web (read at once), expo-network on phones
+    // (gap #4; its first reading is asynchronous, and unknown counts as online).
+    const offNet = watchNetwork((online) => c.setOnline(online));
     setSnapshot(c.snapshot());
     void c.foreground('launch');
 
@@ -164,19 +163,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       else if (s === 'background') void c.background();
     });
     const offEdit = onLocalEdit(() => c.localChange());
-    const net = () => c.setOnline(webOnline());
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.addEventListener('online', net);
-      window.addEventListener('offline', net);
-    }
     return () => {
       alive = false;
       sub.remove();
       offEdit();
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.removeEventListener('online', net);
-        window.removeEventListener('offline', net);
-      }
+      offNet();
       registerStorageMoveHooks(null);
       registerSyncPort(null);
       c.stop();
