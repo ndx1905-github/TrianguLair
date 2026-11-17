@@ -212,6 +212,7 @@ export const devicesFr: Messages = {
   'settings.staleLeft': { one: 'Se verrouille après encore {count} jour sans synchronisation', other: 'Se verrouille après encore {count} jours sans synchronisation' },
   'stale.title': 'Verrouillé : pas de synchronisation depuis trop longtemps',
   'stale.body': { one: 'Cet appareil n’a pas joint votre stockage depuis {count} jour. Il reste verrouillé jusqu’à sa prochaine synchronisation.', other: 'Cet appareil n’a pas joint votre stockage depuis {count} jours. Il reste verrouillé jusqu’à sa prochaine synchronisation.' },
+  'stale.clock': 'L’horloge de cet appareil a été reculée. Il reste verrouillé jusqu’à ce qu’il se synchronise avec votre stockage.',
   'stale.sync': 'Synchroniser',
   'stale.syncing': 'Synchronisation…',
   'stale.failed': 'Toujours pas de synchronisation. Vérifiez le réseau.',

@@ -9,8 +9,9 @@ import { useI18n } from '../i18n';
 /**
  * "Lock if no sync for N days" (spec "Protections on the device"): covers the whole app until a
  * sync with my storage succeeds. A device declared lost meanwhile erases itself at that sync.
+ * `clock`: locked because the clock was set back before a time already seen (devices review F-07).
  */
-export function StaleSyncLock({ days, onSync }: { days: number; onSync: () => Promise<void> }) {
+export function StaleSyncLock({ days, clock = false, onSync }: { days: number; clock?: boolean; onSync: () => Promise<void> }) {
   const c = useUiColors();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
@@ -27,7 +28,7 @@ export function StaleSyncLock({ days, onSync }: { days: number; onSync: () => Pr
           {t('stale.title')}
         </Text>
         <Text style={{ color: c.text, fontSize: 16, textAlign: 'center' }} maxFontSizeMultiplier={2}>
-          {t('stale.body', { count: days })}
+          {clock ? t('stale.clock') : t('stale.body', { count: days })}
         </Text>
         <Button
           label={busy ? t('stale.syncing') : t('stale.sync')}

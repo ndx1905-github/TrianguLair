@@ -219,6 +219,7 @@ export const devicesEn: Messages = {
   'settings.staleLeft': { one: 'Locks after {count} more day without sync', other: 'Locks after {count} more days without sync' },
   'stale.title': 'Locked: no sync for too long',
   'stale.body': { one: 'This device has not reached your storage for {count} day. It stays locked until it syncs.', other: 'This device has not reached your storage for {count} days. It stays locked until it syncs.' },
+  'stale.clock': 'This device’s clock was set back. It stays locked until it syncs with your storage.',
   'stale.sync': 'Sync now',
   'stale.syncing': 'Syncing…',
   'stale.failed': 'Still no sync. Check the network.',

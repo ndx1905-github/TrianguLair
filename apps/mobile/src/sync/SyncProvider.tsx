@@ -27,8 +27,8 @@ import { useStorage } from '../storage/StorageProvider';
 import { parseConfig } from '../storage/config';
 import type { OpenInvitationSummary } from '../storage/interfaces';
 import type { JournalEntry } from '../devices/journal';
-import { deviceName, staleSync } from '../devices/local';
-import { staleSyncAction } from '../identity/lock';
+import { deviceName, staleSync, touchClockMark } from '../devices/local';
+import { clockWentBack, staleSyncAction } from '../identity/lock';
 import { recoveryCopyFor } from '../identity/recovery';
 import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
@@ -244,13 +244,21 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, []);
   const stale = useMemo(
-    () => staleSyncAction(staleSync(), snapshot?.lastOwnSuccess ?? null, Date.now(), !!snapshot?.publishes),
+    () => {
+      // The latest time ever seen moves forward at launch, at each pass and every minute (review F-07).
+      const now = Date.now();
+      const last = snapshot?.lastOwnSuccess ?? null;
+      const mark = touchClockMark(last, now);
+      const settings = staleSync();
+      const action = staleSyncAction(settings, last, now, !!snapshot?.publishes, mark);
+      return { action, clock: action === 'lock' && !!settings && clockWentBack(settings, last, now, mark) };
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapshot, tick],
   );
   useEffect(() => {
-    if (stale === 'wipe') void ctl.current?.wipeNow().catch((e: unknown) => console.warn('Could not wipe this device', e));
-  }, [stale]);
+    if (stale.action === 'wipe') void ctl.current?.wipeNow().catch((e: unknown) => console.warn('Could not wipe this device', e));
+  }, [stale.action]);
 
   useEffect(() => {
     if (wiped) registerSyncPort(null);
@@ -260,7 +268,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   return (
     <SyncContext.Provider value={api}>
       {children}
-      {stale === 'lock' && <StaleSyncLock days={staleSync()?.days ?? 0} onSync={refresh} />}
+      {stale.action === 'lock' && <StaleSyncLock days={staleSync()?.days ?? 0} clock={stale.clock} onSync={refresh} />}
     </SyncContext.Provider>
   );
 }

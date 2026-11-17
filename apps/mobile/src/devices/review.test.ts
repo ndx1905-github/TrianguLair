@@ -23,7 +23,7 @@ import { ContactBook, SqliteStateStore, VAULT_PATH, keyPath } from '@triangulair
 
 import { SqlJsDriver } from '../data/sqljsDriver';
 import { createIdentity, type IdentityRecord } from '../identity/create';
-import { staleSyncAction } from '../identity/lock';
+import { clockWentBack, nextClockMark, staleSyncAction } from '../identity/lock';
 import { masterIdentity, rotateStoredSharingKey } from '../storage/certify';
 import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
@@ -312,11 +312,30 @@ describe('review F-05: restore with the 12 words', () => {
 });
 
 describe('review F-07: lock after N days without sync', () => {
-  it.fails('a clock set back before the last successful sync does not keep the device unlocked', () => {
+  it('a clock set back before the last successful sync does not keep the device unlocked', () => {
     const day = 86_400_000;
     const settings = { days: 7, wipe: false, since: Date.UTC(2026, 0, 1) };
     const lastSuccess = Date.UTC(2026, 5, 1);
     // Thief sets the phone's date back 1 year: "now - lastSuccess" is negative, the rule says "none".
     expect(staleSyncAction(settings, lastSuccess, lastSuccess - 365 * day, true)).toBe('lock');
+  });
+
+  it('the days count up to the latest time ever seen; only a new successful sync resets it', () => {
+    const day = 86_400_000;
+    const settings = { days: 7, wipe: true, since: Date.UTC(2026, 0, 1) };
+    const last = Date.UTC(2026, 5, 1);
+    // The app ran on 20 June (8 + days after the last sync), then the date was set back to 2 June.
+    let mark = nextClockMark(null, last, last + 19 * day);
+    expect(staleSyncAction(settings, last, last + 19 * day, true, mark)).toBe('wipe');
+    mark = nextClockMark(mark, last, last + day);
+    expect(mark.latest).toBe(last + 19 * day);
+    expect(staleSyncAction(settings, last, last + day, true, mark)).toBe('lock');
+    expect(clockWentBack(settings, last, last + day, mark)).toBe(true);
+    // A small network-time correction is not "set back".
+    expect(staleSyncAction(settings, last, last - 60_000, true, nextClockMark(null, last, last))).toBe('none');
+    // A sync succeeds (at the device's current time): the mark follows it, no lock.
+    const synced = last + 2 * day;
+    mark = nextClockMark(mark, synced, synced);
+    expect(staleSyncAction(settings, synced, synced, true, mark)).toBe('none');
   });
 });

@@ -20,8 +20,9 @@ import type { Locale } from '../i18n/core';
 import { useIdentity, useReadyIdentity, type Profile } from '../identity/IdentityProvider';
 import { useAppLock } from '../identity/LockGate';
 import { keyFingerprint } from '../identity/kit';
-import { LOCK_DELAYS_MS, STALE_SYNC_DAYS, staleDaysLeft, type StaleSyncSettings } from '../identity/lock';
-import { deviceName, setStaleSync, staleSync } from '../devices/local';
+import { LOCK_DELAYS_MS, STALE_SYNC_DAYS, parseClockMark, staleDaysLeft, type StaleSyncSettings } from '../identity/lock';
+import { CLOCK_MARK_KEY, deviceName, setStaleSync, staleSync } from '../devices/local';
+import { getSetting } from '../data/deviceSettings';
 import { useMaybeSync } from '../sync/SyncProvider';
 import { protocolOf } from '../storage/config';
 import { useStorage } from '../storage/StorageProvider';
@@ -230,7 +231,7 @@ function SettingsScreen() {
             {stale && (
               <>
                 <ToggleRow label={t('settings.staleWipe')} value={stale.wipe} onChange={(wipe) => changeStale({ ...stale, wipe })} testID="settings-stale-wipe" />
-                <Muted testID="settings-stale-left">{t('settings.staleLeft', { count: staleDaysLeft(stale, sync?.snapshot?.lastOwnSuccess ?? null, Date.now()) })}</Muted>
+                <Muted testID="settings-stale-left">{t('settings.staleLeft', { count: staleDaysLeft(stale, sync?.snapshot?.lastOwnSuccess ?? null, Date.now(), parseClockMark(getSetting(CLOCK_MARK_KEY))) })}</Muted>
               </>
             )}
             <Muted>{t('settings.staleHelp')}</Muted>

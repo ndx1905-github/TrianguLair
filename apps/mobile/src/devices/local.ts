@@ -6,11 +6,12 @@
 import { Platform } from 'react-native';
 
 import { getSetting, setSetting } from '../data/deviceSettings';
-import { parseStaleSync, type StaleSyncSettings } from '../identity/lock';
+import { nextClockMark, parseClockMark, parseStaleSync, type ClockMark, type StaleSyncSettings } from '../identity/lock';
 
 export const DEVICE_NAME_KEY = 'device-name';
 export const MOVED_FROM_KEY = 'identity-moved-from';
 export const STALE_SYNC_KEY = 'stale-sync';
+export const CLOCK_MARK_KEY = 'clock-mark';
 
 /** A first guess for this device's name (the user can rename it in Settings › Devices). */
 export function defaultDeviceName(): string {
@@ -44,4 +45,11 @@ export function staleSync(): StaleSyncSettings | null {
 
 export function setStaleSync(s: StaleSyncSettings | null): void {
   setSetting(STALE_SYNC_KEY, s ? JSON.stringify(s) : '');
+}
+
+/** The latest time this device saw, moved forward now (and reset by a new successful sync): see lock.ts. */
+export function touchClockMark(lastSuccess: number | null, now = Date.now()): ClockMark {
+  const next = nextClockMark(parseClockMark(getSetting(CLOCK_MARK_KEY)), lastSuccess, now);
+  setSetting(CLOCK_MARK_KEY, JSON.stringify(next));
+  return next;
 }

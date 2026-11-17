@@ -115,18 +115,59 @@ export function parseStaleSync(s: string | null): StaleSyncSettings | null {
 }
 
 /**
+ * The latest time this device ever saw (devices review F-07), persisted at each launch, foreground
+ * and minute while the app runs: setting the clock back does not take the count back. Reset by a
+ * successful sync (`success`: the last success it was made for), the only thing that unlocks.
+ */
+export interface ClockMark {
+  latest: number;
+  success: number | null;
+}
+
+/** A clock may be corrected by this much (network time) without counting as set back. */
+export const CLOCK_TOLERANCE_MS = 10 * 60 * 1000;
+
+export function parseClockMark(s: string | null): ClockMark | null {
+  if (!s) return null;
+  try {
+    const o = JSON.parse(s) as Partial<ClockMark>;
+    if (!Number.isSafeInteger(o.latest) || (o.success !== null && !Number.isSafeInteger(o.success))) return null;
+    return { latest: o.latest!, success: o.success ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/** The mark after looking at the clock now: it only moves forward, except after a new successful sync. */
+export function nextClockMark(prev: ClockMark | null, lastSuccess: number | null, now: number): ClockMark {
+  if (!prev || (lastSuccess !== null && lastSuccess !== prev.success)) return { latest: Math.max(now, lastSuccess ?? 0), success: lastSuccess };
+  return { latest: Math.max(prev.latest, now), success: prev.success };
+}
+
+/** The clock is earlier than a time this device already saw (the last sync, the option, the mark). */
+export function clockWentBack(s: StaleSyncSettings, lastSuccess: number | null, now: number, mark: ClockMark | null = null): boolean {
+  const seen = Math.max(lastSuccess ?? 0, s.since, mark?.latest ?? 0);
+  return now + CLOCK_TOLERANCE_MS < seen;
+}
+
+/**
  * What the app must do now. `lastSuccess`: the last pass where my storage worked (null: never).
  * Only for a device that syncs with a storage (`syncs`); a local-only device has nothing to wait for.
+ * The days are counted up to the latest time ever seen (`mark`), and a clock set back before a time
+ * already seen locks at once (devices review F-07: a thief keeping the phone offline and setting
+ * the date back never escaped the lock).
  */
-export function staleSyncAction(s: StaleSyncSettings | null, lastSuccess: number | null, now: number, syncs: boolean): 'none' | 'lock' | 'wipe' {
+export function staleSyncAction(s: StaleSyncSettings | null, lastSuccess: number | null, now: number, syncs: boolean, mark: ClockMark | null = null): 'none' | 'lock' | 'wipe' {
   if (!s || !syncs) return 'none';
+  if (clockWentBack(s, lastSuccess, now, mark)) return 'lock';
   const from = Math.max(lastSuccess ?? 0, s.since);
-  if (now - from < s.days * DAY_MS) return 'none';
+  const latest = Math.max(now, mark?.latest ?? 0);
+  if (latest - from < s.days * DAY_MS) return 'none';
   return s.wipe ? 'wipe' : 'lock';
 }
 
 /** Days left before the lock (for the settings line), at least 0. */
-export function staleDaysLeft(s: StaleSyncSettings, lastSuccess: number | null, now: number): number {
+export function staleDaysLeft(s: StaleSyncSettings, lastSuccess: number | null, now: number, mark: ClockMark | null = null): number {
   const from = Math.max(lastSuccess ?? 0, s.since);
-  return Math.max(0, Math.ceil((from + s.days * DAY_MS - now) / DAY_MS));
+  return Math.max(0, Math.ceil((from + s.days * DAY_MS - Math.max(now, mark?.latest ?? 0)) / DAY_MS));
 }

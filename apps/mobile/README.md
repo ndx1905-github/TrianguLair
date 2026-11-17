@@ -236,6 +236,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     follow the move ("… changed their identity" in What's new and contacts, verified mark removed).
   - *Lock if no sync for N days* (Settings › App lock: off, 3, 7, 14, 30 days, optional erase): after N days without
     reaching my storage the app is covered until a sync succeeds (which wipes it if it was declared lost), or erased.
+    Devices review F-07: the days count up to the latest time this device ever saw (`clock-mark` device setting,
+    moved forward at launch, each pass and every minute; reset only by a successful sync), and a clock set back more
+    than 10 minutes before a time already seen (the last sync, the option, the mark) locks at once ("the clock was set
+    back").
 - **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
   filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
   per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
