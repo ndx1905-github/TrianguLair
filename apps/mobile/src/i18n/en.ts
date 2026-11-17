@@ -7,6 +7,7 @@ import { syncEn } from './sync.en';
 import { contactsEn } from './contacts.en';
 import { devicesEn } from './devices.en';
 import { sharedListsEn } from './sharedLists.en';
+import { photosEn } from './photos.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -24,6 +25,7 @@ export const en: Messages = {
   ...devicesEn,
   // Sharing lists, following a list by link (T-211, T-212), kept in their own file.
   ...sharedListsEn,
+  ...photosEn,
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',

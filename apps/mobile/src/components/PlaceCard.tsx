@@ -21,6 +21,7 @@ import { DirectionsSection } from './DirectionsSection';
 import { ListsSection } from './ListsSection';
 import { SaveEditor, type SaveFields } from './SaveEditor';
 import { FriendsSection } from '../sync/FriendsSection';
+import { PhotoGallery } from '../photos/PhotoGallery';
 import { Banner, Button, Pill, SectionTitle } from './ui';
 
 /** Refresh the OSM data of a place at most this often when its card opens. */
@@ -213,6 +214,8 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
       )}
 
       <DirectionsSection place={place} address={card.address} />
+
+      <PhotoGallery placeId={placeId} mine={!!save} />
 
       {photos.length > 0 && (
         <>

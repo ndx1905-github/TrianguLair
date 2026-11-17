@@ -60,7 +60,11 @@ import {
   readOwnItems,
   newListKey,
   publicListsUrl,
+  SqliteMediaCache,
+  type MediaCache,
+  type Photos,
 } from '@triangulair/sync';
+import { MB, cacheCapMb } from '../photos/model';
 
 import { engineSyncPort, type SyncPort } from '../contacts/port';
 import { slotFiles } from '../devices/channel';
@@ -210,8 +214,12 @@ export class SyncController implements StorageMoveHooks {
   /** The keys each engine was built with (the port signs with this device and states my certificate). */
   private readonly built = new WeakMap<SyncEngine, { sharing: SharingKey; device: DeviceSigner }>();
 
+  /** Local copies of photos (my photos and the friends' cache), in the same database (T-111b). */
+  readonly media: MediaCache;
+
   constructor(private readonly d: ControllerDeps) {
     this.whatsNew = new WhatsNewLog(d.state);
+    this.media = new SqliteMediaCache(d.store.repo.db);
     this.scheduler = new SyncScheduler({
       run: (reason, opts) => this.pass(reason, opts),
       onStatus: () => d.onChange(),
@@ -260,6 +268,8 @@ export class SyncController implements StorageMoveHooks {
       readAdapter: (loc) => this.readAdapter(loc),
       online: () => this.online,
       friendKeys: (owner) => this.keysFor(owner),
+      media: this.media,
+      friendsCacheBytes: cacheCapMb() * MB,
       ...(author && { author }),
       ...(k.move && { move: k.move }),
       onSharingKey: (nk) => {
@@ -1130,6 +1140,14 @@ export class SyncController implements StorageMoveHooks {
     return port;
   }
 
+
+  // ------------------------------------------------------------------ photos (T-111b)
+
+  /** The photos service (add, remove, gallery, images); built with the engine, which works without a storage too. */
+  async photos(): Promise<Photos | null> {
+    if (this.wiped) return null;
+    return (await this.engineReady()).photos;
+  }
 
   // ------------------------------------------------------------------ state for the screens
 

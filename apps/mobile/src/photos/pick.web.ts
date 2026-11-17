@@ -1,0 +1,78 @@
+/**
+ * Web (test build): a file input (`capture` on phones for the camera), then a canvas: the image is
+ * decoded with its EXIF orientation applied, drawn at about 1,600 px and encoded in AVIF when the
+ * browser can, else WebP, else JPEG; the thumbnail uses the same format. A canvas writes no
+ * metadata; the sync package strips and checks again (`Photos.add`).
+ */
+import type { PhotoInput } from '@triangulair/sync';
+
+import { fitSize, type QualitySpec } from './model';
+import { PhotoProcessError, type Picked, type PickSource } from './pick.types';
+
+const TYPES = ['image/avif', 'image/webp', 'image/jpeg'] as const;
+
+export function pickImage(from: PickSource): Promise<Picked | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    if (from === 'camera') input.setAttribute('capture', 'environment');
+    input.style.display = 'none';
+    input.setAttribute('data-testid', 'photo-file-input');
+    let done = false;
+    const finish = (v: Picked | null) => {
+      if (done) return;
+      done = true;
+      input.remove();
+      resolve(v);
+    };
+    input.addEventListener('change', () => {
+      const f = input.files?.[0];
+      finish(f ? { uri: '', width: 0, height: 0, file: f } : null);
+    });
+    input.addEventListener('cancel', () => finish(null));
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function decode(p: Picked): Promise<ImageBitmap> {
+  const src = p.file ?? (await (await fetch(p.uri)).blob());
+  try {
+    return await createImageBitmap(src, { imageOrientation: 'from-image' });
+  } catch {
+    throw new PhotoProcessError('not an image this browser can read');
+  }
+}
+
+function toBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function draw(bmp: ImageBitmap, side: number, quality: number, types: readonly string[]): Promise<{ bytes: Uint8Array; type: string; width: number; height: number }> {
+  const { width, height } = fitSize(bmp.width, bmp.height, side);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new PhotoProcessError('no canvas');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, 0, 0, width, height);
+  for (const type of types) {
+    const blob = await toBlob(canvas, type, quality);
+    // A browser that cannot encode a type silently falls back to PNG: check what came out.
+    if (blob && blob.type === type) return { bytes: new Uint8Array(await blob.arrayBuffer()), type, width, height };
+  }
+  throw new PhotoProcessError('this browser cannot encode WebP, AVIF or JPEG');
+}
+
+export async function processImage(p: Picked, q: QualitySpec): Promise<PhotoInput> {
+  const bmp = await decode(p);
+  try {
+    const full = await draw(bmp, q.side, q.quality, TYPES);
+    const thumb = await draw(bmp, q.thumbSide, q.thumbQuality, [full.type]);
+    return { full: full.bytes, thumb: thumb.bytes, width: full.width, height: full.height };
+  } finally {
+    bmp.close();
+  }
+}

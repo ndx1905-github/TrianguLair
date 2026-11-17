@@ -20,8 +20,9 @@ import { Avatar } from '../sync/FriendsPicker';
 import { usePullToRefresh } from '../sync/usePullToRefresh';
 import { useSync } from '../sync/SyncProvider';
 import { filterEntries, groupByDay, placesOf, type WhatsNewEntry, type WhatsNewType } from '../sync/whatsNew';
+import { PhotoStrip } from '../photos/PhotoStrip';
 
-const TYPES: WhatsNewType[] = ['all', 'places', 'comments', 'statuses', 'people'];
+const TYPES: WhatsNewType[] = ['all', 'places', 'comments', 'statuses', 'photos', 'people'];
 
 function WhatsNewScreen() {
   const c = useUiColors();
@@ -63,6 +64,8 @@ function WhatsNewScreen() {
         return t('wn.comment', { name, place });
       case 'status':
         return t(e.status === 'favorite' ? 'wn.status.favorite' : 'wn.status.tried', { name, place });
+      case 'photo':
+        return t('wn.photo', { name, place, count: e.count ?? 1 });
       case 'followed':
         return t('wn.followed', { name, count: e.count ?? 0 });
       case 'key':
@@ -147,6 +150,7 @@ function WhatsNewScreen() {
                         “{e.comment}”
                       </Text>
                     ) : null}
+                    {e.kind === 'photo' && e.mediaIds?.length ? <PhotoStrip mediaIds={e.mediaIds} /> : null}
                     <Text style={{ color: c.textMuted, fontSize: 12 }} maxFontSizeMultiplier={2}>
                       {time(e.at)}
                     </Text>

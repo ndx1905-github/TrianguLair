@@ -9,7 +9,7 @@
  */
 import type { FriendReport, SyncStateStore } from '@triangulair/sync';
 
-export type WhatsNewKind = 'added' | 'comment' | 'status' | 'followed' | 'key' | 'moved' | 'identity';
+export type WhatsNewKind = 'added' | 'comment' | 'status' | 'photo' | 'followed' | 'key' | 'moved' | 'identity';
 
 export interface WhatsNewEntry {
   id: string;
@@ -24,12 +24,14 @@ export interface WhatsNewEntry {
   comment?: string;
   /** Their status (status, or added with one). */
   status?: string;
-  /** First read of someone: how many places, and which (capped). */
+  /** First read of someone: how many places, and which (capped); new photos: how many. */
   count?: number;
   placeIds?: string[];
+  /** New photos (kind `photo`): their ids, for thumbnails. */
+  mediaIds?: string[];
 }
 
-export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'people';
+export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'photos' | 'people';
 
 export interface RecordContext {
   now: number;
@@ -107,6 +109,11 @@ export class WhatsNewLog {
         if (ch.fields.includes('comment') && s?.comment) add({ ...base, kind: 'comment', comment: s.comment });
         if (ch.fields.includes('status') && s?.status && MEANINGFUL_STATUS.has(s.status)) add({ ...base, kind: 'status', status: s.status });
       }
+      // New photos on a place already there (spec "Editing": "new photo" is meaningful).
+      for (const p of wn.photos ?? []) {
+        if (p.mediaIds.length === 0) continue;
+        add({ owner, kind: 'photo', placeId: p.placeId, ...opt('name', ctx.placeName(p.placeId)), count: p.mediaIds.length, mediaIds: p.mediaIds.slice(0, 24) });
+      }
     }
     if (fresh.length === 0 && gone.size === 0) return [];
     // A place that left their shared places takes its earlier news with it.
@@ -135,6 +142,8 @@ export function matchesType(e: WhatsNewEntry, type: WhatsNewType): boolean {
       return e.kind === 'comment' || (e.kind === 'added' && !!e.comment);
     case 'statuses':
       return e.kind === 'status';
+    case 'photos':
+      return e.kind === 'photo';
     case 'people':
       return e.kind === 'key' || e.kind === 'moved' || e.kind === 'identity';
   }
