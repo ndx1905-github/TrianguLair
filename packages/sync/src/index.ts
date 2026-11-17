@@ -9,6 +9,20 @@ export { OwnSync, VAULT_PATH, keyPath, type OwnSyncOptions, type PublishReport, 
 export { FriendReader, READ_MAJORS, type ReaderOptions, type FriendTarget, type FriendReport, type WhatsNew, type ChangedItem } from './reader.ts';
 export { SyncScheduler, type SchedulerOptions, type SyncStatus, type SyncReason, type Timers, type RunOptions } from './scheduler.ts';
 export { ContactBook, mergeBooks, laterAnchor, listsSeenBy, OWN_ANCHOR_STEP, MAX_FOLLOWED_LISTS, FOLLOWED_REMOVED_KEEP_MS, TooManyFollowedListsError, type Contact, type ContactPolicy, type SharePolicy, type FollowedListEntry, type PublishPrefs } from './contacts.ts';
+export {
+  DEVICES_KEY,
+  VALUES_KEY,
+  MAX_DEVICE_NAME,
+  MAX_DEVICES,
+  MAX_SKEW_MS,
+  cleanName,
+  devicesOf,
+  valueOf,
+  mergeDeviceParts,
+  type DeviceEntry,
+  type EntrySigner,
+  type TrustContext,
+} from './devices.ts';
 export { ListReader, ListGoneError, type ListGone, type ListPreview, type ListReport, type ListMeta, type FollowedListInfo, type ListReaderOptions } from './followed.ts';
 export {
   encodeListLink,

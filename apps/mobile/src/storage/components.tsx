@@ -73,7 +73,7 @@ export function Field({
   secret?: boolean;
   problems?: DraftProblem[];
   testID?: string;
-  keyboard?: 'url' | 'default';
+  keyboard?: 'url' | 'default' | 'number';
 }) {
   const c = useUiColors();
   const { t } = useI18n();
@@ -93,7 +93,7 @@ export function Field({
         autoCorrect={false}
         spellCheck={false}
         autoComplete="off"
-        keyboardType={keyboard === 'url' ? 'url' : 'default'}
+        keyboardType={keyboard === 'url' ? 'url' : keyboard === 'number' ? 'number-pad' : 'default'}
         accessibilityLabel={label}
         style={[styles.input, { color: c.text, borderColor: error ? c.danger : c.border, backgroundColor: c.surface }]}
         maxFontSizeMultiplier={2}

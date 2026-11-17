@@ -69,6 +69,8 @@ function WhatsNewScreen() {
         return t('wn.key', { name });
       case 'moved':
         return t('wn.moved', { name });
+      case 'identity':
+        return t('wn.identity', { name });
     }
   };
 

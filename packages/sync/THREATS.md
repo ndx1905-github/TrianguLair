@@ -80,6 +80,26 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - The vault (`vault.bin`) is authenticated by the vault data key only; contact switches in its free-form part are
   as trustworthy as the vault itself (a stolen device could change them until the declaration; they are not
   security fields of the format: they decide who gets wraps, which the owner sees in the app).
+- **My devices and app values in the vault** (devices review F-01, F-02): every entry is signed by the device that
+  wrote it, in its own slot, and counts only while that device is certified and not revoked by my current sharing
+  certificate. Who my devices are, who is removed and who gets the new key come from master-signed device
+  certificates and the certificate's `revoked_devices` only. Times more than 10 minutes ahead are refused. A
+  declaration drops everything the lost device signed and resets the values to the declaring device's.
+  Residual: until the declaration, a stolen device is a valid signer: it can rename devices and set values
+  (storage settings included) in its own slot, newest-wins. The app never takes another write endpoint from the
+  vault, only new credentials for the same one (apps/mobile README). After the declaration, what it signed is ignored
+  even in an old copy merged by a device that had not seen it.
+- **Followed lists and publish preferences in the vault** (`app.triangulair_sync`, lists review L-02, L-03): not
+  signed, like the contact switches. A stolen device can follow or unfollow lists and turn the tag names of my
+  forwardable lists on until the declaration (the share sheet shows the setting; the declaration does not reset
+  it). It cannot make such an entry win for good: entries dated more than 10 minutes ahead are refused when merging,
+  as for the signed values, so a later change of mine sticks.
+- **Link-only list keys and a lost device**: the keys are in my Yjs document, so a stolen device holds every link.
+  A declaration of loss (the app's `declareLost`, not "Remove a device") draws a new key for each live link-only
+  list; the publication that follows seals them to the new keys and deletes the old files, and the screen lists the
+  lists whose new link must be shared again. What the thief read before stays read; the tombstone of a list already
+  deleted is still sealed to its last key (it only says "This list no longer exists"). Lists followed by link
+  (other people's) are not mine to renew: the thief keeps the links it saw in my vault.
 
 ## Friends' cache
 
@@ -178,3 +198,25 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   skew window passes (bounded).
 - Own packs are still opened with every key I hold (current and previous) once their index is trusted; the index
   rule above is what keeps a revoked device's content out.
+
+## Devices review (PR #86): what is left
+
+Fixed: F-01 to F-08 (signed device list and app values judged against the current certificate; link + code sends no
+key before approval; restore checks freshness; the primary device routes to the identity change; the stale-sync lock
+survives a clock set back; the identity move asks for the storage access change first and is resumable) and F-04 (a
+new device is listed only once it picked its keys up). Partly fixed or documented:
+
+- **F-09 Changes since the theft**: the list shows every change of my other devices since the date by default (the
+  device that signed the index is a hint: another device may have merged the lost one's edits and republished
+  first). Still not covered: contact policies (`share`/`follow`) in the vault, tags and lists (the storage's version
+  history lists them); "Revert" does not put back a place's name; the journal is per device and local.
+- **F-10 Remove a device**: rotates without cancelling invitations and without the storage access guide (the screen
+  says so: suited to a device erased and given away). Nothing reminds the user later that the access was not
+  changed after a declaration; the guide is shown once, on the result screen.
+- **F-11 An interrupted declaration**: the new key is stored before `declareLost` publishes. If the publication
+  fails, the lost device's `keys/` file is deleted and its slots dropped only at the retry, the screen does not list
+  the cancelled invitations, and a retry makes rotation r+2. Nothing leaks: the new certificate still cancels the
+  invitations and revokes the device at the next publication. A pending declaration in the state store would make it
+  resumable.
+- Link + code needs two links (the invitation, and the request link back): the new device has no storage access
+  before its approval.

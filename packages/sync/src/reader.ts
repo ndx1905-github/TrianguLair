@@ -28,6 +28,7 @@
  */
 import {
   DecryptionError,
+  IdentityMovedError,
   StorageMovedError,
   formatKey,
   indexAnchor,
@@ -102,6 +103,12 @@ export interface FriendReport {
   /** They moved storage (followed redirect): new certified address. */
   movedTo?: string;
   problem?: SyncProblem;
+  /**
+   * Their index belongs to a new identity with a valid move from the one I follow (theft of their
+   * primary device): `conflict` when it is a second successor of an identity already left behind.
+   * The engine follows a non-conflicting move (`ContactBook.followMove`).
+   */
+  identityMove?: { from: string; to: string; conflict: boolean; followed?: boolean };
   /** Packs downloaded and bytes. */
   downloaded: { packs: number; bytes: number };
 }
@@ -363,6 +370,7 @@ export class FriendReader {
       this.o.state.set(this.key(t.owner), { ...keep, lastError: this.nowMs() });
       report.status = 'error';
       report.problem = classifyError(e, 'friend');
+      if (e instanceof IdentityMovedError) report.identityMove = { from: e.from, to: e.to, conflict: e.conflict };
       delete report.index;
       return report;
     }

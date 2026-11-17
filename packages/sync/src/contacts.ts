@@ -27,7 +27,23 @@ import {
   type SharingCert,
   type SignedIndex,
   type VaultRecords,
+  type DeviceCert,
 } from '@triangulair/crypto';
+import {
+  MAX_SKEW_MS,
+  devicesOf,
+  dropSigners,
+  markDevicesRemoved,
+  mergeDeviceParts,
+  putDeviceCert,
+  putDeviceInfo,
+  resetValues,
+  setValue,
+  valueOf,
+  type DeviceEntry,
+  type EntrySigner,
+  type TrustContext,
+} from './devices.ts';
 
 /** What a contact may read: everything I share with friends, nothing, or only the places of some of my lists. */
 export type SharePolicy = boolean | { lists: string[] };
@@ -90,6 +106,20 @@ export class TooManyFollowedListsError extends Error {
 /** The stored form of an entry: a removed one never keeps its link. */
 function cleanEntry(e: FollowedListEntry): FollowedListEntry {
   return e.removed ? { at: e.at, removed: true } : e;
+}
+
+/**
+ * A well-formed entry dated no later than `maxAt`, or undefined. The followed lists and the publish
+ * preferences are not signed (any device of mine writes them), so, as for the signed values of
+ * devices.ts (devices review F-01), an entry stamped far in the future (a stolen device's
+ * `at = 2^53-1`) is refused: it would otherwise win every merge for good, and an unfollow or a
+ * change of the preference made after the declaration of loss would never stick.
+ */
+function checkedEntry(e: unknown, maxAt: number): FollowedListEntry | undefined {
+  const x = e as FollowedListEntry | undefined;
+  if (!x || typeof x !== 'object' || !Number.isSafeInteger(x.at) || x.at < 0 || x.at > maxAt) return undefined;
+  if (x.removed === true) return { at: x.at, removed: true };
+  return typeof x.link === 'string' ? { link: x.link, at: x.at } : undefined;
 }
 
 export interface Contact {
@@ -157,9 +187,9 @@ export function laterAnchor(a: IndexAnchor | undefined, b: IndexAnchor | undefin
   return b.seq >= a.seq ? b : a;
 }
 
-function checkedPrefs(p: unknown): PublishPrefs | undefined {
+function checkedPrefs(p: unknown, maxAt = Number.MAX_SAFE_INTEGER): PublishPrefs | undefined {
   const x = p as PublishPrefs | undefined;
-  return x && typeof x === 'object' && typeof x.tagNames === 'boolean' && Number.isSafeInteger(x.at) ? { tagNames: x.tagNames, at: x.at } : undefined;
+  return x && typeof x === 'object' && typeof x.tagNames === 'boolean' && Number.isSafeInteger(x.at) && x.at <= maxAt ? { tagNames: x.tagNames, at: x.at } : undefined;
 }
 
 function withApp(r: VaultRecords, part: AppPart): VaultRecords {
@@ -180,20 +210,34 @@ function laterPolicy(a: ContactPolicy | undefined, b: ContactPolicy | undefined)
   return canonicalize(a) >= canonicalize(b) ? a : b; // deterministic on both devices
 }
 
-/** Merges two copies of my vault records (crypto records by `mergeVaults`, contact policies per contact). */
-export function mergeBooks(a: VaultRecords, b: VaultRecords): VaultRecords {
+/**
+ * Merges two copies of my vault records (crypto records by `mergeVaults`, contact policies per
+ * contact, my devices and app values by `mergeDeviceParts`; `ctx`: the current certificate's
+ * revocations and the clock, see devices.ts).
+ */
+export function mergeBooks(a: VaultRecords, b: VaultRecords, ctx: TrustContext = {}): VaultRecords {
   const merged = mergeVaults(a, b);
   const pa = appPart(a).contacts;
   const pb = appPart(b).contacts;
   const contacts: Record<string, ContactPolicy> = {};
   for (const k of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].sort()) contacts[k] = laterPolicy(pa[k], pb[k])!;
   const own = laterAnchor(checkedOwnAnchor(appPart(a).own, a.owner), checkedOwnAnchor(appPart(b).own, a.owner));
+  // Followed lists and publish preferences: unsigned, so no entry dated beyond the clock (see checkedEntry).
+  const maxAt = (ctx.now ?? Date.now()) + MAX_SKEW_MS;
   const la = appPart(a).lists ?? {};
   const lb = appPart(b).lists ?? {};
   const lists: Record<string, FollowedListEntry> = {};
-  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) lists[k] = cleanEntry(laterEntry(la[k], lb[k])!);
-  const publish = laterEntry(checkedPrefs(appPart(a).publish), checkedPrefs(appPart(b).publish));
-  return withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }), ...(publish && { publish }) });
+  for (const k of [...new Set([...Object.keys(la), ...Object.keys(lb)])].sort()) {
+    const e = laterEntry(checkedEntry(la[k], maxAt), checkedEntry(lb[k], maxAt));
+    if (e) lists[k] = e;
+  }
+  const publish = laterEntry(checkedPrefs(appPart(a).publish, maxAt), checkedPrefs(appPart(b).publish, maxAt));
+  return mergeDeviceParts(
+    withApp(merged, { version: 1, contacts, ...(own && { own }), ...(Object.keys(lists).length && { lists }), ...(publish && { publish }) }),
+    a,
+    b,
+    ctx,
+  );
 }
 
 /**
@@ -412,6 +456,59 @@ export class ContactBook {
 
   retiredOwners(): string[] {
     return [...this.r.retired_owners];
+  }
+
+  /**
+   * A friend moved to a new identity (spec "Loss and theft", theft of the primary device): `index`
+   * is the new identity's index, verified with `expectedOwner = to` and `from` retired. `from` is
+   * retired for good (everything it signs later is refused), the contact continues under `to` with
+   * the same switches, and is no longer verified (the safety code must be compared again).
+   */
+  followMove(from: string, index: SignedIndex, now = Date.now()): void {
+    if (index.owner === from) throw new Error('followMove: same identity');
+    const old = this.policy(from);
+    this.r = { ...this.r, retired_owners: [...new Set([...this.r.retired_owners, from])].sort() };
+    this.addContact(index, { share: old.removed ? false : old.share, follow: old.removed ? false : old.follow, verified: false }, now);
+    this.remove(from, now);
+  }
+
+  // ------------------------------------------------------------------ my devices (devices.ts)
+
+  /** My devices whose certificate verifies; `removed` for those `ctx.revoked` lists (devices.ts). */
+  devices(ctx: TrustContext = {}): DeviceEntry[] {
+    return devicesOf(this.r, ctx);
+  }
+
+  /** Lists a master-signed device certificate (throws when it is not mine). */
+  putDeviceCert(cert: DeviceCert): void {
+    this.r = putDeviceCert(this.r, cert);
+  }
+
+  /** `signer`'s display entry for a listed device (name, date added, primary mark for itself). */
+  putDeviceInfo(id: string, patch: { name?: string; added?: number; primary?: boolean }, signer: EntrySigner, now = Date.now(), ctx: TrustContext = {}): void {
+    this.r = putDeviceInfo(this.r, id, patch, signer, now, ctx);
+  }
+
+  /** Display only: when these (revoked) devices were removed. */
+  markDevicesRemoved(ids: readonly string[], now = Date.now()): void {
+    this.r = markDevicesRemoved(this.r, ids, now);
+  }
+
+  value<T>(key: string, ctx: TrustContext = {}): { value: T; at: number; by: string } | undefined {
+    return valueOf<T>(this.r, key, ctx);
+  }
+
+  setValue(key: string, value: unknown, signer: EntrySigner, now = Date.now(), ctx: TrustContext = {}): void {
+    this.r = setValue(this.r, key, value, signer, now, ctx);
+  }
+
+  /** Declaration of loss: forget what the revoked devices signed, values reset to the declaring device's. */
+  dropSigners(ids: Iterable<string>): void {
+    this.r = dropSigners(this.r, ids);
+  }
+
+  resetValues(values: Record<string, unknown>, signer: EntrySigner, now = Date.now()): void {
+    this.r = resetValues(this.r, values, signer, now);
   }
 
   /** My own anchor recorded in the vault (checked; undefined when absent or malformed). */

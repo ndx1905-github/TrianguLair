@@ -61,11 +61,13 @@ export const storageFr: Messages = {
   'storage.reason.link-list': 'Une liste partagée par lien est lue sur votre stockage : connectez-en un d’abord.',
   'storage.reason.public-list': 'Une liste publique est publiée sur votre stockage : connectez-en un d’abord.',
   'storage.reason.backup': 'Un stockage garde une copie chiffrée de vos lieux : un téléphone perdu ne vous fait pas perdre vos lieux.',
+  'storage.reason.devices': 'Vos appareils se synchronisent par votre stockage : connectez-en un avant d’ajouter un appareil.',
   'storage.needed.title': 'Un stockage est nécessaire',
   'storage.needed.invite': 'Les invitations sont lues sur votre stockage.',
   'storage.needed.link-list': 'Pour partager cette liste par lien, connectez un stockage : la liste y sera lue.',
   'storage.needed.public-list': 'Pour publier cette liste, connectez un stockage : elle y sera publiée.',
   'storage.needed.backup': 'Connectez un stockage pour sauvegarder vos lieux.',
+  'storage.needed.devices': 'Vos appareils partagent vos lieux par votre stockage.',
   'storage.needed.connect': 'Connecter un stockage',
 
   'storage.choice.local': 'Local uniquement',

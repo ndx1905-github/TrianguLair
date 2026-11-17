@@ -207,6 +207,13 @@ test('move to another storage: lossless copy, verified, certified, old storage k
   // it (the engine may have rewritten my own document at B, then removed the superseded copy).
   for (const [p, d] of Object.entries(files)) {
     if (p === 'index.json') continue;
+    // My vault is rewritten whenever its records change (T-206: it also keeps my storage settings,
+    // which the connection test updates): present on both, not byte-for-byte frozen.
+    if (p === 'vault.bin') {
+      expect(await davGet(`${a}/${p}`)).not.toBeNull();
+      expect(await davGet(`${b}/${p}`)).not.toBeNull();
+      continue;
+    }
     expect(Buffer.compare((await davGet(`${a}/${p}`))!, Buffer.from(d)), p).toBe(0);
   }
   const newIndex = (await davGet(`${b}/index.json`))!;

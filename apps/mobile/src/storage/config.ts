@@ -373,6 +373,17 @@ export function sameStorage(a: StorageConfig, b: StorageConfig): boolean {
   return a.readUrl === b.readUrl;
 }
 
+/**
+ * Same storage, same read address, same write endpoint: only the credentials may differ (devices
+ * review F-01: settings from the vault are taken by a device only when this holds).
+ */
+export function sameWriteTarget(a: StorageConfig, b: StorageConfig): boolean {
+  if (a.kind !== b.kind || a.readUrl !== b.readUrl) return false;
+  if (a.kind === 'webdav' && b.kind === 'webdav') return a.url === b.url;
+  if (a.kind === 's3' && b.kind === 's3') return a.endpoint === b.endpoint && a.bucket === b.bucket && a.prefix === b.prefix && a.region === b.region && a.pathStyle === b.pathStyle;
+  return a.kind === 'https';
+}
+
 function str(o: Record<string, unknown>, k: string): string {
   const v = o[k];
   if (typeof v !== 'string') throw new Error(`storage config: ${k}`);

@@ -96,7 +96,8 @@ tombstones), so every device publishes the same audiences.
 | `packs/b2b256-<hash>.bin` | **lists packs** (payload kind 4, below): list definitions sealed to the friends with access; a link-only list (definition + places) sealed to its list key; tombstones of deleted link-only lists | those friends; whoever holds the link |
 | `public/lists.geojson` | public lists in plaintext, ODbL attribution, uMap styles, listed in the index with its hash | anyone, uMap, followers of a public list |
 | `vault.bin` | recovery vault (`TLVD`), written with `If-Match`, merged on conflict | my devices |
-| `keys/<device id>.bin` | the current sharing key sealed to each of my other devices (`TLSK`), written by `rotate` | that device |
+| `keys/<device id>.bin` | the current sharing key sealed to each of my other devices (`TLSK`), written by `rotate` and before each publication | that device |
+| `keys/<owner id>.bin` | the current sharing key sealed with the phrase-derived key (`TLSK` mode 2), written by `rotateKey` and by the app | a device restored with the 12 words |
 
 Packs are written first (in parallel, `If-None-Match: *`), then the public file, then the index (`If-Match` of the
 index the pass started from, `If-None-Match: *` on the first publication). The index is then **read back**:
@@ -253,6 +254,45 @@ the union of the packs I can open: anything no longer in it (deleted, made priva
 from the cache, with the places its data created. Everything is projected in one transaction, and only if every
 needed pack was fetched and verified: otherwise the last valid content stays. The difference feeds What's new
 (`meaningful`: a new comment, or a switch to tried / favorite; the rest is a minor touch-up).
+
+## My devices, declaration of loss, identity moves (T-206, T-207)
+
+- **Device list** (`devices.ts`, vault `app.triangulair_devices`, version 2): per device id, its full
+  **master-signed device certificate**, a removal date (display only) and display entries (name, date added,
+  primary mark), **one signed slot per signer** (`sign.ts`: Ed25519, prefix `TrianguLair-app-signature-v1`, domain
+  `vault-device-info`; a stolen device can only write its own slot). Security decisions use only what a thief
+  cannot forge (review F-02):
+  - which devices exist: the certificates that verify for my owner id (merged as a union; one that does not verify
+    never replaces one that does);
+  - which are removed: the current sharing certificate's `revoked_devices` (`removed` is set for those only);
+  - display entries count only from a valid signer (my master key, or a certified device the current certificate
+    does not revoke); the primary mark only from the device's own slot.
+- **App values** (vault `app.triangulair_values`, version 2): small named values (the app keeps its storage
+  settings and my first name there for a new device), one signed slot per signer (domain `vault-value`). The
+  visible value is the newest slot of a valid signer (review F-01). Times more than `MAX_SKEW_MS` (10 min) ahead are
+  refused when merging and reading; a new value is stamped after every valid one seen (a later change by the user
+  wins), never past `MAX_SAFE_INTEGER`. Unsigned version 1 values are dropped.
+- Engine: `devices()`, `putDevice`, `updateDevice`, `value`, `setValue` (all signed by this device, judged against
+  the current certificate); `mergeBooks(a, b, { revoked, now })`. `now` also bounds the unsigned followed-list and
+  publish-preference entries of `app.triangulair_sync` (refused when more than `MAX_SKEW_MS` ahead).
+- **Key delivery**: before each publication the engine seals the current sharing key to every listed device that does
+  not have it yet (`keys/<device>.bin`, marker per device in the state).
+- **`rotateKey(newKey, { cancelInvitations, recoveryCopy })`**: adopts a rotation made on this device with the master
+  key (declaration of loss, a removed device), cancels every open invitation (`cancelAllInvitations`, V4-02), seals the
+  key to the remaining certified devices it does not revoke, deletes the lost device's `keys/` file, drops every
+  slot the lost device signed, resets the app values to this device's (`values`), and writes the
+  phrase-protected copy (TLSK mode 2) at `keys/<owner id>.bin` (restore with the 12 words). Then `sync()` re-encrypts
+  and publishes; the lost device finds itself in `revoked_devices` at its next pass and wipes (existing remote wipe).
+- **Identity move**: engine option `move` (written in every index, R-11). A friend whose index carries a valid move from
+  the identity I follow (`FriendReport.identityMove`) is followed: the old identity is retired, the contact continues
+  under the new one with the same switches and `verified: false`, their cache is read again (`followed: true`).
+- `SyncReport.pulled` (the pull that starts the pass) and `PullResult.importedFrom` (the device that signed the index
+  whose own-document changes were imported), for the app's "changes since the theft".
+- Storage layout additions: `keys/<owner id>.bin` (recovery copy), and the app's `transfer/<slot>.*` files (adding a
+  device, at most 15 minutes, see the app README).
+- Tests: `test/devices.test.ts` (list merge and forged entries, signed values, declaration with invitations
+  cancelled, key delivered, lost device wiped, friend told; delivery to a device added later; following an identity
+  move); `test/review-devices.test.ts` (the devices review's F-01 and F-02 reproductions).
 
 ## Error cases (spec table) → `SyncProblem`
 

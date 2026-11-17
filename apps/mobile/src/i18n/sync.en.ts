@@ -92,6 +92,7 @@ export const syncEn: Messages = {
   'wn.followed': { one: '{name} shares {count} place with you', other: '{name} shares {count} places with you' },
   'wn.key': '{name} changed their key',
   'wn.moved': '{name} moved their content',
+  'wn.identity': '{name} changed their identity: compare the safety code again',
   'wn.placeGone': 'a place',
   'wn.seeOnMap': 'See on the map',
   'wn.new': 'New',

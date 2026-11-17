@@ -20,7 +20,10 @@ import type { Locale } from '../i18n/core';
 import { useIdentity, useReadyIdentity, type Profile } from '../identity/IdentityProvider';
 import { useAppLock } from '../identity/LockGate';
 import { keyFingerprint } from '../identity/kit';
-import { LOCK_DELAYS_MS } from '../identity/lock';
+import { LOCK_DELAYS_MS, STALE_SYNC_DAYS, parseClockMark, staleDaysLeft, type StaleSyncSettings } from '../identity/lock';
+import { CLOCK_MARK_KEY, deviceName, setStaleSync, staleSync } from '../devices/local';
+import { getSetting } from '../data/deviceSettings';
+import { useMaybeSync } from '../sync/SyncProvider';
 import { protocolOf } from '../storage/config';
 import { useStorage } from '../storage/StorageProvider';
 import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
@@ -55,6 +58,12 @@ function SettingsScreen() {
   const lock = useAppLock();
   const theme = useThemeMode();
   const storage = useStorage();
+  const sync = useMaybeSync();
+  const [stale, setStaleState] = useState<StaleSyncSettings | null>(() => staleSync());
+  const changeStale = (s: StaleSyncSettings | null) => {
+    setStaleSync(s);
+    setStaleState(s);
+  };
 
   const [profile, setProfile] = useState<Profile>(identity.profile);
   useEffect(() => setProfile(identity.profile), [identity.profile]);
@@ -212,10 +221,24 @@ function SettingsScreen() {
                 />
               ))}
             {codeSaved && <Muted>{t('settings.lockCodeSaved')}</Muted>}
-            <Muted>{t('settings.lockSyncLater')}</Muted>
+            <Muted>{t('settings.staleTitle')}</Muted>
+            <Segmented
+              options={[{ value: 0, label: t('settings.staleOff') }, ...STALE_SYNC_DAYS.map((d) => ({ value: d as number, label: t('settings.staleDays', { count: d }) }))]}
+              value={stale?.days ?? 0}
+              onChange={(days: number) => changeStale(days ? { days, wipe: stale?.wipe ?? false, since: stale?.since ?? Date.now() } : null)}
+              testID="settings-stale"
+            />
+            {stale && (
+              <>
+                <ToggleRow label={t('settings.staleWipe')} value={stale.wipe} onChange={(wipe) => changeStale({ ...stale, wipe })} testID="settings-stale-wipe" />
+                <Muted testID="settings-stale-left">{t('settings.staleLeft', { count: staleDaysLeft(stale, sync?.snapshot?.lastOwnSuccess ?? null, Date.now(), parseClockMark(getSetting(CLOCK_MARK_KEY))) })}</Muted>
+              </>
+            )}
+            <Muted>{t('settings.staleHelp')}</Muted>
           </Section>
 
           <Section title={t('settings.device')}>
+            <Muted testID="settings-device-name">{t('settings.deviceName', { name: deviceName() })}</Muted>
             <Muted>{t('settings.deviceAdded', { date: date(identity.record.createdAt) })}</Muted>
             <Muted testID="settings-owner">{t('settings.ownerKey', { fingerprint: keyFingerprint(identity.record.owner) })}</Muted>
             <Muted>{t('settings.deviceKey', { fingerprint: keyFingerprint(identity.record.deviceId) })}</Muted>
@@ -250,6 +273,8 @@ function SettingsScreen() {
               </View>
             )}
             <Muted testID="settings-secrets">{t(`settings.secrets.${identity.secretStore}`)}</Muted>
+            <Muted>{t('settings.devicesHelp')}</Muted>
+            <Button kind="secondary" label={t('settings.devices')} onPress={() => router.push('/devices')} testID="settings-devices" />
           </Section>
 
           <Section title={t('settings.appearance')}>

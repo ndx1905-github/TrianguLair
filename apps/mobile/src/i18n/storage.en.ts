@@ -61,11 +61,13 @@ export const storageEn: Messages = {
   'storage.reason.link-list': 'A list shared by link is read from your storage: connect one first.',
   'storage.reason.public-list': 'A public list is published on your storage: connect one first.',
   'storage.reason.backup': 'A storage keeps an encrypted copy of your places, so a lost phone does not mean lost places.',
+  'storage.reason.devices': 'Your devices sync through your storage: connect one before adding a device.',
   'storage.needed.title': 'A storage is needed',
   'storage.needed.invite': 'Invitations are read from your storage.',
   'storage.needed.link-list': 'To share this list by link, connect a storage: the list is read from there.',
   'storage.needed.public-list': 'To publish this list, connect a storage: it is published there.',
   'storage.needed.backup': 'Connect a storage to back up your places.',
+  'storage.needed.devices': 'Your devices share your places through your storage.',
   'storage.needed.connect': 'Connect a storage',
 
   'storage.choice.local': 'Local only',

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-/** The sync package's own runtime dependency (fflate) and its sources use no WebAssembly (Hermes has none). */
+/**
+ * The sync package's own runtime dependency (fflate) and its sources use no WebAssembly (Hermes has
+ * none). libsodium-wrappers-sumo (app-level signatures in the vault, sign.ts) is the crypto package's
+ * own dependency, already in the app, which runs it without WebAssembly (asm.js fallback).
+ */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';

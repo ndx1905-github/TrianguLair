@@ -5,6 +5,7 @@ import { zonesListsEn } from './zonesLists.en';
 import { storageEn } from './storage.en';
 import { syncEn } from './sync.en';
 import { contactsEn } from './contacts.en';
+import { devicesEn } from './devices.en';
 import { sharedListsEn } from './sharedLists.en';
 
 /** English (reference dictionary: every key exists here). */
@@ -19,6 +20,8 @@ export const en: Messages = {
   ...syncEn,
   // Invitations, contacts and access (T-208, T-209), kept in their own file.
   ...contactsEn,
+  // Adding a device, Settings › Devices, loss and theft (T-206, T-207), kept in their own file.
+  ...devicesEn,
   // Sharing lists, following a list by link (T-211, T-212), kept in their own file.
   ...sharedListsEn,
 
