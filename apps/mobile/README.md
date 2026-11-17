@@ -332,7 +332,8 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
 - **i18n**: English and French (`src/i18n`), device language, `EXPO_PUBLIC_LOCALE` or `?lang=fr`
   on web to force one. No UI string is hard-coded in components.
 
-- **Expo SDK 57** (React Native 0.86, New Architecture, React 19.2), TypeScript, expo-router
+- **Expo SDK 57** (React Native 0.86, New Architecture, React 19.2), TypeScript 7 (the native compiler, like
+  the packages; it only type-checks: Metro and Vitest strip types themselves), expo-router
 - **Map:** `@maplibre/maplibre-react-native` 11 on native and `maplibre-gl` 5 on web, behind one
   component interface (`src/components/map/types.ts`)
 - **Base map:** OpenFreeMap Positron (`https://tiles.openfreemap.org/styles/positron`). The dark
