@@ -37,6 +37,7 @@ import {
   roots,
   saveEntry,
   saveMedia,
+  saveMediaUploads,
   savePlaceIds,
   saveTagIds,
   snapshotFromEntry,
@@ -60,11 +61,17 @@ export function readSave(doc: DataDoc, placeId: string, meId: string): Projected
   if (main !== null && !tags.includes(main)) main = tags[0] ?? null;
   if (main === null) main = tags[0] ?? null;
   const tagIds = main === null ? tags : [main, ...tags.filter((t) => t !== main)];
+  const uploads = saveMediaUploads(s);
   const media: MediaRecord[] = saveMedia(s).map(([mid, m]) => {
+    const u = uploads.get(mid);
     return {
       id: mid,
       saveId: id,
       file: String(m.file ?? ''),
+      thumb: typeof m.thumb === 'string' ? m.thumb : null,
+      mime: typeof m.mime === 'string' ? m.mime : null,
+      bytes: typeof m.bytes === 'number' ? m.bytes : null,
+      upload: u ? { key: u.key, full: u.full, thumb: u.thumb, fp: u.fp } : null,
       blurhash: m.blurhash ?? null,
       width: m.width ?? null,
       height: m.height ?? null,

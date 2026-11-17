@@ -318,6 +318,41 @@ describe('Yjs document', () => {
     expect(s.repo.tagMappings()).toEqual([]);
   });
 
+  it('photos: thumbnail, format, size and upload record; a removal wins over a concurrent upload record', () => {
+    const a = openStore({ actor: hexActor(1), newId: seqIds('a-') });
+    const b = openStore({ actor: hexActor(2), newId: seqIds('b-') });
+    a.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    const m = a.addMedia(P1, { file: 'b2b256:full', thumb: 'b2b256:thumb', mime: 'image/webp', bytes: 1234, width: 1600, height: 1200 });
+    const before = a.repo.getSave(a.saveId(P1))!.updatedAt;
+    a.setMediaUpload(P1, m, { key: 'k', full: 'b2b256:ef', thumb: 'b2b256:et', fp: 'b2b256:fp' });
+    expect(a.repo.getSave(a.saveId(P1))!.updatedAt).toBe(before); // not an edit
+    expect(a.repo.getMedia(a.saveId(P1))).toMatchObject([
+      { id: m, file: 'b2b256:full', thumb: 'b2b256:thumb', mime: 'image/webp', bytes: 1234, upload: { key: 'k', full: 'b2b256:ef', thumb: 'b2b256:et', fp: 'b2b256:fp' } },
+    ]);
+    expect(a.repo.mediaForPlace(P1)).toMatchObject([{ id: m, mine: true }]);
+    expect(a.repo.mediaById(m)).toMatchObject({ placeId: P1, mine: true });
+    b.merge(a.doc);
+    expect(b.repo.getMedia(b.saveId(P1))[0]!.upload).toMatchObject({ key: 'k' });
+    // B removes the photo while A records a new upload: the photo stays removed.
+    b.removeMedia(P1, m);
+    a.setMediaUpload(P1, m, { key: 'k2', full: 'b2b256:ef2', thumb: 'b2b256:et2', fp: 'b2b256:fp' });
+    a.merge(b.doc);
+    b.merge(a.doc);
+    expect(a.repo.getMedia(a.saveId(P1))).toEqual([]);
+    expect(b.repo.getMedia(b.saveId(P1))).toEqual([]);
+    a.setMediaUpload(P1, m, null); // no-op on a removed photo
+  });
+
+  it("a friend's photos are cached with their key and leave with the save", () => {
+    const s = openStore();
+    s.repo.upsertForeignSave({ id: 'f1', ownerId: 'ed25519:friend', place: { id: 'osm:node/7', osmType: 'node', osmId: 7, name: 'X', category: null, kind: 'place', edge: 'sharp', geometry: { type: 'Point', coordinates: [2.35, 48.85] } }, createdAt: 1, updatedAt: 1 });
+    s.repo.setForeignMedia('f1', [{ id: 'p1', file: 'b2b256:ef', thumb: 'b2b256:et', mime: 'image/webp', bytes: 10, upload: { key: 'k', full: 'b2b256:ef', thumb: 'b2b256:et' }, blurhash: null, width: 4, height: 3, createdAt: 5 }]);
+    expect(s.repo.mediaForPlace('osm:node/7')).toMatchObject([{ id: 'p1', ownerId: 'ed25519:friend', mine: false, upload: { key: 'k' } }]);
+    expect(() => s.repo.setForeignMedia('nope', [])).toThrow();
+    s.repo.deleteForeignSave('f1');
+    expect(s.repo.db.all(`SELECT * FROM media`)).toEqual([]);
+  });
+
   it('three devices save the same place offline: folds chain without losing anyone', () => {
     const a = openStore({ actor: hexActor(1), newId: seqIds('a-') });
     const b = openStore({ actor: hexActor(2), newId: seqIds('b-') });

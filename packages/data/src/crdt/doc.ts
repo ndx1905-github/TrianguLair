@@ -22,7 +22,9 @@
  * `[lon, lat]`; the OSM identity is the place id), `comment` (Y.Text),
  * `commentVisibility`, `status`, `priceLevel`, `mainTagId`, `createdAt`,
  * `updatedAt`, and keyed elements: `t:<tagId>` (tag set), `m:<mediaId>`
- * (photo metadata), `s:<client>` (sharing register), `d:<client>` (deletion
+ * (photo metadata), `u:<mediaId>` (where that photo is on my storage, its key;
+ * kept apart from `m:` so that an upload racing a removal cannot bring the
+ * photo back), `s:<client>` (sharing register), `d:<client>` (deletion
  * register), `a:<entryKey>` (entries folded in). Absent means the default
  * (friends, no status, updated = created…). Tags and lists keep
  * `d:<client>` too, and nested Y.Maps for their sets.
@@ -102,7 +104,9 @@ const MEDIA = 'm:';
 const SHARING = 's:';
 const DELETED = 'd:';
 const ABSORBED = 'a:';
-const SAVE_PREFIXES = [TAG, MEDIA, SHARING, DELETED, ABSORBED];
+/** Where a photo is on my storage and its key (`u:<mediaId>`, written by the device that uploads it). */
+const UPLOAD = 'u:';
+const SAVE_PREFIXES = [TAG, MEDIA, SHARING, DELETED, ABSORBED, UPLOAD];
 const isKnownSaveKey = (k: string) => SAVE_KEYS.has(k) || SAVE_PREFIXES.some((p) => k.startsWith(p));
 
 let baseUpdate: Uint8Array | null = null;
@@ -325,6 +329,19 @@ export function saveTagIds(e: YMap): string[] {
 }
 export function saveMedia(e: YMap): [string, Partial<DocMedia>][] {
   return new Slots(e, MEDIA).entries() as [string, Partial<DocMedia>][];
+}
+/** Upload records of a save's photos (`u:<mediaId>`), only for photos still present. */
+export function saveMediaUploads(e: YMap): Map<string, MediaUpload> {
+  const out = new Map<string, MediaUpload>();
+  for (const [id, v] of new Slots(e, UPLOAD).entries()) {
+    if (e.has(MEDIA + id) && isUpload(v)) out.set(id, v);
+  }
+  return out;
+}
+function isUpload(v: unknown): v is MediaUpload {
+  if (typeof v !== 'object' || v === null) return false;
+  const u = v as Record<string, unknown>;
+  return typeof u.key === 'string' && typeof u.full === 'string' && typeof u.thumb === 'string' && typeof u.fp === 'string';
 }
 
 /** Delete-wins read on a save, tag or list: the latest deletion in any slot, or null when no slot is set. */
@@ -571,7 +588,14 @@ export interface ListPatch {
 
 export interface MediaInput {
   id?: string;
+  /** The photo (recompressed, metadata removed): its content hash `b2b256:…`, the key of the local copy. */
   file: string;
+  /** Its thumbnail's content hash. */
+  thumb?: string | null;
+  /** `image/webp`, `image/avif` or `image/jpeg` (photo and thumbnail). */
+  mime?: string | null;
+  /** Size of the photo in bytes. */
+  bytes?: number | null;
   blurhash?: string | null;
   width?: number | null;
   height?: number | null;
@@ -580,10 +604,28 @@ export interface MediaInput {
 /** Media metadata as stored (one atomic JSON value per photo). */
 export interface DocMedia {
   file: string;
+  thumb?: string | null;
+  mime?: string | null;
+  bytes?: number | null;
   blurhash: string | null;
   width: number | null;
   height: number | null;
   createdAt: number;
+}
+
+/**
+ * A photo as published on my storage (sync package): the two encrypted media
+ * files (`b2b256:` hashes of the files, `media/b2b256-<h>.bin`) and the
+ * random key they are sealed to (base64url of 32 bytes), with `fp`, the
+ * recipient set that key has been given to (sync's fingerprint). One atomic
+ * value per photo, replaced when the key is renewed.
+ */
+export interface MediaUpload {
+  key: string;
+  full: string;
+  thumb: string;
+  fp: string;
+  at?: number;
 }
 
 const COMMENT_VIS: readonly CommentVisibility[] = ['private', 'friends', 'public'];
@@ -771,6 +813,9 @@ export class DocTx {
     const id = m.id ?? this.ctx.newId();
     const media: DocMedia = {
       file: m.file,
+      ...(m.thumb != null && { thumb: m.thumb }),
+      ...(m.mime != null && { mime: m.mime }),
+      ...(m.bytes != null && { bytes: m.bytes }),
       blurhash: m.blurhash ?? null,
       width: m.width ?? null,
       height: m.height ?? null,
@@ -784,7 +829,24 @@ export class DocTx {
   removeMedia(placeId: string, mediaId: string): void {
     const s = this.save(placeId);
     if (s.has(MEDIA + mediaId)) s.delete(MEDIA + mediaId);
+    if (s.has(UPLOAD + mediaId)) s.delete(UPLOAD + mediaId);
     this.touch(s);
+  }
+
+  /**
+   * Records where a photo is on my storage (or `null`: not uploaded, e.g. its
+   * key was renewed but the upload has to wait). Does not change `updatedAt`:
+   * an upload is not an edit of the save.
+   */
+  setMediaUpload(placeId: string, mediaId: string, upload: MediaUpload | null): void {
+    const s = this.save(placeId);
+    if (!s.has(MEDIA + mediaId)) return;
+    if (upload === null) {
+      if (s.has(UPLOAD + mediaId)) s.delete(UPLOAD + mediaId);
+      return;
+    }
+    if (!isUpload(upload)) throw new TypeError('invalid media upload');
+    s.set(UPLOAD + mediaId, { key: upload.key, full: upload.full, thumb: upload.thumb, fp: upload.fp, at: upload.at ?? this.ctx.now() });
   }
 
   /**
@@ -829,6 +891,7 @@ export class DocTx {
       this.touch(t);
     }
     for (const [id, m] of saveMedia(from)) if (!dest.has(MEDIA + id)) dest.set(MEDIA + id, m);
+    for (const [id, u] of saveMediaUploads(from)) if (!dest.has(UPLOAD + id)) dest.set(UPLOAD + id, u);
     copyUnknown(from, dest);
     for (const l of this.r.lists.values()) {
       const f = getMap(l, 'filter');

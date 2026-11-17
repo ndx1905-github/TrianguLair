@@ -556,13 +556,7 @@ export class Repository {
         [save.id, tagId === save.mainTagId ? 0 : 1, tagId, this.meId],
       );
     }
-    this.db.run(`DELETE FROM media WHERE save_id = ?`, [save.id]);
-    for (const m of media) {
-      this.db.run(
-        `INSERT INTO media (id, save_id, file, blurhash, width, height, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [m.id, save.id, m.file, m.blurhash, m.width, m.height, m.createdAt],
-      );
-    }
+    this.writeMedia(save.id, media);
     const touched = [save.placeId];
     if (prevPlace && prevPlace.place_id !== save.placeId) touched.push(prevPlace.place_id);
     this.refreshSearchText(touched);
@@ -696,6 +690,31 @@ export class Repository {
     });
   }
 
+  /**
+   * A friend's photos on one of their saves (replaces the previous ones). `upload` must hold the key
+   * and the encrypted files' hashes: that is all a friend's photo is.
+   */
+  setForeignMedia(saveId: string, media: readonly Omit<MediaRecord, 'saveId'>[]): void {
+    const row = this.db.get<{ owner_id: string }>(`SELECT owner_id FROM saves WHERE id = ?`, [saveId]);
+    if (!row) throw new Error(`no save ${saveId}`);
+    if (row.owner_id === this.meId) throw new Error('my own photos come from my document');
+    this.transaction(() => this.writeMedia(saveId, media.map((m) => ({ ...m, saveId }))));
+  }
+
+  private writeMedia(saveId: string, media: readonly MediaRecord[]): void {
+    this.db.run(`DELETE FROM media WHERE save_id = ?`, [saveId]);
+    for (const m of media) {
+      this.db.run(
+        `INSERT INTO media (id, save_id, file, thumb, mime, bytes, upload, blurhash, width, height, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          m.id, saveId, m.file, m.thumb ?? null, m.mime ?? null, m.bytes ?? null, m.upload ? JSON.stringify(m.upload) : null,
+          m.blurhash, m.width, m.height, m.createdAt,
+        ],
+      );
+    }
+  }
+
   /** A friend deleted their save, or removed my access (deletion marker). */
   deleteForeignSave(saveId: string): void {
     const row = this.db.get<{ place_id: string; owner_id: string }>(`SELECT place_id, owner_id FROM saves WHERE id = ?`, [
@@ -752,17 +771,32 @@ export class Repository {
   }
 
   getMedia(saveId: string): MediaRecord[] {
+    return this.db.all(`SELECT * FROM media WHERE save_id = ? ORDER BY created_at, id`, [saveId]).map(rowToMedia);
+  }
+
+  /**
+   * Every photo on a place I can see (spec "User photos": visible according to the place's
+   * visibility): mine first (not in the trash), then friends', newest first, with their author.
+   */
+  mediaForPlace(placeId: string): (MediaRecord & { ownerId: string; mine: boolean })[] {
     return this.db
-      .all(`SELECT * FROM media WHERE save_id = ? ORDER BY created_at, id`, [saveId])
-      .map((r) => ({
-        id: r.id as string,
-        saveId: r.save_id as string,
-        file: r.file as string,
-        blurhash: r.blurhash as string | null,
-        width: r.width as number | null,
-        height: r.height as number | null,
-        createdAt: r.created_at as number,
-      }));
+      .all(
+        `SELECT m.*, s.owner_id AS owner_id FROM media m JOIN saves s ON s.id = m.save_id
+         WHERE s.place_id = ? AND s.deleted_at IS NULL
+         ORDER BY (s.owner_id = ?) DESC, s.owner_id, m.created_at DESC, m.id`,
+        [placeId, this.meId],
+      )
+      .map((r) => ({ ...rowToMedia(r), ownerId: r.owner_id as string, mine: r.owner_id === this.meId }));
+  }
+
+  /** One photo by id, with its save's owner and place. */
+  mediaById(id: string): (MediaRecord & { ownerId: string; placeId: string; mine: boolean }) | null {
+    const r = this.db.get(
+      `SELECT m.*, s.owner_id AS owner_id, s.place_id AS place_id FROM media m JOIN saves s ON s.id = m.save_id WHERE m.id = ?
+       ORDER BY (s.owner_id = ?) DESC LIMIT 1`,
+      [id, this.meId],
+    );
+    return r ? { ...rowToMedia(r), ownerId: r.owner_id as string, placeId: r.place_id as string, mine: r.owner_id === this.meId } : null;
   }
 
   /** My tags, including the ones in the trash (`deletedAt`) and inactive sub-tags. */
@@ -1214,3 +1248,27 @@ export class Repository {
 }
 
 export { bboxIntersects };
+
+function rowToMedia(r: Record<string, unknown>): MediaRecord {
+  let upload: NonNullable<MediaRecord['upload']> | null = null;
+  if (typeof r.upload === 'string') {
+    try {
+      upload = JSON.parse(r.upload) as NonNullable<MediaRecord['upload']>;
+    } catch {
+      upload = null;
+    }
+  }
+  return {
+    id: r.id as string,
+    saveId: r.save_id as string,
+    file: r.file as string,
+    thumb: (r.thumb as string | null) ?? null,
+    mime: (r.mime as string | null) ?? null,
+    bytes: (r.bytes as number | null) ?? null,
+    upload,
+    blurhash: r.blurhash as string | null,
+    width: r.width as number | null,
+    height: r.height as number | null,
+    createdAt: r.created_at as number,
+  };
+}

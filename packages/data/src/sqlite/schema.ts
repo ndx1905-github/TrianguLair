@@ -272,6 +272,18 @@ ALTER TABLE places ADD COLUMN osm_fields TEXT NOT NULL DEFAULT '';
 UPDATE places SET osm_fields = 'name,category,geom' WHERE osm_synced_at IS NOT NULL;
 `;
 
+/**
+ * Version 3 (personal photos, T-111b): the thumbnail, format and size of each
+ * photo, and where it is on the storage (`upload`, JSON: key and encrypted
+ * file hashes; a friend's photo is only usable with it).
+ */
+const V3 = `
+ALTER TABLE media ADD COLUMN thumb TEXT;
+ALTER TABLE media ADD COLUMN mime TEXT;
+ALTER TABLE media ADD COLUMN bytes INTEGER;
+ALTER TABLE media ADD COLUMN upload TEXT;
+`;
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -286,6 +298,12 @@ const MIGRATIONS: readonly Migration[] = [
     version: 2,
     up(db) {
       db.exec(V2);
+    },
+  },
+  {
+    version: 3,
+    up(db) {
+      db.exec(V3);
     },
   },
 ];

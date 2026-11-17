@@ -81,10 +81,21 @@ export interface PlaceRecord extends PlaceSnapshot {
   osmSyncedAt: number | null;
 }
 
+/**
+ * A photo of a save (spec "Data model", `media`). My photos: `file` and
+ * `thumb` are the content hashes of the local copies (recompressed, no
+ * metadata), `upload` where they are on my storage (absent: not uploaded
+ * yet). A friend's photo: `file` and `thumb` are the hashes of their
+ * encrypted media files, `upload` holds the key and the same hashes.
+ */
 export interface MediaRecord {
   id: string;
   saveId: string;
   file: string;
+  thumb?: string | null;
+  mime?: string | null;
+  bytes?: number | null;
+  upload?: { key: string; full: string; thumb: string; fp?: string } | null;
   blurhash: string | null;
   width: number | null;
   height: number | null;

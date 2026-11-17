@@ -18,6 +18,7 @@ import {
   type ListInput,
   type ListPatch,
   type MediaInput,
+  type MediaUpload,
   type SaveInput,
   type SavePatch,
   type TagInput,
@@ -48,7 +49,7 @@ export interface OpenStoreOptions {
 }
 
 /** Bump when the projection code changes in a way that needs a rebuild. */
-export const PROJECTION_VERSION = 2;
+export const PROJECTION_VERSION = 3;
 
 /** Encoding of the chunks in `doc_chunks` (recorded in `meta.doc_format`). */
 export const DOC_FORMAT = 'yjs-update-v1';
@@ -359,6 +360,9 @@ export class DataStore {
   }
   removeMedia(placeId: string, mediaId: string): void {
     this.change((tx) => tx.removeMedia(placeId, mediaId));
+  }
+  setMediaUpload(placeId: string, mediaId: string, upload: MediaUpload | null): void {
+    this.change((tx) => tx.setMediaUpload(placeId, mediaId, upload));
   }
   relinkSave(fromPlaceId: string, to: PlaceSnapshotInput | PlaceSnapshot): string {
     return this.change((tx) => tx.relinkSave(fromPlaceId, to));

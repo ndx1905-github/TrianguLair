@@ -79,15 +79,18 @@ describe('place rows and per-save descriptions', () => {
   it('migration 2 keeps the old "OSM wins" rule for rows synced before it', () => {
     const db = new NodeSqliteDriver();
     migrate(db);
-    expect(SCHEMA_VERSION).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
     // Back to a version-1 database with one OSM-synced row and one that is not.
-    db.exec(`ALTER TABLE saves DROP COLUMN place_snapshot; ALTER TABLE places DROP COLUMN osm_fields; PRAGMA user_version = 1`);
+    db.exec(`ALTER TABLE saves DROP COLUMN place_snapshot; ALTER TABLE places DROP COLUMN osm_fields;
+      ALTER TABLE media DROP COLUMN thumb; ALTER TABLE media DROP COLUMN mime; ALTER TABLE media DROP COLUMN bytes;
+      ALTER TABLE media DROP COLUMN upload; PRAGMA user_version = 1`);
     const ins = `INSERT INTO places (id, osm_type, osm_id, name, geom, lat, lon, min_lon, min_lat, max_lon, max_lat, osm_synced_at)
       VALUES (?, 'node', ?, 'x', '{"type":"Point","coordinates":[0,0]}', 0, 0, 0, 0, 0, 0, ?)`;
     db.run(ins, ['osm:node/1', 1, 123]);
     db.run(ins, ['osm:node/2', 2, null]);
     migrate(db);
     expect(db.all<{ name: string }>(`PRAGMA table_info(saves)`).map((c) => c.name)).toContain('place_snapshot');
+    expect(db.all<{ name: string }>(`PRAGMA table_info(media)`).map((c) => c.name)).toEqual(expect.arrayContaining(['thumb', 'mime', 'bytes', 'upload']));
     expect(db.all<{ id: string; f: string }>(`SELECT id, osm_fields AS f FROM places ORDER BY id`)).toEqual([
       { id: 'osm:node/1', f: 'name,category,geom' },
       { id: 'osm:node/2', f: '' },
