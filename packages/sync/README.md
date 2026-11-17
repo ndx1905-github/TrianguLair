@@ -282,6 +282,9 @@ bounded in total (`SyncLimits`, `limits` option of the engine; review R-06):
 | `placesPayloadBytes` / `manifestPayloadBytes` / `ownDocPayloadBytes` (decompressed) | 4 MiB / 1 MiB / 64 MiB |
 | `friendReadBytes` (downloaded + decompressed, one friend, one read) | 32 MiB (`too-large`, not retried) |
 | `passBytes` (same, every friend of one pass) | 128 MiB (`too-large`, the rest is read next pass) |
+| `photoBytes` / `thumbBytes` (an image added; a photo or thumbnail file downloaded) | 8 MiB / 512 KiB |
+| `thumbPrefetchBytes` (friends' new thumbnails fetched with their places, one pass) | 8 MiB |
+| `ownPhotoPassBytes` (my photos one of my devices fetches in one pass) | 64 MiB |
 
 Pack downloads and decryptions share `concurrency` (default 6) slots across all the friends read at once
 (`friendConcurrency`, default 8, index checks).
