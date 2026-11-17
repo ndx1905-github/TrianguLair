@@ -2,7 +2,7 @@
  * One contact (T-209): the two switches ("I see their places", "they see my places" with
  * everything I share with friends or only some lists), the safety code (12 × 5 digits, or a QR
  * code to show and to scan) with the "I compared it" mark kept on this device, the name I gave
- * them, and removal (their wraps disappear and the pack keys they held are renewed).
+ * them, removal (their wraps disappear and the pack keys they held are renewed) and blocking (gap #6).
  */
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
@@ -19,6 +19,7 @@ import { ToggleRow } from '../../firstLaunch/ToggleRow';
 import { useLayout } from '../../hooks/useLayout';
 import { useI18n } from '../../i18n';
 import { Muted, Section, StorageScreen } from '../../storage/components';
+import { BlockSection } from '../../privacy/BlockSection';
 
 function ContactScreen() {
   const { t, locale } = useI18n();
@@ -145,6 +146,10 @@ function ContactScreen() {
         ) : (
           <Button kind="danger" label={t('contacts.remove')} onPress={() => setConfirmRemove(true)} testID="contact-remove" />
         )}
+      </Section>
+
+      <Section title={t('block.title')}>
+        <BlockSection owner={owner} name={label} onBlocked={() => router.replace('/blocked')} />
       </Section>
     </StorageScreen>
   );

@@ -17,6 +17,7 @@
  */
 import {
   canonicalize,
+  cancelAllInvitations,
   emptyVault,
   fromB64Url,
   openVault,
@@ -72,6 +73,8 @@ import type { SyncKeys } from './keys';
 import { confirmInFilter } from '../lists/sharing';
 import { invitationsLogLine, logLine } from './problems';
 import { WhatsNewLog } from './whatsNew';
+import { BLOCKED_STATE, BLOCKED_VALUE, REPORTED_STATE, parseBlocked, parseReported, withBlocked, withoutBlocked, type BlockedPerson, type ReportedList } from '../privacy/blocked';
+import { deleteAllContent, type DeleteAllSummary, type DeleteStep } from '../privacy/deleteAll';
 
 const INDEX = 'index.json';
 const INDEX_MAX = 4 * 1024 * 1024;
@@ -598,6 +601,123 @@ export class SyncController implements StorageMoveHooks {
       }
       this.d.onChange();
     });
+  }
+
+  // ------------------------------------------------------------------ store rules (gap #6)
+
+  /**
+   * "Delete all my content" (privacy/deleteAll.ts): my document emptied, contacts removed, invitations cancelled,
+   * followed lists unfollowed, an index listing nothing published (the signed "content deleted" marker), every other
+   * file of my storage deleted, then this device erased. A storage failure stops before anything local is erased.
+   */
+  deleteAllContent(onStep?: (s: DeleteStep) => void): Promise<DeleteAllSummary> {
+    return this.exclusive(async () => {
+      if (this.wiped) throw new Error('sync: this device was erased');
+      await ready();
+      const engine = await this.engineReady();
+      this.scheduler.stop();
+      const own = engine.own;
+      const storage = own ? this.d.access.writeAdapter() : null;
+      return deleteAllContent({
+        store: this.d.store,
+        contacts: () => engine.contacts().map((c) => c.owner),
+        removeContact: (o) => {
+          engine.removeContact(o);
+          this.whatsNew.forget(o);
+          this.friendProblems.delete(o);
+        },
+        cancelInvitations: () => {
+          const r = cancelAllInvitations(engine.book.records);
+          engine.book.records = r.records;
+          this.d.state.set(BOOK_KEY, engine.book.records);
+          own?.touchVault();
+          return r.cancelled.length;
+        },
+        followedLists: () => engine.followedLists().map((l) => l.id),
+        unfollowList: (id) => engine.unfollowList(id),
+        publish:
+          own && storage
+            ? async () => {
+                await this.loadFriendKeys();
+                for (let attempt = 0; ; attempt++) {
+                  const r = await engine.sync({ publish: true, readFriends: false });
+                  const p = r.problems.find((x) => x.about === 'own');
+                  if (!p) break;
+                  if (attempt === 0 && p.problem.retryable) continue;
+                  throw new Error(`sync: publishing failed (${p.problem.kind})`);
+                }
+                const index = own.index;
+                return { listed: [...(index?.packs.map((x) => x.file) ?? []), ...(index?.public ? [index.public.file] : [])] };
+              }
+            : null,
+        storage,
+        wipe: async () => {
+          this.wiped = true;
+          await engine.wipe();
+        },
+        ...(onStep && { onStep }),
+      });
+    }).catch((e: unknown) => {
+      // Nothing local was erased: the app goes on (the user can try again).
+      if (!this.wiped) void this.foreground();
+      throw e;
+    }).finally(() => this.d.onChange());
+  }
+
+  /** People I blocked (vault value, so on all my devices; the local copy in local-only mode). */
+  blocked(): BlockedPerson[] {
+    const v = this.engine?.value<unknown>(BLOCKED_VALUE)?.value;
+    return parseBlocked(v !== undefined ? v : this.d.state.get<unknown>(BLOCKED_STATE));
+  }
+
+  /**
+   * Blocks someone (spec "Moderation": their key and places leave the app, they lose every access): removed as a
+   * contact (my next publication drops their wraps), their cache forgotten, their lists unfollowed; the contacts
+   * service then refuses their invitations and answers (`isBlocked`).
+   */
+  block(owner: string, name: string): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      const next = withBlocked(this.blocked(), { owner, name, at: this.now() });
+      this.d.state.set(BLOCKED_STATE, next);
+      engine.setValue(BLOCKED_VALUE, next);
+      if (engine.book.contact(owner)) engine.removeContact(owner);
+      else engine.reader.forget(owner);
+      for (const l of engine.followedLists()) if (l.owner === owner) engine.unfollowList(l.id);
+      this.whatsNew.forget(owner);
+      this.friendProblems.delete(owner);
+      this.d.store.repo.upsertPerson({ id: owner, iFollow: false });
+      this.d.onData();
+      this.d.onChange();
+    }).then(() => this.localChange());
+  }
+
+  unblock(owner: string): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      const next = withoutBlocked(this.blocked(), owner);
+      this.d.state.set(BLOCKED_STATE, next);
+      engine.setValue(BLOCKED_VALUE, next);
+      this.d.onChange();
+    }).then(() => this.localChange());
+  }
+
+  /** Public lists I reported (hidden on this device). */
+  reportedLists(): ReportedList[] {
+    return parseReported(this.d.state.get<unknown>(REPORTED_STATE));
+  }
+
+  /** Reports a list: kept here as reported, and unfollowed (it leaves the map). */
+  hideReportedList(list: { id: string; name: string; owner: string; location: string }): Promise<void> {
+    return this.exclusive(async () => {
+      const engine = await this.engineReady();
+      const next = [{ ...list, at: this.now() }, ...this.reportedLists().filter((r) => r.id !== list.id)];
+      this.d.state.set(REPORTED_STATE, next);
+      if (engine.followedLists().some((l) => l.id === list.id)) engine.unfollowList(list.id);
+      this.whatsNew.forget(list.id);
+      this.d.onData();
+      this.d.onChange();
+    }).then(() => this.localChange());
   }
 
   /**

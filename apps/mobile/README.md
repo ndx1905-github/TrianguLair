@@ -16,6 +16,30 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
   reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
   comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
+- **Store rules** (gap #6, spec "Store rules", "Editing and deleting", "Moderation"; logic in `src/privacy/`, tested in
+  `privacy.test.ts` and e2e `privacy.spec.ts` against Apache WebDAV):
+  - *Delete all my content* (`/delete-all`, Settings › My content; there is no account to close, so this covers
+    Apple's account-deletion rule): what will happen, "I understand" then the word typed (DELETE / SUPPRIMER);
+    disabled offline when a storage is connected. `SyncController.deleteAllContent` (`deleteAll.ts`): my document is
+    emptied (places, zones, the trash, tags, lists, tag mappings deleted and purged, tombstones only, so my other
+    devices empty themselves instead of publishing them back), contacts removed, open invitations cancelled
+    (`cancelAllInvitations`), followed lists unfollowed; with a storage, a publication whose signed index lists
+    nothing for anyone (the "content deleted" marker: friends' apps verify it and empty their cache, as for a removed
+    access), then every other file of the folder is deleted (packs, photos, `public/`, `vault.bin`, `keys/`, so the
+    kit restores nothing, `transfer/`); only the index and the files it lists (my emptied document, sealed to my key)
+    stay. Last, this device is erased like a remote wipe (secrets with `db-key` first). Progress and the summary
+    (counts, files deleted or left, "your recovery kit no longer brings anything back") replace the app
+    (`ContentDeleted.tsx`); "Start again" reloads (`reloadAppAsync` on native). A storage failure stops before the
+    device is erased ("Try again").
+  - *Block a person* (contact screen, report screen; `/blocked` lists them with "Unblock"): removed as a contact
+    (wraps gone at my next publication, their cache forgotten, their lists unfollowed), then their invitations and
+    answers are refused (`contacts.problem.blocked`) and their lists are not offered (`follow.problem.blocked`). The
+    list is a signed vault value (`blocked`: all my devices), mirrored in the sync state for local-only mode.
+  - *Report a list* ("Report" on a followed list, `/lists/report`): no project server and no moderators, so the screen
+    names who can act (the author, and the host of their storage from its address, with its abuse contact), gives a
+    report text to share or copy (the public file's address; a link-only list's key is never put in it), hides the
+    list here (unfollowed, recorded in the sync state, not offered again: `follow.problem.reported`) and offers to
+    block the author.
 - **Trash** (`/trash`, Settings › My content, gap #8; logic in `src/trash/model.ts`): places, zones, tags and lists
   I deleted (they live in my document, so the trash is the same on all my devices), newest first, with the date and
   the days left before the purge; "Restore" (a place comes back with its tags, comment and lists), "Delete forever"

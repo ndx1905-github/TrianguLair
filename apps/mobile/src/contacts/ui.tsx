@@ -233,7 +233,7 @@ export function ProblemBanner({ problem, testID }: { problem: LinkProblem; testI
   return (
     <Banner tone="warning" testID={testID ?? 'link-problem'}>
       {t(`contacts.problem.${problem}`)}
-      {isRetryable(problem) ? '' : `\n${t('contacts.problem.askNew')}`}
+      {isRetryable(problem) || problem === 'blocked' ? '' : `\n${t('contacts.problem.askNew')}`}
     </Banner>
   );
 }
