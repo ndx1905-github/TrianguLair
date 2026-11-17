@@ -311,9 +311,11 @@ test('a second device by link + code, then declared lost: wiped at its next sync
   await settle(a);
 
   // The lost device erases itself at its next sync.
+  // (Its launch pass may already have wiped it: then there is no "Sync now" button to press.)
   await t2.goto('/sync');
-  await syncNow(t2).catch(() => {});
-  await expect(t2.getByTestId('device-removed')).toBeVisible({ timeout: 60_000 });
+  const removed = t2.getByTestId('device-removed');
+  await t2.getByTestId('sync-now').click({ timeout: 30_000 }).catch(() => {});
+  await expect(removed).toBeVisible({ timeout: 60_000 });
   await shot(t2, 'phone-device-removed.png');
 
   // Ben keeps reading Anna with her new key, and sees the notice.
