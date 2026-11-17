@@ -602,6 +602,8 @@ Protections on the device:
 
 Principles: never lose local data, keep working in degraded mode, and explain each problem in plain words with a possible action. Transient errors resolve themselves; the user is alerted only if they last.
 
+Each row is mapped to its code and tests in [`error-cases.md`](error-cases.md).
+
 | Situation | App behavior | What the user sees |
 | --- | --- | --- |
 | No network | Everything works locally; changes wait in a queue | Small note "Offline · 3 changes pending" |

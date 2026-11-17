@@ -245,6 +245,9 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   await b.goto(autostart('/sync'));
   await expect(b.getByTestId('sync-person-Anna')).toContainText('Updated');
   await expect(b.getByTestId('sync-state')).toHaveText('Up to date');
+  // Space used on his storage, by content type (spec "Error cases", quota full).
+  await expect(b.getByTestId('sync-space')).toContainText('Space used:', { timeout: 30_000 });
+  await expect(b.getByTestId('sync-space-keys')).toContainText('Index, keys and contacts');
   await shot(b, 'phone-sync-status.png');
 
   // Ben visits What's new once (her first places: one grouped item), then Anna edits.
@@ -366,8 +369,11 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   const fold2 = a.getByTestId('filter-toggle').filter({ visible: true });
   if ((await fold2.getAttribute('aria-expanded')) === 'true') await fold2.click();
   await shot(a, 'phone-sync-reconnect.png');
+  // "Reconnect" opens the connection form with the current settings, to type the new password.
   await a.getByTestId('sync-note-reconnect').click();
-  await expect(a.getByTestId('storage-read-address')).toBeVisible();
+  await expect(a.getByTestId('storage-setup')).toBeVisible();
+  await expect(a.getByTestId('field-davUrl')).toHaveValue(`${proxyUrl}/dav/${anna.dir}/`);
+  await expect(a.getByTestId('field-davPassword')).toBeVisible();
   await a.goto(autostart('/sync'));
   await expect(a.getByTestId('sync-problem-reconnect')).toBeVisible();
   await a.unroute(`${proxyUrl}/**`);

@@ -87,6 +87,42 @@ type PackInfo =
   | { k: 'lists'; id: string; rot: number; h: string; tomb?: { list: string; until: number } }
   | { k: 'other' };
 
+/** OwnSync.spaceUsed(): bytes on my storage by content type. */
+export interface SpaceUsed {
+  /** Places shared with friends and lists (places packs and their manifest). */
+  places: number;
+  /** My own document (every place, comment and list, for my devices): snapshots and deltas. */
+  document: number;
+  /** List definitions and link-only lists. */
+  lists: number;
+  /** The public lists file (plain GeoJSON). */
+  public: number;
+  /** Personal photos (listed media/ files that are not packs of a known kind). */
+  photos: number;
+  /** Index, vault and sealed keys. */
+  keys: number;
+  /** Files no index lists (an interrupted write, garbage not deleted yet) and anything else. */
+  other: number;
+  total: number;
+  files: number;
+}
+
+export type SpaceKind = Exclude<keyof SpaceUsed, 'total' | 'files'>;
+
+function spaceKind(path: string, byFile: ReadonlyMap<string, string>, cache: Record<string, PackInfo>): SpaceKind {
+  if (path === VAULT_PATH || path.startsWith('keys/') || /^index(\.v[0-9]+)?\.json$/.test(path)) return 'keys';
+  if (path === PUBLIC_LISTS_PATH) return 'public';
+  const hash = byFile.get(path);
+  const k = hash !== undefined ? cache[hash]?.k : undefined;
+  if (k === 'places' || k === 'manifest') return 'places';
+  if (k === 'own-doc') return 'document';
+  if (k === 'lists') return 'lists';
+  // The own document and the manifest are stored under media/ too (same look as photos): only a
+  // listed media file of no known pack kind is a photo.
+  if (hash !== undefined && path.startsWith('media/')) return 'photos';
+  return 'other';
+}
+
 interface IndexState {
   text: string;
   etag: string | null;
@@ -241,6 +277,25 @@ export class OwnSync {
   /** The last verified index of mine on the storage (null before the first publication). */
   get index(): SignedIndex | null {
     return this.current?.rolledBack || this.current?.forked ? null : (this.current?.index ?? null);
+  }
+
+  /**
+   * Space my storage holds, by content type (spec "Error cases", quota full: "Space used by content
+   * type"). Lists the storage (null when it cannot list, e.g. plain HTTPS); packs are typed from the
+   * last verified index and this device's pack cache; files no index lists (left by an interrupted
+   * write, or garbage not deleted yet) count as `other`. Sizes in bytes.
+   */
+  async spaceUsed(): Promise<SpaceUsed | null> {
+    if (!this.storage.capabilities.list) return null;
+    const files = await this.storage.list('');
+    const byFile = new Map((this.index?.packs ?? []).map((p) => [p.file, p.hash]));
+    const cache = this.packs();
+    const out: SpaceUsed = { places: 0, document: 0, lists: 0, public: 0, photos: 0, keys: 0, other: 0, total: 0, files: files.length };
+    for (const f of files) {
+      out.total += f.size;
+      out[spaceKind(f.path, byFile, cache)] += f.size;
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ pull
@@ -585,6 +640,11 @@ export class OwnSync {
         packsKept: b.kept, bytesUploaded: 0, filesDeleted: 0, ownDoc: b.ownDoc, pull,
       };
       if (!b.changed && !opts.force && pull.index) return report;
+      // Interrupted write (spec "Error cases"): packs first, the index last. Until an index lists
+      // them, the packs written now are garbage of this attempt, recorded before writing so that a
+      // pass cut in the middle (network, quota) deletes them later instead of leaving them behind.
+      for (const p of b.writes.keys()) orphans.add(p);
+      this.st.set('own:garbage', [...orphans]);
       await mapLimit([...b.writes], this.o.concurrency ?? 6, async ([path, bytes]) => {
         report.bytesUploaded += bytes.length;
         try {

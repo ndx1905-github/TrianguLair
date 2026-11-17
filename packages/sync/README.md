@@ -301,8 +301,8 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | No network | `offline` | nothing attempted, changes counted as pending, a pass when back online |
 | My storage unreachable | `unreachable` | retried with backoff (30 s … 30 min) while in use; `banner` after 24 h |
 | Credentials rejected | `auth` | `blocked`: writes stop (queue kept) until `resume()`; friends are still refreshed on launch, foreground and pull to refresh (`publish: false`) |
-| Quota full (507/413) | `quota` | retried; the app shows space used (photos are not synced yet) |
-| Interrupted write | — | packs first, index last; a listed pack found missing (checked by listing at the first pull and every full check) is rewritten from local state |
+| Quota full (507/413) | `quota` | retried, nothing lost; `OwnSync.spaceUsed()` gives the bytes by content type for the app's suggestions (photos are not synced yet) |
+| Interrupted write | — | packs first, index last; the packs of an attempt are recorded as garbage before they are written (deleted later if the index never lists them); a listed pack found missing (checked by listing at the first pull and every full check) is rewritten from local state |
 | Two of my devices write at the same time | `conflict` | If-Match + read-back, pull, merge, republish |
 | A friend's storage unreachable | `unreachable` | their cache stays; `lastSuccess(owner)` for "Updated 12 days ago" |
 | A friend changes storage | (`movedTo`) | redirect followed to the certified address only |
@@ -313,7 +313,9 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | A file over a size limit | `too-large` | refused before verification; cache kept (a pass limit is retried next pass) |
 | Any non-retryable problem of mine (`retryable: false`) | `tampered`, `unsupported`, `bug` | shown, retried at the next foreground, not in a loop |
 
-T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vault records) and the UI.
+| An invitation record that can never be listed (invalid, by a revoked device, expired past the 7-day grace) | — | dropped from the vault before each publication (`ContactBook.sweepInvitations`, `SyncReport.invitationsDropped`); `not-yet` and superseded records are kept |
+
+Every row of the spec's table, with the app's side (messages, the 3-month offer, keys missing), is mapped to its code and tests in [`docs/error-cases.md`](../../docs/error-cases.md); `test/error-cases.test.ts` has one test per row.
 
 ## Tests
 
@@ -340,6 +342,7 @@ T-213 will add the remaining rows (invitation links, 3-month cleanup offer, vaul
   reach them, removing access removes both, access settings travel through the vault; the **public file** is valid
   GeoJSON with ODbL attribution, uMap styles and OSM links, and a public list is followed by link and goes away when
   deleted; followed lists shared between my devices through the vault; my own list cannot be followed.
+- `error-cases.test.ts` (T-213): one test per row of the spec's "Error cases" table, on real engines with injected storage faults (network down, 401, 507, a write cut before the index, altered files, a newer format, a storage move, invitation records, a missing key).
 - `no-wasm.test.ts`: fflate and the sources use no WebAssembly (the package also depends on the crypto package's
   `libsodium-wrappers-sumo`, for the list key's public half; asm.js where WebAssembly is missing).
 - `units.test.ts`: planner, payload (decompression bomb), strict places parsing, vault policy merge, state

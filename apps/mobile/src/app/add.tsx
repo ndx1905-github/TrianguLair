@@ -16,7 +16,7 @@ import { useLayout } from '../hooks/useLayout';
 import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { osmClient } from '../osm/client';
-import { classifyOsmError, type OsmFailure } from '../osm/errors';
+import { classifyOsmError, osmFailureKey, type OsmFailure } from '../osm/errors';
 import {
   annotate,
   byDistance,
@@ -169,7 +169,7 @@ function AddScreen() {
     else router.replace('/');
   };
 
-  const failureText = (f: OsmFailure) => t(f === 'offline' ? 'osm.offline' : f === 'busy' ? 'osm.busy' : 'osm.unavailable');
+  const failureText = (f: OsmFailure, during: 'search' | 'nearby') => t(osmFailureKey(f, during));
 
   const renderCandidate = (cand: Candidate) => {
     const dist = formatDistance(cand.distance, tr);
@@ -326,7 +326,7 @@ function AddScreen() {
           {t('add.longPressHint')}
         </Text>
         {OSM_FIXTURES && <Banner>{t('osm.fixtureMode')}</Banner>}
-        {error && <Banner tone="warning">{failureText(error)}</Banner>}
+        {error && <Banner tone="warning">{failureText(error, searching ? 'search' : 'nearby')}</Banner>}
       </View>
       <FlatList
         data={sections}

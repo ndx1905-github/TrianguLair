@@ -61,10 +61,14 @@ export const en: Messages = {
   'map.cluster': { one: '{count} place, zoom in', other: '{count} places, zoom in' },
 
   'map.unavailable': 'The map is not available on this platform.',
+  // Spec "Error cases", map tiles unavailable: the cache had nothing and a fallback address is used.
+  'map.tiles.fallback': 'Map possibly less detailed',
+  'map.tiles.unavailable': 'Map background unavailable for now: your places are still shown',
 
   'osm.offline': 'Can’t reach OpenStreetMap right now. Showing the places saved on this device.',
   'osm.busy': 'OpenStreetMap services are busy. Try again in a moment.',
   'osm.unavailable': 'OpenStreetMap services are unavailable right now.',
+  'osm.searchUnavailable': 'Search unavailable: place the place on the map (long press, or drop a point at the center).',
   'osm.fixtureShort': 'Demo data (offline samples)',
   'osm.fixtureMode': 'Demo mode: OpenStreetMap answers come from built-in sample data.',
 

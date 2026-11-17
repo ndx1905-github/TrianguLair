@@ -335,6 +335,45 @@ describe('SyncController', () => {
     const prev = openSyncKeys(a.created.record, { deviceKeys: a.created.secrets.deviceKeys, sharingKey: a.sharingKey, syncKeys: null }).sharing.cert;
     expect(await a.ctl.openInvitations(prev as SharingCert)).toEqual([]);
   });
+
+  it('a friend unreachable for 3 months: keep their places (asked again 3 months later) or remove them', async () => {
+    let now = Date.now();
+    const a = makeUser('ivy');
+    const b = makeUser('jon', { now: () => now });
+    a.store.putSave({ place: place(40, 'Chez Ivy') });
+    await friends(a, b);
+    const line = () => b.ctl.snapshot().friends.find((f) => f.owner === a.created.record.owner)!;
+    expect(line().places).toBe(1);
+    // Her storage stops answering; months pass.
+    world.delete(a.location);
+    await b.ctl.refresh();
+    const l = line();
+    expect(l.problem).toMatchObject({ kind: 'unreachable', retryable: true });
+    expect(l.places).toBe(1); // still shown from the cache
+    now = l.lastSuccess! + 91 * 86_400_000;
+    expect(friendNote(l.problem, l.lastSuccess, now, l.keptAt)).toMatchObject({ id: 'stale', action: 'keep-or-remove' });
+    // Keep: the offer is gone until 3 more months pass.
+    b.ctl.keepFriend(a.created.record.owner);
+    expect(line().keptAt).toBe(now);
+    expect(friendNote(l.problem, l.lastSuccess, now + 86_400_000, line().keptAt).id).toBe('updated-ago');
+    expect(friendNote(l.problem, l.lastSuccess, now + 91 * 86_400_000, line().keptAt).id).toBe('stale');
+    // Remove: I stop following her, her places leave my cache (she is still a contact).
+    await b.ctl.setPolicy(a.created.record.owner, { follow: false });
+    expect(line()).toMatchObject({ follow: false, places: 0 });
+    world.set(a.location, a.storage);
+  });
+
+  it('space used on my storage by content type (sync status screen)', async () => {
+    const a = makeUser('kim');
+    a.store.putSave({ place: place(50, 'Chez Kim') });
+    await a.ctl.refresh();
+    const s = await a.ctl.spaceUsed();
+    expect(s).not.toBeNull();
+    expect(s!.document).toBeGreaterThan(0);
+    expect(s!.keys).toBeGreaterThan(0);
+    expect(s!.total).toBe(s!.places + s!.document + s!.lists + s!.public + s!.photos + s!.keys + s!.other);
+    expect(await makeUser('lou').ctl.spaceUsed()).toBeNull(); // not built yet: nothing listed
+  });
 });
 
 describe('error mapping (spec "Error cases")', () => {

@@ -13,3 +13,14 @@ export function classifyOsmError(e: unknown): OsmFailure {
   if (code === 'rate_limited') return 'busy';
   return 'unavailable';
 }
+
+/**
+ * The message for a failure (i18n key). A failed search (Photon, then Nominatim as the fallback)
+ * says so and points to the way that needs no service (spec "Error cases": "Search unavailable,
+ * place the place on the map"); the nearby list falls back to the places saved on this device.
+ */
+export function osmFailureKey(f: OsmFailure, during: 'search' | 'nearby'): string {
+  if (f === 'busy') return 'osm.busy';
+  if (during === 'search') return 'osm.searchUnavailable';
+  return f === 'offline' ? 'osm.offline' : 'osm.unavailable';
+}

@@ -121,7 +121,7 @@ t("T-210","P2","Friends' places, counters and What's new view",["app","sync"],
 t("T-211","P2","Public lists (GeoJSON) and \"View on uMap\" link",["sharing"],
   "Publish public/lists.geojson in clear, ODbL attribution, uMap link.",["List opened in uMap"],deps=["T-112","T-204"],status="done")
 t("T-212","P2","Link-only lists (key in the URL fragment)",["sharing","crypto"],"Follow a list without following the person.",["Link opened on a second device"],deps=["T-211"],status="done")
-t("T-213","P2","Error cases from the spec",["app","sync"],"Implement every row of the \"Error cases\" table.",["One test per row"],deps=["T-204"])
+t("T-213","P2","Error cases from the spec",["app","sync"],"Implement every row of the \"Error cases\" table.",["[x] One test per row (mapped in [`error-cases.md`](error-cases.md))"],deps=["T-204"],status="done")
 t("T-214","P2","External security audit",["crypto","maintainer"],"Audit of encryption and sync before release.",["Report published and fixes made"],deps=["T-209"])
 
 # ---------------- Phase 3 ----------------

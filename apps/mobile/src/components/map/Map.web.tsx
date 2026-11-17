@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import type { Map as GLMap, Marker as GLMarker } from 'maplibre-gl';
+import type { Map as GLMap, Marker as GLMarker, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
 import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
 import { PRESSABLE_LAYERS, SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
+import { BaseMapFallback, specKey, type BaseMapStatus, type BaseMapStyle } from './baseMap';
 import { clusterBubbleSize, clusterColors } from './cluster';
 import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
 
@@ -17,12 +18,19 @@ import type { MapCluster, MapPin, MapRegion, MapViewProps } from './types';
  * maplibre-gl 6 is ESM only (no default export) and loads its worker from a
  * file of its own, which Metro does not bundle: scripts/maplibre-worker.mjs
  * copies it into public/, served at the root of the site.
+ *
+ * Base map fallback (baseMap.ts): an error loading the style, its TileJSON or a run of its tiles
+ * switches to the next configured address, then to a built-in blank style.
  */
 type MapLibreModule = typeof import('maplibre-gl');
 
 function workerUrl(lib: MapLibreModule): string {
   // The version keeps a browser from reusing the worker of another maplibre-gl (as maplibre-gl does).
   return `${process.env.EXPO_BASE_URL ?? ''}/maplibre-gl-worker.mjs?v=${lib.getVersion()}`;
+}
+
+function glStyle(s: BaseMapStyle): string | StyleSpecification {
+  return s as string | StyleSpecification;
 }
 
 function pinKey(pin: MapPin, selected: boolean): string {
@@ -89,7 +97,7 @@ function regionOf(map: GLMap): MapRegion {
 }
 
 export default function Map({
-  styleUrl,
+  baseMap,
   center,
   zoom,
   camera,
@@ -112,6 +120,10 @@ export default function Map({
   const markersRef = useRef(new globalThis.Map<string, { key: string; marker: GLMarker }>());
   const clusterMarkersRef = useRef(new globalThis.Map<string, { key: string; marker: GLMarker }>());
   const [ready, setReady] = useState(false);
+  // Base map addresses to try (the fallback of the current theme).
+  const fallbackRef = useRef<BaseMapFallback | null>(null);
+  fallbackRef.current ??= new BaseMapFallback(baseMap);
+  const [baseStatus, setBaseStatus] = useState<BaseMapStatus>(fallbackRef.current.status());
 
   // Latest callbacks, so map listeners registered once always call the current props.
   const cb = useRef({ onPinPress, onLongPress, onMapPress, onRegionChange, onClusterPress, onUserMoveStart, onShapePress });
@@ -130,7 +142,7 @@ export default function Map({
       if (!lib.getWorkerUrl()) lib.setWorkerUrl(workerUrl(lib));
       map = new lib.Map({
         container: containerRef.current,
-        style: styleUrl,
+        style: glStyle(fallbackRef.current!.current()),
         center: [center.lon, center.lat],
         zoom,
         // Attribution is drawn by our own always-visible overlay (MapAttribution).
@@ -162,7 +174,20 @@ export default function Map({
           if (!m.getLayer(layer.id)) m.addLayer({ ...layer, source: SHAPES_SOURCE } as Parameters<GLMap['addLayer']>[0]);
         }
       };
-      map.on('style.load', addShapes);
+      map.on('style.load', () => {
+        fallbackRef.current?.styleLoad();
+        addShapes();
+      });
+      // The style, or the base map's tiles, failed and the cache had nothing: next address.
+      map.on('error', (e) => {
+        const fb = fallbackRef.current;
+        if (!fb?.error(e as { sourceId?: string; tile?: unknown }, [SHAPES_SOURCE])) return;
+        setBaseStatus(fb.status());
+        map!.setStyle(glStyle(fb.current()), { diff: false });
+      });
+      map.on('sourcedata', (e) => {
+        if (e.tile && e.sourceId !== SHAPES_SOURCE) fallbackRef.current?.tileLoad();
+      });
       if (map.isStyleLoaded()) addShapes();
       // Right click on desktop, long press on touch screens.
       map.on('contextmenu', (e) =>
@@ -201,13 +226,16 @@ export default function Map({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Style changes (e.g. dark mode).
-  const styleRef = useRef(styleUrl);
+  // Style changes (e.g. dark mode): the other theme's addresses, from the one reached this session.
+  const baseKey = specKey(baseMap);
   useEffect(() => {
-    if (!ready || styleRef.current === styleUrl) return;
-    styleRef.current = styleUrl;
-    mapRef.current?.setStyle(styleUrl);
-  }, [ready, styleUrl]);
+    if (!ready || fallbackRef.current?.key === baseKey) return;
+    const fb = new BaseMapFallback(baseMap);
+    fallbackRef.current = fb;
+    setBaseStatus(fb.status());
+    mapRef.current?.setStyle(glStyle(fb.current()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, baseKey]);
 
   // Camera requests (cluster taps, "show on map").
   const camKey = useRef<number | null>(null);
@@ -283,7 +311,7 @@ export default function Map({
 
   return (
     <View style={[styles.fill, style]}>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} data-testid="map" />
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} data-testid="map" data-base-map={baseStatus} />
     </View>
   );
 }
