@@ -1,0 +1,117 @@
+name: Native Android build
+
+# Manual (plus version tags). Actions › "Native Android build" › Run workflow.
+# Produces an installable APK (release build, JS bundle embedded, signed with the
+# debug keystore of the Expo template: fine for testing, not for a store) and an
+# F-Droid dependency report in the job summary. See docs/run-on-android.md.
+on:
+  workflow_dispatch:
+    inputs:
+      architectures:
+        description: 'ABIs to build (comma-separated): arm64-v8a for phones, x86_64 for emulators'
+        type: string
+        required: false
+        default: 'arm64-v8a,armeabi-v7a,x86_64'
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  JAVA_VERSION: '17'
+  ARCHITECTURES: ${{ inputs.architectures || 'arm64-v8a,armeabi-v7a,x86_64' }}
+  EXPO_NO_TELEMETRY: '1'
+  CI: '1'
+
+jobs:
+  android:
+    name: Android APK + F-Droid check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Check the ABI list
+        run: |
+          echo "$ARCHITECTURES" | grep -qE '^(arm64-v8a|armeabi-v7a|x86|x86_64)(,(arm64-v8a|armeabi-v7a|x86|x86_64))*$' \
+            || { echo "::error::Invalid architectures: $ARCHITECTURES"; exit 1; }
+
+      # Metro resolves the workspace packages' dependencies from apps/mobile/node_modules
+      # (see metro.config.js), so packages/* need no install of their own.
+      - run: npm ci --workspaces=false
+
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # Restored after prebuild so the key can use the generated Gradle files.
+      - name: Cache Gradle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json', 'apps/mobile/android/gradle/wrapper/gradle-wrapper.properties', 'apps/mobile/android/**/*.gradle', 'apps/mobile/android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # F-Droid audit (docs/spec-coverage.md, gap 9): which proprietary Google
+      # libraries end up in the release APK, and which module pulls them in.
+      - name: F-Droid dependency check
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > ../build-deps.txt
+          node ../scripts/fdroid-deps.mjs ../build-deps.txt "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures="$ARCHITECTURES"
+
+      - name: Collect the APK
+        run: |
+          mkdir -p build
+          cp android/app/build/outputs/apk/release/app-release.apk build/TrianguLair.apk
+          ls -lh build/TrianguLair.apk
+          {
+            echo '## APK'
+            echo
+            echo "TrianguLair.apk ($(du -h build/TrianguLair.apk | cut -f1)), ABIs: \`$ARCHITECTURES\`."
+            echo 'Signed with the debug keystore (testing only). To update it, a later APK from this workflow installs over it; an APK signed with another key must replace it (uninstall first).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: TrianguLair-android-apk-${{ github.sha }}
+          path: apps/mobile/build/TrianguLair.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the dependency tree
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-dependencies-${{ github.sha }}
+          path: apps/mobile/build-deps.txt
+          if-no-files-found: ignore
+          retention-days: 7

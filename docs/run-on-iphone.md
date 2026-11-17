@@ -8,6 +8,9 @@ no Apple Developer Program, no Expo account. Limits of free provisioning:
 - no universal links: invitation and list links open in the browser; paste them
   in the app (Invite / Follow a list screens) instead.
 
+No Mac? See [Without Xcode: CI build + Sideloadly/AltStore](#without-xcode-ci-build--sideloadlyaltstore)
+below.
+
 You need a **Mac** (Apple Silicon or Intel) with macOS recent enough for the
 current Xcode, a **USB cable**, and the iPhone on **iOS 16 or later**.
 
@@ -62,6 +65,38 @@ npx expo run:ios --device --configuration Release
 
 *Settings › General › **VPN & Device Management*** › your Apple ID › **Trust**.
 Then open TrianguLair.
+
+## Without Xcode: CI build + Sideloadly/AltStore
+
+GitHub Actions can build the app on a Mac in the cloud and give you an **unsigned
+`.ipa`**; a sideloading tool on Windows or a Mac then signs it with your Apple ID
+and installs it.
+
+1. On github.com: *Actions* › **Native iOS build** › *Run workflow* (branch
+   `main`, "What to build" = `ipa`). It takes roughly 20–40 minutes; each run
+   uses a good share of the private repo's free macOS minutes, so start it only
+   when you need a new build.
+2. When the run is green, open it and download the artifact
+   `TrianguLair-ios-ipa-…` (a ZIP containing `TrianguLair-unsigned.ipa`; kept
+   7 days). Unzip it.
+3. Install with one of:
+   - **[Sideloadly](https://sideloadly.io)** (Windows / macOS): plug in the
+     iPhone, drag the `.ipa` in, enter your Apple ID, *Start*.
+   - **[AltStore](https://altstore.io)** (AltServer on Windows / macOS, then
+     AltStore on the iPhone): *My Apps* › `+` › pick the `.ipa`.
+4. On the iPhone: Developer Mode on (step 3 above) and trust your Apple ID
+   (step 5 above).
+
+Caveats:
+
+- **You give your Apple ID (and password, or an app-specific password) to a
+  third-party tool**, which talks to Apple on your behalf. Prefer a secondary
+  Apple ID if that bothers you.
+- Same limits as free signing with Xcode: the app **expires after 7 days**
+  (AltStore can refresh it over Wi-Fi while AltServer runs; with Sideloadly,
+  install it again), 3 apps at most, no universal links.
+- The build uses `TL_FREE_SIGNING=1`, bundle id `org.triangulair.app.dev` unless
+  you set one in the workflow form; the tools may also rewrite it.
 
 ## What to try
 

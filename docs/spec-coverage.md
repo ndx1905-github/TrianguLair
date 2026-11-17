@@ -54,7 +54,9 @@ the web test build) from meeting a v1 promise.
 9. **F-Droid: no proprietary services** (Tech stack). `expo-location` (Android: `play-services-location`) and
    `expo-camera` barcode scanning (Android: ML Kit) probably pull in Google libraries. This needs checking in the
    Gradle dependency tree, and MapLibre's location engine needs the same check. There is no reproducible build
-   yet. *Task: a dependency audit and an F-Droid flavor (T-301 prerequisite).*
+   yet. The *Native Android build* workflow (`.github/workflows/native-android.yml`) now reports these libraries
+   and the module pulling each in, in its job summary. *Task: act on that audit and an F-Droid flavor (T-301
+   prerequisite).*
 10. **Map attribution** (Legal, Base map rules). The overlay reads "© OpenStreetMap contributors, OpenFreeMap".
     The "© OpenMapTiles" credit and the "Report an error" link to OpenStreetMap are both missing. *Task: a small fix
     in `app/config.ts` `MAP_ATTRIBUTION` and `app/components/MapAttribution.tsx`.*
