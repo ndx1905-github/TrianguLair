@@ -36,7 +36,7 @@ interface StorageAdapter {
   - `InvalidPath`
   - `ProtocolError` (a response the adapter did not expect)
   - `TooLarge` (`get` with `maxBytes`: the announced Content-Length or stat size is checked first, then the body is streamed and the read cancelled past the limit; SFTP reads through a handle up to the limit. Without a readable body stream, as in some React Native `fetch` builds, the size is checked after reading. `fetchSnapshot`, `fetchHighestIndex` and `fetchPack` take `maxBytes` too.)
-- Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs, and S3 signing uses WebCrypto through `aws4fetch`.
+- Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs and no WebCrypto: S3 signing is pure JavaScript (`src/sigv4.ts` on `@noble/hashes`), so it runs on Hermes.
 - `probeConditionalWrites(adapter)` checks at setup time whether a server really enforces `If-Match`/`If-None-Match`. It writes and then deletes a `.triangulair-probe-*` object.
 
 ## Layout on storage
@@ -88,7 +88,7 @@ Friends never write to someone else's storage, so there is no inbox. They send a
 
 ### S3-compatible (`S3Adapter`)
 
-- `fetch` plus SigV4 (`aws4fetch`). The request is signed with the payload SHA-256. Path-style addressing is the default (MinIO, Garage, R2, Scaleway). `pathStyle: false` switches to virtual-hosted style.
+- `fetch` plus SigV4 (`src/sigv4.ts`: SHA-256 and HMAC-SHA256 from `@noble/hashes`, audited, pure JS, no WASM, no WebCrypto, so it works on Hermes where `crypto.subtle` is missing). It replaces `aws4fetch` and signs exactly like it (same signed headers, S3 path and query canonicalisation, `UNSIGNED-PAYLOAD` without a body); `test/sigv4.test.ts` checks the worked examples of the AWS documentation, equality with `aws4fetch` on varied keys and queries, and a full adapter round trip with `crypto` removed. The request is signed with the payload SHA-256. Path-style addressing is the default (MinIO, Garage, R2, Scaleway). `pathStyle: false` switches to virtual-hosted style.
 - Keys live under `prefix` (for example `triangulair/alice/`). `list` uses ListObjectsV2 with pagination.
 - Conditional writes:
   - `PUT` with `If-None-Match: *` (first publish) and `If-Match` (index swap).

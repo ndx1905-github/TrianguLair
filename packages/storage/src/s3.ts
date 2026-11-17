@@ -1,5 +1,5 @@
-import { AwsClient } from 'aws4fetch';
 import { PreconditionFailed, ProtocolError } from './errors.ts';
+import { signV4, type SigV4Options } from './sigv4.ts';
 import type {
   Capabilities,
   DeleteOptions,
@@ -21,7 +21,6 @@ import {
   normEtag,
   resolveFetch,
   sortEntries,
-  toHex,
   xmlElements,
   xmlText,
   checkMaxBytes,
@@ -61,26 +60,26 @@ function rfc3986(s: string): string {
 }
 
 /**
- * S3 adapter over `fetch` + SigV4 (aws4fetch, which uses WebCrypto
- * `crypto.subtle`). Conditional PUT via `If-Match` / `If-None-Match: *`.
+ * S3 adapter over `fetch` + SigV4 (`sigv4.ts`: pure JS on `@noble/hashes`,
+ * so it also runs on Hermes, which has no WebCrypto). Conditional PUT via
+ * `If-Match` / `If-None-Match: *`.
  */
 export class S3Adapter implements StorageAdapter {
   readonly capabilities: Capabilities;
-  private readonly client: AwsClient;
+  private readonly signing: Omit<SigV4Options, 'datetime'>;
   private readonly fetch: FetchLike;
   private readonly bucketUrl: string;
   private readonly keyPrefix: string;
   private readonly nativeConditional: boolean;
 
   constructor(opts: S3Options) {
-    this.client = new AwsClient({
+    this.signing = {
       accessKeyId: opts.accessKeyId,
       secretAccessKey: opts.secretAccessKey,
       ...(opts.sessionToken ? { sessionToken: opts.sessionToken } : {}),
       service: 's3',
       region: opts.region,
-      retries: 0,
-    });
+    };
     this.fetch = resolveFetch(opts.fetch);
     const ep = new URL(opts.endpoint);
     const epBase = `${ep.protocol}//${ep.host}${ep.pathname.replace(/\/$/, '')}`;
@@ -110,16 +109,14 @@ export class S3Adapter implements StorageAdapter {
     headers: Record<string, string> = {},
     body?: Uint8Array<ArrayBuffer>,
   ): Promise<Response> {
-    let signed: Request;
+    let signed: ReturnType<typeof signV4>;
     try {
-      if (body) {
-        headers['x-amz-content-sha256'] = toHex(await crypto.subtle.digest('SHA-256', body));
-      }
-      signed = await this.client.sign(url, { method, headers, ...(body ? { body } : {}) });
+      // The payload hash is signed (x-amz-content-sha256); no body: UNSIGNED-PAYLOAD, as aws4fetch did.
+      signed = signV4({ method, url, headers, ...(body ? { body } : {}) }, this.signing);
     } catch (e) {
       throw new ProtocolError(`SigV4 signing failed: ${(e as Error).message}`, { path, cause: e });
     }
-    return doFetch(this.fetch, url, signed, path);
+    return doFetch(this.fetch, url, { method, headers: signed.headers, ...(body ? { body } : {}) }, path);
   }
 
   async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
