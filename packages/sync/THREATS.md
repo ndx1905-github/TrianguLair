@@ -37,9 +37,9 @@ now depends on how repetitive the content is, not only on its length.
 
 ## What the storage learns from the layout
 
-- `packs/` vs `media/`: places packs (what friends read) vs my own document and manifest (and photos later). Until
-  photos exist, the host can tell which file is my document; its size bounds the size of my whole collection,
-  private places included. Packs are grouped by recipient set, so the host also sees how many distinct recipient
+- `packs/` vs `media/`: places packs (what friends read) vs my own document, manifest and photos (T-111b). Photo
+  files have the same envelope (2 wraps) and padding as the document; the host still sees sizes, so it can
+  guess which file is a thumbnail, a photo or my document, how many photos I have, and when one is added. Packs are grouped by recipient set, so the host also sees how many distinct recipient
   sets I use (one per restricted friend or list), not who is in them.
 - Republication timing: every sync that changed something writes a new index (the spec accepts update dates);
   the invitation padding also changes the index from time to time (crypto THREATS).
@@ -220,3 +220,23 @@ new device is listed only once it picked its keys up). Partly fixed or documente
   resumable.
 - Link + code needs two links (the invitation, and the request link back): the new device has no storage access
   before its approval.
+
+## Photos (T-111b)
+
+- **Metadata**: the app re-encodes every image (no EXIF written by expo-image-manipulator or a canvas) and the sync
+  layer strips JPEG APP1/APP3–15/COM segments and WebP EXIF/XMP chunks again, then refuses any image that still
+  carries them (an AVIF with an Exif or XMP item is refused: the app falls back to WebP). Pixels are not
+  inspected: what the photo shows (a street sign, a face) is the user's choice.
+- **Keys**: one random X25519 key per photo, both files sealed to it alone; the key is only inside my document
+  (sealed to my sharing key) and inside the places packs of the save's readers. A removed reader (friend,
+  restriction, invitation link, save made private, device declared lost: my sharing key changes) gets the photo
+  re-sealed under a new key, and the old files are deleted after the publication. What they already downloaded
+  stays with them (spec: copies cannot be taken back). Until the owner's next publication a removed friend can
+  still fetch the old files with the key they had.
+- **Fetching**: a friend's photo file is downloaded with a size limit (8 MiB full, 512 KiB thumbnail) and opened only
+  if their verified index lists it at that path; the key comes from a places pack that verified the same way. The
+  image is checked to be WebP/AVIF/JPEG before it is cached; decoding is left to the platform's image decoder.
+- **Host view**: a new photo is two new files in `media/` at the same time as a document delta; a renewal replaces
+  both files of every affected photo, which shows that someone lost access (not who).
+- **On the device**: images are in the app's SQLite database (`media_cache`), with the same protection as the rest
+  of the database, and erased by the remote wipe.

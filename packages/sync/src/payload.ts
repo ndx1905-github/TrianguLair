@@ -9,6 +9,7 @@
  *               3 = manifest (JSON, own devices only)
  *               4 = lists (GeoJSON FeatureCollection, JSON: list definitions, and the places of a
  *                   link-only list; lists.ts)
+ *               5 = photo (an image, WebP / AVIF / JPEG, stored: photos.ts)
  *   6  1  codec: 0 = stored, 1 = raw DEFLATE (RFC 1951, fflate, pure JavaScript)
  *   7  4  body length (u32 big-endian, as stored: compressed with the codec)
  *  11  …  body
@@ -21,6 +22,8 @@
  * format then pads the whole payload with Padmé. Readers check that the
  * padding is zeros. Decompression is bounded (`maxBytes`, by default per
  * kind) so that a hostile pack cannot exhaust memory.
+ *
+ * (Pre-release change, T-111b: kind 5 too.)
  *
  * (Pre-release change, T-211/T-212: kind 4 was added before any app shipped; a reader of
  * envelope version 1 that predates it would refuse the pack as "unsupported".)
@@ -36,9 +39,9 @@ import { LimitError, type ByteBudget } from './util.ts';
 
 const MAGIC = [0x54, 0x4c, 0x53, 0x59]; // "TLSY"
 export const PAYLOAD_VERSION = 1;
-export type PayloadKind = 'places' | 'own-doc' | 'manifest' | 'lists';
-const KIND_BYTE: Record<PayloadKind, number> = { places: 1, 'own-doc': 2, manifest: 3, lists: 4 };
-const BYTE_KIND: Record<number, PayloadKind> = { 1: 'places', 2: 'own-doc', 3: 'manifest', 4: 'lists' };
+export type PayloadKind = 'places' | 'own-doc' | 'manifest' | 'lists' | 'photo';
+const KIND_BYTE: Record<PayloadKind, number> = { places: 1, 'own-doc': 2, manifest: 3, lists: 4, photo: 5 };
+const BYTE_KIND: Record<number, PayloadKind> = { 1: 'places', 2: 'own-doc', 3: 'manifest', 4: 'lists', 5: 'photo' };
 const HEADER = 11;
 
 /** Smallest payload written (header, body and zero padding): 4 KiB. */
@@ -53,6 +56,7 @@ export const PAYLOAD_LIMITS: Readonly<Record<PayloadKind, number>> = Object.free
   lists: DEFAULT_LIMITS.placesPayloadBytes,
   manifest: DEFAULT_LIMITS.manifestPayloadBytes,
   'own-doc': DEFAULT_LIMITS.ownDocPayloadBytes,
+  photo: DEFAULT_LIMITS.photoBytes,
 });
 
 export function encodePayload(

@@ -42,7 +42,7 @@ import { saveIdFor, type DataStore } from '@triangulair/data';
 import { NotFound, fetchHighestIndex, indexPath, type StorageAdapter } from '@triangulair/storage';
 import { fingerprint } from './audience.ts';
 import { classifyError, type SyncProblem } from './errors.ts';
-import { parsePlaces, toForeignSave, type PlaceFeature } from './features.ts';
+import { MAX_FUTURE_MS, parsePlaces, toForeignSave, type PlaceFeature } from './features.ts';
 import { resolveLimits, type SyncLimits } from './limits.ts';
 import { decodePayload } from './payload.ts';
 import { isTombstone, parseLists, type ListDef } from './lists.ts';
@@ -90,6 +90,8 @@ export interface WhatsNew {
   added: string[];
   changed: ChangedItem[];
   removed: string[];
+  /** New photos on places that were already there (spec What's new: "new photo"), by place. */
+  photos?: { placeId: string; mediaIds: string[] }[];
 }
 
 export interface FriendReport {
@@ -143,6 +145,7 @@ const MEANINGFUL_STATUS = new Set(['tried', 'favorite']);
 export class FriendReader {
   readonly limits: SyncLimits;
   private readonly slots: Semaphore;
+  private readonly indexes = new Map<string, SignedIndex>();
   constructor(private readonly o: ReaderOptions) {
     this.limits = resolveLimits(o.limits);
     this.slots = new Semaphore(o.concurrency ?? 6);
@@ -180,7 +183,34 @@ export class FriendReader {
       prunePlaces(this.o.store, ids.map((r) => r.place_id));
     });
     this.o.state.delete(this.key(owner));
+    this.o.state.delete(`friend-index:${owner}`);
+    this.indexes.delete(owner);
     return st ? Object.keys(st.items) : ids.map((r) => r.place_id);
+  }
+
+  /**
+   * A friend's last verified index (to open their photos), as accepted by the last read: from memory,
+   * else the copy kept in the state, verified again at the address it was read from. Null when none
+   * is kept or it no longer verifies (the next read fetches it again).
+   */
+  indexFor(owner: string): SignedIndex | null {
+    const m = this.indexes.get(owner);
+    if (m) return m;
+    const st = this.stateOf(owner);
+    const bytes = this.o.state.getBytes(`friend-index:${owner}`);
+    if (!st || !bytes) return null;
+    try {
+      const index = verifyIndex(bytes, { expectedOwner: owner, location: st.location, ...(this.o.now && { now: this.o.now() }) });
+      this.indexes.set(owner, index);
+      return index;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Where a friend's files are read (their certified address, or where a redirect led). */
+  locationOf(owner: string): string | null {
+    return this.stateOf(owner)?.location ?? null;
   }
 
   /** Reads one friend. `pass`: the byte budget of the whole sync pass (shared by every friend read in it). */
@@ -227,6 +257,9 @@ export class FriendReader {
       }
       if (t.anchor && index.sharing_cert.rotation > t.anchor.sharing_cert.rotation) report.keyChanged = true;
       report.index = index;
+      // Kept to open their photos later (openPack needs their verified index).
+      this.indexes.set(t.owner, index);
+      this.o.state.setBytes(`friend-index:${t.owner}`, f.index);
       const hash = indexAnchor(index).hash;
       st.location = location;
       st.etag = f.etag;
@@ -285,6 +318,7 @@ export class FriendReader {
         }
         const items: Record<string, string> = {};
         const m = new Map<string, PlaceFeature>();
+        // (photos are checked by parsePlaces: refs only, the images are fetched on demand)
         for (const x of parsePlaces(body)) {
           items[x.feature.id] = x.hash;
           m.set(x.feature.id, x.feature);
@@ -325,16 +359,25 @@ export class FriendReader {
           const f = features.get(ph)!.get(id)!;
           const input = toForeignSave(t.owner, f, now);
           const before = repo.getSave(saveIdFor(t.owner, id));
+          const beforePhotos = before ? new Set(repo.getMedia(before.id).map((x) => x.id)) : new Set<string>();
           repo.upsertForeignSave(input);
+          const refs = f.properties.photos ?? [];
+          repo.setForeignMedia(input.id, refs.map((r) => ({
+            id: r.id, file: r.full, thumb: r.thumb, mime: r.type, bytes: null, upload: { key: r.key, full: r.full, thumb: r.thumb },
+            blurhash: null, width: r.w, height: r.h, createdAt: Math.min(Date.parse(r.created), now + MAX_FUTURE_MS),
+          })));
+          const newPhotos = refs.map((r) => r.id).filter((x) => !beforePhotos.has(x));
           if (!old || !before) wn.added.push(id);
           else {
             const fields: string[] = [];
+            if (newPhotos.length || refs.length !== beforePhotos.size) fields.push('photos');
+            if (newPhotos.length) (wn.photos ??= []).push({ placeId: id, mediaIds: newPhotos });
             if (before.comment !== input.comment) fields.push('comment');
             if (before.status !== (input.status ?? null)) fields.push('status');
             if (before.priceLevel !== (input.priceLevel ?? null)) fields.push('price_level');
             if (before.commentVisibility !== input.commentVisibility) fields.push('comment_visibility');
             if (fields.length === 0) fields.push('details'); // name, tags, geometry
-            const meaningful = (fields.includes('comment') && !!input.comment) || (fields.includes('status') && MEANINGFUL_STATUS.has(input.status ?? ''));
+            const meaningful = (fields.includes('comment') && !!input.comment) || (fields.includes('status') && MEANINGFUL_STATUS.has(input.status ?? '')) || newPhotos.length > 0;
             wn.changed.push({ placeId: id, meaningful, fields });
           }
         }

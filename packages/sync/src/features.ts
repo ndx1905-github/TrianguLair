@@ -37,9 +37,14 @@ import {
 import { packHash } from '@triangulair/crypto';
 import { PayloadError } from './errors.ts';
 import { parseJsonBody, utf8 } from './payload.ts';
+import { MAX_PHOTOS_PER_PLACE, checkPhotoRefs, type PhotoRef } from './photos.ts';
 
 export const PLACES_VERSION = 1;
-export const PLACES_MINOR = 0;
+/**
+ * Minor 1 (T-111b): `photos` on a place (photos.ts). A pack declares it only when one of its places
+ * has photos, so an older reader (minor 0) reads such a pack leniently, without the photos.
+ */
+export const PLACES_MINOR = 1;
 /**
  * Reader limits (checked before projecting anything). The writer puts at
  * most `capacity` places in a pack (default 200, never more than this).
@@ -75,6 +80,8 @@ export interface PlaceFeature {
     status?: SaveStatus;
     price_level?: PriceLevel;
     tags?: TagOut[];
+    /** Personal photos (minor 1), oldest first. */
+    photos?: PhotoRef[];
     created: string;
     updated: string;
   };
@@ -190,6 +197,8 @@ export const dayOf = (ms: number): string => iso(Math.floor(ms / DAY_MS) * DAY_M
 export interface PublicFeatureOptions {
   /** Publish my tag names (and parents): only when I opted in (`ContactBook.publicTagNames`). */
   tagNames?: boolean;
+  /** Photos of the save, for friends' packs only (never in public files or link-only lists). */
+  photos?: readonly PhotoRef[];
 }
 
 /**
@@ -218,6 +227,7 @@ export function featureFor(item: OwnItem, audience: 'friends' | 'public', opts: 
       return o;
     });
   }
+  if (audience === 'friends' && opts.photos?.length) props.photos = opts.photos.slice(0, MAX_PHOTOS_PER_PLACE).map((p) => ({ ...p }));
   props.created = audience === 'public' ? dayOf(item.createdAt) : iso(item.createdAt);
   props.updated = audience === 'public' ? dayOf(item.updatedAt) : iso(item.updatedAt);
   return { type: 'Feature', id: item.placeId, geometry: item.geometry, properties: props };
@@ -235,13 +245,14 @@ export function featureHash(f: PlaceFeature): string {
 }
 
 export function placesCollection(features: PlaceFeature[]): Uint8Array {
-  return utf8(JSON.stringify({ type: 'FeatureCollection', triangulair: { kind: 'places', version: PLACES_VERSION }, features }));
+  const minor = features.some((f) => f.properties.photos?.length) ? { minor: 1 } : {};
+  return utf8(JSON.stringify({ type: 'FeatureCollection', triangulair: { kind: 'places', version: PLACES_VERSION, ...minor }, features }));
 }
 
 // ------------------------------------------------------------------ reader side
 
 const STATUSES = new Set(['to_try', 'tried', 'favorite']);
-const PROPS = new Set(['name', 'category', 'kind', 'edge', 'comment', 'comment_visibility', 'status', 'price_level', 'tags', 'created', 'updated']);
+const PROPS = new Set(['name', 'category', 'kind', 'edge', 'comment', 'comment_visibility', 'status', 'price_level', 'tags', 'photos', 'created', 'updated']);
 const TAG_KEYS = new Set(['name', 'color', 'icon', 'parent']);
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
@@ -294,14 +305,14 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
   const lenient = minor > PLACES_MINOR;
   for (const k of Object.keys(doc)) if (!['type', 'triangulair', 'features'].includes(k) && !lenient) fail(`unknown field ${k}`);
   for (const k of Object.keys(meta)) if (!['kind', 'version', 'minor'].includes(k) && !lenient) fail(`unknown field triangulair.${k}`);
-  return parseFeatureArray(doc.features, lenient);
+  return parseFeatureArray(doc.features, lenient, { photos: true });
 }
 
 /**
  * Validates the `features` of a places (or lists) payload: the same strict rules (see the module
  * comment). `lenient`: the document declares a higher minor than this reader's (unknown fields ignored).
  */
-export function parseFeatureArray(features: unknown, lenient: boolean): ParsedFeature[] {
+export function parseFeatureArray(features: unknown, lenient: boolean, opts: { photos?: boolean } = {}): ParsedFeature[] {
   if (!Array.isArray(features) || features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
   return features.map((f: unknown) => {
     if (!isObj(f) || f.type !== 'Feature') fail('feature expected');
@@ -337,6 +348,11 @@ export function parseFeatureArray(features: unknown, lenient: boolean): ParsedFe
         if (t.icon !== undefined && (typeof t.icon !== 'string' || !ICON_RE.test(t.icon))) fail('tag icon must be a symbol name');
         if (t.parent !== undefined) str(t.parent, 100, 'tag parent');
       }
+    }
+    if (p.photos !== undefined) {
+      // Only friends' places packs carry photos (lists packs and public files never do).
+      if (!opts.photos) fail('photos are not allowed here');
+      checkPhotoRefs(p.photos, lenient);
     }
     date(p.created, 'created');
     date(p.updated, 'updated');

@@ -60,12 +60,15 @@ import {
   type SharingKey,
   type SignedIndex,
 } from '@triangulair/crypto';
-import { snapshotOfUpdates, type DataStore } from '@triangulair/data';
+import { snapshotOfUpdates, type DataStore, type MediaRecord } from '@triangulair/data';
+import type { MediaCache } from './media-cache.ts';
+import { imageHash, isPhotoType, mediaPath, newPhotoKey, openPhoto, photoKeyPair, sealPhoto, MAX_PHOTO_SIDE, type PhotoRef } from './photos.ts';
+import type { OwnItem } from './features.ts';
 import { packHash } from '@triangulair/crypto';
 import { INDEX_PATH, NotFound, PUBLIC_LISTS_PATH, PreconditionFailed, fetchSnapshot, type StorageAdapter } from '@triangulair/storage';
 import { audienceOf, computeAudiences, fingerprint, recipientBytes, type Audience } from './audience.ts';
 import { OWN_ANCHOR_STEP, laterAnchor, mergeBooks, sameRecords, type ContactBook } from './contacts.ts';
-import { DeviceRevokedError, NeedsKeyError, PayloadError } from './errors.ts';
+import { DeviceRevokedError, NeedsKeyError, PayloadError, classifyError } from './errors.ts';
 import { MAX_FEATURES_PER_PACK, featureFor, featureHash, parsePlaces, placesCollection, readOwnItems, zOrder, type PlaceFeature } from './features.ts';
 import { resolveLimits, type SyncLimits } from './limits.ts';
 import { planPacks, type DesiredItem, type ExistingPack } from './planner.ts';
@@ -82,7 +85,9 @@ export const keyPath = (deviceId: string): string => `keys/${deviceId.replace(/^
 type PackInfo =
   | { k: 'places'; id: string; rot: number; items: Record<string, string> }
   | { k: 'own-doc'; id: string; rot: number; mode: 'full' | 'delta'; size: number }
-  | { k: 'manifest'; id: string; rot: number; fps: Record<string, string> }
+  | { k: 'manifest'; id: string; rot: number; fps: Record<string, string>; aud?: Record<string, string[]> }
+  /** A media file none of my keys opens: a photo (sealed to its own photo key, photos.ts). */
+  | { k: 'photo' }
   /** A lists pack (lists.ts): `h` = hash of its body; a tombstone is kept until `until`. */
   | { k: 'lists'; id: string; rot: number; h: string; tomb?: { list: string; until: number } }
   | { k: 'other' };
@@ -117,6 +122,7 @@ function spaceKind(path: string, byFile: ReadonlyMap<string, string>, cache: Rec
   if (k === 'places' || k === 'manifest') return 'places';
   if (k === 'own-doc') return 'document';
   if (k === 'lists') return 'lists';
+  if (k === 'photo') return 'photos';
   // The own document and the manifest are stored under media/ too (same look as photos): only a
   // listed media file of no known pack kind is a photo.
   if (hash !== undefined && path.startsWith('media/')) return 'photos';
@@ -177,6 +183,32 @@ export interface OwnSyncOptions {
   move?: IdentityMove;
   newId?: () => string;
   random?: () => number;
+  /**
+   * Local copies of photos (media-cache.ts): my photos are read from it to be sealed and uploaded,
+   * and the photos my other devices uploaded are stored in it when a pull meets them.
+   */
+  media?: MediaCache;
+}
+
+/** What a publication did with my photos (T-111b). */
+export interface PhotosReport {
+  /** Photos sealed and uploaded (new, or re-sealed under a new key). */
+  uploaded: number;
+  /** Photos re-sealed under a new key because someone lost access to them. */
+  renewed: number;
+  /** Photos waiting: not uploaded (storage full, or this device does not have the image). Text went first. */
+  waiting: number;
+  /** The storage refused a photo for lack of space (`quota`): photos wait, the text was published. */
+  quota?: unknown;
+}
+
+interface PhotoPlan extends PhotosReport {
+  /** Media files to list (both files of each published photo), by path. */
+  files: Map<string, IndexPackEntry>;
+  /** Place id → photos for friends' places packs. */
+  refs: Map<string, PhotoRef[]>;
+  /** Recipient sets the photo keys were given to (fingerprint → keys), for the manifest. */
+  aud: Record<string, string[]>;
 }
 
 export interface PullResult {
@@ -216,6 +248,7 @@ export interface PublishReport {
   filesDeleted: number;
   ownDoc: 'none' | 'delta' | 'full';
   pull: PullResult;
+  photos: PhotosReport;
 }
 
 const MANIFEST = 'manifest';
@@ -233,6 +266,8 @@ export class OwnSync {
   private vaultDirty = false;
   private checkedFiles = false;
   private vaultChecked = false;
+  /** Photo files uploaded and not listed by a committed index yet. */
+  private readonly pendingPhotos = new Set<string>();
   readonly limits: SyncLimits;
   /** Earlier vault data keys (persist them with the sharing keys). */
   previousVaultKeys: PreviousVaultKey[];
@@ -403,7 +438,13 @@ export class OwnSync {
       const max = p.file.startsWith('media/') ? this.limits.ownFileBytes : this.limits.packBytes;
       const g = await this.storage.get(p.file, { maxBytes: max });
       if (!g) return { p, info: null as PackInfo | null, update: null as Uint8Array | null };
-      return { p, ...this.classify(g.data, index, p) };
+      const c = this.classify(g.data, index, p);
+      if (c.info?.k === 'photo' && this.o.media) {
+        // A photo another device of mine uploaded: keep the file until my document (imported below)
+        // gives its key; own devices sync photos, so it is not downloaded twice.
+        this.o.media.put(p.hash, g.data, { owner: this.owner, kind: 'enc', mine: true });
+      }
+      return { p, ...c };
     });
     const updates: Uint8Array[] = [];
     for (const { p, info, update } of opened) {
@@ -421,6 +462,10 @@ export class OwnSync {
     for (const u of updates) this.store.importChanges(u);
     res.imported = updates.length;
     if (updates.length) res.importedFrom = index.device_cert.device;
+    if (this.o.media) {
+      await listsReady();
+      this.importOwnPhotos(index);
+    }
 
     // Forget packs that are no longer listed.
     const listedHashes = new Set(listed.map((p) => p.hash));
@@ -450,7 +495,7 @@ export class OwnSync {
     try {
       opened = openPack(bytes, index, this.keys());
     } catch (e) {
-      if (e instanceof DecryptionError && e.code === 'NO_MATCHING_KEY') return { info: { k: 'other' }, update: null };
+      if (e instanceof DecryptionError && e.code === 'NO_MATCHING_KEY') return { info: entry.file.startsWith('media/') ? { k: 'photo' } : { k: 'other' }, update: null };
       throw e;
     }
     if (opened.file !== entry.file) return { info: null, update: null };
@@ -474,9 +519,15 @@ export class OwnSync {
         if (body.length < 1 || (body[0] !== 1 && body[0] !== 2)) throw new PayloadError('own-doc: bad mode');
         return { info: { k: 'own-doc', id: opened.id, rot, mode: body[0] === 1 ? 'full' : 'delta', size: body.length - 1 }, update: body.subarray(1) };
       }
-      const m = parseJsonBody(body) as { kind?: string; version?: number; packs?: Record<string, string> };
+      const m = parseJsonBody(body) as { kind?: string; version?: number; packs?: Record<string, string>; aud?: unknown };
       if (m?.kind !== MANIFEST || m.version !== 1 || typeof m.packs !== 'object' || m.packs === null) throw new PayloadError('manifest: malformed');
-      return { info: { k: 'manifest', id: opened.id, rot, fps: m.packs }, update: null };
+      const aud: Record<string, string[]> = {};
+      if (typeof m.aud === 'object' && m.aud !== null && !Array.isArray(m.aud)) {
+        for (const [fp, keys] of Object.entries(m.aud as Record<string, unknown>)) {
+          if (Array.isArray(keys) && keys.every((k) => typeof k === 'string') && fingerprint(keys as string[]) === fp) aud[fp] = keys as string[];
+        }
+      }
+      return { info: { k: 'manifest', id: opened.id, rot, fps: m.packs, ...(Object.keys(aud).length && { aud }) }, update: null };
     } catch (e) {
       if (e instanceof PayloadError && e.unsupported) throw e;
       if (e instanceof PayloadError || e instanceof LimitError) return { info: { k: 'other' }, update: null };
@@ -634,10 +685,19 @@ export class OwnSync {
       // The vault first (R-09): my other devices compute their audiences from it, so a removed
       // contact must reach it before anything else is published.
       await this.pushVault();
-      const b = this.build(pull);
+      const items = readOwnItems(this.store.repo);
+      const audiences = this.audiences(items);
+      // Photos first (they must be uploaded before the packs that reference them are sealed); a full
+      // storage only makes them wait: the text is published anyway (spec "Error cases", quota full).
+      const photos = await this.preparePhotos(pull, items, audiences, (paths) => {
+        for (const p of paths) orphans.add(p);
+        this.st.set('own:garbage', [...orphans]);
+      });
+      const b = this.build(pull, items, audiences, photos);
+      const photoReport: PhotosReport = { uploaded: photos.uploaded, renewed: photos.renewed, waiting: photos.waiting, ...(photos.quota !== undefined && { quota: photos.quota }) };
       const report: PublishReport = {
         published: false, seq: pull.index?.seq ?? null, attempts: attempt, conflicts, packsWritten: b.writes.size,
-        packsKept: b.kept, bytesUploaded: 0, filesDeleted: 0, ownDoc: b.ownDoc, pull,
+        packsKept: b.kept, bytesUploaded: 0, filesDeleted: 0, ownDoc: b.ownDoc, pull, photos: photoReport,
       };
       if (!b.changed && !opts.force && pull.index) return report;
       // Interrupted write (spec "Error cases"): packs first, the index last. Until an index lists
@@ -715,6 +775,7 @@ export class OwnSync {
       });
       this.st.set('own:garbage', left);
       this.st.set('own:published', [...listed]);
+      for (const f of listed) this.pendingPhotos.delete(f);
       for (const h of Object.keys(b.cache)) if (!b.index.packs.some((p) => p.hash === h)) this.st.delete(`own:doc:${h}`);
       await this.pushVault();
       report.published = true;
@@ -726,7 +787,194 @@ export class OwnSync {
   }
 
   /** Builds the next index from the local state and what the pull found (synchronous). */
-  private build(pull: PullResult) {
+  // ------------------------------------------------------------------ photos (T-111b)
+
+  /** My photos with their save (trashed ones included: my devices keep them while restorable). */
+  private photoRows(): (MediaRecord & { placeId: string; trashed: boolean })[] {
+    const repo = this.store.repo;
+    const saves = repo.db.all<{ id: string; place_id: string; deleted_at: number | null }>(
+      `SELECT s.id, s.place_id, s.deleted_at FROM saves s WHERE s.owner_id = ? AND EXISTS (SELECT 1 FROM media m WHERE m.save_id = s.id) ORDER BY s.place_id`,
+      [repo.meId],
+    );
+    return saves.flatMap((s) => repo.getMedia(s.id).map((m) => ({ ...m, placeId: s.place_id, trashed: s.deleted_at !== null })));
+  }
+
+  /** Recipient sets known for photo keys: the current manifest's, then this device's. */
+  private photoAudiences(prev: SignedIndex | null): Record<string, string[]> {
+    const cache = this.packs();
+    const out: Record<string, string[]> = { ...(this.st.get<Record<string, string[]>>('own:aud') ?? {}) };
+    for (const p of prev?.packs ?? []) {
+      const i = cache[p.hash];
+      if (i?.k === 'manifest' && i.rot === this.rot && i.aud) Object.assign(out, i.aud);
+    }
+    return out;
+  }
+
+  /** Fetches one of my uploaded images from my storage (`which`: full or thumb), checked against its content hash. */
+  async fetchOwnImage(index: SignedIndex, upload: { key: string; full: string; thumb: string }, which: 'full' | 'thumb', expected: string | null): Promise<Uint8Array | null> {
+    const h = which === 'full' ? upload.full : upload.thumb;
+    const path = mediaPath(h);
+    const g = await this.storage.get(path, { maxBytes: which === 'full' ? this.limits.photoBytes + 65_536 : this.limits.thumbBytes });
+    if (!g) return null;
+    await listsReady();
+    const img = openPhoto(g.data, index, photoKeyPair(upload.key), path, { maxBytes: which === 'full' ? this.limits.photoBytes : this.limits.thumbBytes });
+    if (expected !== null && imageHash(img) !== expected) throw new DecryptionError(`${path}: not the image my document names`, 'DECRYPT');
+    return img;
+  }
+
+  /**
+   * After a pull: the photo files my other devices uploaded (kept encrypted by the pull) are opened
+   * with the keys my document now holds and stored as my photos; files no photo of mine references
+   * any more are forgotten.
+   */
+  private importOwnPhotos(index: SignedIndex): void {
+    const media = this.o.media;
+    if (!media) return;
+    const enc = new Set(media.ids({ kind: 'enc', owner: this.owner }));
+    if (enc.size === 0) return;
+    for (const m of this.photoRows()) {
+      const u = m.upload;
+      if (!u) continue;
+      for (const [h, id, kind] of [[u.full, m.file, 'full'], [u.thumb, m.thumb ?? null, 'thumb']] as const) {
+        if (!enc.has(h)) continue;
+        enc.delete(h);
+        const bytes = media.get(h)?.bytes;
+        media.delete(h);
+        if (!bytes || id === null) continue;
+        try {
+          const img = openPhoto(bytes, index, photoKeyPair(u.key), mediaPath(h), { maxBytes: kind === 'full' ? this.limits.photoBytes : this.limits.thumbBytes });
+          if (imageHash(img) !== id) continue;
+          media.put(id, img, { owner: this.owner, kind, mine: true, mime: m.mime ?? null });
+        } catch {
+          // damaged or not the photo my document names: fetched again when needed
+        }
+      }
+    }
+    // Encrypted files no photo of mine uses (removed, or a key renewed since): not needed.
+    for (const h of enc) media.delete(h);
+  }
+
+  /**
+   * Makes every photo of mine available on my storage under a key that only its current readers
+   * have (spec "Direct recipient": a photo key is renewed when someone loses access), before the
+   * places packs that reference them are sealed:
+   *
+   * - not uploaded yet: sealed to a new photo key and uploaded (needs the image on this device);
+   * - its readers grew (a friend added): nothing uploaded, the key's recipient set is extended;
+   * - someone lost access (a friend removed, an invitation accepted or expired, a list restriction,
+   *   the save made private, a device declared lost, which changes my sharing key): re-sealed under
+   *   a new key; the old files are no longer listed and are deleted after the publication;
+   * - the storage is full: the photo waits (`quota`) and the text is published without it. A photo
+   *   whose key must be renewed and cannot be stops being listed until it is uploaded again.
+   *
+   * Returns the media files to list, the friends' references per place and the recipient sets of
+   * the photo keys (written in my manifest, so all my devices make the same decision).
+   */
+  private async preparePhotos(pull: PullResult, items: readonly OwnItem[], audiences: Map<string, Audience>, noteGarbage: (paths: string[]) => void): Promise<PhotoPlan> {
+    const plan: PhotoPlan = { files: new Map(), refs: new Map(), aud: {}, uploaded: 0, renewed: 0, waiting: 0 };
+    const rows = this.photoRows();
+    if (rows.length === 0) return plan;
+    await listsReady();
+    const stale = pull.rolledBack || pull.forked;
+    const prev = stale ? null : pull.index;
+    const missing = new Set(pull.missing);
+    const listed = new Set((prev?.packs ?? []).map((p) => p.file).filter((f) => !missing.has(f)));
+    const reg = this.photoAudiences(prev);
+    const me = audienceOf([this.sharing.cert.key]);
+    const live = new Set(items.map((i) => i.placeId));
+    const media = this.o.media;
+    const present = async (u: { full: string; thumb: string }): Promise<boolean> => {
+      const paths = [mediaPath(u.full), mediaPath(u.thumb)];
+      if (paths.every((p) => listed.has(p) || this.pendingPhotos.has(p))) return true;
+      // Uploaded by an earlier pass of this device that did not commit (or listed by an index I could
+      // not build on): there only if the storage has both files.
+      for (const p of paths) if (!listed.has(p) && !(await this.storage.head(p))) return false;
+      return true;
+    };
+    await mapLimit(rows, this.o.concurrency ?? 6, async (m) => {
+      const aud = m.trashed || !live.has(m.placeId) ? null : (audiences.get(m.placeId) ?? me);
+      let u = m.upload ?? null;
+      const there = u ? await present(u) : false;
+      let renew = false;
+      if (u && there && aud && u.fp !== aud.fp) {
+        const exposed = reg[u.fp!];
+        if (!exposed || exposed.some((k) => !aud.keys.includes(k))) renew = true;
+        else {
+          // Readers only added: the key's recipient set grows, nothing to upload.
+          reg[aud.fp] = aud.keys;
+          u = { ...u, fp: aud.fp };
+          this.store.setMediaUpload(m.placeId, m.id, { key: u.key, full: u.full, thumb: u.thumb, fp: aud.fp });
+        }
+      }
+      if (!u || !there || renew) {
+        const stop = () => {
+          // The old key may be known beyond the current readers (or its files are gone): stop using it.
+          if (u) this.store.setMediaUpload(m.placeId, m.id, null);
+          plan.waiting++;
+        };
+        let full = media?.get(m.file)?.bytes;
+        let thumb = m.thumb ? media?.get(m.thumb)?.bytes : undefined;
+        if ((!full || !thumb) && u && there && prev && m.thumb) {
+          // Renewal on a device that never opened the photo: fetch it with the old key (network
+          // errors abort the publication: nothing is lost, it is tried again).
+          full ??= (await this.fetchOwnImage(prev, u, 'full', m.file)) ?? undefined;
+          thumb ??= (await this.fetchOwnImage(prev, u, 'thumb', m.thumb)) ?? undefined;
+          if (full) media?.put(m.file, full, { owner: this.owner, kind: 'full', mine: true, mime: m.mime ?? null });
+          if (thumb) media?.put(m.thumb, thumb, { owner: this.owner, kind: 'thumb', mine: true, mime: m.mime ?? null });
+        }
+        if (!full || !thumb || plan.quota !== undefined) return stop();
+        const key = newPhotoKey();
+        const kp = photoKeyPair(key);
+        const a = aud ?? me;
+        const sf = sealPhoto(this.owner, full, kp);
+        const sth = sealPhoto(this.owner, thumb, kp);
+        noteGarbage([sf.file, sth.file]);
+        try {
+          for (const x of [sth, sf]) {
+            try {
+              await this.storage.put(x.file, x.bytes, { ifNoneMatch: '*' });
+            } catch (e) {
+              if (!(e instanceof PreconditionFailed)) throw e; // content-addressed: same name, same bytes
+            }
+          }
+        } catch (e) {
+          if (classifyError(e, 'own').kind !== 'quota') throw e;
+          plan.quota ??= e;
+          return stop();
+        }
+        this.pendingPhotos.add(sf.file);
+        this.pendingPhotos.add(sth.file);
+        reg[a.fp] = a.keys;
+        u = { key, full: sf.hash, thumb: sth.hash, fp: a.fp };
+        this.store.setMediaUpload(m.placeId, m.id, u as { key: string; full: string; thumb: string; fp: string });
+        plan.uploaded++;
+        if (renew) plan.renewed++;
+      }
+      for (const h of [u.full, u.thumb]) plan.files.set(mediaPath(h), { file: mediaPath(h), hash: h });
+      plan.aud[u.fp!] = reg[u.fp!] ?? (aud ?? me).keys;
+      // Friends: only photos of a save they can read, in a format and size readers accept.
+      if (aud && audiences.has(m.placeId) && isPhotoType(m.mime) && okSide(m.width) && okSide(m.height)) {
+        let l = plan.refs.get(m.placeId);
+        if (!l) plan.refs.set(m.placeId, (l = []));
+        l.push({ id: m.id, key: u.key, full: u.full, thumb: u.thumb, type: m.mime, w: m.width!, h: m.height!, created: new Date(m.createdAt).toISOString() });
+      }
+    });
+    for (const l of plan.refs.values()) l.sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id < b.id ? -1 : 1));
+    return plan;
+  }
+
+  private audiences(items: readonly OwnItem[]): Map<string, Audience> {
+    const repo = this.store.repo;
+    return computeAudiences(items, {
+      myCert: this.sharing.cert,
+      contacts: this.book.contacts(),
+      invitations: this.book.invitations(),
+      listItems: (id) => repo.listItems(id),
+      now: this.now(),
+    });
+  }
+
+  private build(pull: PullResult, items: readonly OwnItem[], audiences: Map<string, Audience>, photos: PhotoPlan) {
     // A stale index (rollback, fork, older rotation) is never built upon: everything is rewritten
     // from the local state, above the anchor (R-01).
     const stale = pull.rolledBack || pull.forked;
@@ -740,21 +988,13 @@ export class OwnSync {
     const infoOf = (p: IndexPackEntry) => cache[p.hash];
 
     // What each audience can read.
-    const items = readOwnItems(repo);
-    const audiences = computeAudiences(items, {
-      myCert: this.sharing.cert,
-      contacts: this.book.contacts(),
-      invitations: this.book.invitations(),
-      listItems: (id) => repo.listItems(id),
-      now,
-    });
     const desired = new Map<string, DesiredItem>();
     const features = new Map<string, PlaceFeature>();
     const audByFp = new Map<string, Audience>();
     for (const it of items) {
       const a = audiences.get(it.placeId);
       if (!a) continue;
-      const f = featureFor(it, 'friends');
+      const f = featureFor(it, 'friends', { photos: photos.refs.get(it.placeId) ?? [] });
       features.set(it.placeId, f);
       audByFp.set(a.fp, a);
       desired.set(it.placeId, { id: it.placeId, fp: a.fp, hash: featureHash(f), sortKey: zOrder(it.lat, it.lon) });
@@ -771,11 +1011,17 @@ export class OwnSync {
       if (i?.k === 'places') {
         if (i.rot === this.rot) existing.push({ id: i.id, fp: fps[i.id] ?? null, items: i.items, file: p.file });
         else drop.push(p.file);
-      } else if (!i || i.k === 'other') {
-        // Not mine to rebuild: a photo (media/) is kept as it is; an unreadable places pack is rewritten.
-        if (p.file.startsWith('media/')) entries.push(p);
+      } else if (!i || i.k === 'other' || i.k === 'photo') {
+        // A photo (media/) is kept while my document references it (removed, re-sealed under a new key,
+        // or left over by a lost race: dropped); an unreadable places pack is rewritten.
+        if (p.file.startsWith('media/') && photos.files.has(p.file)) entries.push(p);
         else drop.push(p.file);
       }
+    }
+    const listedFiles = new Set(entries.map((e) => e.file));
+    for (const e of photos.files.values()) {
+      cache[e.hash] = { k: 'photo' };
+      if (!listedFiles.has(e.file)) entries.push(e);
     }
     const plan = planPacks(existing, desired, {
       capacity: this.o.capacity ?? 200,
@@ -873,14 +1119,21 @@ export class OwnSync {
     } else entries.push(...docsOk);
     for (const p of docs) if (!docsOk.includes(p)) drop.push(p.file);
 
-    // Manifest (my devices only): which recipient set each places pack is for.
-    const sortedFps = Object.fromEntries(Object.entries(newFps).sort(([a], [b]) => (a < b ? -1 : 1)));
-    const manifestChanged = !manifestEntry || JSON.stringify(sortedFps) !== JSON.stringify(Object.fromEntries(Object.entries(fps).sort(([a], [b]) => (a < b ? -1 : 1))));
+    // Manifest (my devices only): which recipient set each places pack is for, and which recipient
+    // set each photo key was given to (`aud`, only when there are photos).
+    const byKey = ([a]: [string, unknown], [b]: [string, unknown]) => (a < b ? -1 : 1);
+    const sortedFps = Object.fromEntries(Object.entries(newFps).sort(byKey));
+    const aud = Object.fromEntries(Object.entries(photos.aud).sort(byKey));
+    const prevAud = manifestEntry ? ((infoOf(manifestEntry) as Extract<PackInfo, { k: 'manifest' }>).aud ?? {}) : {};
+    const manifestChanged = !manifestEntry || JSON.stringify(sortedFps) !== JSON.stringify(Object.fromEntries(Object.entries(fps).sort(byKey))) ||
+      JSON.stringify(aud) !== JSON.stringify(Object.fromEntries(Object.entries(prevAud).sort(byKey)));
     for (const p of listed) if (infoOf(p)?.k === 'manifest' && (manifestChanged || p !== manifestEntry)) drop.push(p.file);
     if (manifestChanged) {
       const id = manifestEntry ? (infoOf(manifestEntry) as Extract<PackInfo, { k: 'manifest' }>).id : newId();
-      const bytes = sealPack(this.owner, encodePayload('manifest', jsonBytes({ kind: MANIFEST, version: 1, packs: sortedFps })), recipientBytes(me), { id });
-      add(bytes, { k: 'manifest', id, rot: this.rot, fps: sortedFps });
+      const hasAud = Object.keys(aud).length > 0;
+      const body = hasAud ? { kind: MANIFEST, version: 1, packs: sortedFps, aud } : { kind: MANIFEST, version: 1, packs: sortedFps };
+      const bytes = sealPack(this.owner, encodePayload('manifest', jsonBytes(body)), recipientBytes(me), { id });
+      add(bytes, { k: 'manifest', id, rot: this.rot, fps: sortedFps, ...(hasAud && { aud }) });
     } else if (manifestEntry) entries.push(manifestEntry);
 
 
@@ -904,8 +1157,10 @@ export class OwnSync {
       ...(previous && { previous }),
       now,
     });
+    const prevHashes = (prev?.packs ?? []).map((p) => p.hash).sort().join(',');
     const changed =
       writes.size > 0 || drop.length > 0 || publicChanged || !prev || stale || missing.size > 0 ||
+      prevHashes !== entries.map((p) => p.hash).join(',') ||
       prev.sharing_cert.rotation !== this.rot ||
       JSON.stringify(prev.invitations ?? []) !== JSON.stringify(index.invitations ?? []);
     return {
@@ -914,6 +1169,8 @@ export class OwnSync {
     };
   }
 }
+
+const okSide = (n: number | null | undefined): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 1 && n <= MAX_PHOTO_SIDE;
 
 function emptyIndexLike(): SignedIndex {
   return { packs: [] } as unknown as SignedIndex;

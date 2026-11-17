@@ -23,7 +23,7 @@ import {
   type SignedIndex,
   type VaultRecords,
 } from '@triangulair/crypto';
-import type { DataStore } from '@triangulair/data';
+import { saveIdFor, type DataStore } from '@triangulair/data';
 import { HttpsReadOnlyAdapter, fetchHighestIndex, type StorageAdapter } from '@triangulair/storage';
 import { ContactBook, type Contact, type SharePolicy } from './contacts.ts';
 import type { DeviceEntry, EntrySigner, TrustContext } from './devices.ts';
@@ -35,6 +35,8 @@ import { ListReader, type FollowedListInfo, type ListPreview, type ListReport } 
 import { followIdOf, isFollowId, parseListLinkFragment } from './lists.ts';
 import type { SyncStateStore } from './state.ts';
 import { ByteBudget } from './util.ts';
+import { MemoryMediaCache, type MediaCache } from './media-cache.ts';
+import { Photos } from './photo-service.ts';
 
 /** What the app erases on a remote wipe (both may be async). */
 export interface WipeHooks {
@@ -75,6 +77,10 @@ export interface SyncEngineOptions
    * friend with my keys only, finds nothing wrapped to me yet and erases what the invitation showed.
    */
   friendKeys?: (owner: string) => KeyPair[];
+  /** Local copies of photos (SqliteMediaCache in the app's database; default: in memory). */
+  media?: MediaCache;
+  /** Cap of the friends' photos kept on this device (default 500 MiB); their places are never evicted. */
+  friendsCacheBytes?: number;
 }
 
 export interface SyncReport {
@@ -95,6 +101,8 @@ export interface SyncReport {
    * removed"); `expired` ones ended their answer grace period. Absent when none was dropped.
    */
   invitationsDropped?: { invalid: string[]; revoked: string[]; expired: string[] };
+  /** Photos: thumbnails of friends' new photos fetched in this pass, and my photos this device fetched. */
+  photos?: { thumbnails: number; own: number };
   startedAt: number;
   durationMs: number;
 }
@@ -107,6 +115,8 @@ export class SyncEngine {
   readonly reader: FriendReader;
   /** Lists followed by link (no contact needed). */
   readonly lists: ListReader;
+  /** Personal photos: add, remove, gallery, images (photo-service.ts). */
+  readonly photos: Photos;
   private readonly o: SyncEngineOptions;
   private running: Promise<SyncReport> | null = null;
   private wiped = false;
@@ -116,6 +126,7 @@ export class SyncEngine {
     const saved = o.state.get<VaultRecords>(BOOK_KEY);
     this.book = saved ? new ContactBook(saved) : ContactBook.empty(o.sharing.cert.owner);
     const saveBook = () => o.state.set(BOOK_KEY, this.book.records);
+    const media = o.media ?? new MemoryMediaCache();
     this.own =
       o.storage && o.device
         ? new OwnSync({
@@ -128,6 +139,7 @@ export class SyncEngine {
             state: o.state,
             book: this.book,
             saveBook,
+            media,
             ...pick(o, ['capacity', 'maxOwnDeltas', 'blur', 'author', 'onSharingKey', 'newId', 'random', 'fullCheckMs', 'concurrency', 'now', 'limits', 'move']),
           })
         : null;
@@ -137,6 +149,15 @@ export class SyncEngine {
       keys: () => this.keys(),
       readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
       ...pick(o, ['concurrency', 'fullCheckMs', 'now', 'limits']),
+    });
+    this.photos = new Photos({
+      store: o.store,
+      cache: media,
+      reader: this.reader,
+      own: () => this.own,
+      readAdapter: o.readAdapter ?? ((location) => new HttpsReadOnlyAdapter({ baseUrl: location })),
+      limits: this.reader.limits,
+      ...(o.friendsCacheBytes !== undefined && { friendsCacheBytes: o.friendsCacheBytes }),
     });
     this.lists = new ListReader({
       store: o.store,
@@ -209,7 +230,10 @@ export class SyncEngine {
   setPolicy(owner: string, patch: { share?: SharePolicy; follow?: boolean }): void {
     this.book.setPolicy(owner, patch, this.nowMs());
     this.saveBook();
-    if (patch.follow === false) this.reader.forget(owner);
+    if (patch.follow === false) {
+      this.reader.forget(owner);
+      this.photos.prune();
+    }
   }
 
   /** Removes a contact: their wraps disappear at the next publication, their content leaves my cache now. */
@@ -217,6 +241,7 @@ export class SyncEngine {
     this.book.remove(owner, this.nowMs());
     this.saveBook();
     this.reader.forget(owner);
+    this.photos.prune();
   }
 
   /** Records an invitation I created (see ContactBook.addInvitation); publish before sending its link. */
@@ -509,6 +534,7 @@ export class SyncEngine {
       const c = this.book.contact(owner);
       if (!c || !c.policy.follow) this.reader.forget(owner);
     }
+    let thumbs = 0;
     // 2. Friends.
     if (opts.readFriends !== false) {
       const targets = this.book.following().flatMap((c) =>
@@ -539,6 +565,15 @@ export class SyncEngine {
           report.ok = false;
         }
       }
+      // Photos: their removed photos leave the cache; thumbnails of new ones come with the places.
+      this.photos.prune();
+      const fresh: string[] = [];
+      for (const f of report.friends) {
+        if (f.status !== 'updated') continue;
+        for (const id of f.whatsNew.added) fresh.push(...this.o.store.repo.getMedia(saveIdFor(f.owner, id)).map((m) => m.id));
+        for (const p of f.whatsNew.photos ?? []) fresh.push(...p.mediaIds);
+      }
+      if (fresh.length) thumbs = await this.photos.prefetchThumbnails(fresh, this.reader.limits.thumbPrefetchBytes);
       if (this.book.pruneFollowedLists(this.nowMs())) touched = true;
       if (touched) this.saveBook();
       // Lists followed by link (unfollowed on another device: their places leave).
@@ -564,10 +599,19 @@ export class SyncEngine {
         }
         await this.deliverKeys();
         report.own = await this.own.publish();
+        // Quota full: the text went out, the photos wait (spec "Error cases").
+        if (report.own.photos.quota !== undefined) fail('own', report.own.photos.quota, 'own');
       } catch (e) {
         fail('own', e, 'own');
       }
     }
+    // My devices sync my photos (the ones a pull did not meet: bounded per pass).
+    let ownPhotos = 0;
+    if (this.own && ownOk) {
+      this.photos.prune();
+      ownPhotos = await this.photos.syncOwn(this.reader.limits.ownPhotoPassBytes);
+    }
+    if (thumbs || ownPhotos) report.photos = { thumbnails: thumbs, own: ownPhotos };
     report.durationMs = Date.now() - startedAt;
     return report;
   }
