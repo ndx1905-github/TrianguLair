@@ -15,6 +15,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
     "test": "vitest run",
     "export:web:fixtures": "node scripts/maplibre-worker.mjs && EXPO_PUBLIC_OSM_FIXTURES=1 expo export --platform web --output-dir dist",
+    "export:web:pwa": "node scripts/maplibre-worker.mjs && EXPO_PUBLIC_TL_PWA=1 expo export --platform web --output-dir dist-web && node scripts/pwa.mjs dist-web",
+    "export:web:pwa:fixtures": "node scripts/maplibre-worker.mjs && EXPO_PUBLIC_OSM_FIXTURES=1 EXPO_PUBLIC_TL_PWA=1 TL_WEB_BASE=/triangulair expo export --platform web --output-dir dist-pwa && TL_WEB_BASE=/triangulair node scripts/pwa.mjs dist-pwa",
     "e2e": "playwright test"
   },
   "dependencies": {

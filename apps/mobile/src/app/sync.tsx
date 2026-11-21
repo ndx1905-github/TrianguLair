@@ -21,6 +21,7 @@ import { useStorage } from '../storage/StorageProvider';
 import { Avatar } from '../sync/FriendsPicker';
 import { agoText, friendNoteText, noteHelpKey, noteText } from '../sync/noteText';
 import { formatBytes, friendNote, noteHref, ownNote, quotaTips, spaceRows } from '../sync/problems';
+import { CorsHint } from '../pwa/CorsHint';
 import { usePullToRefresh } from '../sync/usePullToRefresh';
 import { useSync } from '../sync/SyncProvider';
 
@@ -101,6 +102,7 @@ function SyncScreen() {
                       {t(help)}
                     </Text>
                   )}
+                  {status.problem?.kind === 'unreachable' && <CorsHint who="own" />}
                   {note.id === 'quota' &&
                     quotaTips(space).map((k) => (
                       <Text key={k} style={[styles.muted, { color: c.text }]} maxFontSizeMultiplier={2} testID="sync-quota-tip">
@@ -155,6 +157,7 @@ function SyncScreen() {
                     <Text style={{ color: c.textMuted, fontSize: 13 }} maxFontSizeMultiplier={2}>
                       {[f.follow ? t('friends.picker.places', { count: f.places }) : null, f.share ? t('sync.friend.shares') : t('sync.friend.noShare')].filter(Boolean).join(' · ')}
                     </Text>
+                    {f.follow && f.problem?.kind === 'unreachable' && <CorsHint who="friend" testID="sync-person-cors" />}
                     {f.follow && n.action === 'keep-or-remove' && ctl && (
                       <View style={styles.actions} testID="sync-person-stale">
                         <Button kind="secondary" label={t('sync.friend.keep')} onPress={() => ctl.keepFriend(f.owner)} testID="sync-person-keep" />

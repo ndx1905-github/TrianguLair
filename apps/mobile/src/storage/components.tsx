@@ -11,6 +11,7 @@ import { useLayout } from '../hooks/useLayout';
 import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { useIdentity, useReadyIdentity } from '../identity/IdentityProvider';
+import { WebGuideLink } from '../pwa/CorsHint';
 import type { MasterKeySource } from './certify';
 import type { DraftProblem } from './config';
 import type { Fix, StepStatus, TestStep } from './connectionTest';
@@ -210,6 +211,7 @@ export function TestResults({ steps }: { steps: TestStep[] }) {
           {s.fixes.map((f) => (
             <FixView key={f.id} fix={f} />
           ))}
+          {s.status === 'fail' && s.outcome === 'cors' && <WebGuideLink testID={`step-${s.id}-guide`} />}
         </View>
       ))}
     </View>

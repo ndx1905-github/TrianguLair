@@ -9,6 +9,7 @@ import { devicesFr } from './devices.fr';
 import { sharedListsFr } from './sharedLists.fr';
 import { photosFr } from './photos.fr';
 import { privacyFr } from './privacy.fr';
+import { pwaFr } from './pwa.fr';
 
 /** Français. */
 export const fr: Messages = {
@@ -29,6 +30,8 @@ export const fr: Messages = {
   ...photosFr,
   // Trash, delete all my content, blocking and reporting, map attribution, kept in their own file.
   ...privacyFr,
+  // The installable web app (PWA), kept in its own file.
+  ...pwaFr,
 
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

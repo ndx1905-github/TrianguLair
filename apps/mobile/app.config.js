@@ -9,8 +9,16 @@
  *   org.triangulair.app.dev), since free provisioning needs one not registered
  *   by someone else.
  * See docs/run-on-iphone.md.
+ *
+ * TL_WEB_BASE=/triangulair builds the web app for a sub-path (https://cloud.example.org/triangulair/)
+ * instead of the root of a domain (expo-router `experiments.baseUrl`; scripts/web-base.cjs).
+ * See docs/self-host-web.md.
  */
+const { webBase } = require('./scripts/web-base.cjs');
+
 module.exports = ({ config }) => {
+  const base = webBase();
+  if (base) config = { ...config, experiments: { ...(config.experiments ?? {}), baseUrl: base } };
   if (process.env.TL_FREE_SIGNING !== '1') return config;
   const ios = { ...(config.ios ?? {}) };
   delete ios.associatedDomains;

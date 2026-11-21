@@ -9,6 +9,7 @@ import { devicesEn } from './devices.en';
 import { sharedListsEn } from './sharedLists.en';
 import { photosEn } from './photos.en';
 import { privacyEn } from './privacy.en';
+import { pwaEn } from './pwa.en';
 
 /** English (reference dictionary: every key exists here). */
 export const en: Messages = {
@@ -29,6 +30,8 @@ export const en: Messages = {
   ...photosEn,
   // Trash, delete all my content, blocking and reporting, map attribution, kept in their own file.
   ...privacyEn,
+  // The installable web app (PWA), kept in its own file.
+  ...pwaEn,
 
   'common.back': 'Back',
   'common.cancel': 'Cancel',

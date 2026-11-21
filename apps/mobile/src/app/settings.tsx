@@ -29,6 +29,7 @@ import { useStorage } from '../storage/StorageProvider';
 import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
 import { PhotoSettings } from '../photos/PhotoSettings';
 import { MyContentSection } from '../privacy/SettingsSection';
+import { BrowserStorageSection } from '../pwa/BrowserStorageSection';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -155,6 +156,8 @@ function SettingsScreen() {
             <Muted>{t('sync.settingsHelp')}</Muted>
             <Button kind="secondary" label={t('sync.settingsRow')} onPress={() => router.push('/sync')} testID="settings-sync" />
           </Section>
+
+          <BrowserStorageSection kitPending={identity.kitPending} />
 
           <Section title={t('settings.friends')}>
             <Muted>{t('settings.friendsHelp')}</Muted>
