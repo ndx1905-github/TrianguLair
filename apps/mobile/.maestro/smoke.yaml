@@ -117,6 +117,13 @@ env:
 - assertVisible:
     id: row-${PLACE}
 - takeScreenshot: 08-list
+# The search (accent folding, Unicode regular expressions) finds it.
+- tapOn:
+    id: list-search
+- inputText: smoke
+- hideKeyboard
+- assertVisible:
+    id: row-${PLACE}
 
 # Still there after a cold start (saved to the encrypted database).
 - stopApp
