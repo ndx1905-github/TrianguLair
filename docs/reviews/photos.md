@@ -358,5 +358,8 @@ Implemented on the branch with tests; the commits follow `9d365c4`.
    entry marked mine (both caches). Test *F-08: a friend naming one of my file hashes gets another cache entry; mine
    is never replaced* (fails before the fix: the friend's photo was found in the cache under my image's id, so my image would have been shown as theirs).
 
-Test runs after the decisions: see the PR description.
+Test runs after the decisions (branch merged with main, #98 included): data `tsc` clean, `vitest` 164 passed;
+import `tsc` clean, `vitest` 56 passed; sync `tsc` clean, `vitest` 156 passed, 1 skipped; app `npm run typecheck`
+clean, `npm test` 355 passed; `expo export --platform android` builds the phone bundle; e2e (Playwright, Apache
+WebDAV) 39 passed, 2 skipped (screenshot-only), `photos.spec.ts` and `import-export.spec.ts` included.
 
