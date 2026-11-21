@@ -115,9 +115,10 @@ export const firstLaunchFr: Messages = {
   'kit.field.protocol': 'Protocole',
   'kit.entryTitle': 'Kit de récupération TrianguLair',
   'kit.entryTitleNamed': 'TrianguLair – {name}',
-  'kit.entryHelp': 'Pour restaurer : installez TrianguLair, choisissez « J’ai déjà TrianguLair sur un autre appareil », puis tapez les 12 mots.',
+  'kit.entryHelp': 'Pour restaurer : installez TrianguLair, choisissez « J’ai déjà TrianguLair sur un autre appareil », puis collez cette entrée entière (ou tapez les 12 mots et l’adresse).',
   'kit.printTitle': 'Kit de récupération TrianguLair',
-  'kit.printHelp': 'Gardez cette page dans un endroit sûr et privé : qui possède ces 12 mots peut prendre votre identité. Pour restaurer : installez TrianguLair, choisissez « J’ai déjà TrianguLair sur un autre appareil », puis tapez les mots.',
+  'kit.qrLabel': 'Code QR de l’adresse de lecture du stockage',
+  'kit.printHelp': 'Gardez cette page dans un endroit sûr et privé : qui possède ces 12 mots peut prendre votre identité. Pour restaurer : installez TrianguLair, choisissez « J’ai déjà TrianguLair sur un autre appareil », puis tapez les mots et scannez le code QR de l’adresse.',
 
   'protect.title': 'Protégez vos lieux',
   'protect.lead': 'Enregistrez votre kit de récupération : un téléphone perdu ne voudra pas dire des lieux perdus.',

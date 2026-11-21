@@ -100,7 +100,7 @@ t("T-201","P2","Final v1 encrypted format and test vectors",["crypto"],
    "[x] Fuzz and property tests of every parser (fixed seed in CI, `npm run fuzz:long`)",
    "[x] Map from each spec promise to the code that enforces it (docs/format/promises.md)",
    "[x] A second minimal reader (Python, docs/format/reference-reader/) checks the signed-index, pack and invitation-link vectors",
-   "Vectors checked by a second implementation"],deps=["T-002"])
+   "[x] Vectors checked by a second implementation: the Python reader implements every op and agrees on all 473 vectors (`npm run reader`, in CI)"],deps=["T-002"],status="done")
 t("T-202","P2","Production storage adapters and tests against real servers",["storage"],
   "Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported. Support `index.v<N>.json` next to `index.json` for major format transitions (spec \"Format versions\").",["Conformance suite green against each server"],deps=["T-003"],status="done")
 t("T-203","P2","Storage settings and migration between storages",["app","storage"],
@@ -108,7 +108,7 @@ t("T-203","P2","Storage settings and migration between storages",["app","storage
 t("T-204","P2","Sync: publishing and reading packs",["sync"],
   "While in use and right after closing, no periodic task; ETag, signed index, friends' cache. ETag compare-and-swap is best effort on some servers: after publishing, re-read the index and check it carries our `seq`; merge and republish otherwise. A real Nextcloud takes ~0.4 s per request: upload packs in parallel and avoid needless round trips.",["Headless multi-user simulation","A full sync against a real Nextcloud stays within the performance targets"],deps=["T-102","T-201","T-202"],status="done")
 t("T-205","P2","Recovery kit and first launch",["crypto","app"],
-  "Three entry points, 12-word phrase, recovery kit, standard flow.",["End-to-end flow"],deps=["T-201"])
+  "Three entry points, 12-word phrase, recovery kit, standard flow.",["[x] End-to-end flow: e2e `recovery.spec.ts` against Apache WebDAV: places, a photo and a friend, the kit saved, browser storage wiped, restored on a fresh launch from the pasted kit or the printed page (words, QR code of the address): places, photos, friends, names and storage access back"],deps=["T-201"],status="done")
 t("T-206","P2","Adding a device (transfer code, QR)",["crypto","app"],"Argon2id code and QR code.",["Two devices in sync"],deps=["T-205","T-204"],status="done")
 t("T-207","P2","Loss and theft: key rotation, remote wipe",["crypto","sync"],
   "Sharing key rotation, re-encryption, key deletion at sync on the removed device.",["\"Stolen device\" scenario simulated"],deps=["T-206"],status="done")

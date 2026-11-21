@@ -3,18 +3,20 @@ import { ActivityIndicator, View } from 'react-native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ready } from '@triangulair/crypto';
 import { HttpsReadOnlyAdapter } from '@triangulair/storage';
+import * as Clipboard from 'expo-clipboard';
 
 import { Banner, Button, Segmented } from '../../components/ui';
 import { LinkActions, QrCode } from '../../contacts/ui';
 import { Scanner } from '../../contacts/Scanner';
 import { defaultDeviceName } from '../../devices/local';
-import { LinkReceiver, QrReceiver, RestoreFailed, restoreWithPhrase, type Joined, type NewDeviceDeps } from '../../devices/sessions';
+import { LinkReceiver, QrReceiver, RestoreFailed, normalizePhrase, restoreWithPhrase, type Joined, type NewDeviceDeps } from '../../devices/sessions';
 import { ErrorText, Fingerprint, WordsField, useMachine, usePoll } from '../../devices/ui';
 import { Frame } from '../../firstLaunch/Frame';
 import { ToggleRow } from '../../firstLaunch/ToggleRow';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { useIdentity } from '../../identity/IdentityProvider';
+import { parseKitText } from '../../identity/kit';
 import { writeAdapter } from '../../storage/adapters';
 import { ChoiceCard, Field } from '../../storage/components';
 
@@ -206,6 +208,7 @@ function PhraseWay({ onJoined }: { onJoined: (j: Joined) => void }) {
   const [primary, setPrimary] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<'both' | 'words' | 'address' | 'nothing' | null>(null);
   const go = async () => {
     setBusy(true);
     setError(null);
@@ -217,11 +220,50 @@ function PhraseWay({ onJoined }: { onJoined: (j: Joined) => void }) {
       setBusy(false);
     }
   };
+  // A whole kit pasted (the password-manager entry, the copied fields, the printed page's text):
+  // keep only the 12 words in the field, and fill the address in.
+  const take = (text: string, from: 'typed' | 'clipboard') => {
+    setError(null);
+    const k = parseKitText(text);
+    const isKit = !!k.address || (!!k.phrase && normalizePhrase(text) !== k.phrase);
+    if (from === 'typed' && !isKit) {
+      setPhrase(text);
+      setFound(null);
+      return;
+    }
+    if (k.phrase) setPhrase(k.phrase);
+    else if (from === 'typed') setPhrase(text);
+    if (k.address) setAddress(k.address);
+    setFound(k.phrase && k.address ? 'both' : k.phrase ? 'words' : k.address ? 'address' : 'nothing');
+  };
+  const paste = async () => {
+    try {
+      take(await Clipboard.getStringAsync(), 'clipboard');
+    } catch {
+      setFound('nothing');
+    }
+  };
   return (
     <View style={{ gap: 12 }} testID="device-phrase-form">
       <Frame.Note>{t('device.phrase.lead')}</Frame.Note>
-      <WordsField label={t('device.phrase.words')} value={phrase} onChange={setPhrase} testID="device-phrase-words" error={error === 'phrase'} />
+      <Button kind="secondary" label={t('device.phrase.paste')} onPress={() => void paste()} testID="device-kit-paste" />
+      <Frame.Note>{t('device.phrase.pasteHelp')}</Frame.Note>
+      {found && (
+        <Banner tone={found === 'both' ? 'info' : 'warning'} testID={found === 'both' ? 'device-kit-found' : 'device-kit-partial'}>
+          {t(`device.phrase.found.${found}`)}
+        </Banner>
+      )}
+      <WordsField label={t('device.phrase.words')} value={phrase} onChange={(v) => take(v, 'typed')} testID="device-phrase-words" error={error === 'phrase'} />
       <Field label={t('device.phrase.address')} value={address} onChange={setAddress} keyboard="url" placeholder="https://…" testID="device-phrase-address" />
+      <Frame.Note>{t('device.phrase.scanHelp')}</Frame.Note>
+      <Scanner
+        onScanned={(text) => {
+          const k = parseKitText(text);
+          if (k.address) setAddress(k.address);
+          setFound(k.address ? null : 'nothing');
+        }}
+        testID="device-phrase-scan"
+      />
       <ToggleRow label={t('device.phrase.primary')} help={t('device.phrase.primaryHelp')} value={primary} onChange={setPrimary} testID="device-phrase-primary" />
       {error && <ErrorText testID="device-phrase-error">{t(`device.error.${error}`)}</ErrorText>}
       {busy ? (

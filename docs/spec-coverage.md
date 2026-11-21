@@ -84,11 +84,11 @@ the web test build) from meeting a v1 promise.
 
 | Status | Rows |
 | --- | --- |
-| done | 171 |
+| done | 174 |
 | partial | 53 |
 | missing | 36 |
 | deferred | 9 |
-| **total** | **269** |
+| **total** | **272** |
 
 ## Coverage table
 
@@ -321,7 +321,8 @@ the web test build) from meeting a v1 promise.
 
 | Section | Statement | Status | Evidence / what is missing | Suggested task |
 | --- | --- | --- | --- | --- |
-| First launch | Three entries (Get started, invitation, already have my places) | done | `app/app/welcome/*`; shot `phone-welcome.png` | — |
+| First launch | Three entries (Get started, invitation, already have my places) | done | `app/app/welcome/*`; shot `phone-welcome.png`; e2e `recovery.spec.ts` (the third entry on a wiped browser) | — |
+| First launch | "I already have my places": restore with the recovery phrase and the storage address | done | `app/app/welcome/device.tsx` (paste the kit, or type the words; QR code of the address scanned), `app/devices/sessions.ts` `restoreWithPhrase`, `app/identity/kit.ts` `parseKitText`; `identity.test.ts`, `devices.test.ts`; e2e `recovery.spec.ts`; shot `phone-restore-kit.png` | — |
 | First launch | Invitation entry: friend's places shown at once with the invitation key, no storage | done | `app/contacts/PendingInvitation.tsx`, `invitations-received`; e2e `invitations.spec.ts` | — |
 | First launch | Standard flow: welcome, name/photo (key made in the background), location, import, map with hint | done | `welcome/*`; shots `phone-welcome-*.png`, `phone-map-hint.png` | — |
 | First launch | "Protect your places" after about 10 places or a few days | done | `app/identity/ProtectCard.tsx`, `protect.ts`; `identity.test.ts` | — |
@@ -329,8 +330,10 @@ the web test build) from meeting a v1 promise.
 | First launch | WebDAV, S3, SFTP forms; HTTPS-only explanation | partial | Forms exist; S3 signs only on web (Hermes lacks `crypto.subtle`), and SFTP is "Desktop only" | S3 signer on Hermes; SFTP on mobile |
 | First launch | Full test: write, read, delete, external read | done | `app/storage/connectionTest.ts`; `storage.test.ts`; e2e `storage.spec.ts` | — |
 | First launch | First friend: invite, publish the index, share sheet or QR | done | `/invite`; e2e `invitations.spec.ts` | — |
-| Kit | 12 words, check of 3 words, password manager entry, clipboard cleared after 1 min, printable PDF with QR | done | `app/app/kit.tsx`, `app/identity/kit.ts`, `clipboard.ts`, `print.*`; `identity.test.ts` | — |
-| Kit | Vault: friends, anchors, invitations, retired identities, app data | done | `crypto/vault.ts`; crypto `vault.test.ts` | — |
+| Kit | 12 words, check of 3 words, password manager entry, clipboard cleared after 1 min, printable PDF with QR | done | `app/app/kit.tsx`, `app/identity/kit.ts` (`kitQrSvg`: QR code of the read address on the printed page), `clipboard.ts`, `print.*`; `identity.test.ts`; e2e `recovery.spec.ts` (the printed QR code decoded with ZXing); shot `web-kit-print-qr.png` | — |
+| Kit | Vault: friends, anchors, invitations, retired identities, app data | done | `crypto/vault.ts`; crypto `vault.test.ts`; second reader `docs/format/reference-reader/` (all vault vectors); the app restores friends with their "verified" mark and the names given to them (vault value `contact-names`): `contacts/flow.test.ts`, e2e `recovery.spec.ts` | — |
+| Kit | Loss: on the new device the kit is enough, everything is restored (places, photos, friends, storage access) | done | e2e `recovery.spec.ts` against Apache WebDAV: browser storage wiped, restored from the pasted kit and from the printed page; shot `phone-restored-photo.png` | — |
+| Kit | Storage credentials changed since: the app asks for them again | done | A vault without them: `devices.test.ts` ("its storage access is asked again"); rejected ones: the "Credentials rejected" error row (`error-cases.md`) opens the storage form | — |
 | Kit | Local-only mode: offer an encrypted backup file | partial | The kit points to the plaintext GeoJSON export (`kit.localOnlyNote`); there is no encrypted backup file | Encrypted local backup |
 | Devices | Add a device by QR, link + code, or phrase; list, rename, remove | done | `app/devices/*`; `devices.test.ts`, `flow.test.ts`; e2e `devices.spec.ts` | — |
 | Loss/theft | Declare lost, key rotation, re-encryption, remote wipe, storage access guide, changes since a date | done | `sync/engine.ts` `rotateKey`, `app/devices/*`; sync `devices.test.ts`; e2e `devices.spec.ts` | — |
