@@ -127,5 +127,5 @@ t("T-214","P2","External security audit",["crypto","maintainer"],"Audit of encry
 # ---------------- Phase 3 ----------------
 t("T-301","P3","Release on App Store, Play Store, F-Droid",["release","maintainer"],"Store listings, screenshots, reproducible F-Droid builds.",["Apps published"],deps=["T-214"])
 t("T-302","P3","User and self-hosting documentation",["docs"],"Guides for Nextcloud, NAS, S3, self-hosted tiles.",["Guides reviewed by a non-technical person"])
-t("T-303","P3","Contribution guide, code of conduct, security policy",["docs"],"Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.",["Files present and linked from the README"])
+t("T-303","P3","Contribution guide, code of conduct, security policy",["docs"],"Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.",["[x] Files present and linked from the README"],status="done")
 t("T-304","P3","Funding: Liberapay / Open Collective, NLnet",["maintainer"],"Open donations, apply to NLnet.",["Application sent"])

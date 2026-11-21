@@ -1,0 +1,203 @@
+name: Release
+
+# Manual only. Actions › "Release" › Run workflow (branch main), or
+#   gh api -X POST repos/<owner>/<repo>/actions/workflows/release.yml/dispatches \
+#     -f ref=main -f 'inputs[version]=0.9.0-beta.1' -f 'inputs[prerelease]=true'
+#
+# 1. checks the version: a CHANGELOG.md section "## [<version>]" must exist, the tag v<version>
+#    must not, and apps/mobile/app.json "version" must be <version> or, for a pre-release such as
+#    0.9.0-beta.1, its numeric core 0.9.0 (iOS only accepts digits and dots there);
+# 2. builds the Android APK and the unsigned iOS .ipa with native-android.yml and native-ios.yml;
+# 3. creates the tag v<version> on the commit it built and a GitHub Release with the APK, the
+#    .ipa, SHA256SUMS.txt and the CHANGELOG.md section as notes.
+#
+# A tag created with the GITHUB_TOKEN does not trigger other workflows, so the tag does not start
+# a second pair of native builds. Uses macOS minutes (the iOS build): run it only to publish.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, without the "v" (e.g. 0.9.0-beta.1). CHANGELOG.md needs a section for it.'
+        type: string
+        required: true
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check the version, release notes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the version
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Run the release from main (this run is on $GITHUB_REF)."
+            exit 1
+          fi
+          # Semantic version, no leading "v": 1.2.3 or 1.2.3-beta.1
+          echo "$VERSION" | grep -qE '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' \
+            || { echo "::error::Invalid version \"$VERSION\": expected e.g. 0.9.0 or 0.9.0-beta.1, without a leading v."; exit 1; }
+          core="${VERSION%%-*}"
+          app=$(node -p "require('./apps/mobile/app.json').expo.version")
+          if [ "$app" != "$VERSION" ] && [ "$app" != "$core" ]; then
+            echo "::error::apps/mobile/app.json has version \"$app\": set it to \"$core\" (or \"$VERSION\") on main first."
+            exit 1
+          fi
+          if [ "$VERSION" != "$core" ] && [ "$PRERELEASE" != true ]; then
+            echo "::warning::$VERSION looks like a pre-release but will be published as a full release."
+          fi
+          echo "App version $app, release v$VERSION." >> "$GITHUB_STEP_SUMMARY"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check that the tag does not exist
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --silent 2>/dev/null; then
+            echo "::error::The tag v$VERSION already exists. Pick another version (or delete the tag and its release first)."
+            exit 1
+          fi
+
+      # The lines between "## [<version>]" and the next "## " heading.
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p build
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > build/notes.md
+          if ! grep -q '[^[:space:]]' build/notes.md; then
+            echo "::error::CHANGELOG.md has no \"## [$VERSION]\" section (or it is empty)."
+            exit 1
+          fi
+          cat build/notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the release notes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes-${{ github.sha }}
+          path: build/notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Android
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-android.yml
+
+  ios:
+    name: iOS
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-ios.yml
+    with:
+      build: ipa
+
+  publish:
+    name: Tag and GitHub Release
+    needs: [prepare, android, ios]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # The called workflows name their artifacts after the commit (github.sha is the same here).
+      - name: Download the APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: TrianguLair-android-apk-${{ github.sha }}
+          path: dl/android
+
+      - name: Download the .ipa
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: TrianguLair-ios-ipa-${{ github.sha }}
+          path: dl/ios
+
+      - name: Download the release notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes-${{ github.sha }}
+          path: dl/notes
+
+      - name: Name the files, checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p release
+          cp dl/android/TrianguLair.apk "release/TrianguLair-$VERSION.apk"
+          cp dl/ios/TrianguLair-unsigned.ipa "release/TrianguLair-$VERSION-unsigned.ipa"
+          (cd release && sha256sum -- *.apk *.ipa > SHA256SUMS.txt)
+          cat release/SHA256SUMS.txt
+          {
+            cat dl/notes/notes.md
+            echo
+            echo '### Files'
+            echo
+            echo "- \`TrianguLair-$VERSION.apk\`: Android (arm64-v8a, armeabi-v7a, x86_64), signed with a test key. See docs/beta-testing.md."
+            echo "- \`TrianguLair-$VERSION-unsigned.ipa\`: iPhone, unsigned: install it with Sideloadly or AltStore and a free Apple ID (re-sign every 7 days)."
+            echo "- \`SHA256SUMS.txt\`: SHA-256 checksums (\`sha256sum -c SHA256SUMS.txt\`)."
+            echo
+            echo '```'
+            cat release/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "Built from $GITHUB_SHA by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          } > release/notes.md
+
+      # The tag points at the commit that was built and checked, not at whatever main is now.
+      - name: Create the tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/v$VERSION" -f "sha=$GITHUB_SHA" --silent
+          echo "Tag v$VERSION → $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub Release
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" \
+            --verify-tag \
+            --title "TrianguLair $VERSION" \
+            --notes-file release/notes.md \
+            "${flags[@]}" \
+            "release/TrianguLair-$VERSION.apk" \
+            "release/TrianguLair-$VERSION-unsigned.ipa" \
+            release/SHA256SUMS.txt
+          gh release view "v$VERSION" --json url --jq '"Release: " + .url' >> "$GITHUB_STEP_SUMMARY"
