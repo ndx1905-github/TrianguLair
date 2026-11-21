@@ -21,11 +21,15 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   save's visibility). "Take a photo" / "Choose a photo": on the phone expo-image-picker (no EXIF requested) then
   expo-image-manipulator (about 1,600 px WebP, quality 0.8, and a 400 px thumbnail; "Smaller" in Settings: 1,200 px);
   on the web a file input and a canvas (EXIF orientation applied, AVIF when the browser encodes it, else WebP, else
-  JPEG). The sync package removes and checks metadata again and keeps both images in the database (`media_cache`).
+  JPEG). A photo is never refused for its size: when an image is over the format caps (2,048 px / 1.5 MiB, thumbnail
+  512 px / 128 KiB) the quality, then the size, is lowered until it fits (`encodeToFit` in `model.ts`); only a file
+  that is not an image is refused. The sync package removes and checks metadata again and keeps both images in the
+  database (`media_cache`).
   A photo not on my storage yet says so ("Not uploaded yet", "Waiting: your storage is full", "On this device only").
   Tapping a photo opens the full-screen viewer (`PhotoViewer.tsx`): author, date, previous / next, "Remove" on mine; a
   friend's full photo is downloaded only then, their thumbnails come with their places. What's new: "Anna added a
-  photo of …" with thumbnails, and a Photos filter. Settings › Photos: quality of new photos, size of the friends'
+  photo of …" with thumbnails, and a Photos filter (a photo removed since leaves the entry, and an entry left
+  without photos goes). Settings › Photos: quality of new photos, size of the friends'
   photo cache (100 MB to 2 GB, 500 MB by default; their places are never evicted), room taken on this device. The
   space my photos take on my storage is in Settings › Sync status (space used by content type).
 - **Store rules** (gap #6, spec "Store rules", "Editing and deleting", "Moderation"; logic in `src/privacy/`, tested in
@@ -66,7 +70,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   cancel, preview (to check / found / manual points / no position, per-place choice among
   candidates, manual point or leave out; what each source tag becomes), batched write with
   progress and cancel, summary and undo for 7 days; export everything as GeoJSON (download or
-  share sheet on web, share sheet on native). Logic in `@triangulair/import` (see its README).
+  share sheet on web, share sheet on native), as a ZIP archive with my photos (full and thumbnail,
+  decrypted, with their place and date; friends' photos are not exported) when I have some. The screen
+  says the file holds my places and photos in clear. Importing that archive restores the photos
+  (stored like new ones, uploaded at the next sync). Logic in `@triangulair/import` (see its README).
   Native file access uses `expo-document-picker`, `expo-file-system` and `expo-sharing`
   (new native modules: a new development build is needed). Screenshots: `docs/*-import-*.png`.
 - **Filter bar** (T-109, `components/FilterBar.tsx`, logic in `src/places/filters.ts` and `src/filters/`):

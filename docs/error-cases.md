@@ -54,6 +54,17 @@ log (`logLine`, `invitationsLogLine`: error names and counts, never content, key
 | Right after closing: pending changes sent once, then nothing | `appBackground` (one pass, every timer cleared) | sync `units.test.ts` *… finishes on close, then nothing* |
 | A device revocation takes effect at the next opening; lock (or wipe) after no sync for X days | engine remote wipe (`DeviceRevokedError`); `app/identity/lock.ts` `staleSyncAction`, `app/sync/StaleSyncLock.tsx` | sync `fixes.test.ts` R-05; app `devices/devices.test.ts` (stale sync lock, clock set back); e2e `devices.spec.ts` |
 
+## Photos (decisions after the photos review)
+
+Not rows of the spec's table; decided by the product owner after [docs/reviews/photos.md](reviews/photos.md).
+
+| Situation | What happens | Code | Tests |
+| --- | --- | --- | --- |
+| A photo larger than the format caps (2,048 px / 1.5 MiB, thumbnail 512 px / 128 KiB) | Never refused: downscaled to the setting's side, then the quality is lowered step by step and, if needed, the side, until it fits. Only a file that is not an image is refused ("This image cannot be read.") | `app/photos/model.ts` `encodeToFit`, `pick.native.ts`, `pick.web.ts`; caps in `sync/photos.ts` | app `photos/photos.test.ts` *photos are made to fit the caps…* |
+| A friend's file over the caps (a modified app) | Refused by the reader before it is cached or shown; the tile shows "Unavailable"; their places are read normally | `sync/photo-service.ts` `load` (download bound, `checkImage`) | sync `photos.test.ts` *caps: a friend's oversized files are refused…*, F-03 |
+| A photo's key must be renewed (someone lost access) on a device that has no copy of the image and cannot fetch it (rollback or fork of my index, or its files gone) | The photo is dropped from my document, as if it had never been added: no error, no problem in the sync report, no tile in the gallery or in What's new, no row or cache entry on any device or at friends, nothing retried. Privacy wins over keeping the photo (F-07). It happens only when no device of mine holding the image publishes first | `sync/own.ts` `preparePhotos` (`dropped`); `app/sync/whatsNew.ts` `prunePhotos` | sync `photos.test.ts` *F-07: a renewal that cannot get the image…*; app `photos/photos.test.ts` *What's new: photos that are gone* |
+| A friend's app finds it lost access to my content (removed, content deleted, save made private, invitation revoked) | It erases my saves, photo rows, thumbnails and opened full photos in the same pass. A modified app can keep what it already downloaded | `sync/reader.ts` (unreadable saves leave), `sync/photo-service.ts` `prune` / `forget`, `sync/engine.ts` `forgetFriend` | sync `photos.test.ts` *a friend whose access is gone (…) purges every thumbnail…* |
+
 ## Open questions
 
 - **Map tiles: which public fallback address.** The fallback mechanism is in place, but the

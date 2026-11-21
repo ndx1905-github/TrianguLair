@@ -42,7 +42,7 @@ Before the fixes, the real weaknesses were in the reader:
 |---|---|---|---|
 | Medium | 4 | F-01, F-02, F-03, F-04 | fixed |
 | Low | 2 | F-05, F-06 | fixed |
-| Low | 2 | F-07, F-08 | open (decision) |
+| Low | 2 | F-07, F-08 | decided and done (see Decisions) |
 | Info | – | Notes section | – |
 
 ---
@@ -174,9 +174,9 @@ thumbnail within 16 KB of `thumbBytes` failed on my other devices, and `syncOwn`
 **Fix.** `mediaFileBytes(n) = n + ⌈n/8⌉ + 64 KiB` (above Padmé's overhead at every size), used for both downloads.
 Test `F-06`: a photo of 8 MiB − 64 bytes reaches a friend and another device of mine.
 
-## Open (need a decision)
+## Open at review time (decided since: see Decisions)
 
-### F-07 A key renewal on a device without the image, against a stale index, drops the photo for good
+### F-07 A key renewal on a device without the image, against a stale index, drops the photo for good *(decided: kept, made clean)*
 
 `packages/sync/src/own.ts` `preparePhotos` (`stop()`).
 
@@ -194,7 +194,7 @@ Options:
 - fetch the image through the served index, then stop if that fails;
 - leave it as it is and document it.
 
-### F-08 The image cache shares one id space between my encrypted files and friends' images
+### F-08 The image cache shares one id space between my encrypted files and friends' images *(fixed)*
 
 `media-cache.ts`, `own.ts:465` (a pull keeps my other devices' encrypted files under their **file hash**, `enc`,
 `mine: 1`), `photo-service.ts:213` (a friend's image is cached under the hash their reference names).
@@ -274,7 +274,7 @@ was not changed here because it touches the cache's id contract used by `list()`
   whose content hash does not match on my own device (the `DecryptionError` path of `fetchOwnImage`, covered only
   indirectly), and the race of F-08.
 
-## Open questions for the product
+## Open questions for the product (all decided: see Decisions)
 
 1. **Pixel bounds** (F-03): 25 MP / 10,000 px a side for photos and 1,024 px for thumbnails are new reader rules.
    They are well above what the app writes. Confirm them, and write them in the photo format section, since
@@ -286,3 +286,77 @@ was not changed here because it touches the cache's id contract used by `list()`
    cache folders? That is cheap and closes the gap for files written before the fix.
 4. **Export of photos**: include the images (and so the plaintext) in the export, or say they are not exported?
 5. **What removed friends keep**: say in the UI that friends keep the thumbnails of all the photos they could see.
+
+## Decisions (product owner, after this review)
+
+Implemented on the branch with tests; the commits follow `9d365c4`.
+
+1. **Size caps: smaller, and writers downscale instead of refusing** (open question 1, F-03).
+   - Final caps, written in the media format rules (packages/sync README "Personal photos", "Format caps"; constants
+     in `sync/src/photos.ts` and `limits.ts`): **2,048 px a side and 1.5 MiB (1,572,864 bytes) for a photo, 512 px a
+     side and 128 KiB (131,072 bytes) for a thumbnail**. The 25 MP pixel-count rule is gone (the side cap implies
+     4.2 MP). A reference's `w`/`h` is bounded by 2,048 too.
+   - Why these values: the app writes 1,600 px (1,200 px with "Smaller") and 400 px (320 px), so 2,048 and 512 leave
+     about 28 % of margin for another client's rounding or a slightly larger setting, while bounding the decoded
+     memory to about 17 MB per photo and 1 MB per thumbnail (against 100 MB and 4 MB before). 1.5 MiB is a 2,048 px
+     image at about 3 bits per pixel, above what a good encoder produces at quality 0.8 for a very detailed scene (a
+     1,600 px WebP at 0.8 is 150–600 KB); 128 KiB is the same density at 512 px (a 400 px WebP at 0.6 is 15–40 KB).
+     The default `photoBytes` / `thumbBytes` limits are now these caps (they were 8 MiB / 512 KiB).
+   - Writers never refuse a photo for its size or dimensions: `encodeToFit` (`apps/mobile/src/photos/model.ts`)
+     downscales to the setting's side (capped at 2,048 / 512), then lowers the quality by 0.1 down to 0.3, then the
+     side by ×0.75, until the file fits; used by both `pick.native.ts` (expo-image-manipulator) and `pick.web.ts`
+     (canvas). Only a file that is not an image is refused ("This image cannot be read."; the "too large" message
+     is gone). `Photos.add` keeps its checks as a guard.
+   - Readers keep validating: a friend's file over the byte cap is refused by the download bound and
+     `openPhoto`, an image over the side caps by `checkImage`; nothing is cached (test *caps: a friend's oversized
+     files are refused by the reader*).
+2. **F-07: keep the behaviour (privacy wins), but drop the photo cleanly.** When a photo must be re-sealed and
+   the device can get no image (no local copy, and a rolled-back or forked index, or its files gone),
+   `preparePhotos` removes the photo from my document (`removeMedia(…, { quiet: true })`: not an edit of the save)
+   and deletes its local copies, and counts it in `report.own.photos.dropped`. No problem is reported and nothing
+   waits or retries; my other devices drop it at their next pull (`prune`), the old files leave the storage, and
+   friends lose the row and its images at their next read. What's new forgets photos that left the cache
+   (`WhatsNewLog.prunePhotos`: an entry left without photos goes), so no empty strip or broken tile remains. A photo
+   never uploaded and not on this device still waits for the device that has it. Documented in THREATS ("A renewal
+   that cannot be done") and docs/error-cases.md ("Photos"). Test *F-07: a renewal that cannot get the image (stale
+   index, no local copy) drops the photo cleanly everywhere, once* (fails on the code before the decision).
+3. **ImagePicker / ImageManipulator cache folders: not purged** on the remote wipe or "Delete all my content".
+   F-04 already deletes the picked file and the manipulator's outputs after each photo; files left by builds made
+   before that fix stay until the OS clears the cache folder. Recorded in THREATS ("On the device").
+4. **Export: my photos are included.** `exportArchive` (`packages/import`) writes a ZIP archive:
+   `triangulair.geojson` (the export document, minor 1: each photo's `id`, `file`, `thumb`, `mime`, size,
+   `created_at`, `author`, and its `image` / `thumb_image` paths) and each photo's full image and thumbnail,
+   decrypted, under `photos/`. The place association is the feature that lists the photo. Friends' photos are never
+   exported (only my saves are, and a test checks that a friend's photo on the same place is not asked for). Without
+   any photo the export stays the plain GeoJSON file. The import reads the archive (`readImportFile` tells it from a
+   KMZ), unpacks only the document and `photos/` images within size bounds, and restores each photo through
+   `applyImport`'s `addPhoto` hook (the app: `Photos.add`, which strips and checks again; new id, same date). A
+   photo already on the save is not added twice and `undoImport` removes the photos it added to a merged save. A
+   plain GeoJSON's photos (metadata only) are not imported and the import says so (`photos-not-included`; this
+   replaces the earlier behaviour that created photo records without images). Round-trip tests in packages/import
+   (two generations, images byte for byte) and in the app (export through the photo store, import on a new account,
+   upload at the next sync). The export screen text says the file holds my places and photos in clear and that
+   friends' photos are not exported; the native share step deletes the file from the cache once the sheet closes.
+   Docs: packages/import README "Export", apps/mobile README, THREATS ("Export").
+5. **Removed friends' cached photos.** There is no way to make a friend's app delete what it holds; what can be
+   ensured is that an honest app does, and it now does so completely:
+   - Detection already existed: a friend's read that can no longer open a save (I removed them, restricted or made
+     the save private, revoked their invitation, or deleted all my content, whose signed marker lists nothing for
+     anyone) removes the save; the photo rows go with it (`ON DELETE CASCADE`) and `prune` drops the images in the
+     same pass. No new detection was needed. Added: `Photos.forget(owner)`, called with every `reader.forget`
+     (contact removed or unfollowed on their side, identity move), which erases every image of that owner from the
+     cache whatever the rows say. Images are only in the database: no image file is written to disk.
+   - Tests: *a friend whose access is gone (removed as a contact / content deleted / save made private) purges every
+     thumbnail, full photo and cache row of mine*, and *removing the friend erases them* on the friend's side.
+   - THREATS ("What a removed friend keeps") and the "Remove from my friends" confirmation (and the "They see my
+     places" switch help) now say that this relies on the friend's app cooperating, and that a modified app can keep
+     what it already downloaded (the thumbnails of all the photos they could see, the full photos they opened).
+   - THREATS ("Host view") now has the line from the notes: a friend's storage host can see which of their full
+     photos I open and when (with my IP address).
+6. **F-08 fixed.** A friend's image is cached under `friendCacheId(owner, hash)` = `<owner>|<hash>` (my ids are bare
+   `b2b256:` hashes, without `|`), in `list`, `load`, the prefetch and `prune`; and a friend's `put` never replaces an
+   entry marked mine (both caches). Test *F-08: a friend naming one of my file hashes gets another cache entry; mine
+   is never replaced* (fails before the fix: the friend's photo was found in the cache under my image's id, so my image would have been shown as theirs).
+
+Test runs after the decisions: see the PR description.
+

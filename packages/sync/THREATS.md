@@ -233,14 +233,36 @@ new device is listed only once it picked its keys up). Partly fixed or documente
   re-sealed under a new key, and the old files are deleted after the publication. What they already downloaded
   stays with them (spec: copies cannot be taken back). Until the owner's next publication a removed friend can
   still fetch the old files with the key they had.
-- **Fetching**: a friend's photo file is downloaded with a size limit (8 MiB full, 512 KiB thumbnail) and opened only
-  if their verified index lists it at that path; the key comes from a places pack that verified the same way. The
-  image is checked before it is cached or shown: the format its reference names, and a pixel size read from its
-  headers of at most 25 MP (10,000 px a side) for a photo and 1,024 px a side for a thumbnail, so a small file
-  cannot make the platform decoder allocate gigabytes. Decoding itself is left to the platform's image decoder
-  (its own bugs are out of reach here). A friend's photo ids are stored inside their save's id: a friend cannot
-  collide with my photos or another friend's. The thumbnails fetched with a pass count failed files too.
+- **Fetching**: a friend's photo file is downloaded with a size limit (the format caps, 1.5 MiB for a photo and
+  128 KiB for a thumbnail, plus the envelope and its padding) and opened only if their verified index lists it at
+  that path; the key comes from a places pack that verified the same way. The image is checked before it is cached
+  or shown: the format its reference names, and a pixel size read from its headers of at most 2,048 px a side for
+  a photo and 512 px for a thumbnail, so a small file cannot make the platform decoder allocate more than about
+  17 MB (photo) or 1 MB (thumbnail). Decoding itself is left to the platform's image decoder (its own bugs are out
+  of reach here). A friend's photo ids are stored inside their save's id, and their images in the cache under
+  their owner id (`<owner>|<hash>`): a friend cannot collide with my photos or another friend's, and a friend's
+  entry never replaces one of mine. The thumbnails fetched with a pass count failed files too.
+- **What a removed friend keeps** (and what their app erases): removing a friend, restricting or making a save
+  private, revoking an invitation or deleting all my content renews the photo keys at my next publication; their
+  app then finds it can no longer open those saves and erases my saves, photo rows, thumbnails and opened full
+  photos (tested). Nothing can make it do so: this **relies on the friend's app cooperating**, and a modified app
+  can keep what it already downloaded, which is the thumbnail of **every** photo of mine they could see (prefetched
+  at each pass), the full photos they opened, and the old keys and file hashes (spec: copies cannot be taken back).
+  The app says so in the "remove a friend" confirmation. Until my next publication they can still fetch the old
+  files; afterwards the old files are deleted, and a host that kept them only holds images that reader already had.
+- **A renewal that cannot be done** (review photos F-07): if a device must re-seal a photo and can get no image
+  (no local copy, and a rolled-back or forked index to fetch through), the photo is dropped from my document
+  rather than kept under a key that someone who lost access may hold. Privacy wins over keeping the photo; it is
+  lost only if no device of mine holding the image publishes first.
 - **Host view**: a new photo is two new files in `media/` at the same time as a document delta; a renewal replaces
-  both files of every affected photo, which shows that someone lost access (not who).
+  both files of every affected photo, which shows that someone lost access (not who). Full photos are downloaded
+  only when opened, so **a friend's storage host can see which of their full photos I open and when** (with my IP
+  address); thumbnails are fetched with each pass and show nothing more than the pass itself.
 - **On the device**: images are in the app's SQLite database (`media_cache`), with the same protection as the rest
-  of the database, and erased by the remote wipe.
+  of the database, and erased by the remote wipe. Since review photos F-04 the picked original and the
+  manipulator's outputs are deleted after processing. The `ImagePicker` and `ImageManipulator` cache folders are
+  **not** emptied by the remote wipe or "Delete all my content" (product decision): files that builds made before
+  that fix may have left there (originals with their GPS) stay until the OS clears the cache folder.
+- **Export**: the export with photos is a ZIP file holding my photos decrypted (without metadata) and my places in
+  clear; it leaves the app's protection once shared (the export screen says so). Friends' photos are never
+  exported. The native share step writes it to the cache folder and deletes it once the share sheet closes.
