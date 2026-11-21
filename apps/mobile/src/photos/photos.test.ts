@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import initSqlJs from 'sql.js';
 import { ready } from '@triangulair/crypto';
-import { DataStore } from '@triangulair/data';
+import { DataStore, foreignMediaId, saveIdFor } from '@triangulair/data';
 import { MemoryAdapter, StorageError, type StorageAdapter } from '@triangulair/storage';
 import { SqliteStateStore, imageMetadata, type FriendReport } from '@triangulair/sync';
 
@@ -145,8 +145,10 @@ describe('photos through the sync controller (sql.js database)', () => {
     await ben.ctl.refresh();
     const theirs = (await ben.ctl.photos())!;
     const item = theirs.list('osm:node/1')[0]!;
-    expect(item).toMatchObject({ id, mine: false, ownerId: anna.owner, thumbLocal: true, fullLocal: false });
-    expect((await theirs.full(id))!.bytes).toEqual(local!.bytes);
+    // A friend's photo id is kept inside the id of their save (review photos F-01).
+    const theirId = foreignMediaId(saveIdFor(anna.owner, 'osm:node/1'), id);
+    expect(item).toMatchObject({ id: theirId, mine: false, ownerId: anna.owner, thumbLocal: true, fullLocal: false });
+    expect((await theirs.full(theirId))!.bytes).toEqual(local!.bytes);
     expect(theirs.list('osm:node/1')[0]!.fullLocal).toBe(true);
     expect(theirs.usage().friends).toBeGreaterThan(30_000);
 
