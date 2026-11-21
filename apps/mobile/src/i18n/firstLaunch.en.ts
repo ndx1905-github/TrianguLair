@@ -115,9 +115,10 @@ export const firstLaunchEn: Messages = {
   'kit.field.protocol': 'Protocol',
   'kit.entryTitle': 'TrianguLair recovery kit',
   'kit.entryTitleNamed': 'TrianguLair – {name}',
-  'kit.entryHelp': 'To restore: install TrianguLair, choose “I already have TrianguLair on another device”, then type the 12 words.',
+  'kit.entryHelp': 'To restore: install TrianguLair, choose “I already have TrianguLair on another device”, then paste this whole entry (or type the 12 words and the address).',
   'kit.printTitle': 'TrianguLair recovery kit',
-  'kit.printHelp': 'Keep this page somewhere safe and private: whoever has these 12 words can take your identity. To restore: install TrianguLair, choose “I already have TrianguLair on another device”, then type the words.',
+  'kit.qrLabel': 'QR code of the storage read address',
+  'kit.printHelp': 'Keep this page somewhere safe and private: whoever has these 12 words can take your identity. To restore: install TrianguLair, choose “I already have TrianguLair on another device”, then type the words and scan the QR code of the address.',
 
   'protect.title': 'Protect your places',
   'protect.lead': 'Save your recovery kit, so a lost phone does not mean lost places.',

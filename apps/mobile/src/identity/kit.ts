@@ -8,8 +8,11 @@
  * local-only mode (phase 1) there is no address yet, so the kit says that
  * the phrase alone does not bring the places back and points to a backup.
  */
+import { validateMnemonic } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { parseKey } from '@triangulair/crypto';
 
+import { qrMatrix, qrPath } from '../contacts/qr';
 import type { TFunction } from '../i18n';
 
 /** The clipboard is cleared this long after copying a kit field. */
@@ -104,7 +107,7 @@ export function printableKitHtml(k: KitInput, t: TFunction, locale: string): str
   const date = k.date.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' });
   const cells = words.map((w, i) => `<li><span class="n">${i + 1}</span><span class="w">${esc(w)}</span></li>`).join('');
   const address = k.readAddress
-    ? `<p><strong>${esc(t('kit.field.url'))}</strong><br><span class="mono">${esc(k.readAddress)}</span></p>`
+    ? `<div class="addr"><p><strong>${esc(t('kit.field.url'))}</strong><br><span class="mono">${esc(k.readAddress)}</span></p>${kitQrSvg(k.readAddress, t('kit.qrLabel'))}</div>`
     : `<p class="note">${esc(t('kit.localOnlyNote'))}</p>`;
   return `<!doctype html><html lang="${esc(locale)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(t('kit.printTitle'))}</title>
@@ -115,7 +118,8 @@ ol{list-style:none;padding:0;margin:0 0 24px;display:grid;grid-template-columns:
 li{border:1px solid #CBD5E1;border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:baseline}
 .n{color:#64748B;font-size:13px;min-width:1.5em}.w{font-size:18px;font-weight:700;letter-spacing:.02em}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace}.note{border-left:4px solid #D97706;padding:8px 12px;background:#FEF3C7}
-.small{color:#475569;font-size:13px}@media print{body{padding:0}}
+.small{color:#475569;font-size:13px}.addr{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.addr p{flex:1 1 240px;word-break:break-all}.addr svg{width:132px;height:132px;flex:none}@media print{body{padding:0}}
 </style></head><body>
 <h1>${esc(t('kit.printTitle'))}</h1>
 <p class="sub">${esc(k.name.trim() || t('kit.entryTitle'))} · ${esc(date)}</p>
@@ -125,6 +129,72 @@ ${address}
 <p><strong>${esc(t('kit.field.fingerprint'))}</strong><br><span class="mono">${esc(keyFingerprint(k.owner))}</span></p>
 <p class="small">${esc(t('kit.printHelp'))}</p>
 </body></html>`;
+}
+
+/**
+ * QR code of the read address for the printed page (spec "Recovery kit": "a QR code of the
+ * address"), as inline SVG, black on white with its quiet zone. The phrase is never in it: the
+ * words are on the page already, and a QR code is read by any camera at a glance. `data-kit-qr`
+ * holds the encoded value (tests).
+ */
+export function kitQrSvg(address: string, label: string): string {
+  const m = qrMatrix(address, 'M');
+  const n = m.size + 8;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" role="img" aria-label="${esc(label)}" data-kit-qr="${esc(address)}" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="#fff"/><path d="${qrPath(m)}" fill="#000"/></svg>`;
+}
+
+/** What a pasted or scanned kit held: the 12 words and the read address, each when found. */
+export interface KitFound {
+  phrase: string | null;
+  address: string | null;
+}
+
+const WORDS = new Set(wordlist);
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/i;
+
+function asPhrase(tokens: string[]): string | null {
+  if (tokens.length !== 12 || !tokens.every((w) => WORDS.has(w))) return null;
+  const phrase = tokens.join(' ');
+  return validateMnemonic(phrase, wordlist) ? phrase : null;
+}
+
+/**
+ * Picks the recovery kit out of a pasted text (restore, spec "Recovery kit"): the entry sent to a
+ * password manager ("Password: …", "URL: …", in any language of the app), the fields copied one by
+ * one, the text of the printed page (numbered words), or the bare 12 words. The phrase is the one
+ * line, or the one run of 12 words of the English BIP39 list once numbers are dropped, whose
+ * checksum is valid; the address is the first http(s) URL, trailing punctuation removed. Nothing is
+ * guessed: when two different phrases are found, or none, `phrase` is null.
+ */
+export function parseKitText(text: string): KitFound {
+  const norm = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  const url = URL_RE.exec(norm)?.[0]?.replace(/[).,;:!?\]}]+$/, '') ?? null;
+  const withoutUrls = norm.replace(new RegExp(URL_RE.source, 'gi'), ' ');
+  const found = new Set<string>();
+  // One line holding the words (after a "Label:" prefix).
+  for (const line of withoutUrls.split(/\r?\n/)) {
+    const body = line.includes(':') ? line.slice(line.lastIndexOf(':') + 1) : line;
+    const p = asPhrase(body.toLowerCase().split(/[^a-z]+/).filter(Boolean));
+    if (p) found.add(p);
+  }
+  // Otherwise the words spread over lines or cells (the printed page): runs of list words.
+  if (found.size === 0) {
+    const tokens = withoutUrls.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !/^\d+$/.test(w));
+    let run: string[] = [];
+    const flush = () => {
+      for (let i = 0; i + 12 <= run.length; i++) {
+        const p = asPhrase(run.slice(i, i + 12));
+        if (p) found.add(p);
+      }
+      run = [];
+    };
+    for (const w of tokens) {
+      if (WORDS.has(w)) run.push(w);
+      else flush();
+    }
+    flush();
+  }
+  return { phrase: found.size === 1 ? [...found][0]! : null, address: url };
 }
 
 /** `count` distinct word positions (0-based, sorted) to ask again. */
