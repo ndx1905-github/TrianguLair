@@ -101,6 +101,10 @@ describe('scripts/pwa.mjs', () => {
       expect(readFileSync(join(dir, r, 'index.html'), 'utf8'), r).toBe(html);
     }
     expect(existsSync(join(dir, 'place', '[id]'))).toBe(false);
+    // The hosts' "not found" pages are the app too (a first visit to /place/<id>).
+    expect(readFileSync(join(dir, '404.html'), 'utf8')).toBe(html);
+    expect(readFileSync(join(dir, 'error', '404.html'), 'utf8')).toBe(html);
+    expect(sw.files.filter((f) => f.endsWith('404.html'))).toEqual([]);
   });
 
   it('is idempotent, and the version follows the content', () => {

@@ -143,6 +143,11 @@ test('works under a sub-path: routes, deep links, assets and the map worker', as
     expect(await res.text()).toContain(`${BASE}/_expo/static/js/web/entry-`);
   }
 
+  // A route with a parameter has no file: the host's "not found" page is the app (first visit, no service worker yet).
+  const missing = await request.get(`${BASE}/place/nowhere`);
+  expect(missing.status()).toBe(404);
+  expect(await missing.text()).toContain(`${BASE}/_expo/static/js/web/entry-`);
+
   // A list link (/l#…): the fragment is taken, removed from the address bar, and offered in "Follow a list".
   const fragment = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA';
   await page.goto(`${autostart(`${BASE}/l`)}#${fragment}`);

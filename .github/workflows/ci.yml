@@ -151,9 +151,22 @@ jobs:
           npx expo export --platform ios --output-dir /tmp/native-ios
       - name: Web export (fixture mode)
         run: npm run export:web:fixtures
+      # The installable web app (docs/self-host-web.md): the production export (root of a domain)
+      # builds with its manifest and service worker; the fixture one, under /triangulair/, is what
+      # e2e/pwa.spec.ts tests (offline, sub-path, update prompt).
+      - name: PWA export (production, root)
+        run: |
+          npm run export:web:pwa
+          node scripts/check-pwa.mjs dist-web
+      - name: PWA export (fixture mode, sub-path)
+        run: |
+          npm run export:web:pwa:fixtures
+          node scripts/check-pwa.mjs dist-pwa /triangulair
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (T-119)
+        env:
+          E2E_PWA: '1'
         run: npm run e2e
       - name: Upload the Playwright report
         if: failure()

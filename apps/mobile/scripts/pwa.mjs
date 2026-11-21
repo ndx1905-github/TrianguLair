@@ -13,7 +13,9 @@
 // - copies index.html to <route>/index.html for every route without a parameter (/l, /i, /r,
 //   /settings, /lists/follow…), so a plain static host (YunoHost "My webapp": try_files $uri $uri/)
 //   opens a deep link without a server-side fallback. Routes with a parameter (/place/<id>) are
-//   answered by the service worker once it is installed.
+//   answered by the service worker once it is installed, and before that by the host's "not
+//   found" page, which is the app too: 404.html (GitHub Pages, Netlify, Codeberg Pages…) and
+//   error/404.html (YunoHost "My webapp").
 //
 // The app registers sw.js only when built with EXPO_PUBLIC_TL_PWA=1 (src/pwa/pwa.web.ts). See
 // docs/self-host-web.md; `npm run export:web:pwa` runs the export and this script.
@@ -82,7 +84,9 @@ function listFiles(dir) {
 }
 
 const { statics, firsts } = routes();
-const routeCopies = new Set(statics.map((r) => `${r}/index.html`));
+/** "Not found" pages that are the app (see above). */
+const NOT_FOUND_PAGES = ['404.html', 'error/404.html'];
+const routeCopies = new Set([...statics.map((r) => `${r}/index.html`), ...NOT_FOUND_PAGES]);
 
 // 1. index.html: check the base path, add the head tags.
 const indexPath = join(dist, 'index.html');
@@ -164,6 +168,10 @@ for (const route of statics) {
   if (existsSync(dir) && !statSync(dir).isDirectory()) continue;
   mkdirSync(dir, { recursive: true });
   writeFileSync(target, html);
+}
+for (const page of NOT_FOUND_PAGES) {
+  mkdirSync(dirname(join(dist, page)), { recursive: true });
+  writeFileSync(join(dist, page), html);
 }
 
 console.log(

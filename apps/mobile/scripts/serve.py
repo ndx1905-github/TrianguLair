@@ -3,7 +3,8 @@
 #   python3 scripts/serve.py dist 4319                       SPA: unknown paths get /index.html
 #   python3 scripts/serve.py dist-pwa 4320 /triangulair      like YunoHost "My webapp" under a sub-path:
 #                                                            files under /triangulair/ only, `try_files
-#                                                            $uri $uri/ =404` (no fallback page)
+#                                                            $uri $uri/ =404`, error/404.html as the
+#                                                            "not found" page)
 import http.server, os, sys
 ROOT = sys.argv[1]; PORT = int(sys.argv[2])
 BASE = sys.argv[3].rstrip('/') if len(sys.argv) > 3 else None
@@ -39,7 +40,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             elif os.path.exists(full):
                 self.path = rest + (self.path[len(path):])
             else:
-                return self.send_error(404)
+                page = os.path.join(ROOT, 'error', '404.html')
+                if not os.path.exists(page): return self.send_error(404)
+                with open(page, 'rb') as f: body = f.read()
+                self.send_response(404)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             return super().do_GET()
         if not os.path.exists(os.path.join(ROOT, path.lstrip('/'))) or path == '/':
             self.path = '/index.html'

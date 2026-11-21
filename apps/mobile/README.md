@@ -1,6 +1,7 @@
 # TrianguLair mobile app
 
-An Expo / React Native app for iOS and Android. The web build is for testing only.
+An Expo / React Native app for iOS and Android. The web build serves the end-to-end tests and is also an installable,
+offline-capable web app (PWA) to host yourself: see [Web app (PWA)](#web-app-pwa) and `docs/self-host-web.md`.
 Wired to the workspace packages `@triangulair/data` (local SQLite + document) and
 `@triangulair/osm` (Overpass, Photon, opening hours, photos):
 
@@ -446,6 +447,36 @@ npx expo start --web          # dev server
 npx expo export --platform web # static build in dist/
 ```
 
+### Web app (PWA)
+
+The web export can be hosted as an installable web app that works offline (guide for YunoHost:
+`docs/self-host-web.md`, which an iPhone can use without sideloading):
+
+```sh
+npm run export:web:pwa                            # dist-web/ for the root of a domain
+TL_WEB_BASE=/triangulair npm run export:web:pwa   # dist-web/ for https://<domain>/triangulair/
+node scripts/check-pwa.mjs dist-web /triangulair  # the manifest, the service worker and its files
+```
+
+- **Base path**: `TL_WEB_BASE` (`scripts/web-base.cjs`) sets expo-router's `experiments.baseUrl` in
+  `app.config.js`; Metro then prefixes the bundles and assets, and `EXPO_BASE_URL` is used for the
+  MapLibre worker (`Map.web.tsx`) and the service worker. Deep links work under it (`/triangulair/l#…`).
+- **`scripts/pwa.mjs`** runs after `expo export`: `manifest.webmanifest` (name, icons from
+  `public/icons/`, standalone, `start_url`/`scope` = the base path), manifest, icon and iOS tags in
+  `index.html`, `sw.js` from `web/service-worker.js` with the list of exported files and a version
+  hashed from them, a copy of `index.html` per static route and as `404.html` / `error/404.html` (static
+  hosts without a fallback). Icons: `scripts/pwa-icons.mjs` (the first-launch mark), committed PNGs.
+- **Service worker** (`web/service-worker.js`): precaches the shell in one cache per build and scope,
+  deletes the older ones on activation; the app's own files from the cache; navigations to the
+  app's routes network first, the cached shell offline, after 6 s or on a 404; never answers or stores
+  requests to other origins (storages, tiles, OSM) or outside the app's folder. A new build waits.
+- **App side** (`src/pwa/`): registered only in `EXPO_PUBLIC_TL_PWA=1` builds (not the dev server nor
+  the default fixture build); "A new version is ready · Reload" (`UpdatePrompt.tsx`: saves the database,
+  then the waiting worker takes over); `navigator.storage.persist()` at startup; Settings › *Storage in
+  this browser* (`BrowserStorageSection.tsx`: kept or not, space used, ask again, Home Screen tip on
+  iPhone, recovery kit reminder); web-only CORS hints where a storage does not answer
+  (`CorsHint.tsx`: sync status, storage test), linking to the guide.
+
 ### iOS / Android: development build (Expo Go is not supported)
 
 MapLibre Native needs native code. Its config plugin is listed in `app.json`, so you need a
@@ -543,6 +574,7 @@ npm test            # vitest: identity creation glue, kit export formats, lock a
                     # sql.js driver + DataStore + demo seed, fixture fetch, i18n (en/fr parity),
                     # import screen logic
 npm run export:web:fixtures && npm run e2e   # end-to-end tests (Playwright, Chromium, headless)
+npm run export:web:pwa:fixtures              # + the "pwa" project (e2e/pwa.spec.ts), run when dist-pwa/ exists
 ```
 
 End-to-end tests (T-119, `e2e/`, `playwright.config.ts`): Playwright Test against the fixture-mode
@@ -551,6 +583,12 @@ clock (Friday 23 October 2026, 18:30 in Paris), answers the base map style and p
 placeholders, and fails a test on any uncaught page error. Each test has a fresh browser context
 (new IndexedDB, demo seed). Selectors are test ids, roles and visible text; the map is driven
 through `window.__tlMap`. First time: `npx playwright install chromium`.
+
+The **pwa** project (`e2e/pwa.spec.ts`) runs on a second build, `dist-pwa/` (fixture mode, service
+worker on, base path `/triangulair`), served by `scripts/serve.py dist-pwa <port> /triangulair` like a
+plain static host (no fallback, `error/404.html` as the not-found page): manifest and icons, service
+worker registration, offline start with my places, the sub-path (routes, deep links, assets, map worker)
+and the update prompt. It runs when `dist-pwa/` exists, and always with `E2E_PWA=1` (CI).
 
 Screenshots in fixture mode: `python3 scripts/shots.py docs importer` (phone) or `importer_tablet`
 (the import preview uses `packages/import/test/fixtures/kml/my-maps.kml`, matched against the OSM
