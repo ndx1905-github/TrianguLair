@@ -17,6 +17,12 @@ mkdir -p "$OUT/screenshots" "$OUT/maestro"
 OUT=$(cd "$OUT" && pwd)
 
 adb wait-for-device
+# A freshly booted emulator is slow; its launcher or other system apps can stop responding,
+# and their "isn't responding" dialogs would cover the app. Hide those dialogs and let the
+# system settle.
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+sleep 20
 adb logcat -c || true
 adb logcat -v threadtime -b main,system,crash > "$OUT/logcat-full.txt" 2>/dev/null &
 LOGCAT=$!
@@ -91,7 +97,7 @@ rm -f "$OUT/pids.txt" "$OUT/pids.sorted"
 echo '--- JavaScript logs (ReactNativeJS) ---'
 grep -E ' ReactNativeJS' "$OUT/logcat-app.txt" | cut -c1-600 | tail -80 || true
 echo '--- Warnings and errors of the app (other tags) ---'
-awk '$5 == "W" || $5 == "E" || $5 == "F"' "$OUT/logcat-app.txt" | grep -v ' ReactNativeJS' | grep -v ' AndroidRuntime' | cut -c1-400 | sort -k6 | uniq -f5 -c | sort -rn | head -60 || true
+awk '$5 == "W" || $5 == "E" || $5 == "F"' "$OUT/logcat-app.txt" | grep -v ' ReactNativeJS\| AndroidRuntime\|ViewManagerPropertyUpdater' | cut -c1-400 | sort -k6 | uniq -f5 -c | sort -rn | head -60 || true
 if [ -s "$OUT/screen-at-failure.xml" ]; then
   echo '--- On screen when the flow failed (resource-id = testID) ---'
   grep -oE '(resource-id|text|content-desc)="[^"]+"' "$OUT/screen-at-failure.xml" | grep -v 'resource-id="android:id\|resource-id="com.android' | head -120

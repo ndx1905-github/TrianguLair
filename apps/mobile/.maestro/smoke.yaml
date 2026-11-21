@@ -9,6 +9,12 @@ env:
 - launchApp:
     clearState: true
     stopApp: true
+# A system app's "isn't responding" dialog (slow emulator), if one is still shown.
+- runFlow:
+    when:
+      visible: .*isn't responding.*
+    commands:
+      - tapOn: Wait
 
 # Welcome screen: the JS bundle loaded, the database opened and the router rendered.
 - extendedWaitUntil:
