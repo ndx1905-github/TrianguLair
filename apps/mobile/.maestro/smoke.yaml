@@ -1,0 +1,134 @@
+# Smoke test of the release APK on an Android emulator (see .github/workflows/native-android.yml
+# and scripts/android-smoke.sh): first launch, add a place by hand, see it on the map and in the list.
+# Selectors are the components' testID (Maestro's `id` on Android).
+appId: org.triangulair.app
+name: First launch, add a place, see it
+env:
+  PLACE: Smoke Test Cafe
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+
+# Welcome screen: the JS bundle loaded, the database opened and the router rendered.
+- extendedWaitUntil:
+    visible:
+      id: welcome-start
+    timeout: 90000
+- takeScreenshot: 01-welcome
+- tapOn:
+    id: welcome-start
+
+# Profile: the keys are made in the background (libsodium) before Continue does anything.
+- extendedWaitUntil:
+    visible:
+      id: welcome-profile
+    timeout: 20000
+- tapOn:
+    id: profile-name
+- inputText: Smoke
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: keys-ready
+    timeout: 60000
+- takeScreenshot: 02-profile
+- tapOn:
+    id: profile-continue
+
+# App lock, location, import: not now.
+- extendedWaitUntil:
+    visible:
+      id: welcome-lock
+    timeout: 30000
+- takeScreenshot: 03-lock
+- tapOn:
+    id: lock-skip
+- extendedWaitUntil:
+    visible:
+      id: welcome-location
+    timeout: 20000
+- tapOn:
+    id: location-skip
+- extendedWaitUntil:
+    visible:
+      id: welcome-import
+    timeout: 20000
+- tapOn:
+    id: import-later
+
+# Map.
+- extendedWaitUntil:
+    visible:
+      id: open-add
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: hint-dismiss
+    commands:
+      - tapOn:
+          id: hint-dismiss
+- takeScreenshot: 04-map-empty
+
+# Add a place by hand at the map's center (no network needed).
+- tapOn:
+    id: open-add
+- extendedWaitUntil:
+    visible:
+      id: drop-point
+    timeout: 20000
+- tapOn:
+    id: drop-point
+- extendedWaitUntil:
+    visible:
+      id: manual-name
+    timeout: 20000
+- tapOn:
+    id: manual-name
+- inputText: ${PLACE}
+- hideKeyboard
+- takeScreenshot: 05-add-form
+- tapOn:
+    id: save-place
+
+# Back on the map with the new place's card.
+- extendedWaitUntil:
+    visible:
+      id: place-card
+    timeout: 20000
+- assertVisible: ${PLACE}
+- takeScreenshot: 06-map-card
+- tapOn:
+    id: card-close
+- extendedWaitUntil:
+    notVisible:
+      id: place-card
+    timeout: 10000
+- takeScreenshot: 07-map-pin
+
+# List: the place is there.
+- tapOn:
+    id: open-list
+- extendedWaitUntil:
+    visible:
+      id: place-list
+    timeout: 20000
+- assertVisible:
+    id: row-${PLACE}
+- takeScreenshot: 08-list
+
+# Still there after a cold start (saved to the encrypted database).
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: open-list
+    timeout: 90000
+- tapOn:
+    id: open-list
+- extendedWaitUntil:
+    visible:
+      id: row-${PLACE}
+    timeout: 20000
+- takeScreenshot: 09-list-after-restart
