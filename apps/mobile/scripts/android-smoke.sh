@@ -79,7 +79,7 @@ awk -v pkg="$PKG" -v pidfile="$OUT/pids.sorted" '
 {
   echo '## Android smoke test'
   echo
-  if [ "$status" -eq 0 ] && [ "$crashed" -eq 0 ]; then echo 'Passed: first launch, add a place, see it on the map and in the list, cold restart.'; else echo "**Failed** (Maestro exit $status, crash: $crashed)."; fi
+  if [ "$status" -eq 0 ] && [ "$crashed" -eq 0 ]; then echo 'Passed: first launch, add a place, its card and pin on the map, the list and its search, cold restart.'; else echo "**Failed** (Maestro exit $status, crash: $crashed)."; fi
   echo
   echo "Screenshots: $(ls "$OUT/screenshots" | tr '\n' ' ')"
   if [ "$crashed" -eq 1 ]; then echo; echo '### Crash'; echo; echo '```'; head -60 "$OUT/crashes.txt"; echo '```'; fi
