@@ -52,7 +52,7 @@ export {
   readSharing,
   updateText,
 } from './crdt/doc.ts';
-export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, ListPatch, MediaInput, DocMedia, TrashItemRef } from './crdt/doc.ts';
+export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, ListPatch, MediaInput, DocMedia, MediaUpload, TrashItemRef } from './crdt/doc.ts';
 export {
   projectAll,
   projectChanges,

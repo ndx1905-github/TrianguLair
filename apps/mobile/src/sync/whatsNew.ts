@@ -9,7 +9,7 @@
  */
 import type { FriendReport, SyncStateStore } from '@triangulair/sync';
 
-export type WhatsNewKind = 'added' | 'comment' | 'status' | 'followed' | 'key' | 'moved' | 'identity';
+export type WhatsNewKind = 'added' | 'comment' | 'status' | 'photo' | 'followed' | 'key' | 'moved' | 'identity';
 
 export interface WhatsNewEntry {
   id: string;
@@ -24,12 +24,14 @@ export interface WhatsNewEntry {
   comment?: string;
   /** Their status (status, or added with one). */
   status?: string;
-  /** First read of someone: how many places, and which (capped). */
+  /** First read of someone: how many places, and which (capped); new photos: how many. */
   count?: number;
   placeIds?: string[];
+  /** New photos (kind `photo`): their ids, for thumbnails. */
+  mediaIds?: string[];
 }
 
-export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'people';
+export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'photos' | 'people';
 
 export interface RecordContext {
   now: number;
@@ -107,12 +109,42 @@ export class WhatsNewLog {
         if (ch.fields.includes('comment') && s?.comment) add({ ...base, kind: 'comment', comment: s.comment });
         if (ch.fields.includes('status') && s?.status && MEANINGFUL_STATUS.has(s.status)) add({ ...base, kind: 'status', status: s.status });
       }
+      // New photos on a place already there (spec "Editing": "new photo" is meaningful).
+      for (const p of wn.photos ?? []) {
+        if (p.mediaIds.length === 0) continue;
+        add({ owner, kind: 'photo', placeId: p.placeId, ...opt('name', ctx.placeName(p.placeId)), count: p.mediaIds.length, mediaIds: p.mediaIds.slice(0, 24) });
+      }
     }
     if (fresh.length === 0 && gone.size === 0) return [];
     // A place that left their shared places takes its earlier news with it.
     const kept = this.entries().filter((e) => !(e.placeId && gone.has(`${e.owner} ${e.placeId}`)));
     this.kv.set(LOG_KEY, [...fresh.reverse(), ...kept].slice(0, MAX_ENTRIES));
     return fresh;
+  }
+
+  /**
+   * Photos that left my cache (removed by their author, access lost, or dropped by a key renewal that
+   * could not be done, review photos F-07) leave What's new as if they had never been added: their
+   * ids go, and a "new photo" entry left without any goes too. Returns whether anything changed.
+   */
+  prunePhotos(exists: (mediaId: string) => boolean): boolean {
+    let changed = false;
+    const out: WhatsNewEntry[] = [];
+    for (const e of this.entries()) {
+      if (e.kind !== 'photo' || !e.mediaIds) {
+        out.push(e);
+        continue;
+      }
+      const ids = e.mediaIds.filter(exists);
+      if (ids.length === e.mediaIds.length) {
+        out.push(e);
+        continue;
+      }
+      changed = true;
+      if (ids.length > 0) out.push({ ...e, mediaIds: ids, count: Math.max(0, (e.count ?? e.mediaIds.length) - (e.mediaIds.length - ids.length)) || ids.length });
+    }
+    if (changed) this.kv.set(LOG_KEY, out);
+    return changed;
   }
 
   /** Someone I no longer follow: their news go too. */
@@ -135,6 +167,8 @@ export function matchesType(e: WhatsNewEntry, type: WhatsNewType): boolean {
       return e.kind === 'comment' || (e.kind === 'added' && !!e.comment);
     case 'statuses':
       return e.kind === 'status';
+    case 'photos':
+      return e.kind === 'photo';
     case 'people':
       return e.kind === 'key' || e.kind === 'moved' || e.kind === 'identity';
   }

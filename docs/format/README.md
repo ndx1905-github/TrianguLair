@@ -30,7 +30,8 @@ that is a bug in one of them: report it. The key words MUST, MUST NOT, SHOULD an
 | [reference-reader/](reference-reader/) | a second, minimal, independent reader in Python, run against the vectors |
 
 Not specified here (not part of format v4): the content payloads inside packs (Automerge documents, GeoJSON; app
-specification), the face-to-face QR contact exchange (R-13), the QR device-transfer key exchange ("Adding a device",
+specification; the photo payload of `media` files and its size caps, 2,048 px and 1.5 MiB for a photo, 512 px and
+128 KiB for a thumbnail, are in `packages/sync/README.md` "Personal photos"), the face-to-face QR contact exchange (R-13), the QR device-transfer key exchange ("Adding a device",
 way 1), link-only list keys (T-212), and the storage layout beyond the file names given in signed-index.md.
 
 ## 1. Notation

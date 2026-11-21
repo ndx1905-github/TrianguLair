@@ -4,7 +4,7 @@ Import and export for TrianguLair (tasks T-114 and T-115): file readers to one
 `ImportedPlace` model, matching to OpenStreetMap, the import preview (found /
 to check / manual point / no position, tag mapping, duplicates), batched writes
 to `@triangulair/data` with progress, cancel and undo, and the full GeoJSON
-export with lossless re-import. MPL-2.0, TypeScript strict, pure JavaScript
+export (a ZIP with my photos) with lossless re-import. MPL-2.0, TypeScript strict, pure JavaScript
 (fflate for KMZ; no WebAssembly, no DOM API), so it runs in Hermes, browsers
 and Node.
 
@@ -31,6 +31,9 @@ plan = setTagAction(plan, 'Want to go', { kind: 'map', tagId });
 const report = await applyImport(store, plan, { batchSize: 200, signal, onProgress });
 await undoImport(store, report);                               // "undo in one gesture"
 const json = exportGeoJson(store);                             // T-115
+const file = await exportArchive(store, { image: (id, which) => photos.full(id) /* or .thumbnail */ });
+// file.name "triangulair-2026-11-21.zip" (or ".geojson" without photos), file.bytes, file.mime
+await applyImport(store, plan, { addPhoto: (placeId, p) => photos.add(placeId, { full: p.images.full, … }) });
 ```
 
 ## Formats
@@ -95,16 +98,42 @@ Original creation dates are kept: this package added an optional
 `buildExport` / `exportGeoJson`: one GeoJSON FeatureCollection (RFC 7946) that
 other tools open as is (each feature: name, `osm` reference and URL, category,
 tag names, comment, status…), with a foreign member `triangulair`
-(`format: "triangulair-export"`, `version` 1 / `minor` 0, as in the spec's
+(`format: "triangulair-export"`, `version` 1 / `minor` 1, as in the spec's
 "Format versions") holding what a lossless re-import needs: tags (tree, colors,
 icons, OSM categories, trash), lists (filters, manual items, visibility, link
 key), tag mappings. Features: every save of mine, places and zones, trash
-included, with comment visibility, price, sharing, dates and photo metadata.
+included, with comment visibility, price, sharing, dates and my photos.
+
+**Photos** (minor 1). Each feature's `media` lists my photos on that place:
+`id`, `file` and `thumb` (content hashes of the images), `mime`, `width`,
+`height`, `blurhash`, `created_at` (when it was added) and `author` (my owner
+id). Friends' photos are never exported, only mine. `exportArchive` makes the
+export with the images: a ZIP archive holding the GeoJSON as
+`triangulair.geojson` and, for each photo, its full image and thumbnail,
+decrypted and without metadata (`photos/0001.webp`, `photos/0001-thumb.webp`;
+stored, not recompressed), named by the photo's `image` and `thumb_image`.
+`image(id, which)` supplies them (the app: the photo store, which fetches a
+photo of mine from my storage when this device does not have it); a photo it
+cannot supply keeps its metadata and is counted in `missing`. Without any
+image the result is the plain GeoJSON file. The file holds my photos in
+clear: the export screen says so.
+
+**Reading it back.** `readImportFile` recognizes the archive (a zip with
+`triangulair.geojson`; any other zip is read as KMZ). Only `triangulair.geojson`
+(≤ 256 MiB) and `photos/<name>.{webp,avif,jpg}` entries (≤ 16 MiB each) are
+unpacked. A photo is imported only with both its images, through the
+`addPhoto(placeId, photo)` option of `applyImport` (the app's photo store checks
+and strips them again, keeps them on the device, and the next sync uploads
+them under new keys); it gets a new id and keeps its date. A photo already on
+the save (same content hash) is not added again; on a save the import merged
+into, `undoImport` removes the photos it added. A plain GeoJSON export carries
+the metadata only: its photos are not imported (`photos-not-included`
+warning, `counts.photosSkipped`).
 
 The round-trip test re-imports an export into an empty store and compares the
-two exports (tag and list ids aside): equal, over two generations; re-importing
-into the same store changes nothing. Not carried: the photo files themselves
-(only their metadata), `updated_at` (set at import) and the date a save was put
+two exports (tag, list and photo ids aside): equal, over two generations,
+photos and their images included; re-importing into the same store changes
+nothing. Not carried: `updated_at` (set at import) and the date a save was put
 in the trash (set at import). A higher `minor` is read (unknown fields
 ignored, warning); a higher `version` is refused.
 

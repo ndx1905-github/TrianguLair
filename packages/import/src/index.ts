@@ -35,7 +35,11 @@ export {
   exportGeoJson,
   exportFileName,
   parseTriangulairExport,
+  parseTriangulairArchive,
   isTriangulairExport,
+  isTriangulairArchive,
+  exportArchive,
+  ARCHIVE_DOCUMENT,
   EXPORT_FORMAT,
   EXPORT_VERSION,
   EXPORT_MINOR,
@@ -43,6 +47,9 @@ export {
   type ExportOptions,
   type ExportProperties,
   type ExportMeta,
+  type ExportPhoto,
+  type ExportFile,
+  type ArchiveOptions,
 } from './formats/triangulair.ts';
 export { readImportFile, readCsvWithMapping, type ReadOutcome } from './detect.ts';
 export * from './match.ts';

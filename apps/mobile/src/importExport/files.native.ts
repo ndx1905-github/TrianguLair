@@ -17,13 +17,24 @@ export async function pickImportFile(): Promise<ImportFile | null> {
   return { name: asset.name, bytes };
 }
 
-/** Writes the export to the cache and opens the share sheet. Returns how it was handed over. */
-export async function saveExportFile(name: string, text: string, dialogTitle: string): Promise<'shared' | 'downloaded'> {
+/**
+ * Writes the export to the cache and opens the share sheet. Returns how it was handed over. The file
+ * holds my photos decrypted (the archive): it is deleted from the cache once the share sheet closes.
+ */
+export async function saveExportFile(name: string, data: string | Uint8Array, mimeType: string, dialogTitle: string): Promise<'shared' | 'downloaded'> {
   const file = new File(Paths.cache, name);
   if (file.exists) file.delete();
   file.create();
-  file.write(text);
-  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device');
-  await Sharing.shareAsync(file.uri, { mimeType: 'application/geo+json', UTI: 'public.json', dialogTitle });
+  file.write(data);
+  try {
+    if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device');
+    await Sharing.shareAsync(file.uri, { mimeType, UTI: mimeType === 'application/zip' ? 'public.zip-archive' : 'public.json', dialogTitle });
+  } finally {
+    try {
+      if (file.exists) file.delete();
+    } catch {
+      // the OS clears the cache folder eventually
+    }
+  }
   return 'shared';
 }

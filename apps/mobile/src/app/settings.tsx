@@ -27,6 +27,7 @@ import { useMaybeSync } from '../sync/SyncProvider';
 import { protocolOf } from '../storage/config';
 import { useStorage } from '../storage/StorageProvider';
 import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
+import { PhotoSettings } from '../photos/PhotoSettings';
 import { MyContentSection } from '../privacy/SettingsSection';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -278,6 +279,7 @@ function SettingsScreen() {
             <Button kind="secondary" label={t('settings.devices')} onPress={() => router.push('/devices')} testID="settings-devices" />
           </Section>
 
+          <PhotoSettings />
           <MyContentSection />
 
           <Section title={t('settings.appearance')}>

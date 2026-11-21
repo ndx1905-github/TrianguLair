@@ -16,6 +16,22 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
   reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
   comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
+- **Personal photos** (T-111b, `src/photos/`; logic in `@triangulair/sync`, see its README "Personal photos"): on
+  the card, "Photos of friends and me": mine first, then each friend's under their name (a place's photos follow the
+  save's visibility). "Take a photo" / "Choose a photo": on the phone expo-image-picker (no EXIF requested) then
+  expo-image-manipulator (about 1,600 px WebP, quality 0.8, and a 400 px thumbnail; "Smaller" in Settings: 1,200 px);
+  on the web a file input and a canvas (EXIF orientation applied, AVIF when the browser encodes it, else WebP, else
+  JPEG). A photo is never refused for its size: when an image is over the format caps (2,048 px / 1.5 MiB, thumbnail
+  512 px / 128 KiB) the quality, then the size, is lowered until it fits (`encodeToFit` in `model.ts`); only a file
+  that is not an image is refused. The sync package removes and checks metadata again and keeps both images in the
+  database (`media_cache`).
+  A photo not on my storage yet says so ("Not uploaded yet", "Waiting: your storage is full", "On this device only").
+  Tapping a photo opens the full-screen viewer (`PhotoViewer.tsx`): author, date, previous / next, "Remove" on mine; a
+  friend's full photo is downloaded only then, their thumbnails come with their places. What's new: "Anna added a
+  photo of …" with thumbnails, and a Photos filter (a photo removed since leaves the entry, and an entry left
+  without photos goes). Settings › Photos: quality of new photos, size of the friends'
+  photo cache (100 MB to 2 GB, 500 MB by default; their places are never evicted), room taken on this device. The
+  space my photos take on my storage is in Settings › Sync status (space used by content type).
 - **Store rules** (gap #6, spec "Store rules", "Editing and deleting", "Moderation"; logic in `src/privacy/`, tested in
   `privacy.test.ts` and e2e `privacy.spec.ts` against Apache WebDAV):
   - *Delete all my content* (`/delete-all`, Settings › My content; there is no account to close, so this covers
@@ -54,7 +70,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   cancel, preview (to check / found / manual points / no position, per-place choice among
   candidates, manual point or leave out; what each source tag becomes), batched write with
   progress and cancel, summary and undo for 7 days; export everything as GeoJSON (download or
-  share sheet on web, share sheet on native). Logic in `@triangulair/import` (see its README).
+  share sheet on web, share sheet on native), as a ZIP archive with my photos (full and thumbnail,
+  decrypted, with their place and date; friends' photos are not exported) when I have some. The screen
+  says the file holds my places and photos in clear. Importing that archive restores the photos
+  (stored like new ones, uploaded at the next sync). Logic in `@triangulair/import` (see its README).
   Native file access uses `expo-document-picker`, `expo-file-system` and `expo-sharing`
   (new native modules: a new development build is needed). Screenshots: `docs/*-import-*.png`.
 - **Filter bar** (T-109, `components/FilterBar.tsx`, logic in `src/places/filters.ts` and `src/filters/`):
@@ -568,6 +587,7 @@ src/contacts/         invitation and access flows: ContactsService, SyncPort and
                       warnings, QR codes, scanner, provider, deep links
 src/storage/          storage config and URL builders, adapters, connection test and fixes, migration, certificate
                       rotation, state (secret store), provider, sharing prompt, interfaces for the sync engine
+src/photos/           personal photos: pickers and recompression (native / web), gallery, viewer, settings, model
 src/sync/             sync controller (engine, scheduler, move hooks, wipe), provider, What's new, friends'
                       places (card section, friends shown), sync status wording
 src/identity/         identity creation (create), secret store (native / web), kit formats, app lock, protect card
@@ -828,6 +848,22 @@ comment on the card; Anna edits the comment and marks it favorite, Ben gets both
 map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
 storage", back to normal after "Sync now"); Anna sets "They see my places" to nothing on Ben's contact and Ben's cache
 drops her places. Passes are triggered with "Sync now" on the sync status screen (no test hook).
+
+Personal photos (`SHOTS=1 npm run e2e -- photos`, same Apache setup, two browser contexts):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-card-photos.png` | Anna's card: her photo (uploaded), "Take a photo" / "Choose a photo", the privacy note |
+| `docs/phone-photo-viewer.png` | Ben opens Anna's photo: the full photo, downloaded now |
+| `docs/phone-whatsnew-photo.png` | Ben's What's new, Photos filter: "Anna added a photo of …" with thumbnails |
+| `docs/phone-settings-photos.png` | Settings › Photos: quality, friends' photo cache, room on this device |
+
+End-to-end: `e2e/photos.spec.ts` (skipped without Apache): Anna adds a JPEG carrying GPS and camera EXIF
+(`e2e/fixtures/photo-gps.jpg`) to a shared place; it waits, then goes out with "Sync now"; none of her storage's
+media files holds the image, "Exif" or the camera model in clear; Ben gets exactly one media file with her places
+(the thumbnail), the full photo only when he opens it, and from the cache the second time; a second photo is "new
+photo" in his What's new; Anna removes the first from the viewer and it leaves Ben's card; Settings › Photos; her
+space used counts photos.
 
 Devices, loss and theft (`SHOTS=1 npm run e2e -- devices.spec.ts --workers=1`, same Apache setup, three browser
 contexts: Anna, Ben and Anna's new device):

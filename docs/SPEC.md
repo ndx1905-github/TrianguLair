@@ -129,7 +129,7 @@ Each storage contains only its owner's content:
 - Nothing is copied to others: my friends read my storage, I read theirs.
 - Packs contain only personal data (OSM identifier, name, coordinates, tags, comment, status, price), never the OSM record (opening hours, free photos, practical info), which each app fetches and caches itself. Order of magnitude: a few hundred bytes per place, so under 1 MB for 1,000 places.
 - A pack key is wrapped per group of identical recipients, not per place: adding friends barely increases the content size.
-- Optional personal photos, recompressed on upload (about 1,600 px wide, WebP or AVIF format) with a separate thumbnail; friends download the full photo only when opening it.
+- Optional personal photos, recompressed on upload (about 1,600 px wide, WebP or AVIF format) with a separate thumbnail; friends download the full photo only when opening it. Format caps: 2,048 px a side and 1.5 MiB for a photo, 512 px and 128 KiB for a thumbnail; the app never refuses a photo for its size (it lowers the quality, then the size, until it fits), and readers refuse larger files.
 - Drawn zones are simplified before saving.
 - The app occasionally merges small update packs and deletes files that have become unnecessary; with Nextcloud, it recommends limiting the version history on its folder.
 

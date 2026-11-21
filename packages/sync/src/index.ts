@@ -80,6 +80,31 @@ export { looksLikeHome, itemLooksLikeHome, heldPublicPlaces, RESIDENTIAL_CATEGOR
 export { buildPublicLists, ODBL_ATTRIBUTION, ODBL_URL, PUBLIC_LISTS_NAME } from './public-lists.ts';
 export { MemoryStateStore, SqliteStateStore, type SyncStateStore } from './state.ts';
 export {
+  PHOTO_TYPES,
+  MAX_PHOTOS_PER_PLACE,
+  MAX_PHOTO_SIDE,
+  MAX_THUMB_SIDE,
+  MAX_PHOTO_BYTES,
+  MAX_THUMB_BYTES,
+  checkImage,
+  PHOTO_SIDE,
+  THUMB_SIDE,
+  mediaPath,
+  newPhotoKey,
+  photoKeyPair,
+  imageHash,
+  sealPhoto,
+  openPhoto,
+  checkPhotoRefs,
+  isPhotoType,
+  type PhotoRef,
+  type PhotoType,
+} from './photos.ts';
+export { Photos, PhotoError, DEFAULT_FRIENDS_CACHE_BYTES, type PhotoInput, type PhotoImage, type PhotoItem, type PhotoState, type PhotosOptions } from './photo-service.ts';
+export { MemoryMediaCache, SqliteMediaCache, friendCacheId, type MediaCache, type BlobMeta, type BlobKind, type CacheUsage } from './media-cache.ts';
+export { sniffImage, imageMetadata, stripImageMetadata, ImageFormatError, type ImageFormat, type MetadataKind } from './image-meta.ts';
+export type { PhotosReport } from './own.ts';
+export {
   classifyError,
   PayloadError,
   DeviceRevokedError,

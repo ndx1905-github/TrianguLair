@@ -92,7 +92,7 @@ tombstones), so every device publishes the same audiences.
 | --- | --- | --- |
 | `index.json` | signed index (crypto 4.0), written last with `If-Match`, then read back | everyone |
 | `packs/b2b256-<hash>.bin` | **places packs**: GeoJSON, one or more per recipient set, my key included; content-addressed, never modified | friends (only the new ones) and my devices |
-| `media/b2b256-<hash>.bin` | **my Yjs document** (one full snapshot + up to 8 deltas, then a new snapshot) and a **manifest** (logical pack id → recipient-set fingerprint), sealed to my key only; photos later | my devices; friends fetch `media/` only on demand (photos), so never these |
+| `media/b2b256-<hash>.bin` | **my Yjs document** (one full snapshot + up to 8 deltas, then a new snapshot) and a **manifest** (logical pack id → recipient-set fingerprint; recipient sets of the photo keys), sealed to my key only; **photos**: one file per image (full ~1,600 px, and its thumbnail), sealed to the photo's own key (below) | my devices; friends fetch `media/` only on demand (a thumbnail, a photo they open), never the document or manifest |
 | `packs/b2b256-<hash>.bin` | **lists packs** (payload kind 4, below): list definitions sealed to the friends with access; a link-only list (definition + places) sealed to its list key; tombstones of deleted link-only lists | those friends; whoever holds the link |
 | `public/lists.geojson` | public lists in plaintext, ODbL attribution, uMap styles, listed in the index with its hash | anyone, uMap, followers of a public list |
 | `vault.bin` | recovery vault (`TLVD`), written with `If-Match`, merged on conflict | my devices |
@@ -174,6 +174,83 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
   read by `loadDataFromQueryString`; the instance fetches the file through its proxy, so no CORS rule is needed for
   uMap). It opens a new uMap map with a copy of the file's current content, all my public lists in one layer.
 
+## Personal photos (T-111b)
+
+`photos.ts`, `photo-service.ts`, `media-cache.ts`, `image-meta.ts`; `OwnSync.preparePhotos`. Spec: "recompressed
+on upload (about 1,600 px wide, WebP or AVIF) with a separate thumbnail; friends download the full photo only when
+opening it", "GPS metadata removed on upload", quota full: "photos wait, text goes first", the friends' cache cap
+("their photos are evicted first").
+
+- **Format caps** (the media format's rules; a reader refuses an image above them, so every client MUST stay
+  within them; review photos F-03 and the product decision in docs/reviews/photos.md):
+
+  | | Longest side | File (the image inside the media file) |
+  |---|---|---|
+  | Photo (`full`) | 2,048 px (`MAX_PHOTO_SIDE`) | 1.5 MiB, 1,572,864 bytes (`MAX_PHOTO_BYTES`) |
+  | Thumbnail (`thumb`) | 512 px (`MAX_THUMB_SIDE`) | 128 KiB, 131,072 bytes (`MAX_THUMB_BYTES`) |
+
+  The side is read from the image headers (`imageSize`: JPEG SOFn, WebP VP8X/VP8/VP8L, AVIF `ispe`), the byte cap
+  applies to the photo payload once the media file is opened (the download bound adds the envelope and Padmé,
+  `mediaFileBytes`). A reference's `w` and `h` are bounded by the photo side cap too (a larger one makes the places
+  payload invalid). The app writes 1,600 px (1,200 px with "Smaller") and 400 px (320 px) thumbnails, so the caps
+  leave a margin; 1.5 MiB is a 2,048 px image at about 3 bits per pixel, above what a good encoder produces for a
+  detailed scene (a 1,600 px WebP at quality 0.8 is 150–600 KB). **Writers never refuse a photo for its size**:
+  the app downscales to the setting's side, then lowers the quality step by step (0.1 down to 0.3) and, if needed,
+  the side (×0.75) until both images fit (`encodeToFit`, apps/mobile/src/photos/model.ts). Only a file that is not
+  an image is refused.
+- **Adding** (`engine.photos.add(placeId, { full, thumb, width, height }, { createdAt? })`): the app recompresses
+  (about 1,600 px and a 400 px thumbnail, WebP, AVIF where the platform encodes it, JPEG as a last resort, made to
+  fit the caps); here the metadata containers are removed again (JPEG APP1, APP2 but ICC, APP3–15 and COM, also
+  between progressive scans, and anything after the end of the image; WebP `EXIF`/`XMP ` and chunks the format
+  does not define; an AVIF with an Exif or XMP item is refused) and the result checked (`imageMetadata` must be
+  empty), against the caps above (`photoBytes` / `thumbBytes`, by default the byte caps, and `checkImage`, like a
+  reader). Both images are kept on the device (`media_cache`, the app's SQLite database: covered by its encryption
+  and by the remote wipe) under their content hash, and recorded in my document (`m:<id>`: hashes, format, size,
+  dimensions, date). Removing (`photos.remove`) deletes the record; the files go at the next publication.
+- **Publishing**: each image is a media file (frozen `sealPack(…, { type: "media" })`, payload kind 5 `photo`,
+  stored, padded to the 4 KiB floor then Padmé, 2 wraps like my own document), sealed to a random **photo key**
+  (X25519), one per photo. The key and the two files' hashes are written in my document (`u:<id>`, all my
+  devices) and, for a save friends can read, in its places pack: `"photos":[{"id","key","full","thumb","type","w",
+  "h","created"}]` (places payload minor 1, declared only by packs with photos; at most 24 per place). Photos are
+  uploaded before the packs that reference them; the index lists both files.
+- **Who can open a photo**: whoever reads the save's places pack (same audience as the save), and my devices.
+  Adding a reader uploads nothing (the key travels in the re-sealed places pack). When a reader is removed (a
+  friend, a "some lists" restriction, an accepted or expired invitation, a save made private, a declaration of
+  loss that changes my sharing key), the photo is re-sealed under a new key and its old files are no longer
+  listed and are deleted after the publication (spec "Direct recipient": "a photo key … is renewed too"). To tell
+  "readers added" from "a reader removed", each `u:` record names the recipient set its key was given to and my
+  manifest keeps those sets (`aud`: fingerprint → keys), so every device of mine decides alike. A device that
+  never opened the photo fetches it with the old key to re-seal it. If it cannot (no local copy, and the pull saw
+  a rollback or a fork, so there is no index to fetch through; or the files are gone), the photo is **dropped**
+  from my document (`report.own.photos.dropped`; review photos F-07, product decision: privacy wins over keeping
+  the photo): every device and friend then forgets it as if it had never been added (no row, no cache entry, no
+  tile, nothing retried). A photo never uploaded and not on this device waits for the device that has it.
+- **Friends**: a read projects the references into `media` (key and file hashes; `Repository.setForeignMedia`) and
+  fetches the **thumbnails of new photos** in the same pass (`thumbPrefetchBytes`, 8 MiB per pass, a failed file
+  counted at `thumbBytes`); the **full photo** is downloaded by `photos.full(id)` only (the app calls it when the
+  photo is opened). A friend's photo is stored under `foreignMediaId(saveId, id)`, and its images in the cache
+  under `friendCacheId(owner, hash)` (review photos F-08), so their ids never meet mine or another friend's; a
+  friend's cache entry never replaces one of mine. Every file is downloaded with a bound that allows for its padding (`mediaFileBytes`), opened
+  only if the friend's verified index (kept by the reader, `indexFor`) lists it and it was served at its own path,
+  and its image checked before it is cached or shown (`checkImage`: the format its reference names, and the pixel
+  bounds above, against decompression bombs). What's new: `whatsNew.photos` (new photos on a place already there; the change is `meaningful`).
+- **Cache**: friends' images are evicted beyond `friendsCacheBytes` (default 500 MiB; `photos.setFriendsCacheBytes`):
+  full photos first, least recently used first, then thumbnails; their places are never evicted. A photo that
+  leaves my cache (removed, access lost, friend removed) leaves the image cache at once (`photos.prune`). My own
+  images are never evicted.
+- **Losing access** (what a friend's app does with my photos): when its read of my index finds that it can no
+  longer open a save (I removed them, restricted or made the save private, revoked their invitation, or deleted
+  all my content: the signed "content deleted" marker lists nothing for anyone), the save and its photo rows go,
+  and every thumbnail and full photo of mine leaves its cache in the same pass (`photos.prune`). Removing or
+  unfollowing a contact on their side also erases every image of that owner (`photos.forget`). Images live only
+  in the database (`media_cache`); no image file is written to disk. This relies on the friend's app: a modified
+  app can keep what it already downloaded (THREATS).
+- **Quota full**: an upload refused with 507/413 makes the photos wait (`report.own.photos.waiting`), the text is
+  published anyway, and the pass reports a `quota` problem; the next pass tries again.
+- **My devices**: a pull that meets photo files another device uploaded keeps them (still encrypted) until my
+  document gives their keys, then stores the images, so each device downloads each photo once; `photos.syncOwn`
+  (each pass, `ownPhotoPassBytes`) fetches the rest. `spaceUsed().photos` counts them on the storage.
+
 ## Lists: friends, link-only, public (T-211, T-212)
 
 `lists.ts`, `list-packs.ts`, `followed.ts`. A list (data package: `visibility` link / public, `linkKey`) leaves my
@@ -238,6 +315,9 @@ bounded in total (`SyncLimits`, `limits` option of the engine; review R-06):
 | `placesPayloadBytes` / `manifestPayloadBytes` / `ownDocPayloadBytes` (decompressed) | 4 MiB / 1 MiB / 64 MiB |
 | `friendReadBytes` (downloaded + decompressed, one friend, one read) | 32 MiB (`too-large`, not retried) |
 | `passBytes` (same, every friend of one pass) | 128 MiB (`too-large`, the rest is read next pass) |
+| `photoBytes` / `thumbBytes` (an image added; a photo or thumbnail file downloaded) | 1.5 MiB / 128 KiB (the format caps) |
+| `thumbPrefetchBytes` (friends' new thumbnails fetched with their places, one pass) | 8 MiB |
+| `ownPhotoPassBytes` (my photos one of my devices fetches in one pass) | 64 MiB |
 
 Pack downloads and decryptions share `concurrency` (default 6) slots across all the friends read at once
 (`friendConcurrency`, default 8, index checks).
@@ -301,7 +381,7 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | No network | `offline` | nothing attempted, changes counted as pending, a pass when back online |
 | My storage unreachable | `unreachable` | retried with backoff (30 s … 30 min) while in use; `banner` after 24 h |
 | Credentials rejected | `auth` | `blocked`: writes stop (queue kept) until `resume()`; friends are still refreshed on launch, foreground and pull to refresh (`publish: false`) |
-| Quota full (507/413) | `quota` | retried, nothing lost; `OwnSync.spaceUsed()` gives the bytes by content type for the app's suggestions (photos are not synced yet) |
+| Quota full (507/413) | `quota` | retried, nothing lost; photos wait and the text is published (`report.own.photos`); `OwnSync.spaceUsed()` gives the bytes by content type for the app's suggestions |
 | Interrupted write | — | packs first, index last; the packs of an attempt are recorded as garbage before they are written (deleted later if the index never lists them); a listed pack found missing (checked by listing at the first pull and every full check) is rewritten from local state |
 | Two of my devices write at the same time | `conflict` | If-Match + read-back, pull, merge, republish |
 | A friend's storage unreachable | `unreachable` | their cache stays; `lastSuccess(owner)` for "Updated 12 days ago" |
@@ -343,6 +423,19 @@ Every row of the spec's table, with the app's side (messages, the 3-month offer,
   GeoJSON with ODbL attribution, uMap styles and OSM links, and a public list is followed by link and goes away when
   deleted; followed lists shared between my devices through the vault; my own list cannot be followed.
 - `error-cases.test.ts` (T-213): one test per row of the spec's "Error cases" table, on real engines with injected storage faults (network down, 401, 507, a write cut before the index, altered files, a newer format, a storage move, invitation records, a missing key).
+- `photos.test.ts` (T-111b): owner adds a photo (metadata removed, nothing in clear on the storage, padded files),
+  friend gets the thumbnail with the places and the full photo when opening it; "new photo" in What's new; a
+  private save's photo reaches my other device only; refusals; removal deletes the files and the friend's copy;
+  a friend whose access is removed cannot fetch the photo (old files deleted) while the others get it under a new
+  key, and adding a friend uploads nothing; a save made private renews the key from a device that never opened it;
+  quota full (text first, photo later); cache eviction (full photos first, LRU) and the SQLite cache; JPEG/WebP
+  metadata removal, AVIF detection, strict references. Review (docs/reviews/photos.md): a friend
+  reusing photo ids, broken thumbnails within the pass budget, decompression bombs, a photo near the byte cap, MPF
+  and trailing data, metadata between progressive scans, unknown WebP chunks, header sizes, the trash (restore,
+  renewal on restore, delete forever). Decisions: the caps (and a friend's oversized files refused), F-07 (a
+  renewal through a rolled-back index drops the photo on every device and friend, once), F-08 (a friend naming
+  my file hashes), friends' cache ids by owner, and a friend who loses access (removed, content deleted, save
+  made private) purging every image of mine.
 - `no-wasm.test.ts`: fflate and the sources use no WebAssembly (the package also depends on the crypto package's
   `libsodium-wrappers-sumo`, for the list key's public half; asm.js where WebAssembly is missing).
 - `units.test.ts`: planner, payload (decompression bomb), strict places parsing, vault policy merge, state
@@ -391,10 +484,10 @@ to a friend" is the publication after adding the friend (every places pack seale
 
 ## Open questions
 
-1. **Own document in `media/`**: friends never download it, but a host sees which file is my document once photos
-   are not there to hide it (its size reveals the size of my whole collection, private places included, within
-   Padmé's 12 %). Photos (T-111 storage part) must be referenced from the places packs, and my devices must not
-   download every photo to classify `media/` files (keep photo hashes known from the Yjs media records).
+1. **Own document in `media/`**: photos now share `media/` with my document (same envelope, 2 wraps, padding), but
+   sizes still differ (a document is usually bigger than a photo and changes in deltas). A device of mine classifies
+   an unknown media file by downloading it once; for photos that download is kept (own devices sync photos), so
+   it costs nothing extra, but a device restored from the recovery kit downloads every photo at its first pull.
 2. **More than 255 recipients** in one pack (MAX_WRAPS = 256 with my own key): `TooManyRecipientsError` for now;
    crypto groups (a group key in a group-key pack) would lift it, at the cost of re-keying the group on removal.
 3. **Friends' lists** (answered by T-211/T-212): a friend sees a list's name and membership only when given access
@@ -419,3 +512,9 @@ to a friend" is the publication after adding the friend (every places pack seale
     rewrite the list pack in turn. The public file has the same rule.
 12. **uMap**: the query-string import is a copy, not uMap's "remote data" layer that follows file changes; a uMap
     map made by the author with the file as remote data (dynamic) does follow it.
+13. **Photo key renewal cost**: removing a reader re-uploads every photo that reader could open (an accepted
+    invitation re-seals every shared photo, as the spec asks for content opened to an invitation). Adding readers
+    costs nothing.
+14. **Thumbnails with the pack**: thumbnails are separate files fetched right after the places (new photos only,
+    bounded per pass), not inlined in the places pack: a pack is rewritten on every edit of one of its places, and
+    200 places with photos would make it megabytes.

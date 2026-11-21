@@ -78,7 +78,7 @@ task. The app also needs a `crypto.getRandomValues` polyfill (or pass
 
 | Module | Main exports |
 | --- | --- |
-| `DataStore` (store.ts) | `open(options)`, `change(tx => …)` (one atomic change), `merge(docOrUpdate)`, `exportDoc(sinceStateVector?)`, `importChanges(update)`, `heads()` (state vector), `snapshot()` / `isAt(snapshot)` / `exportSince(snapshot)` and `snapshotOfUpdates(updates)` (for the sync step, T-204: state vector and delete set, so a pure deletion also counts as a change), `compact()`, `reproject()`, `wipe()` (remote wipe: every row erased, store closed), `doc` (lazy), `saveId(placeId)`; shortcuts: `putSave`, `updateSave`, `setSaveTags`, `addSaveTag`, `removeSaveTag`, `deleteSave`, `restoreSave`, `addMedia`, `removeMedia`, `relinkSave`, `createTag`, `updateTag`, `deleteTag`, `restoreTag`, `setTagMapping`, `createList`, `updateList`, `setListFilter`, `addToList`, `removeFromList`, `deleteList`, `restoreList`, `purgeTrash(only?)` ("Delete forever": one item of the trash now) |
+| `DataStore` (store.ts) | `open(options)`, `change(tx => …)` (one atomic change), `merge(docOrUpdate)`, `exportDoc(sinceStateVector?)`, `importChanges(update)`, `heads()` (state vector), `snapshot()` / `isAt(snapshot)` / `exportSince(snapshot)` and `snapshotOfUpdates(updates)` (for the sync step, T-204: state vector and delete set, so a pure deletion also counts as a change), `compact()`, `reproject()`, `wipe()` (remote wipe: every row erased, store closed), `doc` (lazy), `saveId(placeId)`; shortcuts: `putSave`, `updateSave`, `setSaveTags`, `addSaveTag`, `removeSaveTag`, `deleteSave`, `restoreSave`, `addMedia`, `removeMedia`, `setMediaUpload`, `relinkSave`, `createTag`, `updateTag`, `deleteTag`, `restoreTag`, `setTagMapping`, `createList`, `updateList`, `setListFilter`, `addToList`, `removeFromList`, `deleteList`, `restoreList`, `purgeTrash(only?)` ("Delete forever": one item of the trash now) |
 | `Repository` (sqlite/repository.ts) | Reads: `queryPlaces({ bbox, within, text, source, sort, from, limit, offset })`, `mapPins(bbox, source)`, `search(text)`, `getPlace`, `getSave`, `getMySaveForPlace`, `savesForPlace`, `trash`, `getMedia`, `tags`, `tagMappings`, `friendTags`, `lists`, `getList`, `listItems`, `listsContaining`, `evaluateList`, `saveMatchesList`, `findDuplicateSuggestions`, `countInBBox`, `dumpOwnData`. Caches: `updatePlaceOsmData`, `upsertForeignSave`, `deleteForeignSave`, `upsertPerson`, `getPerson`, `removePerson`, `pruneOrphanPlaces`. Projection only: `writeOwnSave`, `removeOwnSave`, `writeOwnTags`, `writeOwnList`, `removeOwnList`, `writeTagMappings` |
 | Schema (sqlite/schema.ts) | `migrate`, `detectCapabilities`, `readCapabilities`, `rebuildIndexes`, `SCHEMA_VERSION` |
 | Document (crdt/doc.ts, project.ts) | `createDataDoc`, `loadDataDoc`, `baseDocUpdate`, `clientIdFor`, `DocTx` (all edits), `healDoc`, `mergeDataDocs`, `roots`, `saveEntry`, `saveEntryKeys`, `savePlaceIds`, `hasSave`, `tagIdsOf`, `listIdsOf`, `readTombstones`, `readDeletedAt`, `readSharing`, `updateText`; `trackChanges`, `projectAll`, `projectChanges`, `readSave`, `readTags`, `readList`, `readTagMappings` |
@@ -151,7 +151,7 @@ The shared `places` row (T-204 review R-02): my own save writes it (except OSM-s
 | `tags`, `save_tags`, `tag_mappings` | tags: parent_id (cycle-free), name, color, icon, osm_categories JSON, deleted_at, (`active`: not in the trash and no ancestor in the trash); save_tags: position 0 for the main tag |
 | `lists`, `list_items` | lists: visibility (link/public), link_key (cleared when the list leaves `link`), kind (filter/manual), filter JSON (canonical), (`manual` JSON), (`items_dirty`); list_items: materialized membership, recomputed lazily |
 | `access` | save_id or list_id, person_id (schema only, for key wraps later) |
-| `media` | id, save_id, file, blurhash, width, height |
+| `media` | id, save_id, file, blurhash, width, height; (v3, photos) `thumb`, `mime`, `bytes`, `upload` (JSON: key and encrypted file hashes on the storage). My photos: `file`/`thumb` are the content hashes of the local copies; a friend's: the hashes of their encrypted files, usable only with `upload.key` (`Repository.setForeignMedia`, `mediaForPlace`, `mediaById`) |
 | (`places_rtree`) | R*Tree on place bboxes, kept by triggers (if available) |
 | (`places_fts`) | FTS5 on `search_text` (name, category, address, live comments, my active tag names), `unicode61 remove_diacritics 2`, external content, triggers (if available) |
 | (`doc_chunks`) | the Yjs document: one snapshot (`Y.encodeStateAsUpdate`) then incremental updates |
@@ -190,7 +190,9 @@ client-id orders where last-writer-wins could otherwise decide.
   as `[lon, lat]` for a point or GeoJSON text; the OSM identity is the place
   id), `comment` (`Y.Text`), `commentVisibility`, `status`, `priceLevel`,
   `mainTagId`, `createdAt`, `updatedAt`, `t:<tagId>`, `m:<mediaId>` (photo
-  metadata), `s:<client>`, `d:<client>`, `a:<entryKey>`. Absent means the
+  metadata: content hashes of the photo and its thumbnail, format, size, dimensions), `u:<mediaId>` (where
+  the sync package uploaded it and its key: `setMediaUpload`; kept apart so that an upload racing a removal
+  cannot bring the photo back), `s:<client>`, `d:<client>`, `a:<entryKey>`. Absent means the
   default (friends, no status, no price, updated = created).
 - **Clients.** A Yjs client id must never be used by two replicas at once.
   `actor` (any stable per-device string) is hashed to a 32-bit client id; it

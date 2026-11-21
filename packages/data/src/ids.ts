@@ -77,3 +77,13 @@ export function newLocalPlaceId(newId: IdGenerator = randomId): string {
 export function saveIdFor(ownerId: string, placeId: string): string {
   return `${ownerId}|${placeId}`;
 }
+
+/**
+ * SQLite id of a friend's photo: their photo id (chosen by them) inside the id of the save that
+ * carries it. Photo ids are a primary key shared by everyone's photos in the local cache, so a
+ * friend's id is never stored as it is (it could equal one of my photos' ids, or another friend's,
+ * and block their projection; review photos F-01).
+ */
+export function foreignMediaId(saveId: string, mediaId: string): string {
+  return `${saveId}|${mediaId}`;
+}
