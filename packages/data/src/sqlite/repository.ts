@@ -29,6 +29,7 @@ import {
   representativePoint,
   splitBBox,
 } from '../geo.ts';
+import { foreignMediaId } from '../ids.ts';
 import { normalizeSnapshot } from '../place.ts';
 import { ftsMatchQuery, normalizeText, tokenize } from '../text.ts';
 import type {
@@ -692,13 +693,19 @@ export class Repository {
 
   /**
    * A friend's photos on one of their saves (replaces the previous ones). `upload` must hold the key
-   * and the encrypted files' hashes: that is all a friend's photo is.
+   * and the encrypted files' hashes: that is all a friend's photo is. Each `id` is the friend's own
+   * photo id; it is stored as `foreignMediaId(saveId, id)` (ids are unique across all owners here).
    */
   setForeignMedia(saveId: string, media: readonly Omit<MediaRecord, 'saveId'>[]): void {
     const row = this.db.get<{ owner_id: string }>(`SELECT owner_id FROM saves WHERE id = ?`, [saveId]);
     if (!row) throw new Error(`no save ${saveId}`);
     if (row.owner_id === this.meId) throw new Error('my own photos come from my document');
-    this.transaction(() => this.writeMedia(saveId, media.map((m) => ({ ...m, saveId }))));
+    const ids = new Set<string>();
+    for (const m of media) {
+      if (m.id.includes('|') || ids.has(m.id)) throw new Error(`bad photo id ${m.id}`);
+      ids.add(m.id);
+    }
+    this.transaction(() => this.writeMedia(saveId, media.map((m) => ({ ...m, id: foreignMediaId(saveId, m.id), saveId }))));
   }
 
   private writeMedia(saveId: string, media: readonly MediaRecord[]): void {

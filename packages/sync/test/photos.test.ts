@@ -2,13 +2,14 @@
 /** Personal photos (T-111b): publication, friends' thumbnails and full photos, removal, revocation, quota, cache, own devices. */
 import { describe, expect, it } from 'vitest';
 import { MemoryAdapter, StorageError, type StorageAdapter } from '@triangulair/storage';
+import { foreignMediaId, saveIdFor } from '@triangulair/data';
 import { NodeSqliteDriver } from '@triangulair/data/node';
 import { MemoryMediaCache, SqliteMediaCache } from '../src/media-cache.ts';
-import { imageMetadata, sniffImage, stripImageMetadata } from '../src/image-meta.ts';
-import { checkPhotoRefs } from '../src/photos.ts';
+import { ImageFormatError, imageMetadata, imageSize, sniffImage, stripImageMetadata } from '../src/image-meta.ts';
+import { checkImage, checkPhotoRefs, imageHash, mediaFileBytes } from '../src/photos.ts';
 import { PhotoError } from '../src/photo-service.ts';
 import { addDevice, befriend, makeUser, point, World, type Device } from './helpers.ts';
-import { has, jpeg, photo, webp } from './photo-fixtures.ts';
+import { has, jpeg, noise, photo, webp } from './photo-fixtures.ts';
 
 const P1 = 'osm:node/1';
 
@@ -25,6 +26,8 @@ async function pair(opts: { aliceStorage?: StorageAdapter; bobCache?: number } =
 
 const mediaFiles = async (d: Device) => (await d.user.storage.list('media/')).map((e) => e.path).sort();
 const photosOf = (d: Device, placeId = P1) => d.engine.photos.list(placeId);
+/** The id a friend's device gives `owner`'s photo `id` on `placeId`. */
+const fid = (owner: Device, id: string, placeId = P1) => foreignMediaId(saveIdFor(owner.user.owner, placeId), id);
 
 describe('photos: owner adds, friend sees the thumbnail and opens the full photo', () => {
   it('publishes encrypted media files referenced from the places pack; thumbnails with the places, full photo on opening', async () => {
@@ -59,13 +62,13 @@ describe('photos: owner adds, friend sees the thumbnail and opens the full photo
     expect(rb.photos?.thumbnails).toBe(1); // came with the places
     const seen = photosOf(bob);
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ id, mine: false, ownerId: alice.user.owner, state: 'friend', thumbLocal: true, fullLocal: false });
+    expect(seen[0]).toMatchObject({ id: fid(alice, id), mine: false, ownerId: alice.user.owner, state: 'friend', thumbLocal: true, fullLocal: false });
     // The full photo is downloaded only when opened.
-    const full = await bob.engine.photos.full(id);
+    const full = await bob.engine.photos.full(fid(alice, id));
     expect(full!.bytes).toEqual(mine);
     expect(full!.mime).toBe('image/webp');
     expect(photosOf(bob)[0]!.fullLocal).toBe(true);
-    const thumb = await bob.engine.photos.thumbnail(id);
+    const thumb = await bob.engine.photos.thumbnail(fid(alice, id));
     expect(sniffImage(thumb!.bytes)).toBe('image/webp');
 
     // Idle: nothing re-uploaded.
@@ -82,7 +85,7 @@ describe('photos: owner adds, friend sees the thumbnail and opens the full photo
     await alice.engine.sync();
     const r = await bob.engine.sync();
     const wn = r.friends[0]!.whatsNew;
-    expect(wn.photos).toEqual([{ placeId: P1, mediaIds: [id] }]);
+    expect(wn.photos).toEqual([{ placeId: P1, mediaIds: [fid(alice, id)] }]);
     expect(wn.changed).toMatchObject([{ placeId: P1, meaningful: true, fields: ['photos'] }]);
   });
 
@@ -93,8 +96,8 @@ describe('photos: owner adds, friend sees the thumbnail and opens the full photo
     const id1 = alice.engine.photos.add(P1, photo(4));
     await alice.engine.sync();
     await bob.engine.sync();
-    expect(bob.store.repo.mediaById(id)).toBeNull();
-    expect(bob.store.repo.mediaById(id1)).not.toBeNull();
+    expect(bob.store.repo.mediaById(fid(alice, id, 'osm:node/2'))).toBeNull();
+    expect(bob.store.repo.mediaById(fid(alice, id1))).not.toBeNull();
 
     const alice2 = addDevice(w, alice.user);
     const r = await alice2.engine.sync();
@@ -121,7 +124,7 @@ describe('photos: removal and revocation', () => {
     const id = alice.engine.photos.add(P1, photo(1));
     await alice.engine.sync();
     await bob.engine.sync();
-    await bob.engine.photos.full(id);
+    await bob.engine.photos.full(fid(alice, id));
     const withPhoto = await mediaFiles(alice);
     alice.engine.photos.remove(P1, id);
     expect(alice.engine.photos.list(P1)).toEqual([]);
@@ -132,7 +135,7 @@ describe('photos: removal and revocation', () => {
     await bob.engine.sync();
     expect(photosOf(bob)).toEqual([]);
     expect(bob.engine.photos.cache.usage().friends).toBe(0);
-    expect(await bob.engine.photos.full(id)).toBeNull();
+    expect(await bob.engine.photos.full(fid(alice, id))).toBeNull();
   });
 
   it('a friend whose access is removed cannot fetch the photo; the others get it under a new key', async () => {
@@ -148,7 +151,7 @@ describe('photos: removal and revocation', () => {
     await alice.engine.sync();
     await bob.engine.sync();
     await carol.engine.sync();
-    const oldRef = bob.store.repo.mediaById(id)!.upload!;
+    const oldRef = bob.store.repo.mediaById(fid(alice, id))!.upload!;
 
     // Adding someone uploads nothing (the key only travels in the places pack).
     const dave = addDevice(w, makeUser(w, 'dave'));
@@ -157,13 +160,13 @@ describe('photos: removal and revocation', () => {
     const add = await alice.engine.sync();
     expect(add.own!.photos).toMatchObject({ uploaded: 0, renewed: 0 });
     await dave.engine.sync();
-    expect(await dave.engine.photos.full(id)).not.toBeNull();
+    expect(await dave.engine.photos.full(fid(alice, id))).not.toBeNull();
 
     alice.engine.setPolicy(bob.user.owner, { share: false });
     const r = await alice.engine.sync();
     expect(r.own!.photos).toMatchObject({ uploaded: 1, renewed: 1 });
     // The old files are gone: Bob, who still has the old reference (he has not synced), gets nothing.
-    expect(await bob.engine.photos.full(id)).toBeNull();
+    expect(await bob.engine.photos.full(fid(alice, id))).toBeNull();
     const old = await alice.user.storage.get(`media/b2b256-${oldRef.full.slice(7)}.bin`);
     expect(old).toBeNull();
     await bob.engine.sync();
@@ -171,9 +174,9 @@ describe('photos: removal and revocation', () => {
     expect(bob.engine.photos.cache.usage().friends).toBe(0);
     // Carol reads the photo under its new key.
     await carol.engine.sync();
-    const ref = carol.store.repo.mediaById(id)!.upload!;
+    const ref = carol.store.repo.mediaById(fid(alice, id))!.upload!;
     expect(ref.key).not.toBe(oldRef.key);
-    expect((await carol.engine.photos.full(id))!.bytes).toEqual((await alice.engine.photos.full(id))!.bytes);
+    expect((await carol.engine.photos.full(fid(alice, id)))!.bytes).toEqual((await alice.engine.photos.full(id))!.bytes);
     // Nothing more to renew.
     expect((await alice.engine.sync()).own!.photos.renewed).toBe(0);
   });
@@ -229,13 +232,13 @@ describe('photos: quota full and the friends\' cache', () => {
     expect(again.ok).toBe(true);
     expect(again.own!.photos).toMatchObject({ uploaded: 1, waiting: 0 });
     await bob.engine.sync();
-    expect(photosOf(bob).map((p) => p.id)).toEqual([id]);
+    expect(photosOf(bob).map((p) => p.id)).toEqual([fid(alice, id)]);
   });
 
   it('evicts friends\' full photos first, least recently used, and keeps their places', async () => {
     const { alice, bob } = await pair({ bobCache: 70_000 });
     for (let i = 2; i <= 4; i++) alice.store.putSave({ place: point(i, `P${i}`) });
-    const ids = [1, 2, 3, 4].map((i) => alice.engine.photos.add(`osm:node/${i}`, photo(10 + i, { size: 30_000 })));
+    const ids = [1, 2, 3, 4].map((i) => fid(alice, alice.engine.photos.add(`osm:node/${i}`, photo(10 + i, { size: 30_000 })), `osm:node/${i}`));
     await alice.engine.sync();
     await bob.engine.sync();
     expect(bob.engine.photos.usage().friends).toBeLessThan(70_000); // four thumbnails
@@ -319,5 +322,163 @@ describe('image metadata', () => {
     expect(() => checkPhotoRefs([ok, ok], false)).toThrow(/id/);
     expect(() => checkPhotoRefs([{ ...ok, thumb: ok.full }], false)).toThrow(/hash/);
     expect(() => checkPhotoRefs(Array.from({ length: 25 }, (_, i) => ({ ...ok, id: `p${i}` })), false)).toThrow(/bounded/);
+  });
+});
+
+/** Puts a photo in `d`'s document as a modified app could (no checks of `Photos.add`), with its images. */
+function rawPhoto(d: Device, placeId: string, full: Uint8Array, thumb: Uint8Array, opts: { id?: string } = {}): string {
+  const file = imageHash(full);
+  const th = imageHash(thumb);
+  d.engine.photos.cache.put(file, full, { owner: d.user.owner, kind: 'full', mine: true, mime: 'image/webp' });
+  d.engine.photos.cache.put(th, thumb, { owner: d.user.owner, kind: 'thumb', mine: true, mime: 'image/webp' });
+  return d.store.addMedia(placeId, { ...(opts.id && { id: opts.id }), file, thumb: th, mime: 'image/webp', bytes: full.length, width: 1600, height: 1200 });
+}
+
+describe('photos: hostile friends (review photos)', () => {
+  it('F-01: a friend reusing another friend\'s (or my) photo id breaks no read and shows nobody else\'s photo', async () => {
+    const w = new World();
+    const alice = addDevice(w, makeUser(w, 'alice'));
+    const bob = addDevice(w, makeUser(w, 'bob'));
+    const mallory = addDevice(w, makeUser(w, 'mallory'));
+    for (const d of [alice, mallory]) d.store.putSave({ place: point(1, 'Chez Lili') });
+    bob.store.putSave({ place: point(1, 'Chez Lili') });
+    await Promise.all([alice.engine.sync(), bob.engine.sync(), mallory.engine.sync()]);
+    await befriend(w, alice, bob);
+    await befriend(w, mallory, bob, { mutual: true });
+    const mine = bob.engine.photos.add(P1, photo(30));
+    await bob.engine.sync();
+    await mallory.engine.sync();
+    const id = alice.engine.photos.add(P1, photo(31));
+    await alice.engine.sync();
+    // Mallory publishes photos with Alice's id and Bob's id (seen in Bob's places pack).
+    rawPhoto(mallory, P1, webp(20_000, 32), webp(2_000, 33, { width: 400, height: 300 }), { id });
+    rawPhoto(mallory, P1, webp(20_000, 34), webp(2_000, 35, { width: 400, height: 300 }), { id: mine });
+    await mallory.engine.sync();
+    // Mallory read first, then Alice: both reads succeed, every photo keeps its author.
+    const r1 = await bob.engine.sync();
+    expect(r1.ok).toBe(true);
+    const byOwner = (o: Device) => photosOf(bob).filter((p) => p.ownerId === o.user.owner);
+    expect(byOwner(alice)).toHaveLength(1);
+    expect(byOwner(mallory)).toHaveLength(2);
+    expect(photosOf(bob).filter((p) => p.mine).map((p) => p.id)).toEqual([mine]);
+    expect((await bob.engine.photos.full(fid(alice, id)))!.bytes).toEqual((await alice.engine.photos.full(id))!.bytes);
+    expect((await bob.engine.photos.full(mine))!.bytes).toEqual(photo(30).full);
+    // A new device of Bob's whose own pull fails at first: Mallory's copy of Bob's id cannot block Bob's photo.
+    const bob2 = addDevice(w, bob.user);
+    await bob2.engine.sync({ publish: false });
+    expect(bob2.engine.photos.list(P1).filter((p) => p.mine).map((p) => p.id)).toEqual([mine]);
+  });
+
+  it('F-02: a friend serving broken thumbnails cannot make one pass download without bound', async () => {
+    const w = new World();
+    const alice = addDevice(w, makeUser(w, 'alice'));
+    const bob = addDevice(w, makeUser(w, 'bob'), { limits: { thumbPrefetchBytes: 1024 * 1024 } });
+    for (let i = 1; i <= 8; i++) alice.store.putSave({ place: point(i, `P${i}`) });
+    await alice.engine.sync();
+    await bob.engine.sync();
+    await befriend(w, alice, bob);
+    for (let i = 1; i <= 8; i++) alice.engine.photos.add(`osm:node/${i}`, photo(40 + i));
+    await alice.engine.sync();
+    // Alice's host (or Alice) now answers every media file with junk.
+    const inner = alice.user.storage;
+    let mediaGets = 0;
+    w.storages.set(alice.user.location, {
+      ...inner,
+      capabilities: inner.capabilities,
+      get: async (p, o) => {
+        if (!p.startsWith('media/')) return inner.get(p, o);
+        mediaGets++;
+        return { data: noise(4096, mediaGets), etag: 'x' };
+      },
+      head: (p) => inner.head(p),
+      put: (p, d, o) => inner.put(p, d, o),
+      delete: (p, o) => inner.delete(p, o),
+      list: (p) => inner.list(p),
+    } as StorageAdapter);
+    const r = await bob.engine.sync();
+    expect(r.photos?.thumbnails ?? 0).toBe(0);
+    expect(mediaGets).toBe(2); // 1 MiB / 512 KiB counted per failed file
+    expect(photosOf(bob, 'osm:node/1')[0]).toMatchObject({ thumbLocal: false });
+  });
+
+  it('F-03: an image that declares a huge size is refused before it is cached or shown', async () => {
+    const { alice, bob } = await pair();
+    // Photos.add refuses it…
+    expect(() => alice.engine.photos.add(P1, { ...photo(50), thumb: webp(2_000, 51, { width: 400, height: 300, canvas: [16_000, 16_000] }) })).toThrow(/too large/);
+    expect(() => alice.engine.photos.add(P1, { ...photo(50), full: webp(20_000, 52, { canvas: [9_000, 9_000] }) })).toThrow(/too large/);
+    // …a modified app publishes it anyway.
+    const bomb = rawPhoto(alice, P1, webp(20_000, 53, { canvas: [9_000, 9_000] }), webp(2_000, 54, { canvas: [16_000, 16_000] }));
+    await alice.engine.sync();
+    const r = await bob.engine.sync();
+    expect(r.ok).toBe(true);
+    expect(r.photos?.thumbnails ?? 0).toBe(0);
+    await expect(bob.engine.photos.thumbnail(fid(alice, bomb))).rejects.toThrow(ImageFormatError);
+    await expect(bob.engine.photos.full(fid(alice, bomb))).rejects.toThrow(/too large/);
+    expect(bob.engine.photos.cache.usage().friends).toBe(0);
+    // An image of another format than its reference says is refused too.
+    expect(() => checkImage(jpeg(100), 'full', 'image/webp')).toThrow(/announced/);
+  });
+
+  it('F-06: a photo near the 8 MiB limit reaches friends and my other devices (padding counted)', async () => {
+    const { w, alice, bob } = await pair();
+    const big = { ...photo(60), full: webp(8 * 1024 * 1024 - 64, 60) };
+    const id = alice.engine.photos.add(P1, big);
+    await alice.engine.sync();
+    await bob.engine.sync();
+    expect((await bob.engine.photos.full(fid(alice, id)))!.bytes.length).toBe(big.full.length);
+    const alice2 = addDevice(w, alice.user);
+    await alice2.engine.sync();
+    for (const k of alice2.engine.photos.cache.ids()) alice2.engine.photos.cache.delete(k);
+    expect((await alice2.engine.photos.full(id))!.bytes.length).toBe(big.full.length);
+    expect(mediaFileBytes(8 * 1024 * 1024)).toBeGreaterThan(8_651_151);
+  });
+});
+
+describe('image metadata and size (review photos)', () => {
+  it('F-05: JPEG: MPF and what follows the end of the image are removed, an ICC profile is kept', () => {
+    const j = jpeg(500, 7, { mpf: true, icc: true });
+    expect(imageMetadata(j)).toEqual(['other', 'trailer']);
+    const s = stripImageMetadata(j);
+    expect(imageMetadata(s)).toEqual([]);
+    expect(has(s, 'MPF')).toBe(false);
+    expect(has(s, 'GPSLatitude')).toBe(false);
+    expect(has(s, 'ICC_PROFILE')).toBe(true);
+    expect(s.subarray(s.length - 2)).toEqual(new Uint8Array([0xff, 0xd9]));
+    expect(imageSize(s)).toEqual({ width: 1600, height: 1200 });
+  });
+
+  it('F-05: JPEG: metadata between the scans of a progressive JPEG is removed', () => {
+    const j = jpeg(300, 8);
+    const exif = [...new TextEncoder().encode('Exif\0\0MM GPSLatitud')];
+    const app1 = [0xff, 0xe1, 0, exif.length + 2, ...exif];
+    const sos = [0xff, 0xda, 0, 8, 1, 1, 0, 0, 0x3f, 0];
+    const tail = j.length - 2; // before EOI
+    const p = new Uint8Array([...j.subarray(0, tail), ...app1, ...sos, 1, 2, 3, 0xff, 0x00, 4, 0xff, 0xd9]);
+    expect(imageMetadata(p)).toEqual(['exif']);
+    const s = stripImageMetadata(p);
+    expect(imageMetadata(s)).toEqual([]);
+    expect(has(s, 'GPSLatitud')).toBe(false);
+    expect(s.length).toBe(p.length - app1.length);
+  });
+
+  it('imageSize reads JPEG, WebP (VP8X, VP8, VP8L) and AVIF headers', () => {
+    expect(imageSize(jpeg(100, 1, { width: 640, height: 480 }))).toEqual({ width: 640, height: 480 });
+    expect(imageSize(webp(100, 1, { width: 300, height: 200 }))).toEqual({ width: 300, height: 200 });
+    expect(imageSize(webp(100, 1, { width: 300, height: 200, canvas: [12_000, 20] }))).toEqual({ width: 12_000, height: 200 });
+    // Simple lossy WebP (VP8 chunk only).
+    const vp8 = [0, 0, 0, 0x9d, 0x01, 0x2a, 0x80, 0x02, 0xe0, 0x01];
+    const body = [...new TextEncoder().encode('WEBPVP8 '), vp8.length, 0, 0, 0, ...vp8];
+    const lossy = new Uint8Array([...new TextEncoder().encode('RIFF'), body.length, 0, 0, 0, ...body]);
+    expect(imageSize(lossy)).toEqual({ width: 640, height: 480 });
+    const box = (type: string, b: number[]) => {
+      const n = b.length + 8;
+      return [(n >>> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255, ...new TextEncoder().encode(type), ...b];
+    };
+    const u32 = (n: number) => [(n >>> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255];
+    const avif = new Uint8Array([...box('ftyp', [...new TextEncoder().encode('avifmif1')]), ...box('meta', [0, 0, 0, 0, ...box('iprp', box('ipco', box('ispe', [0, 0, 0, 0, ...u32(1600), ...u32(900)])))])]);
+    expect(imageSize(avif)).toEqual({ width: 1600, height: 900 });
+    expect(() => imageSize(new Uint8Array([...box('ftyp', [...new TextEncoder().encode('avifmif1')])]))).toThrow(/size/);
+    expect(() => checkImage(webp(100, 1, { width: 2000, height: 100 }), 'thumb')).toThrow(/too large/);
+    expect(checkImage(webp(100, 1, { width: 1000, height: 100 }), 'thumb')).toMatchObject({ mime: 'image/webp', width: 1000 });
   });
 });

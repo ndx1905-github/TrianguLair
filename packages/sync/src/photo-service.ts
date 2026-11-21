@@ -21,7 +21,7 @@ import type { SyncLimits } from './limits.ts';
 import { listsReady } from './lists.ts';
 import type { MediaCache } from './media-cache.ts';
 import type { OwnSync } from './own.ts';
-import { MAX_PHOTO_SIDE, imageHash, mediaPath, openPhoto, photoKeyPair } from './photos.ts';
+import { MAX_PHOTO_SIDE, checkImage, imageHash, mediaFileBytes, mediaPath, openPhoto, photoKeyPair } from './photos.ts';
 import type { FriendReader } from './reader.ts';
 
 export const DEFAULT_FRIENDS_CACHE_BYTES = 500 * 1024 * 1024;
@@ -122,6 +122,14 @@ export class Photos {
     const mime = sniffImage(full);
     if (!mime || sniffImage(thumb) !== mime) throw new PhotoError('format', 'photo and thumbnail must be WebP, AVIF or JPEG, in the same format');
     if (full.length > L.photoBytes || thumb.length > L.thumbBytes) throw new PhotoError('too-large', 'photo too large');
+    // What friends' readers accept (checkImage): refused here rather than published and refused there.
+    try {
+      checkImage(full, 'full', mime);
+      checkImage(thumb, 'thumb', mime);
+    } catch (e) {
+      if (e instanceof ImageFormatError) throw new PhotoError('format', e.message);
+      throw e;
+    }
     for (const d of [input.width, input.height]) {
       if (!Number.isSafeInteger(d) || d < 1 || d > MAX_PHOTO_SIDE) throw new PhotoError('format', 'bad photo size');
     }
@@ -195,10 +203,11 @@ export class Photos {
     const path = mediaPath(h);
     const L = this.o.limits;
     const max = which === 'full' ? L.photoBytes : L.thumbBytes;
-    const g = await this.o.readAdapter(location).get(path, { maxBytes: max + 65_536 });
+    const g = await this.o.readAdapter(location).get(path, { maxBytes: mediaFileBytes(max) });
     if (!g) return null; // deleted: access removed, or replaced since my last read of their places
     const img = openPhoto(g.data, index, photoKeyPair(u.key), path, { maxBytes: max });
-    if (!sniffImage(img)) throw new ImageFormatError('not an image');
+    // A friend's image goes to the platform decoder: format and pixel size checked first (F-03).
+    checkImage(img, which, m.mime);
     // Still theirs and still shared with me (a read may have removed it meanwhile)?
     if (this.o.store.repo.mediaById(mediaId)) {
       this.o.cache.put(id, img, { owner: m.ownerId, kind: which, mine: false, mime: m.mime ?? null });
@@ -222,7 +231,10 @@ export class Photos {
           used += img.bytes.length;
         }
       } catch {
-        // shown as unavailable on the card; tried again when it is opened
+        // Shown as unavailable on the card; tried again when it is opened. A file that fails still
+        // cost its download: counted at the largest size accepted, so a friend serving broken files
+        // cannot make one pass download without bound (review photos F-02).
+        used += this.o.limits.thumbBytes;
       }
     }
     return n;

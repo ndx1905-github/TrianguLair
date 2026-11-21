@@ -9,14 +9,16 @@
  * might still write, and `imageMetadata` tells what is left (the sync layer refuses an image that
  * still carries any).
  *
- * - JPEG: APP1 (Exif, XMP), APP3–APP15 (IPTC in APP13, maker data) and COM segments are removed
- *   before the first scan; APP0 (JFIF) and APP2 (ICC colour profile) are kept.
+ * - JPEG: APP1 (Exif, XMP), APP2 other than an ICC colour profile (MPF, FlashPix), APP3–APP15 (IPTC in
+ *   APP13, maker data) and COM segments are removed, before the first scan and between scans
+ *   (progressive JPEG); APP0 (JFIF) and ICC profiles are kept. Bytes after the end of the image are
+ *   removed too (cameras append secondary images there, with their own Exif; review photos F-05).
  * - WebP: `EXIF` and `XMP ` chunks are removed and the VP8X flags updated.
  * - AVIF: recognised only; an `Exif` item or an XMP (`mime`) item in its `meta` box is reported (the
  *   app then falls back to WebP).
  */
 export type ImageFormat = 'image/webp' | 'image/avif' | 'image/jpeg';
-export type MetadataKind = 'exif' | 'xmp' | 'iptc' | 'comment' | 'other';
+export type MetadataKind = 'exif' | 'xmp' | 'iptc' | 'comment' | 'trailer' | 'other';
 
 const ascii = (b: Uint8Array, o: number, n: number) => String.fromCharCode(...b.subarray(o, o + n));
 
@@ -41,7 +43,12 @@ export class ImageFormatError extends Error {
 /** Metadata containers present in an image (empty: none found). Throws on an unknown or broken file. */
 export function imageMetadata(b: Uint8Array): MetadataKind[] {
   const f = sniffImage(b);
-  if (f === 'image/jpeg') return jpegSegments(b).filter((s) => !s.keep).map((s) => s.kind);
+  if (f === 'image/jpeg') {
+    const j = jpegLayout(b);
+    const out = j.segs.filter((s) => !s.keep).map((s) => s.kind);
+    if (j.end < b.length) out.push('trailer');
+    return out;
+  }
   if (f === 'image/webp') return webpChunks(b).filter((c) => c.meta).map((c) => (c.id === 'EXIF' ? 'exif' : 'xmp'));
   if (f === 'image/avif') return avifMetadata(b);
   throw new ImageFormatError('not a JPEG, WebP or AVIF image');
@@ -51,11 +58,17 @@ export function imageMetadata(b: Uint8Array): MetadataKind[] {
 export function stripImageMetadata(b: Uint8Array): Uint8Array {
   const f = sniffImage(b);
   if (f === 'image/jpeg') {
-    const segs = jpegSegments(b);
-    if (segs.every((s) => s.keep)) return b;
-    const parts: Uint8Array[] = [b.subarray(0, 2)];
-    for (const s of segs) if (s.keep) parts.push(b.subarray(s.start, s.end));
-    parts.push(b.subarray(segs.length ? segs[segs.length - 1]!.end : 2));
+    const { segs, end } = jpegLayout(b);
+    if (segs.every((s) => s.keep) && end === b.length) return b;
+    // Everything between the dropped segments (other segments, entropy-coded data) is kept as is.
+    const parts: Uint8Array[] = [];
+    let o = 0;
+    for (const s of segs) {
+      if (s.keep) continue;
+      parts.push(b.subarray(o, s.start));
+      o = s.end;
+    }
+    parts.push(b.subarray(o, end));
     return concat(parts);
   }
   if (f === 'image/webp') {
@@ -82,27 +95,33 @@ export function stripImageMetadata(b: Uint8Array): Uint8Array {
 interface Seg {
   start: number;
   end: number;
+  marker: number;
   keep: boolean;
   kind: MetadataKind;
 }
 
-/** JPEG marker segments before the first scan (SOS). */
-function jpegSegments(b: Uint8Array): Seg[] {
+/**
+ * The marker segments of a JPEG (before the first scan and between scans) and where the image ends
+ * (just after its EOI marker). Entropy-coded data after each SOS is skipped: inside it a 0xFF byte is
+ * followed by 0x00 (stuffing) or a restart marker, so the next other marker ends the scan.
+ */
+function jpegLayout(b: Uint8Array): { segs: Seg[]; end: number } {
   const out: Seg[] = [];
   let o = 2;
   for (;;) {
-    if (o + 4 > b.length) throw new ImageFormatError('truncated JPEG');
+    if (o + 2 > b.length) throw new ImageFormatError('truncated JPEG');
     if (b[o] !== 0xff) throw new ImageFormatError('bad JPEG marker');
     let m = b[o + 1]!;
     while (m === 0xff && o + 2 < b.length) {
       o++; // fill bytes
       m = b[o + 1]!;
     }
-    if (m === 0xda || m === 0xd9) return out; // start of scan / end of image: the rest is image data
+    if (m === 0xd9) return { segs: out, end: o + 2 }; // end of image
     if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
       o += 2; // markers without a length
       continue;
     }
+    if (o + 4 > b.length) throw new ImageFormatError('truncated JPEG');
     const len = (b[o + 2]! << 8) | b[o + 3]!;
     if (len < 2 || o + 2 + len > b.length) throw new ImageFormatError('bad JPEG segment length');
     const end = o + 2 + len;
@@ -111,6 +130,8 @@ function jpegSegments(b: Uint8Array): Seg[] {
     if (m === 0xe1) {
       keep = false;
       kind = ascii(b, o + 4, 4) === 'Exif' ? 'exif' : 'xmp';
+    } else if (m === 0xe2) {
+      keep = ascii(b, o + 4, 12) === 'ICC_PROFILE\0'; // MPF (secondary images), FlashPix: removed
     } else if (m === 0xed) {
       keep = false;
       kind = 'iptc';
@@ -120,9 +141,78 @@ function jpegSegments(b: Uint8Array): Seg[] {
     } else if (m >= 0xe3 && m <= 0xef) {
       keep = false;
     }
-    out.push({ start: o, end, keep, kind });
+    out.push({ start: o, end, marker: m, keep, kind });
     o = end;
+    if (m === 0xda) {
+      // Entropy-coded data up to the next marker that is not stuffing or a restart.
+      while (o + 1 < b.length && !(b[o] === 0xff && b[o + 1] !== 0x00 && !(b[o + 1]! >= 0xd0 && b[o + 1]! <= 0xd7))) o++;
+      if (o + 1 >= b.length) throw new ImageFormatError('truncated JPEG');
+    }
   }
+}
+
+/**
+ * Pixel size of an image from its headers (no decoding): JPEG frame header, WebP VP8X canvas / VP8 /
+ * VP8L (the largest given), AVIF `ispe` properties (the largest). Throws when none is found. Used to
+ * refuse decompression bombs before an image reaches the platform decoder (review photos F-03).
+ */
+export function imageSize(b: Uint8Array): { width: number; height: number } {
+  const f = sniffImage(b);
+  if (f === 'image/jpeg') {
+    for (const s of jpegLayout(b).segs) {
+      const m = s.marker;
+      // SOF0–SOF15 but DHT (C4), JPG (C8) and DAC (CC).
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        if (s.end - s.start < 9) break;
+        const height = (b[s.start + 5]! << 8) | b[s.start + 6]!;
+        const width = (b[s.start + 7]! << 8) | b[s.start + 8]!;
+        if (width < 1 || height < 1) break; // height 0: given later by a DNL marker, refused
+        return { width, height };
+      }
+    }
+    throw new ImageFormatError('JPEG without a frame size');
+  }
+  if (f === 'image/webp') {
+    let width = 0;
+    let height = 0;
+    for (const c of webpChunks(b)) {
+      const d = c.start + 8;
+      const n = c.end - d;
+      let w = 0;
+      let h = 0;
+      if (c.id === 'VP8X' && n >= 10) {
+        w = 1 + (b[d + 4]! | (b[d + 5]! << 8) | (b[d + 6]! << 16));
+        h = 1 + (b[d + 7]! | (b[d + 8]! << 8) | (b[d + 9]! << 16));
+      } else if (c.id === 'VP8 ' && n >= 10 && b[d + 3] === 0x9d && b[d + 4] === 0x01 && b[d + 5] === 0x2a) {
+        w = (b[d + 6]! | (b[d + 7]! << 8)) & 0x3fff;
+        h = (b[d + 8]! | (b[d + 9]! << 8)) & 0x3fff;
+      } else if (c.id === 'VP8L' && n >= 5 && b[d] === 0x2f) {
+        const bits = b[d + 1]! | (b[d + 2]! << 8) | (b[d + 3]! << 16) | (b[d + 4]! << 24);
+        w = 1 + (bits & 0x3fff);
+        h = 1 + ((bits >>> 14) & 0x3fff);
+      } else continue;
+      width = Math.max(width, w);
+      height = Math.max(height, h);
+    }
+    if (width < 1 || height < 1) throw new ImageFormatError('WebP without a frame size');
+    return { width, height };
+  }
+  if (f === 'image/avif') {
+    let width = 0;
+    let height = 0;
+    const meta = boxes(b, 0, b.length).find((x) => x.type === 'meta');
+    const iprp = meta && boxes(b, meta.body + 4, meta.end).find((x) => x.type === 'iprp');
+    const ipco = iprp && boxes(b, iprp.body, iprp.end).find((x) => x.type === 'ipco');
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    for (const p of ipco ? boxes(b, ipco.body, ipco.end) : []) {
+      if (p.type !== 'ispe' || p.end - p.body < 12) continue;
+      width = Math.max(width, dv.getUint32(p.body + 4));
+      height = Math.max(height, dv.getUint32(p.body + 8));
+    }
+    if (width < 1 || height < 1) throw new ImageFormatError('AVIF without an image size');
+    return { width, height };
+  }
+  throw new ImageFormatError('not a JPEG, WebP or AVIF image');
 }
 
 interface Chunk {

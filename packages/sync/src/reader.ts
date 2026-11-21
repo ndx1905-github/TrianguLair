@@ -38,7 +38,7 @@ import {
   type KeyPair,
   type SignedIndex,
 } from '@triangulair/crypto';
-import { saveIdFor, type DataStore } from '@triangulair/data';
+import { foreignMediaId, saveIdFor, type DataStore } from '@triangulair/data';
 import { NotFound, fetchHighestIndex, indexPath, type StorageAdapter } from '@triangulair/storage';
 import { fingerprint } from './audience.ts';
 import { classifyError, type SyncProblem } from './errors.ts';
@@ -366,7 +366,7 @@ export class FriendReader {
             id: r.id, file: r.full, thumb: r.thumb, mime: r.type, bytes: null, upload: { key: r.key, full: r.full, thumb: r.thumb },
             blurhash: null, width: r.w, height: r.h, createdAt: Math.min(Date.parse(r.created), now + MAX_FUTURE_MS),
           })));
-          const newPhotos = refs.map((r) => r.id).filter((x) => !beforePhotos.has(x));
+          const newPhotos = refs.map((r) => foreignMediaId(input.id, r.id)).filter((x) => !beforePhotos.has(x));
           if (!old || !before) wn.added.push(id);
           else {
             const fields: string[] = [];

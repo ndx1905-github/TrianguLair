@@ -20,7 +20,7 @@ import {
 } from '../src/crdt/doc.ts';
 import { readTags } from '../src/crdt/project.ts';
 import { NodeSqliteDriver } from '../src/driver/node.ts';
-import { saveIdFor } from '../src/ids.ts';
+import { foreignMediaId, saveIdFor } from '../src/ids.ts';
 import { DataStore } from '../src/store.ts';
 import { clientIdFor } from '../src/crdt/doc.ts';
 import { fakeClock, hexActor, localPoint, ME, osmPoint, rect, seqIds } from './helpers.ts';
@@ -371,10 +371,29 @@ describe('Yjs document', () => {
     const s = openStore();
     s.repo.upsertForeignSave({ id: 'f1', ownerId: 'ed25519:friend', place: { id: 'osm:node/7', osmType: 'node', osmId: 7, name: 'X', category: null, kind: 'place', edge: 'sharp', geometry: { type: 'Point', coordinates: [2.35, 48.85] } }, createdAt: 1, updatedAt: 1 });
     s.repo.setForeignMedia('f1', [{ id: 'p1', file: 'b2b256:ef', thumb: 'b2b256:et', mime: 'image/webp', bytes: 10, upload: { key: 'k', full: 'b2b256:ef', thumb: 'b2b256:et' }, blurhash: null, width: 4, height: 3, createdAt: 5 }]);
-    expect(s.repo.mediaForPlace('osm:node/7')).toMatchObject([{ id: 'p1', ownerId: 'ed25519:friend', mine: false, upload: { key: 'k' } }]);
+    expect(s.repo.mediaForPlace('osm:node/7')).toMatchObject([{ id: foreignMediaId('f1', 'p1'), ownerId: 'ed25519:friend', mine: false, upload: { key: 'k' } }]);
     expect(() => s.repo.setForeignMedia('nope', [])).toThrow();
+    expect(() => s.repo.setForeignMedia('f1', [{ ...s.repo.getMedia('f1')[0]!, id: 'a|b' }])).toThrow(/bad photo id/);
     s.repo.deleteForeignSave('f1');
     expect(s.repo.db.all(`SELECT * FROM media`)).toEqual([]);
+  });
+
+  it("a friend's photo ids cannot collide with mine or another friend's (review photos F-01)", () => {
+    const s = openStore({ newId: seqIds('m-') });
+    s.putSave({ place: osmPoint(7, 'X', 48.85, 2.35) });
+    const mine = s.addMedia('osm:node/7', { file: 'b2b256:mine', thumb: 'b2b256:mt', mime: 'image/webp', width: 4, height: 3 });
+    const place = { id: 'osm:node/7', osmType: 'node' as const, osmId: 7, name: 'X', category: null, kind: 'place' as const, edge: 'sharp' as const, geometry: { type: 'Point' as const, coordinates: [2.35, 48.85] as [number, number] } };
+    const ref = (id: string, f: string) => ({ id, file: f, thumb: `${f}t`, mime: 'image/webp', bytes: 10, upload: { key: 'k', full: f, thumb: `${f}t` }, blurhash: null, width: 4, height: 3, createdAt: 5 });
+    for (const f of ['f1', 'f2']) s.repo.upsertForeignSave({ id: f, ownerId: `ed25519:${f}`, place, createdAt: 1, updatedAt: 1 });
+    // Both friends reuse my photo id (they see it in my places pack): nothing breaks.
+    s.repo.setForeignMedia('f1', [ref(mine, 'b2b256:a')]);
+    s.repo.setForeignMedia('f2', [ref(mine, 'b2b256:b')]);
+    expect(s.repo.mediaById(mine)).toMatchObject({ mine: true, file: 'b2b256:mine' });
+    expect(s.repo.mediaById(foreignMediaId('f1', mine))).toMatchObject({ ownerId: 'ed25519:f1', file: 'b2b256:a' });
+    expect(s.repo.mediaById(foreignMediaId('f2', mine))).toMatchObject({ ownerId: 'ed25519:f2', file: 'b2b256:b' });
+    // My save is projected again (an edit): my photo is still written.
+    s.updateSave('osm:node/7', { comment: 'again' });
+    expect(s.repo.mediaForPlace('osm:node/7').map((m) => m.ownerId)).toEqual([s.repo.meId, 'ed25519:f1', 'ed25519:f2']);
   });
 
   it('three devices save the same place offline: folds chain without losing anyone', () => {

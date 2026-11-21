@@ -19,6 +19,7 @@
  */
 import { fromB64Url, openPack, packEntry, packHash, sealPack, type KeyPair, type PackIndex } from '@triangulair/crypto';
 import { DecryptionError } from '@triangulair/crypto';
+import { ImageFormatError, imageSize, sniffImage } from './image-meta.ts';
 import { PayloadError } from './errors.ts';
 import { listKeyPair, newListKey } from './lists.ts';
 import { decodePayload, encodePayload } from './payload.ts';
@@ -31,6 +32,14 @@ export type PhotoType = (typeof PHOTO_TYPES)[number];
 export const MAX_PHOTOS_PER_PLACE = 24;
 /** Largest width or height accepted in a reference (the app writes about 1,600 px). */
 export const MAX_PHOTO_SIDE = 10_000;
+/**
+ * Largest decoded image accepted from a file (review photos F-03: a small file can declare a huge
+ * canvas, and the platform decoder would allocate width × height × 4 bytes): 25 megapixels for a
+ * photo (100 MB once decoded), 1,024 px on each side for a thumbnail (galleries decode many at once).
+ * The app writes at most 1,600 px and 400 px.
+ */
+export const MAX_PHOTO_PIXELS = 25_000_000;
+export const MAX_THUMB_SIDE = 1024;
 /** Spec sizes: about 1,600 px for the photo, a thumbnail for galleries and What's new. */
 export const PHOTO_SIDE = 1600;
 export const THUMB_SIDE = 400;
@@ -63,6 +72,15 @@ export const isMediaHash = (v: unknown): v is string => typeof v === 'string' &&
 export function mediaPath(hash: string): string {
   if (!HASH_RE.test(hash)) throw new PayloadError('photo: bad file hash');
   return `media/b2b256-${hash.slice(7)}.bin`;
+}
+
+/**
+ * Largest encrypted file to download for an image of at most `imageBytes`: the image plus the pack
+ * envelope and its Padmé padding, which grows with the size (up to 1/32 of it at 8 MiB: an 8 MiB
+ * photo is a 8.65 MB file; review photos F-06). Bounded by `imageBytes / 8` and 64 KiB of header.
+ */
+export function mediaFileBytes(imageBytes: number): number {
+  return imageBytes + Math.ceil(imageBytes / 8) + 65_536;
 }
 
 /** A new photo key (base64url of an X25519 secret key). */
@@ -125,4 +143,21 @@ export function checkPhotoRefs(v: unknown, lenient: boolean): PhotoRef[] {
     if (typeof o.created !== 'string' || !ISO_RE.test(o.created) || !Number.isFinite(Date.parse(o.created))) fail('bad date');
   }
   return v as PhotoRef[];
+}
+
+/**
+ * Checks an image before it is kept or shown (a friend's file, once opened): one of our formats, the
+ * format its reference names (when given), and a pixel size within the bounds above, read from its
+ * headers. Throws ImageFormatError.
+ */
+export function checkImage(img: Uint8Array, which: 'full' | 'thumb', type?: string | null): { mime: PhotoType; width: number; height: number } {
+  const mime = sniffImage(img);
+  if (!mime) throw new ImageFormatError('not a JPEG, WebP or AVIF image');
+  if (type != null && type !== mime) throw new ImageFormatError(`${mime} where ${type} was announced`);
+  const { width, height } = imageSize(img);
+  const side = which === 'full' ? MAX_PHOTO_SIDE : MAX_THUMB_SIDE;
+  if (width > side || height > side || (which === 'full' && width * height > MAX_PHOTO_PIXELS)) {
+    throw new ImageFormatError(`image too large (${width} × ${height} px)`);
+  }
+  return { mime, width, height };
 }

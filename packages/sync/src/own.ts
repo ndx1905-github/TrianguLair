@@ -62,7 +62,7 @@ import {
 } from '@triangulair/crypto';
 import { snapshotOfUpdates, type DataStore, type MediaRecord } from '@triangulair/data';
 import type { MediaCache } from './media-cache.ts';
-import { imageHash, isPhotoType, mediaPath, newPhotoKey, openPhoto, photoKeyPair, sealPhoto, MAX_PHOTO_SIDE, type PhotoRef } from './photos.ts';
+import { imageHash, isPhotoType, mediaFileBytes, mediaPath, newPhotoKey, openPhoto, photoKeyPair, sealPhoto, MAX_PHOTO_SIDE, type PhotoRef } from './photos.ts';
 import type { OwnItem } from './features.ts';
 import { packHash } from '@triangulair/crypto';
 import { INDEX_PATH, NotFound, PUBLIC_LISTS_PATH, PreconditionFailed, fetchSnapshot, type StorageAdapter } from '@triangulair/storage';
@@ -834,7 +834,7 @@ export class OwnSync {
   async fetchOwnImage(index: SignedIndex, upload: { key: string; full: string; thumb: string }, which: 'full' | 'thumb', expected: string | null): Promise<Uint8Array | null> {
     const h = which === 'full' ? upload.full : upload.thumb;
     const path = mediaPath(h);
-    const g = await this.storage.get(path, { maxBytes: which === 'full' ? this.limits.photoBytes + 65_536 : this.limits.thumbBytes });
+    const g = await this.storage.get(path, { maxBytes: mediaFileBytes(which === 'full' ? this.limits.photoBytes : this.limits.thumbBytes) });
     if (!g) return null;
     await listsReady();
     const img = openPhoto(g.data, index, photoKeyPair(upload.key), path, { maxBytes: which === 'full' ? this.limits.photoBytes : this.limits.thumbBytes });
