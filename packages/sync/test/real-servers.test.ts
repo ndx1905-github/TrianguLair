@@ -96,6 +96,8 @@ if (ON) {
         a.store.putSave({ place: point(200, 'from a') });
         a2.store.putSave({ place: point(300, 'from a2') });
         const both = await Promise.all([a.engine.sync(), a2.engine.sync()]);
+        // On failure, show which problem the losing device reported (intermittent on CI runners).
+        expect(both.map((x) => x.problems)).toEqual([[], []]);
         expect(both.every((x) => x.ok)).toBe(true);
         await a.engine.sync();
         await a2.engine.sync();
