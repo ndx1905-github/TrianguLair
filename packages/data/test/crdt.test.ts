@@ -265,6 +265,30 @@ describe('Yjs document', () => {
     expect(s.repo.queryPlaces({}).map((h) => h.id)).toEqual(['osm:node/2']);
   });
 
+  it('"delete forever": one item of the trash is purged now, the others wait', () => {
+    const clock = fakeClock();
+    const s = openStore({ now: clock.now });
+    s.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    s.putSave({ place: osmPoint(2, 'Flore', 48.85, 2.33) });
+    s.putSave({ place: osmPoint(3, 'Kept', 48.85, 2.34) });
+    const tag = s.createTag({ name: 'Old' });
+    const list = s.createList({ name: 'Gone', kind: 'manual' });
+    s.deleteSave(P1);
+    s.deleteSave('osm:node/2');
+    s.deleteTag(tag);
+    s.deleteList(list);
+    // Not in the trash: nothing happens.
+    expect(s.purgeTrash({ kind: 'save', id: 'osm:node/3' })).toBe(0);
+    expect(s.purgeTrash({ kind: 'save', id: P1 })).toBe(1);
+    expect(s.repo.trash().map((r) => r.placeId)).toEqual(['osm:node/2']);
+    expect(s.purgeTrash({ kind: 'tag', id: tag })).toBe(1);
+    expect(s.repo.tags().map((t) => t.id)).not.toContain(tag);
+    expect(s.purgeTrash({ kind: 'list', id: list })).toBe(1);
+    expect(s.repo.lists({ includeDeleted: true })).toEqual([]);
+    expect(Object.keys(readTombstones(s.doc)).sort()).toEqual([`list:${list}`, `save:${P1}`, `tag:${tag}`]);
+    expect(s.repo.queryPlaces({}).map((h) => h.id)).toEqual(['osm:node/3']);
+  });
+
   it('lists: manual selection, exceptions, deletion keeps the places', () => {
     const s = openStore();
     s.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35), status: 'favorite' });

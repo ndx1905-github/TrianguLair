@@ -48,9 +48,10 @@ export const MAP_STYLE_FALLBACK_URLS_DARK: string[] = process.env.EXPO_PUBLIC_MA
       ? ['https://tiles.fallback.invalid/styles/dark']
       : [];
 
-/** Attribution that must stay visible on the map. */
-export const MAP_ATTRIBUTION = '© OpenStreetMap contributors, OpenFreeMap';
+/** Attribution that must stay visible on the map (spec "Base map"; the words are `map.attribution`). */
 export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
+/** "Report an error": OpenStreetMap's own page for reporting a mistake on the map. */
+export const MAP_REPORT_URL = 'https://www.openstreetmap.org/fixthemap';
 
 /** Fallback camera (Paris), used when there is no place to fit. */
 export const INITIAL_CENTER = { lat: 48.8586, lon: 2.3417 };

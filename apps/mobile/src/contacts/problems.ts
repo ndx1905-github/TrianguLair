@@ -30,6 +30,8 @@ export type LinkProblem =
   | 'stale'
   /** My own link (I opened my invitation, or my own answer). */
   | 'own-link'
+  /** From someone I blocked (gap #6): refused. */
+  | 'blocked'
   /** Inviting needs a storage (an index to vouch for the link). */
   | 'needs-storage'
   /** My storage refused or did not take the publication. */

@@ -16,6 +16,36 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   category, address, opening line ("Open, closes at 10 pm"), happy hour, terrace/diet/cuisine/
   reservation/fee chips, free photos with credit lines, friends who saved it, my tags/status/price/
   comment/sharing (saved immediately), move to trash (with "Undo" on the map and the list for 15 s). OSM data is refreshed when stale.
+- **Store rules** (gap #6, spec "Store rules", "Editing and deleting", "Moderation"; logic in `src/privacy/`, tested in
+  `privacy.test.ts` and e2e `privacy.spec.ts` against Apache WebDAV):
+  - *Delete all my content* (`/delete-all`, Settings › My content; there is no account to close, so this covers
+    Apple's account-deletion rule): what will happen, "I understand" then the word typed (DELETE / SUPPRIMER);
+    disabled offline when a storage is connected. `SyncController.deleteAllContent` (`deleteAll.ts`): my document is
+    emptied (places, zones, the trash, tags, lists, tag mappings deleted and purged, tombstones only, so my other
+    devices empty themselves instead of publishing them back), contacts removed, open invitations cancelled
+    (`cancelAllInvitations`), followed lists unfollowed; with a storage, a publication whose signed index lists
+    nothing for anyone (the "content deleted" marker: friends' apps verify it and empty their cache, as for a removed
+    access), then every other file of the folder is deleted (packs, photos, `public/`, `vault.bin`, `keys/`, so the
+    kit restores nothing, `transfer/`); only the index and the files it lists (my emptied document, sealed to my key)
+    stay. Last, this device is erased like a remote wipe (secrets with `db-key` first). Progress and the summary
+    (counts, files deleted or left, "your recovery kit no longer brings anything back") replace the app
+    (`ContentDeleted.tsx`); "Start again" reloads (`reloadAppAsync` on native). A storage failure stops before the
+    device is erased ("Try again").
+  - *Block a person* (contact screen, report screen; `/blocked` lists them with "Unblock"): removed as a contact
+    (wraps gone at my next publication, their cache forgotten, their lists unfollowed), then their invitations and
+    answers are refused (`contacts.problem.blocked`) and their lists are not offered (`follow.problem.blocked`). The
+    list is a signed vault value (`blocked`: all my devices), mirrored in the sync state for local-only mode.
+  - *Report a list* ("Report" on a followed list, `/lists/report`): no project server and no moderators, so the screen
+    names who can act (the author, and the host of their storage from its address, with its abuse contact), gives a
+    report text to share or copy (the public file's address; a link-only list's key is never put in it), hides the
+    list here (unfollowed, recorded in the sync state, not offered again: `follow.problem.reported`) and offers to
+    block the author.
+- **Trash** (`/trash`, Settings › My content, gap #8; logic in `src/trash/model.ts`): places, zones, tags and lists
+  I deleted (they live in my document, so the trash is the same on all my devices), newest first, with the date and
+  the days left before the purge; "Restore" (a place comes back with its tags, comment and lists), "Delete forever"
+  (confirmed; `DataStore.purgeTrash({ kind, id })`, a tombstone remains) and "Empty the trash" (confirmed). At every
+  launch the DataProvider purges what was deleted more than 30 days ago (`purgeTrash()`), before the launch pass
+  publishes it. A deleted comment is an edit, not a trash item (the card's 15 s "Undo" stays).
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
 - **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
@@ -195,8 +225,19 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   (`StorageAccess`; HTTPS-only mode and local only publish nothing but still read friends) and the data store (state in
   the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
   launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
-  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
-  nothing after that. Network status from the browser on web (`online` / `offline`); native assumes online for now.
+  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background
+  (on iOS inside the grace period the system allows, below); nothing after that. Network status (`src/sync/network.*.ts`, logic in `netState.ts`): the browser's `online` /
+  `offline` events on web, `expo-network` on phones (offline only when the system says there is no connection or no
+  internet behind it; unknown counts as online), so "Offline · N changes pending" shows natively too and a failure
+  without network is not counted as "storage unreachable". `expo-network` is a new native module (new development
+  build); it uses no Google service.
+  - **Last pass in the background** (gap #5, `src/sync/grace.ts`, `backgroundGrace.ts`): on AppState "background" the
+    last pass runs inside `UIApplication.beginBackgroundTask` (about 30 s on current iOS) through a local Expo module,
+    `modules/background-grace` (iOS only, autolinked from `modules/`; a new development build is needed). The grace
+    period always ends: when the pass ends, or when iOS says time is up (the pass is then left as is: packs are
+    written first and the index last, so the next launch resumes it). No `expo-background-task` /
+    `BGTaskScheduler`, no `UIBackgroundModes`: the spec allows no periodic work or scheduled wake-up. Android: no
+    module (see the open questions); web: nothing to do.
   - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
     old index at the new storage (it certifies the old address), publishes there with the new certificate, then
     writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
@@ -408,6 +449,17 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 
 - **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
   `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
+  **Encrypted** (gap #7, spec "Protections on the device"; logic in `src/data/dbEncryption.ts`): `app.json` sets
+  `useSQLCipher: true`, and the database `triangulair-sealed.db` is opened with `PRAGMA key = "x'…'"`, a raw 256-bit
+  key from the secret store (`db-key`, Keychain / Keystore, this device only). An older unencrypted `triangulair.db`
+  is moved once with `ATTACH … KEY` + `sqlcipher_export` (and its `user_version`); the plaintext file is deleted only
+  after the encrypted copy opened with the key, and an interrupted move starts again from it. The remote wipe (and
+  "Delete all my content") erases `db-key` with the other secrets before the files, so the database is unreadable at
+  once; an encrypted file whose key is gone is deleted and a new empty one created (the places come back from the
+  storage with the kit); a key that does not open the file is an error, never a reset; a locked vault leaves the file
+  alone. A build without SQLCipher (`PRAGMA cipher_version` empty) keeps the plaintext file, labelled in Settings ›
+  My content. Not run on a device yet. The web test build (sql.js) is not encrypted, and Settings says so.
+  Device settings and the document actor stay in expo-sqlite's kv-store (not encrypted: no places, no keys).
   Type-checked, not run on a device yet (the document is Yjs, pure JavaScript, so Hermes is no
   longer a blocker).
 - **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
@@ -503,8 +555,10 @@ map shows a plain background, so pins and zones keep working. The home screen th
 possibly less detailed" (a fallback address) or "Map background unavailable for now" (none). The
 address reached is kept for the session; the next launch tries the configured style first again.
 
-The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own overlay
-(`MapAttribution`), so it is always visible. When a place sheet is open, the overlay moves above it.
+The attribution "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors" (spec "Base map", translated;
+opens the OSM copyright page) and its "Report an error" link (`MAP_REPORT_URL`, openstreetmap.org/fixthemap) are
+drawn by our own overlay (`MapAttribution`) on every map, web and native, so they are always visible. When a place
+sheet is open, the overlay moves above it.
 
 ## Layout
 
@@ -536,6 +590,7 @@ src/closure/          closed-place glue (pure), runner, useClosureCheck, signal 
 src/state/            AppState (filter, last map area, focus) shared by the screens
 src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
 src/config.ts         map style URLs, attribution, initial camera, fixture flag
+modules/              local Expo modules (autolinked): background-grace (iOS beginBackgroundTask for the last pass)
 ```
 
 ## Pins
@@ -607,6 +662,19 @@ photos with a placeholder image; pins, clusters, UI, data and credit lines are r
 | `docs/tablet-list.png` | Tablet: list by distance and card side by side |
 | `docs/phone-dark-card.png` | Dark mode |
 | `docs/phone-fr-add.png` | French UI |
+
+Trash, store rules and map attribution (gaps #6, #8, #10; `E2E_SHOTS=1 npm run e2e -- trash privacy map-filters`,
+the storage scenarios against Apache WebDAV):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-map-attribution.png` | "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors · Report an error" |
+| `docs/phone-trash.png`, `docs/phone-trash-delete-confirm.png` | Trash with the days left; "Delete forever" confirmation |
+| `docs/phone-dark-fr-trash.png`, `docs/phone-dark-fr-settings-my-content.png` | French, dark: trash; Settings › My content (database not encrypted on web) |
+| `docs/phone-delete-all.png`, `docs/phone-delete-all-done.png` | "Delete all my content": what happens and the confirmations; the summary |
+| `docs/phone-dark-fr-delete-all.png` | French, dark: "Tapez SUPPRIMER pour confirmer" |
+| `docs/phone-block-confirm.png`, `docs/phone-blocked.png` | Blocking a contact; blocked people with "Unblock" |
+| `docs/phone-report-list.png` | Reporting a public list: who can act, the report text, hide, block |
 
 Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHOTS_BASE` picks the server):
 
@@ -799,14 +867,14 @@ Devices open questions:
 
 Sync open questions:
 
-- **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
-  only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
 - **Friends' names**: the protocol carries no display name; the name typed in the invitation flow is kept on this
   device. Contacts added on another device (through the vault) show "A friend" until renamed here.
 - **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
   without expo-updates).
-- **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task
-  (`expo-background-task` or `beginBackgroundTask`) to be sure to finish; not added.
+- **Background grace period on Android**: nothing asks Android for time (no WorkManager job with a headless JS task):
+  the process usually keeps running long enough after its activity stops, but the cached-app freezer (Android 14+)
+  or a low-memory kill can stop the last pass; it then resumes at the next launch (packs first, index last, nothing
+  lost). The iOS module is written against `UIApplication.beginBackgroundTask` but not yet built or run on a device.
 - Previous sharing keys are persisted only when the engine adopts a new key from another device; a local rotation
   (storage move) keeps the same key pair.
 

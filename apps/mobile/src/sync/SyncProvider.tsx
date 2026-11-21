@@ -11,7 +11,7 @@
  * accept), and names contacts and invitations from the ContactsService.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import type { DeviceCert, SharingCert, SharingKey } from '@triangulair/crypto';
 import { SqliteStateStore, type DeviceEntry } from '@triangulair/sync';
 
@@ -33,6 +33,10 @@ import { recoveryCopyFor } from '../identity/recovery';
 import { StaleSyncLock } from './StaleSyncLock';
 import { SyncController, type ControllerSnapshot } from './controller';
 import { DeviceRemoved } from './DeviceRemoved';
+import { watchNetwork } from './network';
+import { inBackgroundGrace } from './backgroundGrace';
+import { registerBlockedSource, type BlockedPerson, type ReportedList } from '../privacy/blocked';
+import { ContentDeleted, type ErasePhase } from '../privacy/ContentDeleted';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
 import type { WhatsNewEntry } from './whatsNew';
 
@@ -63,13 +67,16 @@ export interface SyncApi {
   prepareIdentityMove(next: { owner: string; deviceCert: DeviceCert; deviceName: string; added: number }): Promise<void>;
   /** The controller (list sharing and followed lists, T-211/T-212); null until the identity and data are ready. */
   controller(): SyncController | null;
+  /** "Delete all my content" (gap #6): the app is replaced by the progress, then the summary. */
+  deleteAllContent(): void;
+  blocked(): BlockedPerson[];
+  block(owner: string, name: string): Promise<void>;
+  unblock(owner: string): Promise<void>;
+  reportedLists(): ReportedList[];
+  hideReportedList(list: { id: string; name: string; owner: string; location: string }): Promise<void>;
 }
 
 const SyncContext = createContext<SyncApi | null>(null);
-
-function webOnline(): boolean {
-  return Platform.OS !== 'web' || typeof navigator === 'undefined' || navigator.onLine !== false;
-}
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const identity = useIdentity();
@@ -77,6 +84,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const data = useMaybeData();
   const [snapshot, setSnapshot] = useState<ControllerSnapshot | null>(null);
   const [wiped, setWiped] = useState(false);
+  const [erase, setErase] = useState<ErasePhase | null>(null);
   const ctl = useRef<SyncController | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -155,29 +163,26 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     });
     ctl.current = c;
     registerStorageMoveHooks(c);
-    c.setOnline(webOnline());
+    registerBlockedSource(() => c.blocked());
+    // Network status before the first pass: the browser's events on web (read at once), expo-network on phones
+    // (gap #4; its first reading is asynchronous, and unknown counts as online).
+    const offNet = watchNetwork((online) => c.setOnline(online));
     setSnapshot(c.snapshot());
     void c.foreground('launch');
 
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') void c.foreground('foreground');
-      else if (s === 'background') void c.background();
+      // The last pass, inside the grace period iOS allows (gap #5); nothing after it.
+      else if (s === 'background') void inBackgroundGrace(() => c.background());
     });
     const offEdit = onLocalEdit(() => c.localChange());
-    const net = () => c.setOnline(webOnline());
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.addEventListener('online', net);
-      window.addEventListener('offline', net);
-    }
     return () => {
       alive = false;
       sub.remove();
       offEdit();
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.removeEventListener('online', net);
-        window.removeEventListener('offline', net);
-      }
+      offNet();
       registerStorageMoveHooks(null);
+      registerBlockedSource(null);
       registerSyncPort(null);
       c.stop();
       if (ctl.current === c) ctl.current = null;
@@ -236,6 +241,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         await ctl.current.prepareIdentityMove(next);
       },
       controller: () => ctl.current,
+      deleteAllContent: () => {
+        const c = ctl.current;
+        if (!c) return;
+        setErase({ kind: 'running', step: 'content' });
+        void c
+          .deleteAllContent((step) => setErase({ kind: 'running', step }))
+          .then((summary) => setErase({ kind: 'done', summary }))
+          .catch((e: unknown) => {
+            console.warn('Could not delete all the content', e);
+            setErase({ kind: 'failed', message: e instanceof Error ? e.message : String(e) });
+          });
+      },
+      blocked: () => ctl.current?.blocked() ?? [],
+      block: async (owner, name) => ctl.current?.block(owner, name),
+      unblock: async (owner) => ctl.current?.unblock(owner),
+      reportedLists: () => ctl.current?.reportedLists() ?? [],
+      hideReportedList: async (list) => ctl.current?.hideReportedList(list),
     }),
     [snapshot, refresh, nameContact],
   );
@@ -267,6 +289,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     if (wiped) registerSyncPort(null);
   }, [wiped]);
 
+  // "Delete all my content": its progress and summary replace the app (the database closes underneath).
+  if (erase) return <ContentDeleted phase={erase} onRetry={() => api.deleteAllContent()} onBack={() => setErase(null)} />;
   if (wiped) return <DeviceRemoved />;
   return (
     <SyncContext.Provider value={api}>

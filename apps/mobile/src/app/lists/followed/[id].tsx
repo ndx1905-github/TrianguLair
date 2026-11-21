@@ -5,7 +5,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 
 import { DataGate } from '../../../components/DataGate';
 import { Banner, Button } from '../../../components/ui';
@@ -70,6 +70,7 @@ function FollowedListScreen() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               <Button kind="secondary" label={t('followed.refresh')} onPress={() => void sync.refresh()} testID="followed-refresh" />
               <Button kind="secondary" label={t('followed.unfollow')} onPress={() => setConfirm(true)} testID="followed-unfollow" />
+              <Button kind="secondary" label={t('report.action')} onPress={() => router.push(`/lists/report?id=${encodeURIComponent(id)}` as Href)} testID="followed-report" />
             </View>
           )}
         </>

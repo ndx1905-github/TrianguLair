@@ -21,12 +21,13 @@ import { useI18n } from '../../i18n';
 import { categoryIdOf } from '../../lists/listLogic';
 import { PreviewMap } from '../../lists/PreviewMap';
 import { authorLabel, goneKey, listFragmentOf } from '../../lists/sharing';
+import { isBlocked } from '../../privacy/blocked';
 import { useContacts } from '../../contacts/ContactsProvider';
 import { categoryLabel } from '../../places/card';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { useSync } from '../../sync/SyncProvider';
 
-type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable' | 'too-many' | 'not-followed';
+type Problem = 'deleted' | 'link-dead' | 'not-a-list' | 'mine' | 'unreachable' | 'too-many' | 'not-followed' | 'blocked' | 'reported';
 
 function FollowScreen() {
   const tr = useI18n();
@@ -57,6 +58,9 @@ function FollowScreen() {
     try {
       const p = await ctl.previewList(fragment);
       if (p.owner === ctl.owner()) setProblem('mine');
+      // Gap #6: an author I blocked, or a list I reported, is not offered again.
+      else if (isBlocked(p.owner)) setProblem('blocked');
+      else if (ctl.reportedLists().some((r) => r.id === p.id)) setProblem('reported');
       else setPreview(p);
       setText(value);
     } catch (e) {

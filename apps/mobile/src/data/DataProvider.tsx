@@ -10,6 +10,7 @@ import { OSM_FIXTURES } from '../config';
 import { useI18n } from '../i18n';
 import { useIdentity } from '../identity/IdentityProvider';
 import { movedFrom } from '../devices/local';
+import { purgeExpired } from '../trash/model';
 import { seedDemoData } from './demo';
 import { getSetting, setSetting } from './deviceSettings';
 import { openAppStore, type AppStore } from './openStore';
@@ -20,6 +21,8 @@ export interface DataState {
   /** Incremented after every change. */
   version: number;
   persistence: AppStore['persistence'];
+  /** Is the local database encrypted (gap #7)? */
+  encryption: AppStore['encryption'];
   /** Runs an edit and refreshes the screens. */
   mutate: <T>(fn: (store: DataStore) => T) => T;
   /** Redraws after changes made outside `mutate` (the sync engine: friends' cache, my other devices). */
@@ -54,15 +57,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
   const tRef = useRef(t);
   tRef.current = t;
-  const identity = useIdentity().state;
+  const { state: identity, secrets } = useIdentity();
   const meId = identity.kind === 'ready' ? identity.record.owner : null;
   const profile = identity.kind === 'ready' ? identity.profile : null;
 
   // The store opens once my identity exists (first launch creates it), under its owner id.
+  // The secret store holds the database key (native, gap #7): wait for it too.
+  const hasSecrets = !!secrets;
   useEffect(() => {
-    if (!meId) return;
+    if (!meId || !hasSecrets) return;
     let cancelled = false;
-    openAppStore(meId, movedFrom())
+    openAppStore(meId, movedFrom(), secrets)
       .then((app) => {
         if (cancelled) return;
         if (getSetting('demo-seeded') !== '1') {
@@ -77,6 +82,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           setSetting('demo-seeded', '1');
         }
+        // Items in the trash for more than 30 days leave for good (spec "Editing and deleting"; the launch pass
+        // publishes the purge to my other devices).
+        purgeExpired(app.store);
         setStatus({ kind: 'ready', app });
       })
       .catch((error: unknown) => {
@@ -86,7 +94,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [meId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meId, hasSecrets]);
 
   const app = status.kind === 'ready' ? status.app : null;
 
@@ -117,7 +126,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
   const value = useMemo<DataState | null>(
-    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, mutate, refresh, erase: () => app.erase() } : null),
+    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, encryption: app.encryption, mutate, refresh, erase: () => app.erase() } : null),
     [app, version, mutate, refresh],
   );
 
