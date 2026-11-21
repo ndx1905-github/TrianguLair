@@ -158,4 +158,41 @@ describe('photos through the sync controller (sql.js database)', () => {
     expect(theirs.list('osm:node/1')).toEqual([]);
     expect(theirs.usage().friends).toBe(0);
   });
+
+  it('"Delete all my content" deletes the photo files on my storage, the friend\'s copy and my local copies', async () => {
+    const anna = makeUser('anna2');
+    const ben = makeUser('ben2');
+    anna.store.putSave({ place: { osm: { type: 'node', id: 1 }, name: 'Chez Lili', category: 'amenity=restaurant', geometry: { type: 'Point', coordinates: [2.35, 48.85] } } });
+    await anna.ctl.refresh();
+    await ben.ctl.refresh();
+    await ben.ctl.addContact({ location: anna.location, owner: anna.owner, name: 'Anna', follow: true, share: false });
+    await anna.ctl.addContact({ location: ben.location, name: 'Ben', follow: false, share: true });
+    const photos = (await anna.ctl.photos())!;
+    const id = photos.add('osm:node/1', { full: webp(30_000, 3), thumb: webp(3_000, 4), width: 1600, height: 1200 });
+    await anna.ctl.refresh();
+    const u = anna.store.repo.mediaById(id)!.upload!;
+    const paths = [u.full, u.thumb].map((h) => `media/b2b256-${h.slice(7)}.bin`);
+    expect((await anna.storage.list('media/')).filter((e) => paths.includes(e.path))).toHaveLength(2);
+    await ben.ctl.refresh();
+    const theirs = (await ben.ctl.photos())!;
+    const theirId = foreignMediaId(saveIdFor(anna.owner, 'osm:node/1'), id);
+    expect(await theirs.full(theirId)).not.toBeNull();
+
+    // The wipe empties every table of the database, media_cache included.
+    const tables = () => anna.driver.all<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table'`).map((r) => r.name);
+    expect(tables()).toContain('media_cache');
+    let cacheRows = -1;
+    // Counted just before the database closes (after its tables are emptied).
+    const realClose = anna.driver.close.bind(anna.driver);
+    anna.driver.close = () => {
+      cacheRows = anna.driver.get<{ n: number }>(`SELECT count(*) AS n FROM media_cache`)!.n;
+      realClose();
+    };
+    await anna.ctl.deleteAllContent();
+    expect(cacheRows).toBe(0);
+    expect((await anna.storage.list('media/')).filter((e) => paths.includes(e.path))).toEqual([]);
+    await ben.ctl.refresh();
+    expect(theirs.list('osm:node/1')).toEqual([]);
+    expect(theirs.usage().friends).toBe(0);
+  });
 });

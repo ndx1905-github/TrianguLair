@@ -482,3 +482,51 @@ describe('image metadata and size (review photos)', () => {
     expect(checkImage(webp(100, 1, { width: 1000, height: 100 }), 'thumb')).toMatchObject({ mime: 'image/webp', width: 1000 });
   });
 });
+
+describe('photos: trash and visibility (review photos)', () => {
+  it('a trashed place takes its photos from friends; restored they come back; purged their files and copies go', async () => {
+    const { w, alice, bob } = await pair();
+    const id = alice.engine.photos.add(P1, photo(70));
+    await alice.engine.sync();
+    await bob.engine.sync();
+    const files = await mediaFiles(alice);
+    alice.store.deleteSave(P1);
+    await alice.engine.sync();
+    await bob.engine.sync();
+    expect(photosOf(bob)).toEqual([]);
+    expect(bob.engine.photos.cache.usage().friends).toBe(0);
+    expect(alice.engine.photos.list(P1)).toEqual([]); // not shown while in the trash
+    // Kept on my storage and on my devices while restorable.
+    expect((await mediaFiles(alice)).filter((f) => files.includes(f)).length).toBeGreaterThanOrEqual(2);
+    expect(alice.engine.photos.cache.usage().mine).toBeGreaterThan(0);
+
+    alice.store.restoreSave(P1);
+    const r = await alice.engine.sync();
+    expect(r.own!.photos.renewed).toBe(0); // same readers
+    await bob.engine.sync();
+    expect((await bob.engine.photos.full(fid(alice, id)))!.bytes).toEqual((await alice.engine.photos.full(id))!.bytes);
+
+    // Trashed, then a reader removed while in the trash: restored, the photo is re-sealed.
+    alice.store.deleteSave(P1);
+    await alice.engine.sync();
+    alice.engine.setPolicy(bob.user.owner, { share: false });
+    await alice.engine.sync();
+    alice.store.restoreSave(P1);
+    expect((await alice.engine.sync()).own!.photos.renewed).toBe(1);
+
+    // Purged: the files leave my storage and the local copies go.
+    const alice2 = addDevice(w, alice.user);
+    await alice2.engine.sync();
+    const u = alice.store.repo.mediaById(id)!.upload!;
+    const paths = [u.full, u.thumb].map((h) => `media/b2b256-${h.slice(7)}.bin`);
+    expect((await mediaFiles(alice)).filter((f) => paths.includes(f))).toHaveLength(2);
+    alice.store.deleteSave(P1);
+    alice.store.purgeTrash({ kind: 'save', id: P1 }); // "Delete forever"
+    const p = await alice.engine.sync();
+    expect(p.own!.filesDeleted).toBeGreaterThanOrEqual(2);
+    expect((await mediaFiles(alice)).filter((f) => paths.includes(f))).toEqual([]);
+    expect(alice.engine.photos.cache.usage().mine).toBe(0);
+    await alice2.engine.sync();
+    expect(alice2.engine.photos.cache.usage().mine).toBe(0);
+  });
+});
