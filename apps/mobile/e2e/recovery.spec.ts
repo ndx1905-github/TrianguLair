@@ -18,7 +18,7 @@
  * where nothing answers are explained first.
  *
  * `SHOTS=1` also writes the screenshots of docs/ (the restore form with a pasted kit, the printed
- * page, the restored photo).
+ * page with its QR code, the restored photo).
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -436,6 +436,13 @@ test('lost phone: the printed kit, its QR code for the address and the words typ
   const svg = /<svg[^>]*data-kit-qr=[\s\S]*?<\/svg>/.exec(kit.printed)![0];
   const [qr] = await decodeQr(p.page, svg);
   expect(qr).toBe(p.location);
+  if (SHOTS) {
+    const printPage = await p.ctx.newPage();
+    await printPage.setViewportSize({ width: 794, height: 1123 });
+    await printPage.setContent(kit.printed);
+    await printPage.screenshot({ path: 'docs/web-kit-print-qr.png' });
+    await printPage.close();
+  }
 
   await wipe(p.page);
   const page = p.page;

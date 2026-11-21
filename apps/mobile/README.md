@@ -169,9 +169,17 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   turns it into a dot on the Settings button for 7 days). The phrase is shown on demand, exported as a
   password-manager entry (share sheet: title, phrase as password, address as URL, key fingerprint and
   protocol in the notes), copied field by field (clipboard cleared after one minute, also checked on
-  return to the foreground), or printed (expo-print; on web a print view in a hidden frame). Then
+  return to the foreground), or printed (expo-print; on web a print view in a hidden frame): the numbered words,
+  the address and a QR code of the address (`kitQrSvg`; never the phrase). Then
   3 random words are asked; once they match, the phrase is erased from the device for good. In
   local-only mode the kit says the phrase alone does not bring the places back and points to the export.
+  *Restoring* (`/welcome/device` › "Restore"): "Paste my recovery kit" (clipboard) or the words field takes the whole
+  password-manager entry, the fields copied one by one, the printed page's text or the bare words; `parseKitText`
+  keeps only the 12 words (one valid BIP39 phrase, checksum included, else nothing is guessed) and fills the address
+  in; the printed page's QR code is scanned for the address. Friends come back with the vault: their certificates,
+  the "verified" marks (the contacts service reads the vault record, and writes it when the mark changes) and the
+  names I gave them (vault value `contact-names`, signed by the device that wrote it, taken when this device has
+  none).
 - **App lock**: on by default only when the phone has no screen lock (expo-local-authentication
   `getEnrolledLevelAsync`), then with an app code (salted hash in the secret store; 30 s doubling wait
   after 5 wrong codes); otherwise offered with Face ID / fingerprint / phone code. Locks on start and
@@ -879,6 +887,23 @@ contexts: Anna, Ben and Anna's new device):
 | `docs/phone-device-removed.png` | The lost device after its next sync |
 | `docs/phone-whatsnew-key.png` | Ben: "Anna changed their key" |
 | `docs/tablet-fr-device-qr.png`, `docs/tablet-fr-add-qr.png` | French tablet: the new device's QR code; the old device's answer code |
+
+Recovery kit and lost phone (`SHOTS=1 npm run e2e -- recovery.spec.ts`, same Apache setup):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-restore-kit.png` | Restore on a fresh launch: the password-manager entry pasted, the words and the address picked out |
+| `docs/web-kit-print-qr.png` | The printed kit: numbered words, the address and its QR code |
+| `docs/phone-restored-photo.png` | After the restore: my photo back, full size |
+
+End-to-end: `e2e/recovery.spec.ts` (skipped without Apache): Anna (friend of Ben, who shares his places with her)
+saves places (one private, one with a comment and a photo), connects her storage and saves her kit (sent to the
+password manager, printed, 3 words checked); then the phone is lost: every IndexedDB database and localStorage of the
+origin is deleted, and the app opens on its welcome screen. Test 1 pastes the password-manager entry: her places, the
+comment, the photo (thumbnail and full image, read back from the storage), Ben's places, Ben's name, the storage
+access (a new place goes out and reaches Ben) and the saved kit all come back. Test 2 decodes the printed page's QR
+code with ZXing (the read address), refuses words with a bad checksum and an address where nothing of hers is, then
+restores with the words typed loosely.
 
 End-to-end: `e2e/devices.spec.ts` (skipped without Apache): Anna and Ben become friends; Anna adds a device by link +
 code (a wrong code first; the request link back; wrong last digits first), both list the same places and an edit on the tablet reaches the phone, both list the two
