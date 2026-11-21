@@ -49,7 +49,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
 | T-201 | Final v1 encrypted format and test vectors | crypto | T-002 | to do |
-| T-202 | Production storage adapters and tests against real servers | storage | T-003 | to do |
+| T-202 | Production storage adapters and tests against real servers | storage | T-003 | done |
 | T-203 | Storage settings and migration between storages | app, storage | T-202 | done |
 | T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | done |
 | T-205 | Recovery kit and first launch | crypto, app | T-201 | to do |
