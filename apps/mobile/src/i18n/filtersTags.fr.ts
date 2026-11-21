@@ -24,7 +24,7 @@ export const frFiltersTags: Messages = {
   'fb.manageTags': 'Gérer les tags',
   'fb.unknown': { one: '{count} sans l’info (estompé)', other: '{count} sans l’info (estompés)' },
   'fb.friendTag': '{name} · {person}',
-  'fb.friendTagA11y': '{name}, tag de {person}, {count} lieux',
+  'fb.friendTagA11y': { one: '{name}, tag de {person}, {count} lieu', other: '{name}, tag de {person}, {count} lieux' },
   'fb.charge': 'Entrée ≤ {max} €',
   'fb.summaryA11y': 'Filtres actifs',
   'fb.done': 'OK',

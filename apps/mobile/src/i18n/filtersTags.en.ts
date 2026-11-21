@@ -24,7 +24,7 @@ export const enFiltersTags: Messages = {
   'fb.manageTags': 'Manage tags',
   'fb.unknown': { one: '{count} without the info (faded)', other: '{count} without the info (faded)' },
   'fb.friendTag': '{name} · {person}',
-  'fb.friendTagA11y': '{name}, tag of {person}, {count} places',
+  'fb.friendTagA11y': { one: '{name}, tag of {person}, {count} place', other: '{name}, tag of {person}, {count} places' },
   'fb.charge': 'Entry ≤ €{max}',
   'fb.summaryA11y': 'Active filters',
   'fb.done': 'Done',

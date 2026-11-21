@@ -116,14 +116,31 @@ env:
     notVisible:
       id: place-card
     timeout: 10000
-# Its pin is on the map (a MapLibre marker labelled with the name); tapping it opens the card.
-- assertVisible: ${PLACE}
+# Its pin is on the map: the camera is centred on the new place, so tapping just above the
+# centre (the pin's tip is on the coordinate) opens its card again. Markers are not in the
+# accessibility tree, hence the point. Filters and the recovery-kit card are folded first.
+- runFlow:
+    when:
+      visible:
+        id: protect-later
+    commands:
+      - tapOn:
+          id: protect-later
+- runFlow:
+    when:
+      visible:
+        id: filter-panel
+    commands:
+      - tapOn:
+          id: filter-toggle
 - takeScreenshot: 07-map-pin
-- tapOn: ${PLACE}
+- tapOn:
+    point: 50%,48%
 - extendedWaitUntil:
     visible:
       id: place-card
     timeout: 10000
+- assertVisible: ${PLACE}
 - tapOn:
     id: card-close
 - extendedWaitUntil:

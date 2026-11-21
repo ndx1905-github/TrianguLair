@@ -56,7 +56,7 @@ export const en: Messages = {
   'filters.collapse': 'Collapse filters',
   'filters.expand': 'Expand filters',
   'filters.remove': 'Remove filter {name}',
-  'filters.tagA11y': '{name}, {count} places',
+  'filters.tagA11y': { one: '{name}, {count} place', other: '{name}, {count} places' },
 
   'criterion.openNow': 'Open now',
   'criterion.terrace': 'Terrace',
