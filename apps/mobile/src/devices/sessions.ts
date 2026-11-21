@@ -72,9 +72,16 @@ import {
   type EphemeralKeys,
 } from './channel';
 
-/** Vault values written by every device (SyncController): the storage settings and my first name. */
+/**
+ * Vault values written by every device (SyncController): the storage settings, my first name, and
+ * the names I gave my contacts (owner id → name), so that a device restored with the kit or added
+ * later shows them.
+ */
 export const VALUE_STORAGE = 'storage';
 export const VALUE_PROFILE = 'profile';
+export const VALUE_CONTACT_NAMES = 'contact-names';
+/** Longest contact name kept in the vault value (what the contact screens accept). */
+export const MAX_CONTACT_NAME = 80;
 
 const MAX_FILE = 256 * 1024;
 const INDEX = 'index.json';

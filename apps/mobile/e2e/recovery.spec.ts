@@ -38,6 +38,7 @@ const SHARED = 'Le Comptoir des Archives';
 const PRIVATE = 'Café Pendule';
 const AFTER = 'Fromagerie Martin';
 const COMMENT = 'Best croissant of the street';
+const BENS = 'Librairie du Haut Marais';
 const PHOTO = path.join(__dirname, 'fixtures', 'photo-gps.jpg');
 
 let proxy: http.Server | null = null;
@@ -125,9 +126,9 @@ async function phone(browser: Browser): Promise<Phone> {
   return { ctx, page, dir, location: `${FRIENDS}/pub/${dir}/`, errors, media, shared };
 }
 
-async function connectStorage(p: Phone): Promise<void> {
+async function connectStorage(p: Phone, name = 'Anna'): Promise<void> {
   const page = p.page;
-  await page.goto(autostart('/storage?name=Anna'));
+  await page.goto(autostart(`/storage?name=${name}`));
   await page.getByTestId('storage-connect').click();
   await page.getByTestId('choice-webdav').click();
   await page.getByTestId('field-davUrl').fill(`${proxyUrl}/dav/${p.dir}/`);
@@ -168,6 +169,40 @@ async function addPlace(page: Page, name: string, opts: { private?: boolean; com
   await expect(page.getByTestId('place-card')).toBeVisible();
   await page.getByTestId('card-close').click();
   await settle(page);
+}
+
+/** Anna invites Ben; Ben answers (sharing his places back), Anna accepts and follows him. */
+async function befriend(anna: Page, ben: Page): Promise<void> {
+  await anna.goto(autostart('/invite'));
+  await anna.getByTestId('invite-name').fill('Ben');
+  await anna.getByTestId('invite-create').click();
+  await expect(anna.getByTestId('invite-ready')).toBeVisible({ timeout: 60_000 });
+  await settle(anna);
+  const link = (await anna.getByTestId('invite-link').textContent())!;
+  await ben.goto(`${autostart('/i')}#${link.split('#')[1]!}`);
+  await expect(ben.getByTestId('received-verified')).toBeVisible({ timeout: 30_000 });
+  await ben.getByTestId('received-name').fill('Anna');
+  await expect(ben.getByTestId('received-share-back')).toHaveAttribute('aria-checked', 'true');
+  await ben.getByTestId('received-answer').click();
+  await expect(ben.getByTestId('received-answered')).toBeVisible({ timeout: 60_000 });
+  await settle(ben);
+  const back = (await ben.getByTestId('received-return-link').textContent())!;
+  await anna.goto(autostart('/invite'));
+  await anna.getByTestId('answer-input').fill(back);
+  await anna.getByTestId('answer-open').click();
+  await expect(anna.getByTestId('answers-screen')).toBeVisible({ timeout: 30_000 });
+  await anna.locator('[data-testid^="answer-"][data-testid$="-accept"]').click();
+  await expect(anna.locator('[data-testid^="answer-"][data-testid$="-follow"]')).toHaveAttribute('aria-checked', 'true');
+  await anna.locator('[data-testid^="answer-"][data-testid$="-confirm"]').click();
+  await expect(anna.getByTestId('answers-contacts')).toBeVisible({ timeout: 60_000 });
+  await settle(anna);
+}
+
+/** Whether my list shows a place (search by name). */
+async function listed(page: Page, name: string, at = autostart('/list')): Promise<void> {
+  await page.goto(at);
+  await page.getByTestId('list-search').fill(name);
+  await expect(page.getByTestId(`row-${name}`)).toBeVisible({ timeout: 30_000 });
 }
 
 /** The card of `name`, opened from the list. */
@@ -284,8 +319,8 @@ async function wipe(page: Page): Promise<void> {
 }
 
 /** Anna's phone before the loss: places, a photo, her storage and her kit. */
-async function beforeLoss(p: Phone): Promise<Kit> {
-  await connectStorage(p);
+async function beforeLoss(p: Phone, opts: { connected?: boolean } = {}): Promise<Kit> {
+  if (!opts.connected) await connectStorage(p);
   await addPlace(p.page, SHARED, { comment: COMMENT });
   await addPlace(p.page, PRIVATE, { private: true });
   await openCard(p.page, SHARED);
@@ -342,9 +377,23 @@ async function checkRestored(p: Phone): Promise<void> {
 
 test('lost phone: the kit entry from the password manager pasted on a fresh launch brings the places and photos back', async ({ browser }) => {
   test.skip(!proxy, 'Apache WebDAV of packages/storage/scripts/real-servers.sh is not running');
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
   const p = await phone(browser);
-  await beforeLoss(p);
+  // Ben is a friend: he follows Anna and shares his places with her.
+  const ben = await phone(browser);
+  await connectStorage(ben, 'Ben');
+  await sync(ben.page);
+  await connectStorage(p);
+  await befriend(p.page, ben.page);
+  await addPlace(ben.page, BENS);
+  await sync(ben.page);
+  await beforeLoss(p, { connected: true });
+  await listed(p.page, BENS);
+  const contacts = (page: Page) => page.getByTestId('contacts-screen').locator('[data-testid^="contact-"]');
+  await p.page.goto(autostart('/contacts'));
+  await expect(contacts(p.page)).toContainText(['Ben'], { timeout: 30_000 });
+  await sync(ben.page);
+  await listed(ben.page, SHARED);
   const entry = p.shared[0]!;
   expect(entry).toContain(p.location);
 
@@ -364,7 +413,17 @@ test('lost phone: the kit entry from the password manager pasted on a fresh laun
   expect(p.media.length).toBeGreaterThanOrEqual(1);
   await page.goto('/devices');
   await expect(page.getByTestId('device-me')).toContainText('Anna’s new phone', { timeout: 30_000 });
+  // Friends came back with the vault: Ben's place is on the restored phone, and Ben still reads
+  // Anna (same identity, nothing to re-invite): the place added after the restore reaches him.
+  await listed(page, BENS, '/list');
+  // The name Anna gave him came back too (vault value), not just his key.
+  await page.goto('/contacts');
+  await expect(contacts(page)).toContainText(['Ben'], { timeout: 30_000 });
+  await sync(ben.page);
+  await listed(ben.page, AFTER);
+  expect(ben.errors).toEqual([]);
   await p.ctx.close();
+  await ben.ctx.close();
 });
 
 test('lost phone: the printed kit, its QR code for the address and the words typed; mistakes explained first', async ({ browser }) => {

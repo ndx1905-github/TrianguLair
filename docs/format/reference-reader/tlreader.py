@@ -1016,3 +1016,659 @@ def safety(a: str, b: str) -> tuple[list[str], str]:
     h = blake2b(b"TrianguLair-safety-v1" + lo + hi, 64)
     groups = ["%05d" % (int.from_bytes(h[5 * i : 5 * i + 5], "big") % 100000) for i in range(12)]
     return groups, "tlsafe1:" + b64e(h[:32])
+
+
+# --------------------------------------------------------------------------------------------
+# Recovery phrase -> identity (identity-and-keys.md §1)
+# --------------------------------------------------------------------------------------------
+
+import os as _os
+import unicodedata as _ud
+
+_BIP39_SHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"  # BIP-0039 english.txt
+
+
+def _load_wordlist() -> list[str]:
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "bip39-english.txt")
+    with open(path, "rb") as f:
+        raw = f.read()
+    if hashlib.sha256(raw).hexdigest() != _BIP39_SHA256:
+        raise RuntimeError("bip39-english.txt is not the BIP-0039 English list")
+    words = raw.decode("ascii").split("\n")[:-1]
+    assert len(words) == 2048
+    return words
+
+
+WORDLIST = _load_wordlist()
+_WORD_INDEX = {w: i for i, w in enumerate(WORDLIST)}
+
+
+def _js_trim(s: str) -> str:
+    """ECMAScript String.prototype.trim (WhiteSpace and LineTerminator)."""
+    ws = _JS_SPACE | {" ", " "}
+    i, j = 0, len(s)
+    while i < j and s[i] in ws:
+        i += 1
+    while j > i and s[j - 1] in ws:
+        j -= 1
+    return s[i:j]
+
+
+def _js_split_ws(s: str, extra: str = "") -> list[str]:
+    """Split on runs of ECMAScript \\s (plus the characters of `extra`)."""
+    ws = _JS_SPACE | {" ", " "} | set(extra)
+    out, cur, in_run = [], [], False
+    for ch in s:
+        if ch in ws:
+            if not in_run:
+                out.append("".join(cur))
+                cur = []
+            in_run = True
+        else:
+            cur.append(ch)
+            in_run = False
+    out.append("".join(cur))
+    return out
+
+
+def normalize_phrase(phrase: str) -> str:
+    return " ".join(_js_split_ws(_js_trim(_ud.normalize("NFKD", phrase)).lower()))
+
+
+def mnemonic_entropy(phrase: str) -> bytes:
+    """12 BIP39 English words -> 16 bytes of entropy (checksum checked); else INVALID_PHRASE."""
+    words = phrase.split(" ")
+    if len(words) != 12 or any(w not in _WORD_INDEX for w in words):
+        raise fail("INVALID_PHRASE", "phrase: not 12 words of the list")
+    bits = 0
+    for w in words:
+        bits = (bits << 11) | _WORD_INDEX[w]
+    entropy, checksum = (bits >> 4).to_bytes(16, "big"), bits & 0xF
+    if hashlib.sha256(entropy).digest()[0] >> 4 != checksum:
+        raise fail("INVALID_PHRASE", "phrase: bad checksum")
+    return entropy
+
+
+def kdf(length: int, sub_id: int, ctx: str, key: bytes) -> bytes:
+    """libsodium crypto_kdf_derive_from_key (README §2)."""
+    salt = struct.pack("<Q", sub_id) + bytes(8)
+    person = ctx.encode("ascii") + bytes(8)
+    return hashlib.blake2b(b"", digest_size=length, key=key, salt=salt, person=person).digest()
+
+
+@dataclass
+class Identity:
+    owner: str
+    master_pk: bytes
+    master_seed: bytes
+    vault_key: bytes
+
+
+def _identity_from_seed(seed: bytes, vault_key: bytes) -> Identity:
+    pk, _ = sodium.crypto_sign_seed_keypair(seed)
+    return Identity(key_string("ed25519", pk), pk, seed, vault_key)
+
+
+def identity_from_phrase(phrase: Any) -> Identity:
+    if not isinstance(phrase, str):
+        raise fail("INVALID_PHRASE", "phrase: string expected")
+    entropy = mnemonic_entropy(normalize_phrase(phrase))
+    root = blake2b(b"TrianguLair/root/v1", 32, key=entropy)
+    return _identity_from_seed(kdf(32, 1, "TLmaster", root), kdf(32, 2, "TLvault_", root))
+
+
+def decode_primary_identity(b: bytes) -> Identity:
+    """identity-and-keys.md §2 (TLPI)."""
+    if len(b) < 4 or b[:4] != b"TLPI":
+        raise fail("FORMAT", "TLPI: bad magic")
+    if len(b) < 5 or b[4] == 0:
+        raise fail("FORMAT", "TLPI: bad version")
+    if b[4] != 1:
+        raise fail("UNSUPPORTED_VERSION", f"TLPI: version {b[4]}")
+    if len(b) < 69:
+        raise fail("FORMAT", "TLPI: truncated")
+    if len(b) > 69:
+        raise fail("FORMAT", "TLPI: trailing bytes")
+    return _identity_from_seed(b[5:37], b[37:69])
+
+
+# --------------------------------------------------------------------------------------------
+# Sealed sharing key TLSK (identity-and-keys.md §6) and key export (key-export.md)
+# --------------------------------------------------------------------------------------------
+
+
+@dataclass
+class DeviceHolder:
+    device: str
+    box_public: bytes
+    box_secret: bytes
+
+
+@dataclass
+class SharingKey:
+    cert: dict
+    secret: bytes
+    public: bytes
+    vault_key: bytes
+
+
+def _sharing_secret(doc: dict, cert: dict, W: str) -> SharingKey:
+    secret = b64d(doc["secret"], f"{W}.secret", 32)
+    public = sodium.crypto_scalarmult_base(secret)
+    if public != parse_key("x25519", cert["key"], f"{W}.cert.key"):
+        raise fail("FORMAT", f"{W}: secret does not match the certified key")
+    vault_key = b64d(doc["vault_key"], f"{W}.vault_key", 32)
+    return SharingKey(cert, secret, public, vault_key)
+
+
+def open_sharing_key(b: bytes, holder: DeviceHolder | Identity, expected_owner: str | None = None, last_seen: dict | None = None) -> SharingKey:
+    W = "TLSK"
+    if len(b) < 4 or b[:4] != b"TLSK":
+        raise fail("FORMAT", f"{W}: bad magic")
+    if len(b) < 5 or b[4] == 0:
+        raise fail("FORMAT", f"{W}: bad version")
+    if b[4] != 2:
+        raise fail("UNSUPPORTED_VERSION", f"{W}: version {b[4]}")
+    if len(b) < 6:
+        raise fail("FORMAT", f"{W}: no mode")
+    mode = b[5]
+    if mode == 1 and isinstance(holder, DeviceHolder):
+        try:
+            pt = sodium.crypto_box_seal_open(b[6:], holder.box_public, holder.box_secret)
+        except Exception:
+            raise fail("DECRYPT", f"{W}: cannot open") from None
+        to = holder.device
+    elif mode == 2 and isinstance(holder, Identity):
+        if len(b) < 30:
+            raise fail("FORMAT", f"{W}: truncated nonce")
+        try:
+            pt = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(b[30:], b[:30], b[6:30], holder.vault_key)
+        except Exception:
+            raise fail("DECRYPT", f"{W}: cannot open") from None
+        to = holder.owner
+        expected_owner = holder.owner
+    else:
+        raise fail("FORMAT", f"{W}: mode and holder do not match")
+    doc = parse_canonical(utf8_strict(pt, W), W)
+    check_structure(doc, "sharing-key", 2, ["type", "version", "to", "secret", "vault_key", "cert"])
+    if doc["type"] != "sharing-key":
+        raise fail("FORMAT", f"{W}: wrong type")
+    if doc["to"] != to:
+        raise fail("FORMAT", f"{W}: sealed for someone else")
+    cert = verify_sharing_cert(obj(doc["cert"], f"{W}.cert"), expected_owner=expected_owner, last_seen=last_seen)
+    return _sharing_secret(doc, cert, W)
+
+
+def decode_key_export(b: bytes, expected_owner: str | None = None, retired: Iterable[str] = (), last_seen: dict | None = None) -> SharingKey:
+    W = "key-export"
+    doc = parse_canonical(utf8_strict(b, W), W)
+    check_structure(doc, W, 3, ["type", "version", "secret", "vault_key", "cert"])
+    if doc["type"] != W:
+        raise fail("FORMAT", f"{W}: wrong type")
+    cert = verify_sharing_cert(obj(doc["cert"], f"{W}.cert"), expected_owner=expected_owner, retired=retired, last_seen=last_seen)
+    return _sharing_secret(doc, cert, W)
+
+
+# --------------------------------------------------------------------------------------------
+# Transfer blob TLTX and transfer code (transfer-blob.md)
+# --------------------------------------------------------------------------------------------
+
+_PREFIX4 = {w[:4]: w for w in WORDLIST}
+
+
+def normalize_transfer_code(code: Any) -> str:
+    if not isinstance(code, str):
+        raise fail("INVALID_CODE", "code: string expected")
+    parts = [p for p in _js_split_ws(_js_trim(_ud.normalize("NFKD", code).lower()), "-") if p]
+    if len(parts) != 6:
+        raise fail("INVALID_CODE", "code: 6 words expected")
+    out = []
+    for p in parts:
+        w = _PREFIX4.get(p[:4]) if len(p) >= 3 else None
+        if w is None or not w.startswith(p):
+            raise fail("INVALID_CODE", "code: unknown word")
+        out.append(w)
+    return " ".join(out)
+
+
+def decrypt_transfer(b: bytes, code: Any, now: int) -> bytes:
+    W = "TLTX"
+    if len(b) < 74 or b[:4] != b"TLTX":
+        raise fail("FORMAT", f"{W}: too short or bad magic")
+    if b[4] == 0:
+        raise fail("FORMAT", f"{W}: bad version")
+    if b[4] != 2:
+        raise fail("UNSUPPORTED_VERSION", f"{W}: version {b[4]}")
+    if b[5] != 1:
+        raise fail("FORMAT", f"{W}: purpose")
+    ops, mem, expires = struct.unpack(">III", b[6:18])
+    if not 2 <= ops <= 10 or not 64 * 2**20 <= mem <= 256 * 2**20:
+        raise fail("FORMAT", f"{W}: Argon2 parameters out of range")
+    if now >= expires * 1000:
+        raise fail("EXPIRED", f"{W}: expired")
+    password = normalize_transfer_code(code).encode("utf-8")
+    key = sodium.crypto_pwhash_alg(32, password, b[18:34], ops, mem, sodium.crypto_pwhash_ALG_ARGON2ID13)
+    try:
+        return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(b[58:], b[:58], b[34:58], key)
+    except Exception:
+        raise fail("DECRYPT", f"{W}: wrong code or tampered") from None
+
+
+# --------------------------------------------------------------------------------------------
+# Invitation records (invitation-record.md)
+# --------------------------------------------------------------------------------------------
+
+_RECORD_MEMBERS = ["answers", "created", "device_cert", "expires", "id", "location", "rotation", "seed", "signature"]
+
+
+@dataclass
+class OwnerInvitation:
+    owner: str
+    id: str
+    seed: bytes
+    public: bytes
+    secret: bytes
+    rotation: int
+    device: str
+    device_cert: dict
+    location: str
+    created: int  # ms
+    expires: int  # ms
+    signature: str
+
+
+def _whole_second(v: Any, what: str) -> int:
+    t = iso_ms(v, what)
+    if t % 1000 or not 0 <= t // 1000 <= 0xFFFFFFFF:
+        raise fail("FORMAT", f"{what}: not a u32 whole second")
+    return t
+
+
+def check_owner_invitation(inv: OwnerInvitation) -> None:
+    """invitation-record.md §3, checkOwnerInvitation."""
+    W = "invitation-record"
+    owner_pk = parse_key("ed25519", inv.owner, f"{W}.owner")
+    if not all(is_int(t) and t % 1000 == 0 and 0 <= t // 1000 <= 0xFFFFFFFF for t in (inv.created, inv.expires)):
+        raise fail("FORMAT", f"{W}: dates")
+    if inv.expires <= inv.created or inv.expires - inv.created > MAX_TTL_MS:
+        raise fail("FORMAT", f"{W}: lifetime")
+    if not is_int(inv.rotation) or not 0 <= inv.rotation <= 0xFFFFFFFF:
+        raise fail("FORMAT", f"{W}: rotation")
+    check_location(inv.location, f"{W}.location")
+    if len(inv.seed) != 16:
+        raise fail("FORMAT", f"{W}: seed")
+    inv_id, pk, _ = derive_invitation(inv.seed)
+    if inv_id != inv.id or pk != inv.public:
+        raise fail("FORMAT", f"{W}: seed does not give the id and key")
+    dc = verify_device_cert(inv.device_cert, expected_owner=inv.owner)
+    if dc["device"] != inv.device:
+        raise fail("FORMAT", f"{W}: device")
+    sig = b64d(inv.signature, f"{W}.signature", 64)
+    loc = inv.location.encode("utf-8")
+    msg = owner_pk + b64d(inv.id, f"{W}.id", 16) + inv.public + u32(inv.rotation) + u32(inv.created // 1000) + u32(inv.expires // 1000) + u16(len(loc)) + loc
+    verify_sig(W, sig, msg, parse_key("ed25519", inv.device, f"{W}.device"))
+
+
+def record_invitation(rec: dict, owner: str) -> OwnerInvitation:
+    """A vault record -> the owner's invitation (recordInvitation), checked."""
+    W = "invitation-record"
+    seed = b64d(rec.get("seed"), f"{W}.seed", 16)
+    inv_id, pk, sk = derive_invitation(seed)
+    if rec.get("id") != inv_id:
+        raise fail("FORMAT", f"{W}: id does not match the seed")
+    dco = obj(rec.get("device_cert"), f"{W}.device_cert")
+    for k in DEVICE_IMPLIED:
+        if k in dco:
+            raise fail("FORMAT", f"{W}.device_cert: {k} is implied")
+    dc = verify_device_cert({**dco, "type": "device-cert", "version": 1, "owner": owner}, expected_owner=owner)
+    r = rec.get("rotation")
+    if not is_int(r) or not 0 <= r <= 0xFFFFFFFF:
+        raise fail("FORMAT", f"{W}: rotation")
+    for k in ("location", "signature", "created", "expires"):
+        string(rec, k, W)
+    inv = OwnerInvitation(owner, inv_id, seed, pk, sk, r, dc["device"], dc, rec["location"],
+                          _whole_second(rec["created"], f"{W}.created"), _whole_second(rec["expires"], f"{W}.expires"), rec["signature"])
+    check_owner_invitation(inv)
+    return inv
+
+
+def invitation_status(inv: OwnerInvitation, cert: dict, now: int) -> str:
+    """invitation-record.md §3, listable (never throws)."""
+    if inv.owner != cert["owner"]:
+        return "invalid"
+    try:
+        check_owner_invitation(inv)
+    except TLError:
+        return "invalid"
+    if inv.device in cert["revoked_devices"]:
+        return "revoked"
+    if inv.expires <= now:
+        return "expired"
+    if inv.rotation < cert["rotation"]:
+        return "superseded"
+    if inv.rotation > cert["rotation"] or inv.created > now + SKEW_MS:
+        return "not-yet"
+    return "listed"
+
+
+# --------------------------------------------------------------------------------------------
+# Return link (return-link.md)
+# --------------------------------------------------------------------------------------------
+
+GRACE_MS = 7 * DAY_MS
+
+
+@dataclass
+class Answer:
+    owner: str
+    device: str
+    cert: dict
+    created: int  # ms
+    location: str | None
+    opened_after_expiry: bool
+
+
+class _Reader:
+    def __init__(self, b: bytes, what: str) -> None:
+        self.b, self.i, self.what = b, 0, what
+
+    def take(self, n: int) -> bytes:
+        if self.i + n > len(self.b):
+            raise fail("FORMAT", f"{self.what}: truncated")
+        out = self.b[self.i : self.i + n]
+        self.i += n
+        return out
+
+    def u16(self) -> int:
+        return struct.unpack(">H", self.take(2))[0]
+
+    def u32(self) -> int:
+        return struct.unpack(">I", self.take(4))[0]
+
+
+def open_invitation_response(b: bytes, inv: OwnerInvitation, now: int) -> Answer:
+    W = "return-link"
+    if len(b) < 2 or len(b) > 9600 or b[0] != 0x52:
+        raise fail("FORMAT", f"{W}: bad size or magic")
+    if b[1] == 0:
+        raise fail("FORMAT", f"{W}: bad version")
+    if b[1] != 4:
+        raise fail("UNSUPPORTED_VERSION", f"{W}: version {b[1]}")
+    if not is_int(inv.created) or not is_int(inv.expires):
+        raise fail("FORMAT", f"{W}: invitation dates")
+    if now >= inv.expires + GRACE_MS:
+        raise fail("EXPIRED", f"{W}: past the grace period")
+    try:
+        inner = sodium.crypto_box_seal_open(b[2:], inv.public, inv.secret)
+    except Exception:
+        raise fail("DECRYPT", f"{W}: cannot open") from None
+    r = _Reader(inner, W)
+    if b64e(r.take(16)) != inv.id:
+        raise fail("FORMAT", f"{W}: another invitation")
+    responder = key_string("ed25519", r.take(32))
+    created = r.u32()
+    key = r.take(32)
+    check_x25519(key)
+    rotation = r.u32()
+    n = r.u16()
+    if n > 256:
+        raise fail("FORMAT", f"{W}: too many revoked devices")
+    revoked = [key_string("ed25519", r.take(32)) for _ in range(n)]
+    L = r.u16()
+    if L > 512:
+        raise fail("FORMAT", f"{W}: address too long")
+    location = None
+    if L:
+        location = utf8_strict(r.take(L), W)
+        check_location(location, f"{W}.location")
+    csig = r.take(64)
+    cert_doc = {"key": key_string("x25519", key), "owner": responder, "revoked_devices": revoked, "rotation": rotation,
+                "signature": b64e(csig), "type": "sharing-cert", "version": 3}
+    if location is not None:
+        cert_doc["location"] = location
+    cert = verify_sharing_cert(cert_doc, expected_owner=responder)
+    device_pk, box = r.take(32), r.take(32)
+    check_x25519(box)
+    dsig = r.take(64)
+    dc = verify_device_cert({"box": key_string("x25519", box), "device": key_string("ed25519", device_pk), "owner": responder,
+                             "signature": b64e(dsig), "type": "device-cert", "version": 1}, expected_owner=responder)
+    sig = r.take(64)
+    if r.i != len(inner):
+        raise fail("FORMAT", f"{W}: trailing bytes")
+    verify_sig("invitation-response", sig, inner[:-64] + parse_key("ed25519", inv.owner) + inv.public, device_pk)
+    if created * 1000 < inv.created - SKEW_MS or created * 1000 >= inv.expires:
+        raise fail("FORMAT", f"{W}: created outside the invitation's window")
+    if dc["device"] in cert["revoked_devices"]:
+        raise fail("REVOKED", f"{W}: revoked device")
+    return Answer(responder, dc["device"], cert, created * 1000, location, now >= inv.expires)
+
+
+@dataclass
+class Collected:
+    answers: list[Answer]
+    rejected: int
+    multiple: bool
+    accepted: Answer | None
+    late: list[Answer]
+
+
+def collect_answers(inv: OwnerInvitation, responses: list[bytes], now: int, accepted_owner: str | None = None) -> Collected:
+    if not is_int(inv.created) or not is_int(inv.expires):
+        raise fail("FORMAT", "invitation: dates")
+    by_owner: dict[str, Answer] = {}
+    rejected = 0
+    for resp in responses:
+        try:
+            a = open_invitation_response(resp, inv, now)
+        except TLError as e:
+            if e.code == "EXPIRED":
+                raise
+            rejected += 1
+            continue
+        cur = by_owner.get(a.owner)
+        if cur is None or a.cert["rotation"] > cur.cert["rotation"]:
+            by_owner[a.owner] = a
+    answers = list(by_owner.values())
+    if accepted_owner is None:
+        return Collected(answers, rejected, len(answers) > 1, answers[0] if len(answers) == 1 else None, [])
+    return Collected(answers, rejected, len(answers) > 1, by_owner.get(accepted_owner), [a for a in answers if a.owner != accepted_owner])
+
+
+def check_answer_index(a: Answer, idx: Index) -> None:
+    """return-link.md §6 (answer path), without lastSeen."""
+    W = "answer"
+    if not idx.owner_bound:
+        raise fail("FORMAT", f"{W}: index not verified for an owner")
+    if a.location is None:
+        raise fail("FORMAT", f"{W}: no read address")
+    if idx.read_from is None or idx.read_from != idx.cert["location"]:
+        raise fail("FORMAT", f"{W}: index not read at its certified address")
+    if idx.owner != a.owner:
+        raise fail("OWNER_MISMATCH", f"{W}: other owner")
+    cert_not_older(idx.cert, a.cert)
+    if a.device in idx.cert["revoked_devices"]:
+        raise fail("REVOKED", f"{W}: revoked device")
+
+
+# --------------------------------------------------------------------------------------------
+# Recovery vault TLVD (vault.md)
+# --------------------------------------------------------------------------------------------
+
+
+def verify_index_anchor(x: Any, owner: str) -> dict:
+    """signed-index.md §7."""
+    W = "index-anchor"
+    a = obj(x, W)
+    if set(a) != {"hash", "owner", "seq", "sharing_cert", "type", "version"}:
+        raise fail("FORMAT", f"{W}: members")
+    if a["type"] != W:
+        raise fail("FORMAT", f"{W}: wrong type")
+    if not is_int(a["version"]) or a["version"] < 1:
+        raise fail("FORMAT", f"{W}: version")
+    parse_key("ed25519", a["owner"], f"{W}.owner")
+    nonneg_int(a, "seq", W)
+    check_hash(a["hash"], f"{W}.hash")
+    verify_sharing_cert(obj(a["sharing_cert"], f"{W}.sharing_cert"), expected_owner=owner)
+    if a["owner"] != owner:
+        raise fail("OWNER_MISMATCH", f"{W}: other owner")
+    return a
+
+
+def _check_vault_invitation(rec: Any, owner: str, extensible: bool) -> None:
+    W = "vault.invitations[]"
+    rec = obj(rec, W)
+    check_fields(rec, W, _RECORD_MEMBERS, ["accepted"], extensible)
+    b64d(rec["id"], f"{W}.id", 16)
+    iso_ms(rec["created"], f"{W}.created")
+    iso_ms(rec["expires"], f"{W}.expires")
+    record_invitation(rec, owner)
+    if "accepted" in rec:
+        parse_key("ed25519", rec["accepted"], f"{W}.accepted")
+    answers = array(rec, "answers", W, 16)
+    for s in answers:
+        if not isinstance(s, str) or len(s) > 13000:
+            raise fail("FORMAT", f"{W}.answers[]: too long")
+        b64d(s, f"{W}.answers[]")
+    sorted_unique(answers, f"{W}.answers")
+
+
+def check_vault_records(rec: dict, owner: str) -> dict:
+    """vault.md §3 steps 5-9."""
+    W = "vault-records"
+    extensible = check_structure(rec, W, 3, ["type", "version", "owner", "contacts", "invitations", "retired_owners"], ["app"])
+    if rec["type"] != W:
+        raise fail("FORMAT", f"{W}: wrong type")
+    if not isinstance(rec["owner"], str):
+        raise fail("FORMAT", f"{W}: owner")
+    if rec["owner"] != owner:
+        raise fail("OWNER_MISMATCH", f"{W}: other owner")
+    if "app" in rec and not isinstance(rec["app"], dict):
+        raise fail("FORMAT", f"{W}: app")
+    contacts = array(rec, "contacts", W, 10_000)
+    for c in contacts:
+        c = obj(c, f"{W}.contacts[]")
+        check_fields(c, f"{W}.contacts[]", ["owner", "sharing_cert", "verified"], ["anchor"], extensible)
+        parse_key("ed25519", c["owner"], f"{W}.contacts[].owner")
+        if not isinstance(c["verified"], bool):
+            raise fail("FORMAT", f"{W}.contacts[].verified")
+        verify_sharing_cert(obj(c["sharing_cert"], f"{W}.contacts[].sharing_cert"), expected_owner=c["owner"])
+        if "anchor" in c:
+            verify_index_anchor(c["anchor"], c["owner"])
+    owners = [c["owner"] for c in contacts]
+    if any(a >= b for a, b in zip(owners, owners[1:])):
+        raise fail("FORMAT", f"{W}: contacts not sorted")
+    invitations = array(rec, "invitations", W, 256)
+    for i in invitations:
+        _check_vault_invitation(i, owner, extensible)
+    ids = [i["id"] for i in invitations]
+    if any(a >= b for a, b in zip(ids, ids[1:])):
+        raise fail("FORMAT", f"{W}: invitations not sorted")
+    retired = array(rec, "retired_owners", W, 256)
+    sorted_unique(retired, f"{W}.retired_owners")
+    for r in retired:
+        parse_key("ed25519", r, f"{W}.retired_owners[]")
+    return rec
+
+
+def open_vault(b: bytes, owner: str, vault_key: bytes) -> dict:
+    """vault.md §3."""
+    W = "TLVD"
+    if len(b) < 45 or b[:4] != b"TLVD":
+        raise fail("FORMAT", f"{W}: too short or bad magic")
+    if b[4] == 0:
+        raise fail("FORMAT", f"{W}: bad version")
+    if b[4] != 3:
+        raise fail("UNSUPPORTED_VERSION", f"{W}: version {b[4]}")
+    ad = b[:5] + parse_key("ed25519", owner, "owner") + b[5:29]
+    try:
+        pt = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(b[29:], ad, b[5:29], vault_key)
+    except Exception:
+        raise fail("DECRYPT", f"{W}: cannot open") from None
+    if len(pt) < 4:
+        raise fail("FORMAT", f"{W}: plaintext too short")
+    j = struct.unpack(">I", pt[:4])[0]
+    if j > len(pt) - 4 or len(pt) != padme(4 + j):
+        raise fail("FORMAT", f"{W}: bad length")
+    if any(pt[4 + j :]):
+        raise fail("FORMAT", f"{W}: non-zero padding")
+    return check_vault_records(parse_canonical(utf8_strict(pt[4 : 4 + j], W), W), owner)
+
+
+def _anchor_rank(a: dict) -> tuple[int, int]:
+    return (a["sharing_cert"]["rotation"], a["seq"])
+
+
+def _merge_answers(a_rec: dict, b_rec: dict, owner: str) -> list[str]:
+    union = sorted(set(a_rec["answers"]) | set(b_rec["answers"]))
+    if len(union) <= 16:
+        return union
+    inv = record_invitation(a_rec, owner)
+    accepted = a_rec.get("accepted", b_rec.get("accepted"))
+    in_a = set(a_rec["answers"])
+    best: dict[str, tuple[Answer, str]] = {}
+    bad: list[str] = []
+    for s in union:
+        try:
+            ans = open_invitation_response(b64d(s, "answer"), inv, inv.created)
+        except TLError:
+            bad.append(s)
+            continue
+        cur = best.get(ans.owner)
+        if cur is None or ans.cert["rotation"] > cur[0].cert["rotation"] or (ans.cert["rotation"] == cur[0].cert["rotation"] and s < cur[1]):
+            best[ans.owner] = (ans, s)
+    good = sorted(best.values(), key=lambda x: (x[0].owner != accepted, x[1] not in in_a, x[1]))
+    bad.sort(key=lambda s: (s not in in_a, s))
+    return sorted(([s for _, s in good] + bad)[:16])
+
+
+def merge_vaults(a: dict, b: dict) -> dict:
+    """vault.md §4."""
+    if a["owner"] != b["owner"]:
+        raise fail("OWNER_MISMATCH", "vault: two owners")
+    owner = a["owner"]
+    out = {**{k: v for k, v in b.items()}, **a}
+    bc = {c["owner"]: c for c in b["contacts"]}
+    contacts = {}
+    for c in a["contacts"]:
+        o = bc.get(c["owner"])
+        if o is None:
+            contacts[c["owner"]] = c
+            continue
+        m = dict(c)
+        if o["sharing_cert"]["rotation"] > c["sharing_cert"]["rotation"]:
+            m["sharing_cert"] = o["sharing_cert"]
+        m["verified"] = c["verified"] or o["verified"]
+        if "anchor" in o and ("anchor" not in c or _anchor_rank(o["anchor"]) > _anchor_rank(c["anchor"])):
+            m["anchor"] = o["anchor"]
+        contacts[c["owner"]] = m
+    for c in b["contacts"]:
+        contacts.setdefault(c["owner"], c)
+    out["contacts"] = [contacts[k] for k in sorted(contacts)]
+    bi = {i["id"]: i for i in b["invitations"]}
+    invs = {}
+    for i in a["invitations"]:
+        o = bi.get(i["id"])
+        if o is None:
+            invs[i["id"]] = i
+            continue
+        m = dict(i)
+        m["answers"] = _merge_answers(i, o, owner)
+        if "accepted" not in m and "accepted" in o:
+            m["accepted"] = o["accepted"]
+        invs[i["id"]] = m
+    for i in b["invitations"]:
+        invs.setdefault(i["id"], i)
+    out["invitations"] = [invs[k] for k in sorted(invs)]
+    out["retired_owners"] = sorted(set(a["retired_owners"]) | set(b["retired_owners"]))
+    minors = [x["minor"] for x in (a, b) if "minor" in x]
+    out.pop("minor", None)
+    if minors:
+        out["minor"] = max(minors)
+    crit = sorted(set(a.get("crit", [])) | set(b.get("crit", [])), key=_utf16)
+    out.pop("crit", None)
+    if crit:
+        out["crit"] = crit
+    out.pop("app", None)
+    if "app" in a or "app" in b:
+        out["app"] = a.get("app", b.get("app"))
+    return out

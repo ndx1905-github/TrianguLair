@@ -223,6 +223,31 @@ describe('invitation by link and return link', () => {
     expect(carol.svc.contact(alice.owner)!.verified).toBe(false);
   });
 
+  it('a device without this device\'s local values (restored with the kit) gets the verified mark and the name from the vault', async () => {
+    const w = new World();
+    const alice = await user(w, 'alice');
+    const carol = await user(w, 'carol');
+    const inv = await alice.svc.createInvitation({ name: 'Carol' });
+    const opened = await carol.svc.openInvitation(inv.link);
+    const { link } = await carol.svc.answerInvitation(opened.token, { name: 'Alice', shareBack: true });
+    await alice.svc.receiveAnswer(link);
+    await alice.svc.acceptAnswer(inv.id, carol.owner, { name: 'Carol', share: { kind: 'all' }, follow: true });
+    alice.svc.setVerified(carol.owner, true);
+    expect(alice.engine.contacts().find((c) => c.owner === carol.owner)!.verified).toBe(true); // in the vault record
+    // The same vault, none of the device-local values (a new phone restored with the kit).
+    const port = engineSyncPort({ engine: alice.engine, state: new MemoryStateStore(), sharing: () => alice.sharing.cert, device: () => alice.signer, readAdapter: w.readAdapter });
+    const fresh = await createContactsService({ port, local: memoryKV(), secrets: memorySecrets(), now: () => alice.clock.now });
+    expect(fresh.contact(carol.owner)).toMatchObject({ verified: true, name: '' });
+    fresh.adoptName(carol.owner, ' Carol ');
+    expect(fresh.contact(carol.owner)!.name).toBe('Carol');
+    fresh.adoptName(carol.owner, 'Someone else'); // a name given here is kept
+    expect(fresh.contact(carol.owner)!.name).toBe('Carol');
+    // Taking the mark away reaches the vault too.
+    fresh.setVerified(carol.owner, false);
+    expect(fresh.contact(carol.owner)!.verified).toBe(false);
+    expect(alice.engine.contacts().find((c) => c.owner === carol.owner)!.verified).toBe(false);
+  });
+
   it('several answers, a late one after acceptance, one opened after expiry', async () => {
     const w = new World();
     const clock = { now: Date.parse('2026-10-23T16:30:00Z') };

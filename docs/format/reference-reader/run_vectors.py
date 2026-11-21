@@ -169,6 +169,77 @@ def op_move(i: dict) -> dict:
     return {"from": m["from"], "to": m["to"], "issued": m["issued"]}
 
 
+def sharing_result(k: tl.SharingKey) -> dict:
+    return {"cert": tl.canon(k.cert), "secret_hex": k.secret.hex(), "public_hex": k.public.hex(), "vault_key_hex": k.vault_key.hex()}
+
+
+def key_options(i: dict) -> dict:
+    o = i.get("options", {})
+    kw: dict[str, Any] = {}
+    if "expectedOwner" in o:
+        kw["expected_owner"] = o["expectedOwner"]
+    if "lastSeen" in o:
+        kw["last_seen"] = tl.verify_sharing_cert(o["lastSeen"])
+    return kw
+
+
+def op_identity(i: dict) -> dict:
+    idn = tl.identity_from_phrase(i["phrase"])
+    return {"owner": idn.owner, "master_seed_hex": idn.master_seed.hex(), "vault_key_hex": idn.vault_key.hex()}
+
+
+def op_primary(i: dict) -> dict:
+    idn = tl.decode_primary_identity(unhex(i["bytes_hex"]))
+    return {"owner": idn.owner, "vault_key_hex": idn.vault_key.hex()}
+
+
+def op_open_sharing_key(i: dict) -> dict:
+    h = i["holder"]
+    holder = tl.identity_from_phrase(h["phrase"]) if "phrase" in h else tl.DeviceHolder(h["device"], unhex(h["box_public_hex"]), unhex(h["box_secret_hex"]))
+    return sharing_result(tl.open_sharing_key(unhex(i["bytes_hex"]), holder, **key_options(i)))
+
+
+def owner_invitation(x: dict) -> tl.OwnerInvitation:
+    return tl.record_invitation(json.loads(x["record"]), x["owner"])
+
+
+def answer_summary(a: tl.Answer) -> dict:
+    out = {"owner": a.owner, "device": a.device, "created": tl.iso_string(a.created), "rotation": a.cert["rotation"], "openedAfterExpiry": a.opened_after_expiry}
+    if a.location is not None:
+        out["location"] = a.location
+    return out
+
+
+def op_open_response(i: dict) -> dict:
+    return answer_summary(tl.open_invitation_response(unhex(i["bytes_hex"]), owner_invitation(i["invitation"]), tl.iso_ms(i["now"], "now")))
+
+
+def op_collect(i: dict) -> dict:
+    c = tl.collect_answers(owner_invitation(i["invitation"]), [unhex(h) for h in i["responses_hex"]], tl.iso_ms(i["now"], "now"), i.get("acceptedOwner"))
+    return {"answers": [a.owner for a in c.answers], "rejected": c.rejected, "multiple": c.multiple, "accepted": c.accepted.owner if c.accepted else None, "late": [a.owner for a in c.late]}
+
+
+def op_answer_index(i: dict) -> dict:
+    now = tl.iso_ms(i["now"], "now")
+    a = tl.open_invitation_response(unhex(i["bytes_hex"]), owner_invitation(i["invitation"]), now)
+    idx = tl.verify_index(i["index"], expected_owner=a.owner, location=a.location, now=now)
+    tl.check_answer_index(a, idx)
+    return {"owner": a.owner, "device": a.device}
+
+
+def op_status(i: dict) -> dict:
+    try:
+        inv = tl.record_invitation(json.loads(i["record"]), i["owner"])
+    except tl.TLError:
+        return {"status": "invalid"}
+    return {"status": tl.invitation_status(inv, tl.verify_sharing_cert(i["sharing_cert"]), tl.iso_ms(i["now"], "now"))}
+
+
+def op_merge(i: dict) -> dict:
+    k = unhex(i["vault_key_hex"])
+    return {"records": tl.canon(tl.merge_vaults(tl.open_vault(unhex(i["a_hex"]), i["owner"], k), tl.open_vault(unhex(i["b_hex"]), i["owner"], k)))}
+
+
 OPS: dict[str, Callable[[dict], dict]] = {
     "canonical_json": lambda i: {"canonical": tl.canon(tl.parse_canonical(i["text"], "doc"))},
     "parse_key": lambda i: {"hex": tl.parse_key(i["kind"], i["value"]).hex()},
@@ -188,6 +259,18 @@ OPS: dict[str, Callable[[dict], dict]] = {
     "parse_invitation_link": op_parse_link,
     "accept_invitation": op_accept,
     "safety_code": op_safety,
+    "identity_from_phrase": op_identity,
+    "decode_primary_identity": op_primary,
+    "open_sharing_key": op_open_sharing_key,
+    "decode_key_export": lambda i: sharing_result(tl.decode_key_export(unhex(i["bytes_hex"]), **key_options(i))),
+    "normalize_transfer_code": lambda i: {"code": tl.normalize_transfer_code(i["code"])},
+    "decrypt_transfer": lambda i: {"payload_hex": tl.decrypt_transfer(unhex(i["blob_hex"]), i["code"], tl.iso_ms(i["now"], "now")).hex()},
+    "invitation_status": op_status,
+    "open_invitation_response": op_open_response,
+    "collect_answers": op_collect,
+    "check_answer_index": op_answer_index,
+    "open_vault": lambda i: {"records": tl.canon(tl.open_vault(unhex(i["bytes_hex"]), i["owner"], unhex(i["vault_key_hex"])))},
+    "merge_vaults": op_merge,
 }
 
 
