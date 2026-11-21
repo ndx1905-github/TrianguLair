@@ -4,6 +4,8 @@ import {
   NetworkError,
   PreconditionFailed,
   ProtocolError,
+  QuotaExceeded,
+  TimeoutError,
   TooLarge,
   type StorageError,
 } from './errors.ts';
@@ -100,6 +102,15 @@ export function checkMaxBytes(maxBytes: number | undefined): number | undefined 
   return maxBytes;
 }
 
+/** The whole body; a connection cut while reading it is a NetworkError. */
+async function wholeBody(res: Response, path: string): Promise<Uint8Array<ArrayBuffer>> {
+  try {
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    throw new NetworkError(`Reading ${path} failed: ${(e as Error)?.message ?? e}`, { path, cause: e });
+  }
+}
+
 /**
  * Reads a response body, refusing more than `maxBytes`: the announced
  * Content-Length is checked first, then the body is streamed and the read
@@ -108,7 +119,7 @@ export function checkMaxBytes(maxBytes: number | undefined): number | undefined 
  * after the fact (the Content-Length check still applies).
  */
 export async function readBody(res: Response, path: string, maxBytes: number | undefined): Promise<Uint8Array<ArrayBuffer>> {
-  if (maxBytes === undefined) return new Uint8Array(await res.arrayBuffer());
+  if (maxBytes === undefined) return wholeBody(res, path);
   const len = res.headers.get('content-length');
   if (len !== null && /^\d+$/.test(len.trim()) && Number(len) > maxBytes) {
     await res.body?.cancel().catch(() => undefined);
@@ -116,7 +127,7 @@ export async function readBody(res: Response, path: string, maxBytes: number | u
   }
   const reader = res.body?.getReader?.();
   if (!reader) {
-    const data = new Uint8Array(await res.arrayBuffer());
+    const data = await wholeBody(res, path);
     if (data.byteLength > maxBytes) throw new TooLarge(path, maxBytes, { size: data.byteLength });
     return data;
   }
@@ -146,16 +157,52 @@ export async function readBody(res: Response, path: string, maxBytes: number | u
   return out;
 }
 
-/** Run fetch, turning transport failures into NetworkError. */
-export async function doFetch(
-  fetchFn: FetchLike,
-  url: string,
-  init: RequestInit | Request,
-  path?: string,
-): Promise<Response> {
+/**
+ * Default time an HTTP adapter waits for the response headers of one request
+ * (an upload's headers come after the whole body is sent, so it is generous).
+ */
+export const DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Validates a `timeoutMs` option: undefined → default, 0 → none. */
+export function checkTimeout(ms: number | undefined): number {
+  if (ms === undefined) return DEFAULT_TIMEOUT_MS;
+  if (!Number.isFinite(ms) || ms < 0) throw new RangeError('timeoutMs must be a non-negative number');
+  return ms;
+}
+
+/**
+ * Wraps a fetch so that a request with no response headers after `timeoutMs`
+ * (> 0) is aborted and rejected with a `TimeoutError`. The race does not rely
+ * on the fetch implementation honouring `signal` (older React Native builds
+ * do not). Reading the body afterwards is not bounded by this timer.
+ */
+export function timedFetch(fetchFn: FetchLike, timeoutMs: number): FetchLike {
+  if (!(timeoutMs > 0)) return fetchFn;
+  return async (input, init = {}) => {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new TimeoutError(`${init.method ?? 'GET'}: no response after ${timeoutMs} ms`, timeoutMs));
+        ctl?.abort();
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([fetchFn(input, ctl && !init.signal ? { ...init, signal: ctl.signal } : init), expired]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+/** Run fetch, turning transport failures into NetworkError (and naming the path in a TimeoutError). */
+export async function doFetch(fetchFn: FetchLike, url: string, init: RequestInit, path?: string): Promise<Response> {
   try {
-    return init instanceof Request ? await fetchFn(init) : await fetchFn(url, init);
+    return await fetchFn(url, init);
   } catch (e) {
+    if (e instanceof TimeoutError) {
+      throw new TimeoutError(`${init.method ?? 'GET'} ${path ?? url}: no response after ${e.timeoutMs} ms`, e.timeoutMs, { path, cause: e });
+    }
     throw new NetworkError(`Request failed: ${(e as Error)?.message ?? e}`, { path, cause: e });
   }
 }
@@ -169,6 +216,8 @@ export function httpError(res: Response, what: string, path?: string): StorageEr
   if (status === 401 || status === 403)
     return new AuthError(`${what}: HTTP ${status}`, { status, path });
   if (status === 412) return new PreconditionFailed(path ?? what, { status });
+  // 507 Insufficient Storage (WebDAV quota, MinIO), 413 Content Too Large (upload limit).
+  if (status === 507 || status === 413) return new QuotaExceeded(`${what}: HTTP ${status} (storage full or upload too large)`, { status, path });
   if (status >= 500 || status === 408 || status === 429)
     return new NetworkError(`${what}: HTTP ${status}`, { status, path });
   return new ProtocolError(`${what}: unexpected HTTP ${status}`, { status, path });

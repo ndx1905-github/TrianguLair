@@ -20,6 +20,8 @@
       "yjs": ["./node_modules/yjs"],
       "fflate": ["./node_modules/fflate"],
       "aws4fetch": ["./node_modules/aws4fetch"],
+      "@noble/hashes": ["./node_modules/@noble/hashes"],
+      "@noble/hashes/*": ["./node_modules/@noble/hashes/*"],
       "opening_hours": ["./node_modules/opening_hours"],
       "libsodium-wrappers-sumo": ["./node_modules/libsodium-wrappers-sumo"],
       "@scure/bip39": ["./node_modules/@scure/bip39"],

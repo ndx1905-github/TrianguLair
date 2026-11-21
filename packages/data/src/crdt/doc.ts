@@ -91,6 +91,11 @@ export type YMap = Y.Map<unknown>;
 
 export const DOC_SCHEMA = 1;
 export const TRASH_RETENTION_MS = 30 * 24 * 3600 * 1000;
+/** One item of the trash: a save (by place id), a tag or a list. */
+export interface TrashItemRef {
+  kind: 'save' | 'tag' | 'list';
+  id: string;
+}
 export const TOMBSTONE_RETENTION_MS = 183 * 24 * 3600 * 1000;
 
 /** Yjs client of the base update; never used by a device. */
@@ -1103,16 +1108,19 @@ export class DocTx {
   /**
    * Removes items deleted more than 30 days ago, leaving a tombstone; drops
    * tombstones older than six months. Returns the number of purged items.
+   * With `only`, that one item is removed now if it is in the trash
+   * ("Delete forever" in the trash screen), whatever its age.
    */
-  purgeTrash(): number {
+  purgeTrash(only?: TrashItemRef): number {
     const now = this.ctx.now();
+    const wanted = (kind: TrashItemRef['kind'], id: string) => !only || (only.kind === kind && only.id === id);
     const old = (m: YMap | null | undefined) => {
       const d = readDeletedAt(m);
-      return d !== null && now - d >= TRASH_RETENTION_MS;
+      return d !== null && (!!only || now - d >= TRASH_RETENTION_MS);
     };
     let n = 0;
     for (const placeId of savePlaceIds(this.doc)) {
-      if (old(saveEntry(this.doc, placeId))) {
+      if (wanted('save', placeId) && old(saveEntry(this.doc, placeId))) {
         this.dropEntries(placeId);
         this.r.tombstones.set(`save:${placeId}`, now);
         n++;
@@ -1120,7 +1128,7 @@ export class DocTx {
     }
     for (const [kind, m] of [['tag', this.r.tags], ['list', this.r.lists]] as const) {
       for (const id of [...m.keys()].sort()) {
-        if (old(m.get(id))) {
+        if (wanted(kind, id) && old(m.get(id))) {
           m.delete(id);
           this.r.tombstones.set(`${kind}:${id}`, now);
           n++;

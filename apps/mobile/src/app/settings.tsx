@@ -28,6 +28,7 @@ import { protocolOf } from '../storage/config';
 import { useStorage } from '../storage/StorageProvider';
 import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
 import { PhotoSettings } from '../photos/PhotoSettings';
+import { MyContentSection } from '../privacy/SettingsSection';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -279,6 +280,7 @@ function SettingsScreen() {
           </Section>
 
           <PhotoSettings />
+          <MyContentSection />
 
           <Section title={t('settings.appearance')}>
             <Muted>{t('settings.theme')}</Muted>

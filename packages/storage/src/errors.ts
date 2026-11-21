@@ -12,7 +12,8 @@ export type StorageErrorCode =
   | 'UNSUPPORTED'
   | 'INVALID_PATH'
   | 'PROTOCOL'
-  | 'TOO_LARGE';
+  | 'TOO_LARGE'
+  | 'QUOTA';
 
 export class StorageError extends Error {
   readonly code: StorageErrorCode;
@@ -61,6 +62,32 @@ export class AuthError extends StorageError {
 export class NetworkError extends StorageError {
   constructor(message: string, opts: { status?: number; path?: string; cause?: unknown } = {}) {
     super('NETWORK', message, opts);
+  }
+}
+
+/**
+ * No response within the adapter's `timeoutMs` (the request was aborted). A
+ * `NetworkError` (code `NETWORK`, retryable) with the limit attached.
+ */
+export class TimeoutError extends NetworkError {
+  readonly timeoutMs: number;
+  constructor(message: string, timeoutMs: number, opts: { path?: string; cause?: unknown } = {}) {
+    super(message, opts);
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * The storage is full or refuses the size of the upload: HTTP 507 (WebDAV
+ * quota, MinIO), 413, or an S3 error code such as `QuotaExceeded`,
+ * `EntityTooLarge`, `XMinioStorageFull`. Retrying later can work once space is freed.
+ */
+export class QuotaExceeded extends StorageError {
+  /** S3 `<Code>` when the server sent one. */
+  readonly serverCode: string | undefined;
+  constructor(message: string, opts: { status?: number; path?: string; cause?: unknown; serverCode?: string } = {}) {
+    super('QUOTA', message, opts);
+    this.serverCode = opts.serverCode;
   }
 }
 

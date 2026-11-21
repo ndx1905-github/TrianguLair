@@ -31,6 +31,7 @@ import {
 } from '../../storage/config';
 import { runConnectionTest, type TestReport, type TestStep } from '../../storage/connectionTest';
 import { ChoiceCard, CopyBlock, Field, MasterKeyPrompt, Muted, Section, StorageScreen, TestResults } from '../../storage/components';
+import { NextcloudConnect } from '../../storage/NextcloudConnect';
 import { useStorage } from '../../storage/StorageProvider';
 import { safeReturn } from '../../storage/useStorageForSharing';
 import { s3AccessKeyPolicy } from '../../storage/fixes';
@@ -61,6 +62,7 @@ function SetupScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [sftpInfo, setSftpInfo] = useState(false);
 
   const built = useMemo(() => buildConfig(draft), [draft]);
   const problemsFor = (f: DraftField): DraftProblem[] => built.problems.filter((p) => p.field === f && (showProblems || p.level === 'warning'));
@@ -137,6 +139,7 @@ function SetupScreen() {
 
   const choice = draft.choice;
   const suggested = suggestedReadUrl(draft);
+  const ncFolder = nextcloudDavUrl(draft.ncServer, draft.ncUserId.trim() || draft.ncUser);
   const willMove = current !== null && report !== null && report.config.readUrl !== current.readUrl;
 
   return (
@@ -150,17 +153,38 @@ function SetupScreen() {
               key={ch}
               title={t(`storage.choice.${ch}`)}
               help={t(`storage.choice.${ch}Help`)}
-              selected={chosen && ch === choice}
-              disabled={ch === 'sftp'}
+              selected={(chosen && ch === choice) || (ch === 'sftp' && sftpInfo)}
               badge={ch === 'sftp' ? t('storage.desktopOnly') : undefined}
               onPress={() => {
-                if (ch === 'sftp' || ch === 'local') return;
+                if (ch === 'local') return;
+                // SFTP on a phone (decided in T-202): desktop only, no native module; explain why and what to do.
+                if (ch === 'sftp') return setSftpInfo((v) => !v);
+                setSftpInfo(false);
                 set({ choice: ch });
                 setChosen(true);
               }}
               testID={`choice-${ch}`}
             />
           ))}
+          {sftpInfo && (
+            <View style={{ gap: 8 }} testID="sftp-desktop-only">
+              <Banner tone="warning">{t('storage.sftp.title')}</Banner>
+              <Muted>{t('storage.sftp.why')}</Muted>
+              <Muted>{t('storage.sftp.instead')}</Muted>
+              <View style={{ alignSelf: 'flex-start' }}>
+                <Button
+                  kind="secondary"
+                  label={t('storage.sftp.useHttps')}
+                  onPress={() => {
+                    setSftpInfo(false);
+                    set({ choice: 'https' });
+                    setChosen(true);
+                  }}
+                  testID="sftp-use-https"
+                />
+              </View>
+            </View>
+          )}
         </Section>
       )}
 
@@ -174,11 +198,11 @@ function SetupScreen() {
           {choice === 'nextcloud' && (
             <>
               <Field label={t('storage.field.ncServer')} value={draft.ncServer} onChange={(v) => set({ ncServer: v })} placeholder="https://cloud.example.org" keyboard="url" problems={problemsFor('ncServer')} testID="field-ncServer" />
-              <Field label={t('storage.field.ncUser')} value={draft.ncUser} onChange={(v) => set({ ncUser: v })} help={t('storage.field.ncUserHelp')} problems={problemsFor('ncUser')} testID="field-ncUser" />
+              <NextcloudConnect draft={draft} set={set} />
+              <Field label={t('storage.field.ncUser')} value={draft.ncUser} onChange={(v) => set({ ncUser: v, ncUserId: '' })} help={t('storage.field.ncUserHelp')} problems={problemsFor('ncUser')} testID="field-ncUser" />
               <Field label={t('storage.field.ncPassword')} value={draft.ncPassword} onChange={(v) => set({ ncPassword: v })} help={t('storage.field.ncPasswordHelp')} secret problems={problemsFor('ncPassword')} testID="field-ncPassword" />
-              {nextcloudDavUrl(draft.ncServer, draft.ncUser) && <Muted testID="nc-dav-url">{t('storage.field.ncFolder', { url: nextcloudDavUrl(draft.ncServer, draft.ncUser)! })}</Muted>}
+              {ncFolder && <Muted testID="nc-dav-url">{t('storage.field.ncFolder', { url: ncFolder })}</Muted>}
               <Field label={t('storage.field.ncShareLink')} value={draft.ncShareLink} onChange={(v) => set({ ncShareLink: v })} placeholder="https://cloud.example.org/s/…" help={t('storage.field.ncShareLinkHelp')} keyboard="url" problems={problemsFor('ncShareLink')} testID="field-ncShareLink" />
-              <Muted>{t('storage.field.ncLoginFlowLater')}</Muted>
             </>
           )}
           {choice === 'webdav' && (

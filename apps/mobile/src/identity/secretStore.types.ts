@@ -21,7 +21,8 @@ export interface SecretStore {
  * `pending-invitation`: a link opened before my identity existed, finished after the first launch; T-208;
  * `recovery-copy`: my current sharing key sealed with the phrase-derived key (TLSK mode 2), uploaded by the sync
  * controller to `keys/<owner>.bin` for a restore with the 12 words; T-206; `pending-move`: an identity move under way,
- * finished at the next launch if interrupted, devices review F-08).
+ * finished at the next launch if interrupted, devices review F-08; `db-key`: the local database's SQLCipher key,
+ * erased first by a wipe so the database is unreadable at once, gap #7).
  */
 export type SecretKey =
   | 'identity'
@@ -35,7 +36,8 @@ export type SecretKey =
   | 'invitations-received'
   | 'pending-invitation'
   | 'recovery-copy'
-  | 'pending-move';
+  | 'pending-move'
+  | 'db-key';
 
 export const SECRET_KEYS: readonly SecretKey[] = [
   'identity',
@@ -50,4 +52,5 @@ export const SECRET_KEYS: readonly SecretKey[] = [
   'pending-invitation',
   'recovery-copy',
   'pending-move',
+  'db-key',
 ];

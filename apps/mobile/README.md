@@ -28,6 +28,36 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   photo of …" with thumbnails, and a Photos filter. Settings › Photos: quality of new photos, size of the friends'
   photo cache (100 MB to 2 GB, 500 MB by default; their places are never evicted), room taken on this device. The
   space my photos take on my storage is in Settings › Sync status (space used by content type).
+- **Store rules** (gap #6, spec "Store rules", "Editing and deleting", "Moderation"; logic in `src/privacy/`, tested in
+  `privacy.test.ts` and e2e `privacy.spec.ts` against Apache WebDAV):
+  - *Delete all my content* (`/delete-all`, Settings › My content; there is no account to close, so this covers
+    Apple's account-deletion rule): what will happen, "I understand" then the word typed (DELETE / SUPPRIMER);
+    disabled offline when a storage is connected. `SyncController.deleteAllContent` (`deleteAll.ts`): my document is
+    emptied (places, zones, the trash, tags, lists, tag mappings deleted and purged, tombstones only, so my other
+    devices empty themselves instead of publishing them back), contacts removed, open invitations cancelled
+    (`cancelAllInvitations`), followed lists unfollowed; with a storage, a publication whose signed index lists
+    nothing for anyone (the "content deleted" marker: friends' apps verify it and empty their cache, as for a removed
+    access), then every other file of the folder is deleted (packs, photos, `public/`, `vault.bin`, `keys/`, so the
+    kit restores nothing, `transfer/`); only the index and the files it lists (my emptied document, sealed to my key)
+    stay. Last, this device is erased like a remote wipe (secrets with `db-key` first). Progress and the summary
+    (counts, files deleted or left, "your recovery kit no longer brings anything back") replace the app
+    (`ContentDeleted.tsx`); "Start again" reloads (`reloadAppAsync` on native). A storage failure stops before the
+    device is erased ("Try again").
+  - *Block a person* (contact screen, report screen; `/blocked` lists them with "Unblock"): removed as a contact
+    (wraps gone at my next publication, their cache forgotten, their lists unfollowed), then their invitations and
+    answers are refused (`contacts.problem.blocked`) and their lists are not offered (`follow.problem.blocked`). The
+    list is a signed vault value (`blocked`: all my devices), mirrored in the sync state for local-only mode.
+  - *Report a list* ("Report" on a followed list, `/lists/report`): no project server and no moderators, so the screen
+    names who can act (the author, and the host of their storage from its address, with its abuse contact), gives a
+    report text to share or copy (the public file's address; a link-only list's key is never put in it), hides the
+    list here (unfollowed, recorded in the sync state, not offered again: `follow.problem.reported`) and offers to
+    block the author.
+- **Trash** (`/trash`, Settings › My content, gap #8; logic in `src/trash/model.ts`): places, zones, tags and lists
+  I deleted (they live in my document, so the trash is the same on all my devices), newest first, with the date and
+  the days left before the purge; "Restore" (a place comes back with its tags, comment and lists), "Delete forever"
+  (confirmed; `DataStore.purgeTrash({ kind, id })`, a tombstone remains) and "Empty the trash" (confirmed). At every
+  launch the DataProvider purges what was deleted more than 30 days ago (`purgeTrash()`), before the launch pass
+  publishes it. A deleted comment is an edit, not a trash item (the card's 15 s "Undo" stays).
 - **List** (`/list`, T-104 basic): sort recent / distance / name, text search (FTS or fallback),
   same filter bar; two panes (list + card) on wide screens.
 - **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
@@ -150,8 +180,24 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   last test), the connection test, and the previous storages that keep a signed redirect. The wizard offers
   Nextcloud (server + user + app password → `<server>/remote.php/dav/files/<user>/TrianguLair/`; the public share link
   `…/s/<token>` → `…/public.php/dav/files/<token>/` as read address), generic WebDAV, S3 (endpoint, bucket, region,
-  keys, prefix, path or host style; read address suggested as `<endpoint>/<bucket>/<prefix>`), SFTP (shown, marked
-  "Desktop only": `ssh2` needs Node) and HTTPS only (published by other means). Fields are validated as typed
+  keys, prefix, path or host style; read address suggested as `<endpoint>/<bucket>/<prefix>`), SFTP (marked
+  "Desktop only"; tapping it explains why and offers HTTPS only, see below) and HTTPS only (published by other means).
+  - **Nextcloud Login Flow v2** (T-202, `src/storage/nextcloud.ts`, `NextcloudConnect.tsx`): after the server address,
+    *Connect in the browser* posts to `<server>/index.php/login/v2`, opens the returned login page (`Linking.openURL`),
+    polls the poll endpoint every 2 s (20 min at most, cancellable; the token only goes back to the same origin) and
+    fills user name and app password. The account id (`GET /ocs/v2.php/cloud/user`) is kept as `nextcloud.userId` when
+    it differs from the login name (email or LDAP logins), and the WebDAV folder uses it. Then, **only when the user
+    taps** *Create the read-only public link for me*, the app creates the TrianguLair folder (MKCOL) and reuses a
+    read-only public link without password or creates one through the OCS Share API (`POST
+    /ocs/v2.php/apps/files_sharing/api/v1/shares`, `shareType=3`, `permissions=1`), and fills the share-link field.
+    Problems are typed (unreachable, not a Nextcloud, expired, refused, public links disabled, password enforced; an
+    admin-set expiry date is shown). The manual fields stay below as the fallback. Tested against a mock of the
+    endpoints (`nextcloud.test.ts`, `e2e/nextcloud.spec.ts`), not against a real Nextcloud.
+  - **SFTP on a phone: desktop only** (decided in T-202). `ssh2` needs Node, and no native SFTP module is shipped
+    (it would need an Expo dev build and host-key handling). The card explains it and offers *Use HTTPS only*: the
+    desktop app or a sync tool writes the folder on the SFTP server, the server publishes it over HTTPS.
+  - **S3 on a phone** works: the storage package signs with a pure-JS SigV4 (`@noble/hashes`), no WebCrypto needed
+    on Hermes. Fields are validated as typed
   (http write URL: warning; the read address must pass the crypto package's `checkLocation`: public https, no query,
   no credentials). Credentials live in the secret store (`storage` entry; web: the test-only store).
   - **Test connection** (`connectionTest.ts`): reach (HEAD `index.json` with the credentials; on the web a transport
@@ -191,8 +237,19 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   (`StorageAccess`; HTTPS-only mode and local only publish nothing but still read friends) and the data store (state in
   the same SQLite database, table `sync_state`). A `SyncScheduler` runs it as `(reason, opts) => engine.sync(opts)`: on
   launch, on return to the foreground, 3 s after my last edit (only edits that changed my document: `onLocalEdit` in
-  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background;
-  nothing after that. Network status from the browser on web (`online` / `offline`); native assumes online for now.
+  the DataProvider), on pull to refresh (list, What's new, sync status) and once when the app goes to the background
+  (on iOS inside the grace period the system allows, below); nothing after that. Network status (`src/sync/network.*.ts`, logic in `netState.ts`): the browser's `online` /
+  `offline` events on web, `expo-network` on phones (offline only when the system says there is no connection or no
+  internet behind it; unknown counts as online), so "Offline · N changes pending" shows natively too and a failure
+  without network is not counted as "storage unreachable". `expo-network` is a new native module (new development
+  build); it uses no Google service.
+  - **Last pass in the background** (gap #5, `src/sync/grace.ts`, `backgroundGrace.ts`): on AppState "background" the
+    last pass runs inside `UIApplication.beginBackgroundTask` (about 30 s on current iOS) through a local Expo module,
+    `modules/background-grace` (iOS only, autolinked from `modules/`; a new development build is needed). The grace
+    period always ends: when the pass ends, or when iOS says time is up (the pass is then left as is: packs are
+    written first and the index last, so the next launch resumes it). No `expo-background-task` /
+    `BGTaskScheduler`, no `UIBackgroundModes`: the spec allows no periodic work or scheduled wake-up. Android: no
+    module (see the open questions); web: nothing to do.
   - **Storage moves**: the controller is the registered `StorageMoveHooks`: `publishAfterMove` removes the copy of my
     old index at the new storage (it certifies the old address), publishes there with the new certificate, then
     writes the same index at every previous storage (the signed redirect friends follow); an index of another identity
@@ -404,6 +461,17 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
 
 - **Native**: `expo-sqlite` through the package's `ExpoSqliteDriver` (`src/data/openStore.native.ts`).
   `app.json` enables R*Tree (`customBuildFlags: -DSQLITE_ENABLE_RTREE=1`, needs a native rebuild).
+  **Encrypted** (gap #7, spec "Protections on the device"; logic in `src/data/dbEncryption.ts`): `app.json` sets
+  `useSQLCipher: true`, and the database `triangulair-sealed.db` is opened with `PRAGMA key = "x'…'"`, a raw 256-bit
+  key from the secret store (`db-key`, Keychain / Keystore, this device only). An older unencrypted `triangulair.db`
+  is moved once with `ATTACH … KEY` + `sqlcipher_export` (and its `user_version`); the plaintext file is deleted only
+  after the encrypted copy opened with the key, and an interrupted move starts again from it. The remote wipe (and
+  "Delete all my content") erases `db-key` with the other secrets before the files, so the database is unreadable at
+  once; an encrypted file whose key is gone is deleted and a new empty one created (the places come back from the
+  storage with the kit); a key that does not open the file is an error, never a reset; a locked vault leaves the file
+  alone. A build without SQLCipher (`PRAGMA cipher_version` empty) keeps the plaintext file, labelled in Settings ›
+  My content. Not run on a device yet. The web test build (sql.js) is not encrypted, and Settings says so.
+  Device settings and the document actor stay in expo-sqlite's kv-store (not encrypted: no places, no keys).
   Type-checked, not run on a device yet (the document is Yjs, pure JavaScript, so Hermes is no
   longer a blocker).
 - **Web**: sql.js (SQLite in WebAssembly, inline build) behind `SqlJsDriver` (`src/data/sqljsDriver.ts`),
@@ -499,8 +567,10 @@ map shows a plain background, so pins and zones keep working. The home screen th
 possibly less detailed" (a fallback address) or "Map background unavailable for now" (none). The
 address reached is kept for the session; the next launch tries the configured style first again.
 
-The attribution "© OpenStreetMap contributors, OpenFreeMap" is drawn by our own overlay
-(`MapAttribution`), so it is always visible. When a place sheet is open, the overlay moves above it.
+The attribution "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors" (spec "Base map", translated;
+opens the OSM copyright page) and its "Report an error" link (`MAP_REPORT_URL`, openstreetmap.org/fixthemap) are
+drawn by our own overlay (`MapAttribution`) on every map, web and native, so they are always visible. When a place
+sheet is open, the overlay moves above it.
 
 ## Layout
 
@@ -533,6 +603,7 @@ src/closure/          closed-place glue (pure), runner, useClosureCheck, signal 
 src/state/            AppState (filter, last map area, focus) shared by the screens
 src/theme/            tags.ts (palette, demo tags, category icons), icons.ts, colors.ts
 src/config.ts         map style URLs, attribution, initial camera, fixture flag
+modules/              local Expo modules (autolinked): background-grace (iOS beginBackgroundTask for the last pass)
 ```
 
 ## Pins
@@ -604,6 +675,19 @@ photos with a placeholder image; pins, clusters, UI, data and credit lines are r
 | `docs/tablet-list.png` | Tablet: list by distance and card side by side |
 | `docs/phone-dark-card.png` | Dark mode |
 | `docs/phone-fr-add.png` | French UI |
+
+Trash, store rules and map attribution (gaps #6, #8, #10; `E2E_SHOTS=1 npm run e2e -- trash privacy map-filters`,
+the storage scenarios against Apache WebDAV):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-map-attribution.png` | "OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors · Report an error" |
+| `docs/phone-trash.png`, `docs/phone-trash-delete-confirm.png` | Trash with the days left; "Delete forever" confirmation |
+| `docs/phone-dark-fr-trash.png`, `docs/phone-dark-fr-settings-my-content.png` | French, dark: trash; Settings › My content (database not encrypted on web) |
+| `docs/phone-delete-all.png`, `docs/phone-delete-all-done.png` | "Delete all my content": what happens and the confirmations; the summary |
+| `docs/phone-dark-fr-delete-all.png` | French, dark: "Tapez SUPPRIMER pour confirmer" |
+| `docs/phone-block-confirm.png`, `docs/phone-blocked.png` | Blocking a contact; blocked people with "Unblock" |
+| `docs/phone-report-list.png` | Reporting a public list: who can act, the report text, hide, block |
 
 Filter bar, tags and closed places (`scripts/shots_filters.py`, same setup; `SHOTS_BASE` picks the server):
 
@@ -812,25 +896,23 @@ Devices open questions:
 
 Sync open questions:
 
-- **Network status on native**: no NetInfo module yet (a new native module): native assumes online, so "Offline" is
-  only shown on web; a failure without network is classified as "storage unreachable" (banner after 24 h).
 - **Friends' names**: the protocol carries no display name; the name typed in the invitation flow is kept on this
   device. Contacts added on another device (through the vault) show "A friend" until renamed here.
 - **Restart after a remote wipe on native**: the removed screen asks to close and reopen the app (no reload API
   without expo-updates).
-- **Background grace period**: the last pass runs on AppState "background"; on iOS it needs a background task
-  (`expo-background-task` or `beginBackgroundTask`) to be sure to finish; not added.
+- **Background grace period on Android**: nothing asks Android for time (no WorkManager job with a headless JS task):
+  the process usually keeps running long enough after its activity stops, but the cached-app freezer (Android 14+)
+  or a low-memory kill can stop the last pass; it then resumes at the next launch (packs first, index last, nothing
+  lost). The iOS module is written against `UIApplication.beginBackgroundTask` but not yet built or run on a device.
 - Previous sharing keys are persisted only when the engine adopts a new key from another device; a local rotation
   (storage move) keeps the same key pair.
 
 Storage open questions:
 
-- **S3 on a phone**: `aws4fetch` signs with WebCrypto `crypto.subtle`, which Hermes lacks; S3 works in the web build
-  only until a SubtleCrypto polyfill (or another signer) is chosen.
-- **Nextcloud Login Flow v2** (spec: connection through the browser creating the app password, and the share link made
-  automatically through the OCS API) is not done: an app password and a pasted share link for now. The public DAV URL
-  (`public.php/dav/files/<token>/`, Nextcloud 29+) is still to be checked against a real instance; older servers need
-  another form.
+- **Nextcloud Login Flow v2 and the OCS share link** are tested against mocks only; to check on a real instance,
+  with the public DAV URL (`public.php/dav/files/<token>/`, Nextcloud 29+; older servers need another form). In the web
+  build these endpoints need CORS headers (a reverse-proxy rule), otherwise the wizard says so and the manual form is
+  used. On a phone, the browser tab stays open after approval (no redirect back into the app with Login Flow v2).
 - **Back to local only** from a storage is not offered (it would need a certificate without `location`, and friends
   would lose access): to decide.
 - **Redirect period**: 180 days chosen for "a few months"; the old storage's packs are kept as they are (nothing is

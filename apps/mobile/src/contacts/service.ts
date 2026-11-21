@@ -56,6 +56,7 @@ import {
   type ShareScope,
 } from './model';
 import { LinkProblemError } from './problems';
+import { isBlocked } from '../privacy/blocked';
 import type { SyncPort } from './port';
 
 const MAX_ANSWERS = 16;
@@ -339,7 +340,7 @@ class Service implements ContactsService {
 
   invitations(): InvitationView[] {
     return this.opened()
-      .map((x) => this.view(x, this.collect(x).answers))
+      .map((x) => this.view(x, this.collect(x).answers.filter((a) => !isBlocked(a.owner))))
       .sort((a, b) => b.created - a.created);
   }
 
@@ -370,6 +371,7 @@ class Service implements ContactsService {
         continue;
       }
       if (resp.owner === this.owner) throw new LinkProblemError('own-link');
+      if (isBlocked(resp.owner)) throw new LinkProblemError('blocked');
       const id = x.invitation.id;
       this.port.updateRecords((r) => ({
         ...r,
@@ -402,7 +404,9 @@ class Service implements ContactsService {
   answers(invitationId: string): AnswerDetail | null {
     const x = this.opened().find((i) => i.invitation.id === invitationId);
     if (!x) return null;
-    const c = this.collect(x);
+    const all = this.collect(x);
+    // Answers from someone I blocked are not shown (gap #6).
+    const c = { ...all, answers: all.answers.filter((a) => !isBlocked(a.owner)) };
     const set = answerSet(
       c.answers.map((a) => ({ owner: a.owner, created: Date.parse(a.created), openedAfterExpiry: a.openedAfterExpiry, location: a.location })),
       x.accepted,
@@ -430,6 +434,7 @@ class Service implements ContactsService {
   async acceptAnswer(invitationId: string, responder: string, choice: AcceptChoice): Promise<void> {
     const x = this.opened().find((i) => i.invitation.id === invitationId);
     if (!x) throw new LinkProblemError('no-longer-works');
+    if (isBlocked(responder)) throw new LinkProblemError('blocked');
     const answer = this.collect(x).answers.find((a) => a.owner === responder);
     if (!answer) throw new LinkProblemError('not-mine');
     const existing = this.port.contacts().find((c) => c.owner === responder);
@@ -467,6 +472,7 @@ class Service implements ContactsService {
     if (!f || f.kind !== 'invitation') throw new LinkKindError(f?.kind ?? null, 'invitation');
     const received = parseInvitationLink(f.link, { now: this.date() });
     if (received.owner === this.owner) throw new LinkProblemError('own-link');
+    if (isBlocked(received.owner)) throw new LinkProblemError('blocked');
     const existing = this.port.contacts().find((c) => c.owner === received.owner);
     const index = await this.port.fetchIndex(received.location, received.owner, existing?.anchor);
     checkInvitationIndex(received, index, { now: this.date(), ...(existing?.anchor && { lastSeen: existing.anchor }) });

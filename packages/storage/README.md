@@ -30,13 +30,15 @@ interface StorageAdapter {
   - `NotFound`
   - `PreconditionFailed` (the `ifMatch`/`ifNoneMatch` condition failed)
   - `AuthError` (401/403, or an SSH auth failure)
-  - `NetworkError` (transport failure, 5xx, 408 or 429; retryable)
+  - `NetworkError` (transport failure, connection cut while sending or reading, 5xx, 408 or 429; retryable)
+  - `TimeoutError` (a `NetworkError`, code `NETWORK`: no response headers within the adapter's `timeoutMs`, default 120 s, `0` for none; the request is aborted)
+  - `QuotaExceeded` (code `QUOTA`: HTTP 507 or 413, or an S3 error `<Code>` such as `QuotaExceeded`, `EntityTooLarge`, `XMinioStorageFull`; retry once space is freed)
   - `ReadOnly`
   - `Unsupported` (for example `list` over plain HTTPS)
   - `InvalidPath`
   - `ProtocolError` (a response the adapter did not expect)
   - `TooLarge` (`get` with `maxBytes`: the announced Content-Length or stat size is checked first, then the body is streamed and the read cancelled past the limit; SFTP reads through a handle up to the limit. Without a readable body stream, as in some React Native `fetch` builds, the size is checked after reading. `fetchSnapshot`, `fetchHighestIndex` and `fetchPack` take `maxBytes` too.)
-- Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs, and S3 signing uses WebCrypto through `aws4fetch`.
+- Every HTTP adapter takes an injectable `fetch` (React Native, proxies, tests). The default is `globalThis.fetch`. HTTP adapters use no Node APIs and no WebCrypto: S3 signing is pure JavaScript (`src/sigv4.ts` on `@noble/hashes`), so it runs on Hermes.
 - `probeConditionalWrites(adapter)` checks at setup time whether a server really enforces `If-Match`/`If-None-Match`. It writes and then deletes a `.triangulair-probe-*` object.
 
 ## Layout on storage
@@ -88,7 +90,7 @@ Friends never write to someone else's storage, so there is no inbox. They send a
 
 ### S3-compatible (`S3Adapter`)
 
-- `fetch` plus SigV4 (`aws4fetch`). The request is signed with the payload SHA-256. Path-style addressing is the default (MinIO, Garage, R2, Scaleway). `pathStyle: false` switches to virtual-hosted style.
+- `fetch` plus SigV4 (`src/sigv4.ts`: SHA-256 and HMAC-SHA256 from `@noble/hashes`, audited, pure JS, no WASM, no WebCrypto, so it works on Hermes where `crypto.subtle` is missing). It replaces `aws4fetch` and signs exactly like it (same signed headers, S3 path and query canonicalisation, `UNSIGNED-PAYLOAD` without a body); `test/sigv4.test.ts` checks the worked examples of the AWS documentation, equality with `aws4fetch` on varied keys and queries, and a full adapter round trip with `crypto` removed. The request is signed with the payload SHA-256. Path-style addressing is the default (MinIO, Garage, R2, Scaleway). `pathStyle: false` switches to virtual-hosted style.
 - Keys live under `prefix` (for example `triangulair/alice/`). `list` uses ListObjectsV2 with pagination.
 - Conditional writes:
   - `PUT` with `If-None-Match: *` (first publish) and `If-Match` (index swap).
@@ -142,18 +144,27 @@ This is the reference semantics, used in tests and as a fixture. `putUnchecked` 
 
 Each adapter also has tests for `AuthError` (bad credentials) and `NetworkError` (connection refused), and `probeConditionalWrites` is checked against both enforcing and lax servers.
 
+### Simulated failures (T-202)
+
+`startFaultProxy(upstream)` (`@triangulair/storage/testing/faults`, Node only) is a small HTTP proxy put between an adapter and any server. Rules (method, path regex, number of times) inject: a status (`507`, `413`, `401`, `403`, `503`, an S3 XML error), `hang` (no answer), `delay`, `drop-upload` (both connections cut after N bytes of the request body: the server sees a truncated upload) and `drop-download`. The `Host` header is forwarded unchanged, so SigV4 still verifies.
+
+- `test/faults.test.ts`: WebDAV (Nephele) and S3 (mock) through the proxy: `TimeoutError` (and an index write that timed out is not applied), slow but in time, `QuotaExceeded` for 507/413 and the S3 quota codes, `AuthError` for 401/403 (S3 `AccessDenied` stays `AuthError`), 503 retryable, a cut upload or download is a `NetworkError` and never yields a complete-looking object; the HTTPS read adapter with a timeout and a cut download.
+- `test/integration/real-faults.test.ts` (real servers): the same cuts and timeouts in front of Apache, WsgiDAV and moto; **real** quota answers from Apache (a DAV folder on a 1 MiB tmpfs answers `507`, `LimitRequestBody` answers `413`, no partial file is left); wrong passwords on Apache, WsgiDAV and OpenSSH.
+- `packages/sync/test/faults.test.ts`: real sync engines through the proxy: the index upload cut (truncated index on the server, friends keep their cache, the next pass repairs it), a pack upload cut (index untouched, retried), a timeout retried by the scheduler, quota full (`Quota full`, nothing published), credentials refused (writes blocked until `resume()`).
+
 ## Limitations
 
 - **Not tested against real servers**: Nextcloud, MinIO/Garage/AWS, OpenSSH and real CDNs are all untested. That is T-202. The S3 mock follows AWS documentation but is not S3.
 - **Nephele does not enforce conditions atomically**: it checks and then writes without a lock, and concurrent `If-Match` writers can all succeed. The conformance fixture flags this with `nonAtomicConditionals`. Whether Nextcloud is atomic under concurrency (file locking) must be verified in T-202. If it is not, the index needs another guard, such as a version counter inside the signed index that readers verify.
 - The SFTP test server does not advertise `posix-rename@openssh.com`, so only the unlink-and-rename fallback is tested. That fallback has a short window where the file is missing.
-- There are no timeouts or retries, and no quota error type (`507` and S3 `EntityTooLarge` surface as `ProtocolError`). Simulated failures (timeouts, full quota, interrupted writes) are left to T-202.
+- HTTP adapters time out waiting for response headers (`timeoutMs`); reading a body that stalls after the headers is not bounded. SFTP relies on `ssh2`'s connection timeout only. Adapters never retry: retries are the sync scheduler's job (backoff).
+- **An upload cut in the middle can leave a truncated file** on servers that stream the body into the target (WsgiDAV, Nephele; observed in the fault tests, even under `If-Match`). Apache `mod_dav`, Nextcloud (`.part` files) and S3 keep the previous object, and the SFTP adapter writes a temporary file and renames it. The sync engine republishes an own index that is not even JSON (`packages/sync`, `OwnSync.pull`), and packs are only referenced by an index written after them.
 - Uploads are single requests (no multipart or resumable uploads). That is fine for packs and photos of a few MB.
 - The package ships TypeScript sources (`main: src/index.ts`) and has no build step yet.
 
 ## Open questions
 
-- **SFTP on mobile**: `ssh2` cannot run in React Native or Hermes. The options are a native module (for example a Swift/Kotlin SFTP bridge, which would need an Expo dev build), making SFTP a desktop/CLI-only write protocol, or dropping SFTP writes on mobile and having users pair SFTP with a sync tool and the HTTPS read mode.
+- ~~SFTP on mobile~~ **Decided (T-202): SFTP is desktop/CLI only.** `ssh2` cannot run in React Native or Hermes, and a native SFTP bridge (Swift/Kotlin, Expo dev build, host-key handling) is not worth its cost now. On a phone the wizard shows SFTP as "Desktop only" and explains the alternative: keep the folder on the SFTP server in sync with a sync tool (or write it from the desktop) and use the HTTPS read mode on the phone. To revisit if users ask for it.
 - How does a web build reach Nextcloud with CORS: a recommended reverse-proxy snippet, or a Nextcloud app?
 - Do GitHub Pages and Codeberg Pages expose `ETag` to cross-origin scripts? If not, `fetchSnapshot` on the web falls back to a full `GET` (size and `Last-Modified` may also be hidden).
 - Should `fetchSnapshot` use a conditional `GET` (`If-None-Match`, `304`) instead of `HEAD` then `GET`? That saves a round trip when the index changed, but it needs CORS to allow the `If-None-Match` request header.
@@ -169,8 +180,19 @@ Results on 2026-10-13:
 | Apache httpd 2.4 `mod_dav` | ✅ passes | Enforces If-Match / If-None-Match. A file modified less than 1 s ago gets a **weak** ETag (`W/"…"`), which never matches If-Match; the adapter then emulates the check (HEAD + PUT, not atomic). |
 | WsgiDAV 4.3 | ✅ passes (with guard) | Coarse ETags (mtime in whole seconds + size), handled by the coarse-ETag guard. Also ignores If-Match on a missing resource: use `conditionalWrites: false`. |
 | Nextcloud (real instance behind nginx) | ✅ passes 17/17 (with guard) | **Coarse ETags**: same-size writes within one second keep the same ETag. Before the guard, 3 of 17 conformance tests failed because of it. |
-| moto server 5.2 (S3 API emulator) | ✅ passes | Enforces conditional PUT. Real AWS S3 / MinIO / R2 / Garage still to test (T-202). |
+| moto server 5.2 (S3 API emulator) | ✅ passes | Enforces conditional PUT. Signed by the pure-JS SigV4 signer since T-202. Real AWS S3 / MinIO / R2 / Garage still to test. |
 | OpenSSH `internal-sftp` | ✅ passes | Conditional writes emulated by the adapter. |
+
+Simulated failures on the same servers (2026-11-17, `real-faults.test.ts`, fault proxy in front):
+
+| Server | Upload cut after 64 KiB of a 256 KiB `If-Match` PUT | Full disk / body limit | Wrong password |
+|---|---|---|---|
+| Apache `mod_dav` | previous file kept (temporary file + rename) | real `507` / `413` → `QuotaExceeded`, nothing left behind | `AuthError` |
+| WsgiDAV 4.4 | **truncated file** (the first 64 KiB of the new content) | — | `AuthError` |
+| moto 5.2 | previous object kept | — (S3 quota codes injected) | moto accepts any key: `403 InvalidAccessKeyId` injected → `AuthError` |
+| OpenSSH | — (no HTTP proxy for SFTP; the adapter writes a temporary file and renames) | — | `AuthError` |
+
+**CI**: the job *storage (real servers)* in `.github/workflows/ci.yml` runs `scripts/real-servers.sh` on the runner and then this package's integration tests and `packages/sync`'s `test/real-servers.test.ts` on every push and pull request.
 
 Bugs found and fixed by these runs: the WebDAV adapter did not create the storage root folder when it was missing
 (every write failed with HTTP 409), it sent weak ETags in If-Match, and coarse ETags (Nextcloud, WsgiDAV, many NAS)
@@ -182,4 +204,6 @@ ETag changes. Run against your own server with `test/integration/remote-webdav.t
 not rely on it alone: after publishing, re-read the index and check that it carries our `seq`; packs whose content
 is missing from the index are merged and republished on the next sync.
 
-Still to test: Nextcloud, ownCloud/oCIS, Synology/QNAP WebDAV, real S3 providers.
+Also found by the fault runs (T-202): a truncated own index left the owner stuck on "tampered" for good; the sync engine now republishes it.
+
+Still to test: Nextcloud, ownCloud/oCIS, Synology/QNAP WebDAV, real S3 providers (MinIO: no longer publishes community container images, so CI uses moto).
