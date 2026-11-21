@@ -89,6 +89,11 @@ env:
 - inputText: ${PLACE}
 - hideKeyboard
 - takeScreenshot: 05-add-form
+- scrollUntilVisible:
+    element:
+      id: save-place
+    direction: DOWN
+    timeout: 20000
 - tapOn:
     id: save-place
 
