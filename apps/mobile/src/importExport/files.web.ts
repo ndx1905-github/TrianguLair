@@ -5,7 +5,7 @@
  */
 import type { ImportFile } from '@triangulair/import';
 
-export const IMPORT_ACCEPT = '.json,.geojson,.umap,.kml,.kmz,.csv,.tsv,.txt,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,text/csv';
+export const IMPORT_ACCEPT = '.json,.geojson,.umap,.kml,.kmz,.zip,.csv,.tsv,.txt,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/zip,text/csv';
 
 export function pickImportFile(): Promise<ImportFile | null> {
   return new Promise((resolve, reject) => {
@@ -38,9 +38,9 @@ export function pickImportFile(): Promise<ImportFile | null> {
   });
 }
 
-export async function saveExportFile(name: string, text: string, dialogTitle: string): Promise<'shared' | 'downloaded'> {
-  const blob = new Blob([text], { type: 'application/geo+json' });
-  const file = typeof File === 'function' ? new File([blob], name, { type: 'application/geo+json' }) : null;
+export async function saveExportFile(name: string, data: string | Uint8Array, mimeType: string, dialogTitle: string): Promise<'shared' | 'downloaded'> {
+  const blob = new Blob([typeof data === 'string' ? data : new Uint8Array(data)], { type: mimeType });
+  const file = typeof File === 'function' ? new File([blob], name, { type: mimeType }) : null;
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   if (file && coarse && nav.canShare?.({ files: [file] })) {

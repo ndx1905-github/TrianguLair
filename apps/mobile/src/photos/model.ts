@@ -48,6 +48,45 @@ export function setCacheCapMb(mb: number): void {
 /** Megabytes as storage providers and the spec count them. */
 export const MB = 1_000_000;
 
+/** One encoded image (the platform encoder's output). */
+export interface Encoded {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/** Lowest encoder quality tried before the size is reduced. */
+export const MIN_QUALITY = 0.3;
+/** Quality step between two tries. */
+export const QUALITY_STEP = 0.1;
+/** Each size reduction keeps this share of the longest side. */
+export const SIDE_STEP = 0.75;
+/** Below this longest side, give up (a 64 px image is a few KB: never reached in practice). */
+export const MIN_SIDE = 64;
+
+/**
+ * Encodes an image so that it fits the format caps (spec "Personal photos"; docs/format/pack.md
+ * "Media files"): at most `maxSide` px a side and `maxBytes` bytes. A photo is never refused for its
+ * size: it is downscaled to the setting's side (`side`, capped at `maxSide`), then, while the file is
+ * too large, the quality is lowered step by step down to MIN_QUALITY, and after that the side is
+ * reduced (×0.75) and the qualities tried again. `encode(side, quality)` is the platform's encoder.
+ */
+export async function encodeToFit<T extends Encoded>(
+  encode: (side: number, quality: number) => Promise<T>,
+  o: { side: number; quality: number; maxSide: number; maxBytes: number },
+): Promise<T> {
+  let side = Math.min(o.side, o.maxSide);
+  for (;;) {
+    for (let q = Math.min(1, o.quality); ; q = Math.round((q - QUALITY_STEP) * 100) / 100) {
+      const out = await encode(side, Math.max(q, MIN_QUALITY));
+      if (out.bytes.length <= o.maxBytes && out.width <= o.maxSide && out.height <= o.maxSide) return out;
+      if (q <= MIN_QUALITY) break;
+    }
+    side = Math.floor(side * SIDE_STEP);
+    if (side < MIN_SIDE) throw new RangeError('the image cannot be made small enough');
+  }
+}
+
 /** Size that fits `max` on the longest side, never enlarged. */
 export function fitSize(w: number, h: number, max: number): { width: number; height: number } {
   if (!(w > 0) || !(h > 0)) throw new RangeError('bad image size');

@@ -88,8 +88,30 @@ export interface ImportedPlace {
   priceLevel?: PriceLevel;
   sharing?: Sharing;
   commentVisibility?: CommentVisibility;
-  /** Photo metadata of a TrianguLair export (the files themselves are not in the export). */
-  media?: { id: string; file: string; blurhash?: string | null; width?: number | null; height?: number | null }[];
+  /**
+   * My photos in a TrianguLair export. Only a photo whose images came with it (the `.zip` archive)
+   * is imported; a plain GeoJSON export carries their metadata only.
+   */
+  media?: ImportedPhoto[];
+}
+
+/** One of my photos from a TrianguLair export. */
+export interface ImportedPhoto {
+  /** Its id in the exported account (a re-import gives it a new one). */
+  id: string;
+  /** Content hash of the full image (`b2b256:…`): a photo already on the save is not added twice. */
+  file: string;
+  thumb?: string | null;
+  mime?: string | null;
+  blurhash?: string | null;
+  width?: number | null;
+  height?: number | null;
+  /** When it was added (ms). */
+  createdAt?: number;
+  /** Owner id of its author (always the exporting account: friends' photos are not exported). */
+  author?: string;
+  /** The images, from the archive (decrypted, without metadata). */
+  images?: { full: Uint8Array; thumb: Uint8Array };
 }
 
 /** A tag or list as defined in the source, with what we know about it. */
@@ -117,7 +139,9 @@ export interface ParseWarning {
     | 'unverified-format'
     | 'empty'
     | 'bad-row'
-    | 'newer-version';
+    | 'newer-version'
+    /** A TrianguLair export whose photos are not in the file (a plain GeoJSON, or an image missing from the archive). */
+    | 'photos-not-included';
   /** Place key or row number, when it concerns one entry. */
   at?: string;
   detail?: string;

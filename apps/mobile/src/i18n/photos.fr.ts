@@ -23,7 +23,6 @@ export const photosFr: Messages = {
   'photos.privacy': 'La position et les détails de l’appareil sont retirés avant l’enregistrement de vos photos.',
   'photos.error.format': 'Cette image ne peut pas être lue.',
   'photos.error.permission': 'Autorisez l’accès à l’appareil photo ou aux photos dans les réglages du téléphone.',
-  'photos.error.tooLarge': 'Cette photo est trop grande.',
   'photos.error.other': 'La photo n’a pas pu être ajoutée.',
   'photos.of': 'Photo {n} sur {count}',
   'photos.previous': 'Photo précédente',

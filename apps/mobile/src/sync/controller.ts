@@ -828,6 +828,8 @@ export class SyncController implements StorageMoveHooks {
 
   private recordNews(friends: FriendReport[], firstRead: ReadonlySet<string>): void {
     const repo = this.d.store.repo;
+    // Photos gone since they were announced leave What's new (no empty strip, no broken tile).
+    this.whatsNew.prunePhotos((id) => !!repo.mediaById(id));
     this.whatsNew.record(friends, {
       now: this.now(),
       firstRead,

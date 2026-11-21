@@ -21,7 +21,7 @@ import {
   type SaveStatus,
 } from '@triangulair/data';
 
-import type { ImportedPlace, SourceFormat } from './model.ts';
+import type { ImportedPhoto, ImportedPlace, SourceFormat } from './model.ts';
 import { targetPlaceId, type ImportPlan, type PlanItem } from './plan.ts';
 
 export interface ApplyOptions {
@@ -33,11 +33,19 @@ export interface ApplyOptions {
   yieldFn?: () => Promise<void>;
   newId?: () => string;
   now?: () => number;
+  /**
+   * Stores one of my exported photos on a save (the app: `Photos.add`, which keeps the images on the
+   * device and records the photo in my document). Returns its new id. Without it, photos are skipped.
+   * Called after the batch that wrote the save; a throw skips that photo only.
+   */
+  addPhoto?: (placeId: string, photo: ImportedPhoto & { images: NonNullable<ImportedPhoto['images']> }) => string;
 }
 
 export interface MergedSave {
   placeId: string;
   addedTagIds: string[];
+  /** Photos the import added to this existing save (undo removes them). */
+  addedMediaIds?: string[];
   previousComment?: string;
   previousStatus?: SaveStatus | null;
   restoredFromTrash?: boolean;
@@ -63,6 +71,10 @@ export interface ImportReport {
     toCheck: number;
     skipped: number;
     duplicates: number;
+    /** Photos added (images included in the file). */
+    photos?: number;
+    /** Photos not added: images not in the file, refused, or no photo support. */
+    photosSkipped?: number;
   };
 }
 
@@ -88,6 +100,7 @@ function mergeImported(primary: ImportedPlace, others: readonly ImportedPlace[])
     ...(comments.length > 0 && { comment: comments.join('\n\n') }),
     ...(status && { status }),
     ...(created.length > 0 && { createdAt: Math.min(...created) }),
+    ...(all.some((p) => p.media?.length) && { media: all.flatMap((p) => p.media ?? []).filter((m, i, a) => a.findIndex((x) => x.file === m.file) === i) }),
   };
 }
 
@@ -169,8 +182,9 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
     merged: [],
     createdTagIds: [],
     createdListIds: [],
-    counts: { imported: 0, created: 0, merged: 0, linkedToOsm: 0, manual: 0, toCheck: 0, skipped: 0, duplicates: 0 },
+    counts: { imported: 0, created: 0, merged: 0, linkedToOsm: 0, manual: 0, toCheck: 0, skipped: 0, duplicates: 0, photos: 0, photosSkipped: 0 },
   };
+  const counts = report.counts as Required<ImportReport['counts']>;
   // Fold duplicates into their primary item.
   const folded = new Map<string, ImportedPlace[]>();
   for (const it of plan.items) {
@@ -201,6 +215,8 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       const id = it.existing?.placeId ?? targetPlaceId(it);
       return [it.key, id ? store.repo.getMySaveForPlace(id) : null] as const;
     }));
+    // Photos are stored after the batch's change (the app's photo store writes its own change).
+    const photos: { placeId: string; photo: ImportedPhoto; merged?: MergedSave }[] = [];
     store.change((tx) => {
       for (const it of batch) {
         const place = mergeImported(it.place, folded.get(it.key) ?? []);
@@ -225,6 +241,8 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             tx.restoreSave(cur.placeId);
             merged.restoredFromTrash = true;
           }
+          const have = new Set(store.repo.getMedia(cur.id).map((m) => m.file));
+          for (const m of place.media ?? []) if (!have.has(m.file)) photos.push({ placeId: cur.placeId, photo: m, merged });
           report.merged.push(merged);
           report.counts.merged++;
         } else {
@@ -240,9 +258,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             ...(place.commentVisibility && { commentVisibility: place.commentVisibility }),
             ...(place.createdAt && { createdAt: place.createdAt }),
           });
-          for (const m of place.media ?? []) {
-            tx.addMedia(placeId, { id: m.id, file: m.file, blurhash: m.blurhash ?? null, width: m.width ?? null, height: m.height ?? null });
-          }
+          for (const m of place.media ?? []) photos.push({ placeId, photo: m });
           if (place.trashed) tx.deleteSave(placeId);
           report.createdPlaceIds.push(placeId);
           report.counts.created++;
@@ -256,6 +272,20 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
         if (it.match.kind === 'ambiguous') report.counts.toCheck++;
       }
     }, 'import');
+    for (const { placeId, photo, merged } of photos) {
+      const images = photo.images;
+      if (!images || !opts.addPhoto) {
+        counts.photosSkipped++;
+        continue;
+      }
+      try {
+        const id = opts.addPhoto(placeId, { ...photo, images });
+        counts.photos++;
+        if (merged) (merged.addedMediaIds ??= []).push(id);
+      } catch {
+        counts.photosSkipped++;
+      }
+    }
     written += batch.length;
     report.counts.imported = written;
     opts.onProgress?.(written, total);
@@ -322,6 +352,7 @@ export async function undoImport(store: DataStore, report: ImportReport, opts: O
       if (m.addedTagIds.length > 0) tx.setSaveTags(m.placeId, s.tagIds.filter((t) => !m.addedTagIds.includes(t)));
       if (m.previousComment !== undefined) tx.updateSave(m.placeId, { comment: m.previousComment });
       if (m.previousStatus !== undefined) tx.updateSave(m.placeId, { status: m.previousStatus });
+      for (const id of m.addedMediaIds ?? []) tx.removeMedia(m.placeId, id);
       if (m.restoredFromTrash) tx.deleteSave(m.placeId);
     }),
   ];

@@ -122,6 +122,31 @@ export class WhatsNewLog {
     return fresh;
   }
 
+  /**
+   * Photos that left my cache (removed by their author, access lost, or dropped by a key renewal that
+   * could not be done, review photos F-07) leave What's new as if they had never been added: their
+   * ids go, and a "new photo" entry left without any goes too. Returns whether anything changed.
+   */
+  prunePhotos(exists: (mediaId: string) => boolean): boolean {
+    let changed = false;
+    const out: WhatsNewEntry[] = [];
+    for (const e of this.entries()) {
+      if (e.kind !== 'photo' || !e.mediaIds) {
+        out.push(e);
+        continue;
+      }
+      const ids = e.mediaIds.filter(exists);
+      if (ids.length === e.mediaIds.length) {
+        out.push(e);
+        continue;
+      }
+      changed = true;
+      if (ids.length > 0) out.push({ ...e, mediaIds: ids, count: Math.max(0, (e.count ?? e.mediaIds.length) - (e.mediaIds.length - ids.length)) || ids.length });
+    }
+    if (changed) this.kv.set(LOG_KEY, out);
+    return changed;
+  }
+
   /** Someone I no longer follow: their news go too. */
   forget(owner: string): void {
     this.kv.set(LOG_KEY, this.entries().filter((e) => e.owner !== owner));

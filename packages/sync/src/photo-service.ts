@@ -113,8 +113,9 @@ export class Photos {
    * Adds a photo to my save on `placeId` (already recompressed by the app). Metadata (EXIF, GPS,
    * XMP…) is removed again and the result checked; both images are stored on this device, the
    * document records the photo, and the next publication uploads it. Returns the photo id.
+   * `createdAt`: the date it was first added (a re-imported export keeps it).
    */
-  add(placeId: string, input: PhotoInput): string {
+  add(placeId: string, input: PhotoInput, opts: { createdAt?: number } = {}): string {
     if (!this.o.store.repo.getMySaveForPlace(placeId)) throw new PhotoError('no-save', 'save the place first');
     const L = this.o.limits;
     const full = clean(input.full);
@@ -137,7 +138,7 @@ export class Photos {
     const th = imageHash(thumb);
     this.o.cache.put(file, full, { owner: this.me, kind: 'full', mine: true, mime });
     this.o.cache.put(th, thumb, { owner: this.me, kind: 'thumb', mine: true, mime });
-    return this.o.store.addMedia(placeId, { file, thumb: th, mime, bytes: full.length, width: input.width, height: input.height });
+    return this.o.store.addMedia(placeId, { file, thumb: th, mime, bytes: full.length, width: input.width, height: input.height, ...(opts.createdAt !== undefined && { createdAt: opts.createdAt }) });
   }
 
   /** Removes one of my photos (everywhere: my devices, then friends at their next read; its files are deleted at the next publication). */

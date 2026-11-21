@@ -9,7 +9,7 @@ import { parseCsv, stripBom, type CsvTable } from './csv.ts';
 import { guessMapping, isGoogleSavedCsv, parseCsvWithMapping, parseGoogleSavedCsv, type ColumnMapping } from './formats/csv.ts';
 import { isGoogleLabeledPlaces, isGoogleSavedPlaces, parseGenericGeoJson, parseGoogleLabeledPlaces, parseGoogleSavedPlaces } from './formats/geojson.ts';
 import { isZip, looksLikeKml, parseKml, parseKmz } from './formats/kml.ts';
-import { isTriangulairExport, parseTriangulairExport } from './formats/triangulair.ts';
+import { isTriangulairArchive, isTriangulairExport, parseTriangulairArchive, parseTriangulairExport } from './formats/triangulair.ts';
 import { isMapstrCsv, isMapstrGeoJson, parseMapstrCsv, parseMapstrGeoJson } from './formats/unverified/mapstr.ts';
 import { isPinDropCsv, isPinDropKml, parsePinDropCsv, parsePinDropKml } from './formats/unverified/pindrop.ts';
 import type { ImportFile, ParseResult } from './model.ts';
@@ -31,8 +31,17 @@ export function readImportFile(file: ImportFile): ReadOutcome {
   const name = file.name ?? '';
   const ext = (/\.([a-z0-9]+)$/i.exec(name)?.[1] ?? '').toLowerCase();
   try {
-    if (isZip(file.bytes) || ext === 'kmz') {
+    if (isZip(file.bytes) || ext === 'kmz' || ext === 'zip') {
       if (!file.bytes) return { kind: 'error', code: 'unreadable' };
+      // My own export with photos, or a KMZ.
+      if (isTriangulairArchive(file.bytes)) {
+        try {
+          return { kind: 'parsed', result: parseTriangulairArchive(file.bytes) };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return { kind: 'error', code: /newer version/.test(msg) ? 'too-new' : 'unreadable', detail: msg };
+        }
+      }
       return { kind: 'parsed', result: parseKmz(file.bytes) };
     }
     const text = textOf(file);

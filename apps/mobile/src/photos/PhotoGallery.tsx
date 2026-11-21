@@ -65,8 +65,8 @@ export function PhotoGallery({ placeId, mine }: { placeId: string; mine: boolean
       // Through mutate: the card redraws and the edit is published like any other.
       mutate(() => svc.add(placeId, input));
     } catch (e) {
-      if (e instanceof PhotoProcessError || (e instanceof PhotoError && e.code !== 'too-large')) setError(t('photos.error.format'));
-      else if (e instanceof PhotoError) setError(t('photos.error.tooLarge'));
+      // Never refused for its size (made to fit when processed): only a file that is not an image.
+      if (e instanceof PhotoProcessError || (e instanceof PhotoError && e.code !== 'no-save')) setError(t('photos.error.format'));
       else setError(t('photos.error.other'));
     } finally {
       setBusy(false);

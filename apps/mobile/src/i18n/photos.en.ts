@@ -23,7 +23,6 @@ export const photosEn: Messages = {
   'photos.privacy': 'Location and camera details are removed before your photos are saved.',
   'photos.error.format': 'This image cannot be read.',
   'photos.error.permission': 'Allow access to the camera or photos in the phone settings.',
-  'photos.error.tooLarge': 'This photo is too large.',
   'photos.error.other': 'The photo could not be added.',
   'photos.of': 'Photo {n} of {count}',
   'photos.previous': 'Previous photo',

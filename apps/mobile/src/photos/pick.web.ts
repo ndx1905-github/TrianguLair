@@ -1,12 +1,13 @@
 /**
  * Web (test build): a file input (`capture` on phones for the camera), then a canvas: the image is
  * decoded with its EXIF orientation applied, drawn at about 1,600 px and encoded in AVIF when the
- * browser can, else WebP, else JPEG; the thumbnail uses the same format. A canvas writes no
- * metadata; the sync package strips and checks again (`Photos.add`).
+ * browser can, else WebP, else JPEG; the thumbnail uses the same format. Both are made to fit the
+ * format caps (`encodeToFit`: smaller quality, then smaller size; never refused for their size). A
+ * canvas writes no metadata; the sync package strips and checks again (`Photos.add`).
  */
-import type { PhotoInput } from '@triangulair/sync';
+import { MAX_PHOTO_BYTES, MAX_PHOTO_SIDE, MAX_THUMB_BYTES, MAX_THUMB_SIDE, type PhotoInput } from '@triangulair/sync';
 
-import { fitSize, type QualitySpec } from './model';
+import { encodeToFit, fitSize, type QualitySpec } from './model';
 import { PhotoProcessError, type Picked, type PickSource } from './pick.types';
 
 const TYPES = ['image/avif', 'image/webp', 'image/jpeg'] as const;
@@ -69,8 +70,21 @@ async function draw(bmp: ImageBitmap, side: number, quality: number, types: read
 export async function processImage(p: Picked, q: QualitySpec): Promise<PhotoInput> {
   const bmp = await decode(p);
   try {
-    const full = await draw(bmp, q.side, q.quality, TYPES);
-    const thumb = await draw(bmp, q.thumbSide, q.thumbQuality, [full.type]);
+    let types: readonly string[] = TYPES;
+    const full = await encodeToFit(
+      async (side, quality) => {
+        const out = await draw(bmp, side, quality, types);
+        types = [out.type]; // the format the browser could encode, kept for the next tries and the thumbnail
+        return out;
+      },
+      { side: q.side, quality: q.quality, maxSide: MAX_PHOTO_SIDE, maxBytes: MAX_PHOTO_BYTES },
+    );
+    const thumb = await encodeToFit((side, quality) => draw(bmp, side, quality, [full.type]), {
+      side: q.thumbSide,
+      quality: q.thumbQuality,
+      maxSide: MAX_THUMB_SIDE,
+      maxBytes: MAX_THUMB_BYTES,
+    });
     return { full: full.bytes, thumb: thumb.bytes, width: full.width, height: full.height };
   } finally {
     bmp.close();

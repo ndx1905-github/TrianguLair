@@ -3,7 +3,10 @@
  * generic CSV, match the places to OpenStreetMap, review the preview (found /
  * to check / manual points / no position, and what each source tag becomes),
  * write in batches with progress and cancel, undo for a few days; export
- * everything as GeoJSON. All the logic is in @triangulair/import.
+ * everything as GeoJSON, in a ZIP archive with my photos (decrypted) when I
+ * have some; friends' photos are never exported. All the logic is in
+ * @triangulair/import; the photos come from and go to the photo store
+ * (`Photos`, sync package).
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -12,8 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   applyImport,
   buildPlan,
-  exportFileName,
-  exportGeoJson,
+  exportArchive,
   mappingProblems,
   matchPlaces,
   osmLookupFromClient,
@@ -46,6 +48,7 @@ import { ColumnMappingEditor, PreviewRow, ProgressBar, TagMappingRow } from '../
 import { pickImportFile, saveExportFile } from '../importExport/files';
 import { firstGroup, GROUP_ORDER, itemsByGroup, LAST_IMPORT_KEY, serializeReport, toWrite, undoableReport, UNDO_DAYS } from '../importExport/logic';
 import { osmClient } from '../osm/client';
+import { usePhotosService } from '../photos/usePhotos';
 
 type Step =
   | { kind: 'home' }
@@ -70,6 +73,7 @@ function ImportScreen() {
   const [message, setMessage] = useState<{ tone: 'info' | 'warning'; text: string } | null>(null);
   const [lastImport, setLastImport] = useState<ImportReport | null>(() => undoableReport(getSetting(LAST_IMPORT_KEY), Date.now()));
   const abort = useRef<AbortController | null>(null);
+  const photos = usePhotosService();
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
@@ -128,9 +132,16 @@ function ImportScreen() {
   const doExport = async () => {
     setMessage(null);
     try {
-      const name = exportFileName();
-      await saveExportFile(name, exportGeoJson(store, { app: `TrianguLair ${APP_VERSION}` }), t('import.exportTitle'));
-      setMessage({ tone: 'info', text: t('import.exported', { file: name }) });
+      // My photos, decrypted (a full photo not on this device is fetched from my storage).
+      const out = await exportArchive(store, {
+        app: `TrianguLair ${APP_VERSION}`,
+        image: async (id, which) => (photos ? (which === 'full' ? photos.full(id) : photos.thumbnail(id)) : null),
+      });
+      await saveExportFile(out.name, out.bytes, out.mime, t('import.exportTitle'));
+      setMessage({
+        tone: out.missing > 0 ? 'warning' : 'info',
+        text: out.missing > 0 ? t('import.exportedMissing', { file: out.name, count: out.missing }) : t('import.exported', { file: out.name }),
+      });
     } catch {
       setMessage({ tone: 'warning', text: t('import.exportFailed') });
     }
@@ -141,7 +152,15 @@ function ImportScreen() {
     abort.current = ac;
     setStep({ kind: 'writing', done: 0, total: toWrite(plan) });
     try {
-      const report = await applyImport(store, plan, { signal: ac.signal, onProgress: (done, total) => setStep({ kind: 'writing', done, total }) });
+      const report = await applyImport(store, plan, {
+        signal: ac.signal,
+        onProgress: (done, total) => setStep({ kind: 'writing', done, total }),
+        // My photos from a TrianguLair archive: checked, stored on this device, uploaded at the next sync.
+        ...(photos && {
+          addPhoto: (placeId: string, p: { images: { full: Uint8Array; thumb: Uint8Array }; width?: number | null; height?: number | null; createdAt?: number }) =>
+            photos.add(placeId, { full: p.images.full, thumb: p.images.thumb, width: p.width ?? 0, height: p.height ?? 0 }, p.createdAt !== undefined ? { createdAt: p.createdAt } : {}),
+        }),
+      });
       setSetting(LAST_IMPORT_KEY, serializeReport(report));
       setLastImport(undoableReport(serializeReport(report), Date.now()));
       setStep({ kind: 'done', report });
@@ -252,9 +271,13 @@ function ImportScreen() {
                 ['toCheck', n.toCheck],
                 ['manual', n.manual],
                 ['merged', n.merged],
+                ['photos', n.photos ?? 0],
+                ['photosSkipped', n.photosSkipped ?? 0],
                 ['skipped', n.skipped + n.duplicates],
               ] as const
-            ).map(([k, count]) => (
+            )
+              .filter(([k, count]) => count > 0 || !k.startsWith('photos'))
+              .map(([k, count]) => (
               <Text key={k} style={[k === 'imported' ? styles.big : styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
                 {t(`import.done.${k}`, { count })}
               </Text>
