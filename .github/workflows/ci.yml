@@ -19,7 +19,7 @@ env:
 jobs:
   packages:
     name: ${{ matrix.package }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: the Playwright and real-server setups are tested there; ubuntu-latest moved to 26.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -90,7 +90,7 @@ jobs:
   # longer publishes community images).
   real-servers:
     name: storage (real servers)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -125,7 +125,7 @@ jobs:
 
   app:
     name: app (mobile)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -143,6 +143,12 @@ jobs:
       - run: npm ci --workspaces=false
       - run: npm run typecheck
       - run: npm test
+      # The JavaScript bundles of the phone apps (Metro + Hermes bytecode). Catches
+      # modules that resolve on the web but not on a phone, without a native build.
+      - name: Native bundles (Android, iOS)
+        run: |
+          npx expo export --platform android --output-dir /tmp/native-android
+          npx expo export --platform ios --output-dir /tmp/native-ios
       - name: Web export (fixture mode)
         run: npm run export:web:fixtures
       - name: Install Chromium for Playwright
