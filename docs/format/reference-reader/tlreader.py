@@ -4,10 +4,13 @@ Covers: canonical JSON (README §4), base64url and keys (§3), signatures (§5),
 read addresses (identity-and-keys.md §5), sharing and device certificates, identity moves,
 the signed index with ordering and anchors (signed-index.md), the invitation listing padding,
 packs and Padmé (pack.md), group keys, invitation links, tokens and their acceptance
-(invitation-link.md), and the safety code. It does not write anything.
+(invitation-link.md), the safety code; then the owner's private structures that a restore with the
+recovery kit reads: the recovery phrase and its derivations, TLPI, TLSK, the key export, the transfer
+blob and code, invitation records, return links, index anchors and the recovery vault (with merge).
+It does not write anything.
 
-Dependencies: Python >= 3.10, PyNaCl (libsodium) for Ed25519, X25519, sealed boxes and
-XChaCha20-Poly1305; hashlib for BLAKE2b.
+Dependencies: Python >= 3.10, PyNaCl (libsodium) for Ed25519, X25519, sealed boxes,
+XChaCha20-Poly1305 and Argon2id; hashlib for BLAKE2b and SHA-256; bip39-english.txt.
 """
 
 from __future__ import annotations

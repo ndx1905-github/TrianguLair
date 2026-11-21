@@ -73,6 +73,8 @@ produce one. It MUST NOT be granted silently, even when it is the only one.
 2. For each response, `openInvitationResponse`: ERROR(EXPIRED) is raised to the caller; any other error counts in
    `rejected`. Keep one answer per responder owner: the first, replaced by a later one only if its certificate
    rotation is higher.
+   `answers` lists the kept answers in the order of each responder's first valid answer (a replacement keeps that
+   place).
 3. `multiple` = more than one responder. Without `acceptedOwner`: `accepted` = the single answer if exactly one
    responder, else none. With `acceptedOwner`: `accepted` = that responder's answer (or none), `late` = every other
    responder's answer (warn: the first may have been an impostor).

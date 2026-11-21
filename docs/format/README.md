@@ -264,7 +264,7 @@ Hash and KDF contexts (all distinct, none a prefix of another followed by attack
 
 ## 10. Known-answer vectors
 
-`vectors/*.json` hold 472 vectors in 17 files, generated deterministically by
+`vectors/*.json` hold 473 vectors in 17 files, generated deterministically by
 `packages/crypto/test/vectors/generate.ts` from seeded randomness (libsodium's random source is replaced, in the
 test process only, by a stream seeded per file; see `test/vectors/seeded.ts`). Fixed clocks: fixtures are created at
 `T0 = 2026-10-20T12:00:00.000Z` and most readers run at `NOW = 2026-10-20T13:00:00.000Z`.
@@ -322,9 +322,9 @@ milliseconds; keys are their `ed25519:` / `x25519:` strings; certificates in res
 
 `packages/crypto/test/vectors.test.ts` checks that the library returns every `expect`, and that regenerating the
 files gives them back byte for byte (so writers are covered too). `npm run vectors` in `packages/crypto` rewrites
-them after an intended change. `reference-reader/` runs an independent Python implementation of the reading ops
-(canonical JSON, signatures, keys, read addresses, certificates, identity moves, signed index with ordering and
-anchors, packs, Padmé, invitation links, tokens, acceptance, listing padding, safety code) against the same files.
+them after an intended change. `reference-reader/` runs an independent Python implementation of every op of this table (the public
+structures, and the private ones a restore reads: phrase, `TLPI`, `TLSK`, key export, transfer blob, invitation
+records, return links, vault) against the same files: all 473 vectors agree.
 
 ## 11. Fuzzing
 
