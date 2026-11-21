@@ -105,11 +105,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # A called workflow's jobs get at most these permissions: actions: read lets a job of
+  # native-android.yml download artifacts with the API (the emulator smoke test does).
   android:
     name: Android
     needs: prepare
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/native-android.yml
 
   ios:
