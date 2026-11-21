@@ -71,9 +71,13 @@ fi
   fi
 } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 
+# The job log gets the essentials too (the artifacts are not always at hand).
+echo '--- JavaScript logs (ReactNativeJS) ---'
+grep -E ' ReactNativeJS' "$OUT/logcat-app.txt" | cut -c1-600 | tail -80 || true
 if [ "$crashed" -eq 1 ]; then
   echo "::error::The app crashed, see crashes.txt"
-  cat "$OUT/crashes.txt"
+  echo '--- Crash ---'
+  grep -E -A60 "FATAL EXCEPTION|Fatal signal" "$OUT/logcat-app.txt" | cut -c1-600 | head -150
   exit 1
 fi
 exit "$status"
