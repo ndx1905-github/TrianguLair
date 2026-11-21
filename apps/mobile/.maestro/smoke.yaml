@@ -110,7 +110,20 @@ env:
     notVisible:
       id: place-card
     timeout: 10000
+# Its pin is on the map (a MapLibre marker labelled with the name); tapping it opens the card.
+- assertVisible: ${PLACE}
 - takeScreenshot: 07-map-pin
+- tapOn: ${PLACE}
+- extendedWaitUntil:
+    visible:
+      id: place-card
+    timeout: 10000
+- tapOn:
+    id: card-close
+- extendedWaitUntil:
+    notVisible:
+      id: place-card
+    timeout: 10000
 
 # List: the place is there.
 - tapOn:

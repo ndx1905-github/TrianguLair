@@ -90,6 +90,8 @@ rm -f "$OUT/pids.txt" "$OUT/pids.sorted"
 # The job log gets the essentials too (the artifacts are not always at hand).
 echo '--- JavaScript logs (ReactNativeJS) ---'
 grep -E ' ReactNativeJS' "$OUT/logcat-app.txt" | cut -c1-600 | tail -80 || true
+echo '--- Warnings and errors of the app (other tags) ---'
+awk '$5 == "W" || $5 == "E" || $5 == "F"' "$OUT/logcat-app.txt" | grep -v ' ReactNativeJS' | grep -v ' AndroidRuntime' | cut -c1-400 | sort -k6 | uniq -f5 -c | sort -rn | head -60 || true
 if [ -s "$OUT/screen-at-failure.xml" ]; then
   echo '--- On screen when the flow failed (resource-id = testID) ---'
   grep -oE '(resource-id|text|content-desc)="[^"]+"' "$OUT/screen-at-failure.xml" | grep -v 'resource-id="android:id\|resource-id="com.android' | head -120
