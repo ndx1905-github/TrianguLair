@@ -230,18 +230,24 @@ export class SyncEngine {
   setPolicy(owner: string, patch: { share?: SharePolicy; follow?: boolean }): void {
     this.book.setPolicy(owner, patch, this.nowMs());
     this.saveBook();
-    if (patch.follow === false) {
-      this.reader.forget(owner);
-      this.photos.prune();
-    }
+    if (patch.follow === false) this.forgetFriend(owner);
+  }
+
+  /**
+   * Erases everything a friend's content left on this device: their saves (and so their photo rows),
+   * the places only they had, their read state and kept index, and every image of theirs in the cache.
+   */
+  private forgetFriend(owner: string): void {
+    this.reader.forget(owner);
+    this.photos.forget(owner);
+    this.photos.prune();
   }
 
   /** Removes a contact: their wraps disappear at the next publication, their content leaves my cache now. */
   removeContact(owner: string): void {
     this.book.remove(owner, this.nowMs());
     this.saveBook();
-    this.reader.forget(owner);
-    this.photos.prune();
+    this.forgetFriend(owner);
   }
 
   /** Records an invitation I created (see ContactBook.addInvitation); publish before sending its link. */
@@ -472,7 +478,7 @@ export class SyncEngine {
       const index = verifyIndex(f.index, { expectedOwner: m.to, location, retiredOwners: [...this.book.retiredOwners(), m.from], ...(this.o.now && { now: this.o.now() }) });
       if (!index.move || index.move.from !== m.from) return null;
       this.book.followMove(m.from, index, this.nowMs());
-      this.reader.forget(m.from);
+      this.forgetFriend(m.from);
       this.saveBook();
       return index;
     } catch {
@@ -532,7 +538,7 @@ export class SyncEngine {
     for (const k of this.o.state.keys('friend:')) {
       const owner = k.slice('friend:'.length);
       const c = this.book.contact(owner);
-      if (!c || !c.policy.follow) this.reader.forget(owner);
+      if (!c || !c.policy.follow) this.forgetFriend(owner);
     }
     let thumbs = 0;
     // 2. Friends.

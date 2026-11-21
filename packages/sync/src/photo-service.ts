@@ -19,7 +19,7 @@ import type { StorageAdapter } from '@triangulair/storage';
 import { ImageFormatError, imageMetadata, sniffImage, stripImageMetadata } from './image-meta.ts';
 import type { SyncLimits } from './limits.ts';
 import { listsReady } from './lists.ts';
-import type { MediaCache } from './media-cache.ts';
+import { friendCacheId, type MediaCache } from './media-cache.ts';
 import type { OwnSync } from './own.ts';
 import { MAX_PHOTO_SIDE, checkImage, imageHash, mediaFileBytes, mediaPath, openPhoto, photoKeyPair } from './photos.ts';
 import type { FriendReader } from './reader.ts';
@@ -152,8 +152,8 @@ export class Photos {
     return this.o.store.repo.mediaForPlace(placeId).map((m) => ({
       ...m,
       state: m.mine ? (m.upload ? 'uploaded' : 'waiting') : 'friend',
-      thumbLocal: !!m.thumb && this.o.cache.has(m.thumb),
-      fullLocal: this.o.cache.has(m.file),
+      thumbLocal: !!m.thumb && this.o.cache.has(cacheId(m, 'thumb')!),
+      fullLocal: this.o.cache.has(cacheId(m, 'full')!),
     }));
   }
 
@@ -180,7 +180,7 @@ export class Photos {
   private async load(mediaId: string, which: 'full' | 'thumb'): Promise<PhotoImage | null> {
     const m = this.o.store.repo.mediaById(mediaId);
     if (!m) return null;
-    const id = which === 'full' ? m.file : m.thumb;
+    const id = cacheId(m, which);
     if (!id) return null;
     const hit = this.o.cache.get(id);
     if (hit) return { bytes: hit.bytes, mime: hit.mime ?? m.mime ?? null };
@@ -223,7 +223,7 @@ export class Photos {
     for (const id of mediaIds) {
       if (used >= budget) break;
       const m = this.o.store.repo.mediaById(id);
-      if (!m?.thumb || this.o.cache.has(m.thumb)) continue;
+      if (!m?.thumb || this.o.cache.has(cacheId(m, 'thumb')!)) continue;
       try {
         const img = await this.thumbnail(id);
         if (img) {
@@ -280,9 +280,13 @@ export class Photos {
   prune(): void {
     const repo = this.o.store.repo;
     const used = new Set<string>();
-    for (const r of repo.db.all<{ file: string; thumb: string | null }>(`SELECT file, thumb FROM media`)) {
-      used.add(r.file);
-      if (r.thumb) used.add(r.thumb);
+    const rows = repo.db.all<{ file: string; thumb: string | null; owner_id: string }>(
+      `SELECT m.file, m.thumb, s.owner_id FROM media m JOIN saves s ON s.id = m.save_id`,
+    );
+    for (const r of rows) {
+      const m = { file: r.file, thumb: r.thumb, ownerId: r.owner_id, mine: r.owner_id === repo.meId };
+      used.add(cacheId(m, 'full')!);
+      if (r.thumb) used.add(cacheId(m, 'thumb')!);
     }
     for (const id of this.o.cache.ids({ mine: false })) if (!used.has(id)) this.o.cache.delete(id);
     for (const kind of ['full', 'thumb'] as const) {
@@ -295,6 +299,17 @@ export class Photos {
     return this.o.cache.evict(this.cap);
   }
 
+  /**
+   * Erases every image of `owner` from the cache (a friend removed, unfollowed, or whose content I can
+   * no longer read). `prune` would find them unused too; this does not depend on the media rows.
+   */
+  forget(owner: string): number {
+    if (owner === this.me) return 0;
+    const ids = this.o.cache.ids({ owner, mine: false });
+    for (const id of ids) this.o.cache.delete(id);
+    return ids.length;
+  }
+
   private dropOwnCopies(ids: string[]): void {
     const repo = this.o.store.repo;
     for (const id of ids) {
@@ -303,6 +318,13 @@ export class Photos {
       if (!still) this.o.cache.delete(id);
     }
   }
+}
+
+/** Where an image of this photo is in the cache: my hashes as they are, a friend's behind their owner id (F-08). */
+function cacheId(m: { file: string; thumb?: string | null; ownerId: string; mine: boolean }, which: 'full' | 'thumb'): string | null {
+  const h = which === 'full' ? m.file : (m.thumb ?? null);
+  if (!h) return null;
+  return m.mine ? h : friendCacheId(m.ownerId, h);
 }
 
 function clean(b: Uint8Array): Uint8Array {

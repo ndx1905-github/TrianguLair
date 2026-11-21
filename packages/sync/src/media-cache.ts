@@ -7,10 +7,20 @@
  *
  * Kept in the app's SQLite database (table `media_cache`), so they share its protection (spec
  * "Protections on the device": the local database is encrypted with a key in the system vault, and a
- * remote wipe erases every table). Ids: the content hash of my image (`b2b256:` of the plaintext), or
- * the hash of a friend's encrypted file.
+ * remote wipe erases every table). Ids: the content hash of my image (`b2b256:` of the plaintext), the
+ * hash of one of my encrypted files (`enc`, kept by a pull), or, for a friend's image, their owner id
+ * and the hash of their encrypted file (`friendCacheId`): a friend's ids never meet mine (review photos
+ * F-08). A friend's entry never replaces one of mine either (`put`).
  */
 import type { SqlDriver } from '@triangulair/data';
+
+/**
+ * Cache id of a friend's image: `<owner>|<hash of their encrypted file>`. My ids are bare hashes
+ * (`b2b256:…`, no `|`), so a friend naming one of my file hashes in their places pack gets another id.
+ */
+export function friendCacheId(owner: string, hash: string): string {
+  return `${owner}|${hash}`;
+}
 
 export type BlobKind = 'full' | 'thumb' | 'enc';
 
@@ -36,6 +46,7 @@ export interface MediaCache {
   /** The bytes (and marks them as used now). */
   get(id: string): { bytes: Uint8Array; mime: string | null } | undefined;
   has(id: string): boolean;
+  /** Stores an entry; a friend's (`mine: false`) never replaces one of mine (it is ignored). */
   put(id: string, bytes: Uint8Array, meta: BlobMeta): void;
   delete(id: string): void;
   /** Ids of entries (all, or of one owner, or of one kind). */
@@ -71,6 +82,7 @@ export class MemoryMediaCache implements MediaCache {
   }
   put(id: string, bytes: Uint8Array, meta: BlobMeta): void {
     const prev = this.m.get(id);
+    if (prev?.mine && !meta.mine) return;
     this.m.set(id, { ...meta, mine: meta.mine || !!prev?.mine, bytes: bytes.slice(), usedAt: this.now() });
   }
   delete(id: string): void {
@@ -135,7 +147,8 @@ export class SqliteMediaCache implements MediaCache {
     this.db.run(
       `INSERT INTO media_cache (id, owner, kind, mine, mime, size, used_at, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET owner = excluded.owner, kind = excluded.kind, mine = max(media_cache.mine, excluded.mine),
-         mime = excluded.mime, size = excluded.size, used_at = excluded.used_at, bytes = excluded.bytes`,
+         mime = excluded.mime, size = excluded.size, used_at = excluded.used_at, bytes = excluded.bytes
+       WHERE media_cache.mine = 0 OR excluded.mine = 1`,
       [id, meta.owner, meta.kind, meta.mine ? 1 : 0, meta.mime ?? null, bytes.length, this.now(), bytes],
     );
   }

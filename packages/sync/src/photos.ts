@@ -30,16 +30,23 @@ export const PHOTO_TYPES = ['image/webp', 'image/avif', 'image/jpeg'] as const;
 export type PhotoType = (typeof PHOTO_TYPES)[number];
 /** At most this many photos of one save travel to friends (readers refuse more). */
 export const MAX_PHOTOS_PER_PLACE = 24;
-/** Largest width or height accepted in a reference (the app writes about 1,600 px). */
-export const MAX_PHOTO_SIDE = 10_000;
 /**
- * Largest decoded image accepted from a file (review photos F-03: a small file can declare a huge
- * canvas, and the platform decoder would allocate width × height × 4 bytes): 25 megapixels for a
- * photo (100 MB once decoded), 1,024 px on each side for a thumbnail (galleries decode many at once).
- * The app writes at most 1,600 px and 400 px.
+ * Format caps on images (docs/format/pack.md, "Media files"; product decision after review photos
+ * F-03): what the app writes plus a margin. A reader refuses an image above them, so another client
+ * must stay within them too. The app writes about 1,600 px (1,200 px with "Smaller") and 400 px
+ * thumbnails, and always fits these caps by downscaling and lowering the quality, never by refusing.
+ *
+ * - 2,048 px a side for a photo (4.2 MP, 16.8 MB once decoded) and 512 px for a thumbnail (1 MB
+ *   decoded; galleries decode many at once).
+ * - 1.5 MiB for a photo file and 128 KiB for a thumbnail: a 2,048 px image at about 3 bits per pixel,
+ *   above what a good-quality encoder produces for a very detailed scene (a 1,600 px WebP at quality
+ *   0.8 is 150–600 KB), and a 512 px one likewise (a 400 px WebP at 0.6 is 15–40 KB).
+ *
+ * The same side cap bounds the `w` and `h` of a reference.
  */
-export const MAX_PHOTO_PIXELS = 25_000_000;
-export const MAX_THUMB_SIDE = 1024;
+export const MAX_PHOTO_SIDE = 2048;
+export const MAX_THUMB_SIDE = 512;
+export { MAX_PHOTO_BYTES, MAX_THUMB_BYTES } from './limits.ts';
 /** Spec sizes: about 1,600 px for the photo, a thumbnail for galleries and What's new. */
 export const PHOTO_SIDE = 1600;
 export const THUMB_SIDE = 400;
@@ -77,7 +84,7 @@ export function mediaPath(hash: string): string {
 /**
  * Largest encrypted file to download for an image of at most `imageBytes`: the image plus the pack
  * envelope and its Padmé padding, which grows with the size (up to 1/32 of it at 8 MiB: an 8 MiB
- * photo is a 8.65 MB file; review photos F-06). Bounded by `imageBytes / 8` and 64 KiB of header.
+ * image is a 8.65 MB file; review photos F-06). Bounded by `imageBytes / 8` and 64 KiB of header.
  */
 export function mediaFileBytes(imageBytes: number): number {
   return imageBytes + Math.ceil(imageBytes / 8) + 65_536;
@@ -156,7 +163,7 @@ export function checkImage(img: Uint8Array, which: 'full' | 'thumb', type?: stri
   if (type != null && type !== mime) throw new ImageFormatError(`${mime} where ${type} was announced`);
   const { width, height } = imageSize(img);
   const side = which === 'full' ? MAX_PHOTO_SIDE : MAX_THUMB_SIDE;
-  if (width > side || height > side || (which === 'full' && width * height > MAX_PHOTO_PIXELS)) {
+  if (width > side || height > side) {
     throw new ImageFormatError(`image too large (${width} × ${height} px)`);
   }
   return { mime, width, height };

@@ -359,8 +359,8 @@ export class DataStore {
   addMedia(placeId: string, media: MediaInput): string {
     return this.change((tx) => tx.addMedia(placeId, media));
   }
-  removeMedia(placeId: string, mediaId: string): void {
-    this.change((tx) => tx.removeMedia(placeId, mediaId));
+  removeMedia(placeId: string, mediaId: string, opts: { quiet?: boolean } = {}): void {
+    this.change((tx) => tx.removeMedia(placeId, mediaId, opts));
   }
   setMediaUpload(placeId: string, mediaId: string, upload: MediaUpload | null): void {
     this.change((tx) => tx.setMediaUpload(placeId, mediaId, upload));

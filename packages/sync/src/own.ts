@@ -198,6 +198,12 @@ export interface PhotosReport {
   renewed: number;
   /** Photos waiting: not uploaded (storage full, or this device does not have the image). Text went first. */
   waiting: number;
+  /**
+   * Photos removed from my document because they had to be re-sealed and no image could be had here
+   * (review photos F-07: privacy wins). They leave every device and every friend as if they had never
+   * been added; nothing retries them.
+   */
+  dropped: number;
   /** The storage refused a photo for lack of space (`quota`): photos wait, the text was published. */
   quota?: unknown;
 }
@@ -714,7 +720,7 @@ export class OwnSync {
         this.st.set('own:garbage', [...orphans]);
       });
       const b = this.build(pull, items, audiences, photos);
-      const photoReport: PhotosReport = { uploaded: photos.uploaded, renewed: photos.renewed, waiting: photos.waiting, ...(photos.quota !== undefined && { quota: photos.quota }) };
+      const photoReport: PhotosReport = { uploaded: photos.uploaded, renewed: photos.renewed, waiting: photos.waiting, dropped: photos.dropped, ...(photos.quota !== undefined && { quota: photos.quota }) };
       const report: PublishReport = {
         published: false, seq: pull.index?.seq ?? null, attempts: attempt, conflicts, packsWritten: b.writes.size,
         packsKept: b.kept, bytesUploaded: 0, filesDeleted: 0, ownDoc: b.ownDoc, pull, photos: photoReport,
@@ -885,13 +891,16 @@ export class OwnSync {
    *   the save made private, a device declared lost, which changes my sharing key): re-sealed under
    *   a new key; the old files are no longer listed and are deleted after the publication;
    * - the storage is full: the photo waits (`quota`) and the text is published without it. A photo
-   *   whose key must be renewed and cannot be stops being listed until it is uploaded again.
+   *   whose key must be renewed and cannot be stops being listed until it is uploaded again;
+   * - its key must be renewed (or its files are gone) and no image can be had on this device: the
+   *   photo is removed from my document (`dropped`, review photos F-07). A photo never uploaded and
+   *   not on this device waits for the device that has it.
    *
    * Returns the media files to list, the friends' references per place and the recipient sets of
    * the photo keys (written in my manifest, so all my devices make the same decision).
    */
   private async preparePhotos(pull: PullResult, items: readonly OwnItem[], audiences: Map<string, Audience>, noteGarbage: (paths: string[]) => void): Promise<PhotoPlan> {
-    const plan: PhotoPlan = { files: new Map(), refs: new Map(), aud: {}, uploaded: 0, renewed: 0, waiting: 0 };
+    const plan: PhotoPlan = { files: new Map(), refs: new Map(), aud: {}, uploaded: 0, renewed: 0, waiting: 0, dropped: 0 };
     const rows = this.photoRows();
     if (rows.length === 0) return plan;
     await listsReady();
@@ -941,6 +950,17 @@ export class OwnSync {
           thumb ??= (await this.fetchOwnImage(prev, u, 'thumb', m.thumb)) ?? undefined;
           if (full) media?.put(m.file, full, { owner: this.owner, kind: 'full', mine: true, mime: m.mime ?? null });
           if (thumb) media?.put(m.thumb, thumb, { owner: this.owner, kind: 'thumb', mine: true, mime: m.mime ?? null });
+        }
+        if ((!full || !thumb) && u) {
+          // Must be re-sealed (someone lost access, or its files are gone) and this device can get no
+          // image: neither a local copy nor, from a stale index (rollback, fork), the old files. The
+          // old key may be known beyond the current readers, so the photo is dropped from my document
+          // (review photos F-07, product decision: privacy wins over keeping it). Every device and
+          // friend then forgets it cleanly: no row, no cache entry, no tile, nothing to retry.
+          this.store.removeMedia(m.placeId, m.id, { quiet: true });
+          for (const id of [m.file, m.thumb]) if (id && !this.store.repo.db.get(`SELECT 1 AS x FROM media WHERE file = ? OR thumb = ?`, [id, id])) media?.delete(id);
+          plan.dropped++;
+          return;
         }
         if (!full || !thumb || plan.quota !== undefined) return stop();
         const key = newPhotoKey();

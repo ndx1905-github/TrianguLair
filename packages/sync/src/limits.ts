@@ -39,10 +39,11 @@ export interface SyncLimits {
   listPreviewBytes: number;
   /**
    * One photo (T-111b): the largest image accepted when adding it, and the largest full-size photo
-   * file downloaded (a recompressed 1,600 px WebP is 150–600 KB). Default 8 MiB.
+   * file downloaded (a recompressed 1,600 px WebP is 150–600 KB). Default: the format cap,
+   * `MAX_PHOTO_BYTES` (1.5 MiB, photos.ts).
    */
   photoBytes: number;
-  /** One thumbnail file download (about 20 KB). Default 512 KiB. */
+  /** One thumbnail file download (about 20 KB). Default: the format cap, `MAX_THUMB_BYTES` (128 KiB). */
   thumbBytes: number;
   /** Friends' thumbnails fetched with their places in one pass (new photos only; the rest on demand). Default 8 MiB. */
   thumbPrefetchBytes: number;
@@ -51,6 +52,10 @@ export interface SyncLimits {
 }
 
 const MiB = 1024 * 1024;
+
+/** Format caps on image files (docs/format/pack.md "Media files"; explained in photos.ts, which re-exports them). */
+export const MAX_PHOTO_BYTES = 1536 * 1024;
+export const MAX_THUMB_BYTES = 128 * 1024;
 
 export const DEFAULT_LIMITS: Readonly<SyncLimits> = Object.freeze({
   indexBytes: 4 * MiB,
@@ -64,8 +69,8 @@ export const DEFAULT_LIMITS: Readonly<SyncLimits> = Object.freeze({
   listPackBytes: 1 * MiB,
   listReadBytes: 8 * MiB,
   listPreviewBytes: 4 * MiB,
-  photoBytes: 8 * MiB,
-  thumbBytes: 512 * 1024,
+  photoBytes: MAX_PHOTO_BYTES,
+  thumbBytes: MAX_THUMB_BYTES,
   thumbPrefetchBytes: 8 * MiB,
   ownPhotoPassBytes: 64 * MiB,
 });

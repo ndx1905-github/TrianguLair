@@ -6,7 +6,9 @@ import { foreignMediaId, saveIdFor } from '@triangulair/data';
 import { NodeSqliteDriver } from '@triangulair/data/node';
 import { MemoryMediaCache, SqliteMediaCache } from '../src/media-cache.ts';
 import { ImageFormatError, imageMetadata, imageSize, sniffImage, stripImageMetadata } from '../src/image-meta.ts';
-import { checkImage, checkPhotoRefs, imageHash, mediaFileBytes } from '../src/photos.ts';
+import { MAX_PHOTO_BYTES, MAX_PHOTO_SIDE, MAX_THUMB_BYTES, MAX_THUMB_SIDE, checkImage, checkPhotoRefs, imageHash, mediaFileBytes } from '../src/photos.ts';
+import { DEFAULT_LIMITS } from '../src/limits.ts';
+import { friendCacheId } from '../src/media-cache.ts';
 import { PhotoError } from '../src/photo-service.ts';
 import { addDevice, befriend, makeUser, point, World, type Device } from './helpers.ts';
 import { has, jpeg, noise, photo, webp } from './photo-fixtures.ts';
@@ -372,7 +374,7 @@ describe('photos: hostile friends (review photos)', () => {
   it('F-02: a friend serving broken thumbnails cannot make one pass download without bound', async () => {
     const w = new World();
     const alice = addDevice(w, makeUser(w, 'alice'));
-    const bob = addDevice(w, makeUser(w, 'bob'), { limits: { thumbPrefetchBytes: 1024 * 1024 } });
+    const bob = addDevice(w, makeUser(w, 'bob'), { limits: { thumbPrefetchBytes: 256 * 1024 } });
     for (let i = 1; i <= 8; i++) alice.store.putSave({ place: point(i, `P${i}`) });
     await alice.engine.sync();
     await bob.engine.sync();
@@ -397,7 +399,7 @@ describe('photos: hostile friends (review photos)', () => {
     } as StorageAdapter);
     const r = await bob.engine.sync();
     expect(r.photos?.thumbnails ?? 0).toBe(0);
-    expect(mediaGets).toBe(2); // 1 MiB / 512 KiB counted per failed file
+    expect(mediaGets).toBe(2); // 256 KiB / 128 KiB counted per failed file
     expect(photosOf(bob, 'osm:node/1')[0]).toMatchObject({ thumbLocal: false });
   });
 
@@ -419,9 +421,9 @@ describe('photos: hostile friends (review photos)', () => {
     expect(() => checkImage(jpeg(100), 'full', 'image/webp')).toThrow(/announced/);
   });
 
-  it('F-06: a photo near the 8 MiB limit reaches friends and my other devices (padding counted)', async () => {
+  it('F-06: a photo near the byte cap reaches friends and my other devices (padding counted)', async () => {
     const { w, alice, bob } = await pair();
-    const big = { ...photo(60), full: webp(8 * 1024 * 1024 - 64, 60) };
+    const big = { ...photo(60), full: webp(MAX_PHOTO_BYTES - 64, 60), thumb: webp(MAX_THUMB_BYTES - 64, 61, { width: 400, height: 300 }) };
     const id = alice.engine.photos.add(P1, big);
     await alice.engine.sync();
     await bob.engine.sync();
@@ -430,6 +432,7 @@ describe('photos: hostile friends (review photos)', () => {
     await alice2.engine.sync();
     for (const k of alice2.engine.photos.cache.ids()) alice2.engine.photos.cache.delete(k);
     expect((await alice2.engine.photos.full(id))!.bytes.length).toBe(big.full.length);
+    expect((await alice2.engine.photos.thumbnail(id))!.bytes.length).toBe(big.thumb.length);
     expect(mediaFileBytes(8 * 1024 * 1024)).toBeGreaterThan(8_651_151);
   });
 });
@@ -490,7 +493,7 @@ describe('image metadata and size (review photos)', () => {
     expect(imageSize(avif)).toEqual({ width: 1600, height: 900 });
     expect(() => imageSize(new Uint8Array([...box('ftyp', [...new TextEncoder().encode('avifmif1')])]))).toThrow(/size/);
     expect(() => checkImage(webp(100, 1, { width: 2000, height: 100 }), 'thumb')).toThrow(/too large/);
-    expect(checkImage(webp(100, 1, { width: 1000, height: 100 }), 'thumb')).toMatchObject({ mime: 'image/webp', width: 1000 });
+    expect(checkImage(webp(100, 1, { width: 500, height: 100 }), 'thumb')).toMatchObject({ mime: 'image/webp', width: 500 });
   });
 });
 
@@ -540,4 +543,149 @@ describe('photos: trash and visibility (review photos)', () => {
     await alice2.engine.sync();
     expect(alice2.engine.photos.cache.usage().mine).toBe(0);
   });
+});
+
+describe('photos: product decisions after the review', () => {
+  it('caps: 2,048 px and 1.5 MiB for a photo, 512 px and 128 KiB for a thumbnail; the default limits are the caps', () => {
+    expect([MAX_PHOTO_SIDE, MAX_THUMB_SIDE, MAX_PHOTO_BYTES, MAX_THUMB_BYTES]).toEqual([2048, 512, 1536 * 1024, 128 * 1024]);
+    expect(DEFAULT_LIMITS.photoBytes).toBe(MAX_PHOTO_BYTES);
+    expect(DEFAULT_LIMITS.thumbBytes).toBe(MAX_THUMB_BYTES);
+    expect(checkImage(webp(100, 1, { width: 2048, height: 1536 }), 'full')).toMatchObject({ width: 2048 });
+    expect(() => checkImage(webp(100, 1, { width: 2049, height: 1536 }), 'full')).toThrow(/too large/);
+    expect(checkImage(webp(100, 1, { width: 512, height: 512 }), 'thumb')).toMatchObject({ width: 512 });
+    expect(() => checkImage(webp(100, 1, { width: 400, height: 513 }), 'thumb')).toThrow(/too large/);
+    // A reference announcing a size over the cap is refused with the payload.
+    const ok = { id: 'abc', key: 'A'.repeat(43), full: `b2b256:${'B'.repeat(43)}`, thumb: `b2b256:${'C'.repeat(43)}`, type: 'image/webp', w: 2048, h: 1200, created: '2026-11-17T10:00:00.000Z' };
+    expect(checkPhotoRefs([ok], false)).toHaveLength(1);
+    expect(() => checkPhotoRefs([{ ...ok, w: 2049 }], false)).toThrow(/size/);
+  });
+
+  it('caps: a friend\'s oversized files are refused by the reader, and nothing is cached', async () => {
+    const { alice, bob } = await pair();
+    // A modified app of Alice's publishes files over the caps (Photos.add would refuse them).
+    const heavy = rawPhoto(alice, P1, webp(MAX_PHOTO_BYTES + 8192, 80), webp(MAX_THUMB_BYTES + 8192, 81, { width: 400, height: 300 }));
+    const wide = rawPhoto(alice, 'osm:node/1', webp(20_000, 82, { width: 4000, height: 3000 }), webp(2_000, 83, { width: 800, height: 600 }));
+    await alice.engine.sync();
+    const r = await bob.engine.sync();
+    expect(r.ok).toBe(true);
+    expect(r.photos?.thumbnails ?? 0).toBe(0);
+    for (const id of [heavy, wide]) {
+      await expect(bob.engine.photos.thumbnail(fid(alice, id))).rejects.toThrow();
+      await expect(bob.engine.photos.full(fid(alice, id))).rejects.toThrow();
+    }
+    expect(bob.engine.photos.cache.usage().friends).toBe(0);
+  });
+
+  it('F-07: a renewal that cannot get the image (stale index, no local copy) drops the photo cleanly everywhere, once', async () => {
+    const mem = new MemoryAdapter();
+    const { w, alice, bob } = await pair({ aliceStorage: mem });
+    const id = alice.engine.photos.add(P1, photo(90));
+    await alice.engine.sync();
+    await bob.engine.sync();
+    await bob.engine.photos.full(fid(alice, id));
+    expect(bob.engine.photos.cache.usage().friends).toBeGreaterThan(0);
+    const alice2 = addDevice(w, alice.user, { media: new MemoryMediaCache() });
+    await alice2.engine.sync();
+    for (const k of alice2.engine.photos.cache.ids()) alice2.engine.photos.cache.delete(k);
+    // The storage rolls back to an older index (the photo is listed there under its key).
+    const old = (await mem.get('index.json'))!.data;
+    alice.store.updateSave(P1, { comment: 'newer' });
+    await alice.engine.sync();
+    await alice2.engine.sync({ publish: false });
+    for (const k of alice2.engine.photos.cache.ids()) alice2.engine.photos.cache.delete(k);
+    mem.putUnchecked('index.json', old);
+    // Bob loses access while alice2 cannot fetch the image through the stale index.
+    alice2.engine.setPolicy(bob.user.owner, { share: false });
+    const r = await alice2.engine.sync();
+    expect(r.own!.pull.rolledBack).toBe(true);
+    expect(r.own!.photos).toMatchObject({ dropped: 1, waiting: 0, uploaded: 0 });
+    expect(r.problems).toEqual([]);
+    // As if it had never been there: no row, no copy, nothing waiting, nothing retried.
+    expect(alice2.engine.photos.list(P1)).toEqual([]);
+    expect(alice2.store.repo.mediaById(id)).toBeNull();
+    expect(alice2.store.repo.getMySaveForPlace(P1)!.comment).toBe('newer');
+    const again = await alice2.engine.sync();
+    expect(again.own!.photos).toMatchObject({ dropped: 0, waiting: 0, uploaded: 0, renewed: 0 });
+    // The other device forgets it too, and its files leave the storage.
+    await alice.engine.sync();
+    expect(alice.engine.photos.list(P1)).toEqual([]);
+    expect(alice.engine.photos.cache.ids()).toEqual([]);
+    const u = bob.store.repo.mediaById(fid(alice, id))!.upload!;
+    expect(await mem.head(`media/b2b256-${u.full.slice(7)}.bin`)).toBeNull();
+    // The friend who lost access purges what they had of it.
+    await bob.engine.sync();
+    expect(photosOf(bob)).toEqual([]);
+    expect(bob.store.repo.mediaById(fid(alice, id))).toBeNull();
+    expect(bob.engine.photos.cache.ids()).toEqual([]);
+  });
+
+  it('F-08: a friend naming one of my file hashes gets another cache entry; mine is never replaced', async () => {
+    const { alice, bob } = await pair();
+    bob.store.putSave({ place: point(1, 'Chez Lili') });
+    const mine = bob.engine.photos.add(P1, photo(95));
+    const m = bob.store.repo.mediaById(mine)!;
+    await alice.engine.sync();
+    await bob.engine.sync();
+    // A forged reference of Alice's naming Bob's local ids as her files.
+    const forged = { key: 'A'.repeat(43), full: m.file, thumb: m.thumb! };
+    bob.store.repo.setForeignMedia(saveIdFor(alice.user.owner, P1), [
+      { id: 'forged', file: forged.full, thumb: forged.thumb, mime: 'image/webp', bytes: null, upload: forged, blurhash: null, width: 1600, height: 1200, createdAt: 1 },
+    ]);
+    const theirs = bob.engine.photos.list(P1).find((p) => !p.mine)!;
+    expect(theirs).toMatchObject({ thumbLocal: false, fullLocal: false });
+    expect(await bob.engine.photos.full(theirs.id)).toBeNull(); // not on her storage: nothing of mine is shown as hers
+    // A friend's entry under one of my ids is ignored; prune and eviction keep mine.
+    bob.engine.photos.cache.put(m.file, new Uint8Array(10), { owner: alice.user.owner, kind: 'full', mine: false });
+    bob.engine.photos.prune();
+    bob.engine.photos.setFriendsCacheBytes(0);
+    expect((await bob.engine.photos.full(mine))!.bytes).toEqual(photo(95).full);
+    expect(bob.engine.photos.cache.ids({ mine: true }).sort()).toEqual([m.file, m.thumb!].sort());
+    const sql = new SqliteMediaCache(new NodeSqliteDriver(':memory:'));
+    sql.put('h', new Uint8Array(5), { owner: 'me', kind: 'full', mine: true });
+    sql.put('h', new Uint8Array(1), { owner: 'f', kind: 'full', mine: false });
+    expect(sql.get('h')!.bytes.length).toBe(5);
+    expect(friendCacheId('f', 'b2b256:x')).toBe('f|b2b256:x');
+  });
+
+  it('a friend\'s cache ids carry the owner; removing the friend erases them', async () => {
+    const { alice, bob } = await pair();
+    const id = alice.engine.photos.add(P1, photo(96));
+    await alice.engine.sync();
+    await bob.engine.sync();
+    await bob.engine.photos.full(fid(alice, id));
+    const ids = bob.engine.photos.cache.ids({ owner: alice.user.owner });
+    expect(ids).toHaveLength(2);
+    for (const k of ids) expect(k.startsWith(`${alice.user.owner}|b2b256:`)).toBe(true);
+    bob.engine.removeContact(alice.user.owner);
+    expect(bob.engine.photos.cache.ids()).toEqual([]);
+    expect(bob.store.repo.mediaById(fid(alice, id))).toBeNull();
+  });
+
+  for (const how of ['removed as a contact', 'content deleted', 'save made private'] as const) {
+    it(`a friend whose access is gone (${how}) purges every thumbnail, full photo and cache row of mine`, async () => {
+      const { alice, bob } = await pair();
+      alice.store.putSave({ place: point(2, 'P2') });
+      const a = alice.engine.photos.add(P1, photo(97));
+      const b = alice.engine.photos.add('osm:node/2', photo(98));
+      await alice.engine.sync();
+      await bob.engine.sync();
+      await bob.engine.photos.full(fid(alice, a)); // one full photo opened, both thumbnails prefetched
+      expect(bob.engine.photos.cache.ids({ owner: alice.user.owner })).toHaveLength(3);
+      if (how === 'removed as a contact') alice.engine.removeContact(bob.user.owner);
+      else if (how === 'save made private') for (const p of [P1, 'osm:node/2']) alice.store.updateSave(p, { sharing: 'private' });
+      else {
+        // "Delete all my content": the document emptied, the publication lists nothing for anyone.
+        for (const p of [P1, 'osm:node/2']) alice.store.deleteSave(p);
+        for (const p of [P1, 'osm:node/2']) alice.store.purgeTrash({ kind: 'save', id: p });
+      }
+      expect((await alice.engine.sync()).ok).toBe(true);
+      const r = await bob.engine.sync();
+      expect(r.ok).toBe(true);
+      expect(bob.store.repo.savesForPlace(P1).filter((s) => s.ownerId === alice.user.owner)).toEqual([]);
+      for (const id of [a, b]) expect(bob.store.repo.mediaById(fid(alice, id, id === a ? P1 : 'osm:node/2'))).toBeNull();
+      expect(bob.store.repo.db.get<{ n: number }>(`SELECT count(*) AS n FROM media`)!.n).toBe(0);
+      expect(bob.engine.photos.cache.ids()).toEqual([]);
+      expect(bob.engine.photos.usage().friends).toBe(0);
+    });
+  }
 });

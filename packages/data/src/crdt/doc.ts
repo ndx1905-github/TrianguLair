@@ -604,6 +604,8 @@ export interface MediaInput {
   blurhash?: string | null;
   width?: number | null;
   height?: number | null;
+  /** When the photo was added (a re-import keeps the exported date). Default: now. */
+  createdAt?: number;
 }
 
 /** Media metadata as stored (one atomic JSON value per photo). */
@@ -824,18 +826,22 @@ export class DocTx {
       blurhash: m.blurhash ?? null,
       width: m.width ?? null,
       height: m.height ?? null,
-      createdAt: this.ctx.now(),
+      createdAt: m.createdAt !== undefined && Number.isSafeInteger(m.createdAt) && m.createdAt >= 0 ? m.createdAt : this.ctx.now(),
     };
     s.set(MEDIA + id, media);
     this.touch(s);
     return id;
   }
 
-  removeMedia(placeId: string, mediaId: string): void {
+  /**
+   * Removes a photo. `quiet`: not an edit of the save (`updatedAt` unchanged), for a photo the sync
+   * drops by itself (a key renewal that cannot be done, review photos F-07).
+   */
+  removeMedia(placeId: string, mediaId: string, opts: { quiet?: boolean } = {}): void {
     const s = this.save(placeId);
     if (s.has(MEDIA + mediaId)) s.delete(MEDIA + mediaId);
     if (s.has(UPLOAD + mediaId)) s.delete(UPLOAD + mediaId);
-    this.touch(s);
+    if (!opts.quiet) this.touch(s);
   }
 
   /**

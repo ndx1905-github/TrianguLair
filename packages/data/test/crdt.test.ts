@@ -367,6 +367,19 @@ describe('Yjs document', () => {
     a.setMediaUpload(P1, m, null); // no-op on a removed photo
   });
 
+  it('photos: an import keeps the date a photo was added; a quiet removal is not an edit of the save', () => {
+    const s = openStore();
+    s.putSave({ place: osmPoint(1, 'Napoli', 48.85, 2.35) });
+    const m = s.addMedia(P1, { file: 'b2b256:full', thumb: 'b2b256:thumb', mime: 'image/webp', width: 1600, height: 1200, createdAt: 1_700_000_000_000 });
+    expect(s.repo.mediaById(m)!.createdAt).toBe(1_700_000_000_000);
+    const bad = s.addMedia(P1, { file: 'b2b256:f2', createdAt: -5 });
+    expect(s.repo.mediaById(bad)!.createdAt).toBeGreaterThan(1_700_000_000_000);
+    const before = s.repo.getSave(s.saveId(P1))!.updatedAt;
+    s.removeMedia(P1, m, { quiet: true });
+    expect(s.repo.mediaById(m)).toBeNull();
+    expect(s.repo.getSave(s.saveId(P1))!.updatedAt).toBe(before);
+  });
+
   it("a friend's photos are cached with their key and leave with the save", () => {
     const s = openStore();
     s.repo.upsertForeignSave({ id: 'f1', ownerId: 'ed25519:friend', place: { id: 'osm:node/7', osmType: 'node', osmId: 7, name: 'X', category: null, kind: 'place', edge: 'sharp', geometry: { type: 'Point', coordinates: [2.35, 48.85] } }, createdAt: 1, updatedAt: 1 });
