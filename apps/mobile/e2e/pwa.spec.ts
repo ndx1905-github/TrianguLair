@@ -186,8 +186,10 @@ test('a new version offers "Reload", which switches to it', async ({ page, conte
   await expect(prompt).toBeVisible();
   await expect(page.getByTestId('pwa-update-later')).toBeVisible();
 
+  // Listen first: the reload can finish before the click returns.
+  const reloaded = page.waitForEvent('load');
   await page.getByTestId('pwa-update-reload').click();
-  await page.waitForEvent('load');
+  await reloaded;
   await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
   await controlled(page);
   expect(await version()).toBe(`${before}-next`);
