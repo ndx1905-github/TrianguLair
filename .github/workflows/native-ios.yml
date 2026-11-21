@@ -26,6 +26,24 @@ on:
         default: ''
   push:
     tags: ['v*']
+  # Called by release.yml, which builds the sideloadable .ipa with the defaults.
+  workflow_call:
+    inputs:
+      build:
+        description: 'What to build: ipa, simulator or both'
+        type: string
+        required: false
+        default: ipa
+      bundle_id:
+        description: 'Bundle identifier (empty: org.triangulair.app.dev)'
+        type: string
+        required: false
+        default: ''
+      xcode:
+        description: 'Xcode version to select (empty: newest stable on the runner)'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read

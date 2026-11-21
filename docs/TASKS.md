@@ -69,7 +69,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 |---|---|---|---|---|
 | T-301 | Release on App Store, Play Store, F-Droid | release, maintainer | T-214 | to do |
 | T-302 | User and self-hosting documentation | docs | — | to do |
-| T-303 | Contribution guide, code of conduct, security policy | docs | — | to do |
+| T-303 | Contribution guide, code of conduct, security policy | docs | — | done |
 | T-304 | Funding: Liberapay / Open Collective, NLnet | maintainer | — | to do |
 
 ## Details
@@ -516,7 +516,7 @@ Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.
 
 Acceptance criteria:
 
-- [ ] Files present and linked from the README
+- [x] Files present and linked from the README
 
 ### T-304 — Funding: Liberapay / Open Collective, NLnet
 
