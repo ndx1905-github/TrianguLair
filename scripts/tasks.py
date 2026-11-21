@@ -102,7 +102,7 @@ t("T-201","P2","Final v1 encrypted format and test vectors",["crypto"],
    "[x] A second minimal reader (Python, docs/format/reference-reader/) checks the signed-index, pack and invitation-link vectors",
    "Vectors checked by a second implementation"],deps=["T-002"])
 t("T-202","P2","Production storage adapters and tests against real servers",["storage"],
-  "Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported. Support `index.v<N>.json` next to `index.json` for major format transitions (spec \"Format versions\").",["Conformance suite green against each server"],deps=["T-003"])
+  "Nextcloud, MinIO, SFTP, web server in CI; simulated failures (timeout, quota, credentials, interrupted write). SFTP on mobile: native module or unsupported. Support `index.v<N>.json` next to `index.json` for major format transitions (spec \"Format versions\").",["Conformance suite green against each server"],deps=["T-003"],status="done")
 t("T-203","P2","Storage settings and migration between storages",["app","storage"],
   "Choice of local only / WebDAV / S3 / SFTP, HTTPS read address, connection test, full copy when switching.",["Lossless migration tested"],deps=["T-202"],status="done")
 t("T-204","P2","Sync: publishing and reading packs",["sync"],
