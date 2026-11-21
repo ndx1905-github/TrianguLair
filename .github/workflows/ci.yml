@@ -143,6 +143,12 @@ jobs:
       - run: npm ci --workspaces=false
       - run: npm run typecheck
       - run: npm test
+      # The JavaScript bundles of the phone apps (Metro + Hermes bytecode). Catches
+      # modules that resolve on the web but not on a phone, without a native build.
+      - name: Native bundles (Android, iOS)
+        run: |
+          npx expo export --platform android --output-dir /tmp/native-android
+          npx expo export --platform ios --output-dir /tmp/native-ios
       - name: Web export (fixture mode)
         run: npm run export:web:fixtures
       - name: Install Chromium for Playwright
