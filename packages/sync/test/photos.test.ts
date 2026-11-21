@@ -461,6 +461,17 @@ describe('image metadata and size (review photos)', () => {
     expect(s.length).toBe(p.length - app1.length);
   });
 
+  it('WebP: chunks the format does not define are removed too', () => {
+    const w = webp(300, 9);
+    const extra = [...new TextEncoder().encode('GPS '), 6, 0, 0, 0, ...new TextEncoder().encode('48.85N')];
+    const body = [...w.subarray(12), ...extra];
+    const x = new Uint8Array([...w.subarray(0, 4), (body.length + 4) & 255, ((body.length + 4) >> 8) & 255, 0, 0, ...w.subarray(8, 12), ...body]);
+    expect(imageMetadata(x)).toEqual(['other']);
+    const s = stripImageMetadata(x);
+    expect(s).toEqual(w);
+    expect(imageMetadata(s)).toEqual([]);
+  });
+
   it('imageSize reads JPEG, WebP (VP8X, VP8, VP8L) and AVIF headers', () => {
     expect(imageSize(jpeg(100, 1, { width: 640, height: 480 }))).toEqual({ width: 640, height: 480 });
     expect(imageSize(webp(100, 1, { width: 300, height: 200 }))).toEqual({ width: 300, height: 200 });

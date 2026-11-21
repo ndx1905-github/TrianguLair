@@ -224,8 +224,8 @@ new device is listed only once it picked its keys up). Partly fixed or documente
 ## Photos (T-111b)
 
 - **Metadata**: the app re-encodes every image (no EXIF written by expo-image-manipulator or a canvas) and the sync
-  layer strips JPEG APP1/APP3–15/COM segments and WebP EXIF/XMP chunks again, then refuses any image that still
-  carries them (an AVIF with an Exif or XMP item is refused: the app falls back to WebP). Pixels are not
+  layer strips JPEG APP1/APP2 (but ICC)/APP3–15/COM segments (also between progressive scans) and trailing data,
+  and WebP EXIF/XMP and unknown chunks again, then refuses any image that still carries them (an AVIF with an Exif or XMP item is refused: the app falls back to WebP). Pixels are not
   inspected: what the photo shows (a street sign, a face) is the user's choice.
 - **Keys**: one random X25519 key per photo, both files sealed to it alone; the key is only inside my document
   (sealed to my sharing key) and inside the places packs of the save's readers. A removed reader (friend,
@@ -235,7 +235,11 @@ new device is listed only once it picked its keys up). Partly fixed or documente
   still fetch the old files with the key they had.
 - **Fetching**: a friend's photo file is downloaded with a size limit (8 MiB full, 512 KiB thumbnail) and opened only
   if their verified index lists it at that path; the key comes from a places pack that verified the same way. The
-  image is checked to be WebP/AVIF/JPEG before it is cached; decoding is left to the platform's image decoder.
+  image is checked before it is cached or shown: the format its reference names, and a pixel size read from its
+  headers of at most 25 MP (10,000 px a side) for a photo and 1,024 px a side for a thumbnail, so a small file
+  cannot make the platform decoder allocate gigabytes. Decoding itself is left to the platform's image decoder
+  (its own bugs are out of reach here). A friend's photo ids are stored inside their save's id: a friend cannot
+  collide with my photos or another friend's. The thumbnails fetched with a pass count failed files too.
 - **Host view**: a new photo is two new files in `media/` at the same time as a document delta; a renewal replaces
   both files of every affected photo, which shows that someone lost access (not who).
 - **On the device**: images are in the app's SQLite database (`media_cache`), with the same protection as the rest

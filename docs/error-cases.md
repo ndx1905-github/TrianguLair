@@ -63,11 +63,11 @@ log (`logLine`, `invitationsLogLine`: error names and counts, never content, key
   (or a style for one of those), an outage beyond the cache gives the blank background with
   "Map background unavailable for now". On native, a tile host failing while its style loads is
   covered by the cache only (no per-tile error event in MapLibre React Native 11).
-- **Quota full: "photos wait, text goes first".** Personal photos are not published yet (no
-  `media` uploads), so there is nothing to order; when they are, the publication must write text
-  packs and the index before photo files, and a 507 on a photo must not stop the text.
-  `OwnSync.spaceUsed()` already counts listed photo files separately, and the photo-quality tip
-  appears only when photos take space.
+- **Quota full: "photos wait, text goes first".** Since T-111b photos are uploaded before the
+  packs that reference them (a pack must not name a file that is not there), and a 507/413 on a
+  photo only makes it wait: the text is published without it (`report.own.photos.waiting`, sync
+  `photos.test.ts` *quota full*). `OwnSync.spaceUsed()` counts listed photo files separately, and
+  the photo-quality tip appears only when photos take space.
 - **Credentials rejected: Nextcloud connection relaunched.** The Nextcloud Login Flow is not
   implemented (T-203: app password typed by hand), so "Reconnect" opens the connection form filled
   with the current settings; the Login Flow should start from there once it exists.

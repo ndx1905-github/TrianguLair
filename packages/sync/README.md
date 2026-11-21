@@ -183,9 +183,11 @@ opening it", "GPS metadata removed on upload", quota full: "photos wait, text go
 
 - **Adding** (`engine.photos.add(placeId, { full, thumb, width, height })`): the app recompresses (about 1,600 px and
   a 400 px thumbnail, WebP, AVIF where the platform encodes it, JPEG as a last resort); here the metadata
-  containers are removed again (JPEG APP1/APP3–15/COM, WebP `EXIF`/`XMP `; an AVIF with an Exif or XMP item is
-  refused) and the result checked (`imageMetadata` must be empty), sizes bounded (`photoBytes` 8 MiB,
-  `thumbBytes` 512 KiB). Both images are kept on the device (`media_cache`, the app's SQLite database: covered
+  containers are removed again (JPEG APP1, APP2 but ICC, APP3–15 and COM, also between progressive scans, and
+  anything after the end of the image; WebP `EXIF`/`XMP ` and chunks the format does not define; an AVIF with an
+  Exif or XMP item is refused) and the result checked (`imageMetadata` must be empty), sizes bounded
+  (`photoBytes` 8 MiB, `thumbBytes` 512 KiB) and the pixel size read from the headers bounded like a reader
+  does (`checkImage`: 25 MP and 10,000 px per side for a photo, 1,024 px for a thumbnail). Both images are kept on the device (`media_cache`, the app's SQLite database: covered
   by its encryption and by the remote wipe) under their content hash, and recorded in my document (`m:<id>`:
   hashes, format, size, dimensions). Removing (`photos.remove`) deletes the record; the files go at the next
   publication.
@@ -204,10 +206,13 @@ opening it", "GPS metadata removed on upload", quota full: "photos wait, text go
   manifest keeps those sets (`aud`: fingerprint → keys), so every device of mine decides alike. A device that
   never opened the photo fetches it with the old key to re-seal it.
 - **Friends**: a read projects the references into `media` (key and file hashes; `Repository.setForeignMedia`) and
-  fetches the **thumbnails of new photos** in the same pass (`thumbPrefetchBytes`, 8 MiB per pass); the **full
-  photo** is downloaded by `photos.full(id)` only (the app calls it when the photo is opened). Every file is
-  opened only if the friend's verified index (kept by the reader, `indexFor`) lists it and it was served at its
-  own path. What's new: `whatsNew.photos` (new photos on a place already there; the change is `meaningful`).
+  fetches the **thumbnails of new photos** in the same pass (`thumbPrefetchBytes`, 8 MiB per pass, a failed file
+  counted at `thumbBytes`); the **full photo** is downloaded by `photos.full(id)` only (the app calls it when the
+  photo is opened). A friend's photo is stored under `foreignMediaId(saveId, id)`, so their ids never meet mine or
+  another friend's. Every file is downloaded with a bound that allows for its padding (`mediaFileBytes`), opened
+  only if the friend's verified index (kept by the reader, `indexFor`) lists it and it was served at its own path,
+  and its image checked before it is cached or shown (`checkImage`: the format its reference names, and the pixel
+  bounds above, against decompression bombs). What's new: `whatsNew.photos` (new photos on a place already there; the change is `meaningful`).
 - **Cache**: friends' images are evicted beyond `friendsCacheBytes` (default 500 MiB; `photos.setFriendsCacheBytes`):
   full photos first, least recently used first, then thumbnails; their places are never evicted. A photo that
   leaves my cache (removed, access lost, friend removed) leaves the image cache at once (`photos.prune`). My own
@@ -396,7 +401,10 @@ Every row of the spec's table, with the app's side (messages, the 3-month offer,
   a friend whose access is removed cannot fetch the photo (old files deleted) while the others get it under a new
   key, and adding a friend uploads nothing; a save made private renews the key from a device that never opened it;
   quota full (text first, photo later); cache eviction (full photos first, LRU) and the SQLite cache; JPEG/WebP
-  metadata removal, AVIF detection, strict references.
+  metadata removal, AVIF detection, strict references. Review (docs/reviews/photos.md): a friend
+  reusing photo ids, broken thumbnails within the pass budget, decompression bombs, a photo near 8 MiB, MPF and
+  trailing data, metadata between progressive scans, unknown WebP chunks, header sizes, the trash (restore,
+  renewal on restore, delete forever).
 - `no-wasm.test.ts`: fflate and the sources use no WebAssembly (the package also depends on the crypto package's
   `libsodium-wrappers-sumo`, for the list key's public half; asm.js where WebAssembly is missing).
 - `units.test.ts`: planner, payload (decompression bomb), strict places parsing, vault policy merge, state

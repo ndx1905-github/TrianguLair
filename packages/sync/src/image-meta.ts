@@ -13,7 +13,8 @@
  *   APP13, maker data) and COM segments are removed, before the first scan and between scans
  *   (progressive JPEG); APP0 (JFIF) and ICC profiles are kept. Bytes after the end of the image are
  *   removed too (cameras append secondary images there, with their own Exif; review photos F-05).
- * - WebP: `EXIF` and `XMP ` chunks are removed and the VP8X flags updated.
+ * - WebP: `EXIF` and `XMP ` chunks, and any chunk the format does not define (where a writer could put
+ *   anything), are removed and the VP8X flags updated; image, alpha, animation and ICC chunks are kept.
  * - AVIF: recognised only; an `Exif` item or an XMP (`mime`) item in its `meta` box is reported (the
  *   app then falls back to WebP).
  */
@@ -49,7 +50,7 @@ export function imageMetadata(b: Uint8Array): MetadataKind[] {
     if (j.end < b.length) out.push('trailer');
     return out;
   }
-  if (f === 'image/webp') return webpChunks(b).filter((c) => c.meta).map((c) => (c.id === 'EXIF' ? 'exif' : 'xmp'));
+  if (f === 'image/webp') return webpChunks(b).filter((c) => c.meta).map((c) => (c.id === 'EXIF' ? 'exif' : c.id === 'XMP ' ? 'xmp' : 'other'));
   if (f === 'image/avif') return avifMetadata(b);
   throw new ImageFormatError('not a JPEG, WebP or AVIF image');
 }
@@ -222,6 +223,9 @@ interface Chunk {
   meta: boolean;
 }
 
+/** WebP chunks that make the image (RIFF WebP container spec); anything else is metadata or unknown. */
+const WEBP_IMAGE_CHUNKS = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP']);
+
 function webpChunks(b: Uint8Array): Chunk[] {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   const riff = dv.getUint32(4, true);
@@ -234,7 +238,7 @@ function webpChunks(b: Uint8Array): Chunk[] {
     const size = dv.getUint32(o + 4, true);
     const next = o + 8 + size + (size & 1);
     if (o + 8 + size > end) throw new ImageFormatError('bad WebP chunk');
-    out.push({ id, start: o, end: Math.min(next, end), meta: id === 'EXIF' || id === 'XMP ' });
+    out.push({ id, start: o, end: Math.min(next, end), meta: !WEBP_IMAGE_CHUNKS.has(id) });
     o = next;
   }
   return out;
