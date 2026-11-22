@@ -11,6 +11,7 @@ import {
   nextcloudBase,
   nextcloudDavUrl,
   nextcloudShareReadUrl,
+  nextcloudShareLinkReadUrl,
   normalizePrefix,
   parseConfig,
   readUrlProblem,
@@ -47,6 +48,14 @@ describe('URL builders', () => {
     expect(nextcloudShareReadUrl('https://x.org/nc/index.php/s/Tok3n/')).toBe('https://x.org/nc/public.php/dav/files/Tok3n/');
     expect(nextcloudShareReadUrl('https://x.org/public.php/dav/files/Tok3n')).toBe('https://x.org/public.php/dav/files/Tok3n/');
     expect(nextcloudShareReadUrl('https://x.org/apps/files')).toBeNull();
+  });
+
+  it('reads a Nextcloud share link pasted as the read address of a generic WebDAV storage through public DAV', () => {
+    expect(nextcloudShareLinkReadUrl('https://x.org/s/Tok3n/')).toBe('https://x.org/public.php/dav/files/Tok3n/');
+    expect(nextcloudShareLinkReadUrl('https://x.org/public.php/dav/files/Tok3n/')).toBeNull();
+    expect(nextcloudShareLinkReadUrl('https://x.org/pub/')).toBeNull();
+    const stored = parseConfig({ kind: 'webdav', flavor: 'generic', url: 'https://x.org/remote.php/dav/files/a/T/', username: 'a', password: 'p', readUrl: 'https://x.org/s/Tok3n/' });
+    expect(stored.readUrl).toBe('https://x.org/public.php/dav/files/Tok3n/');
   });
 
   it('S3 prefix and public URL', () => {
