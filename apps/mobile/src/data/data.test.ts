@@ -5,7 +5,19 @@ import { DataStore, placeIdFromOsm } from '@triangulair/data';
 import { listQuery } from '../places/list';
 import { buildPin } from '../pins/build';
 import { placeFacts, toAppTag } from '../places/model';
-import { DEMO_FRIEND, DEMO_PLACES, FIXTURE_CLOSED_PLACE, FIXTURE_SAVED_PLACE, hasAnyData, seedDemoData } from './demo';
+import {
+  DEMO_FRIEND,
+  DEMO_PLACES,
+  FIXTURE_CLOSED_PLACE,
+  FIXTURE_SAVED_PLACE,
+  deleteExamples,
+  hasAnyData,
+  hasExamples,
+  isExamplePlace,
+  seedDemoData,
+  seedExamples,
+  seedStarterTags,
+} from './demo';
 import { SqlJsDriver } from './sqljsDriver';
 import { TAGS } from '../theme/tags';
 
@@ -104,6 +116,72 @@ describe('demo data', () => {
     expect(pin.faded).toBe(false);
     const greyed = buildPin({ facts, match: 'nomatch' }, { tagIds: ['x'], criteria: [] }, tags, byId, true);
     expect(greyed.greyed).toBe(true);
+  });
+});
+
+describe('examples (beta feedback: the demo seed polluted real users\' data)', () => {
+  const opts = { friendName: 'Léa (example)', tagName: (id: keyof typeof TAGS) => TAGS[id].label, now: 1_700_000_000_000 };
+
+  it('a new user gets the starter tags only: no place, no friend', () => {
+    const { store } = openStore();
+    expect(seedStarterTags(store, (id) => TAGS[id].label)).toBe(true);
+    expect(store.repo.tags().map((t) => t.name).sort()).toEqual(Object.values(TAGS).map((t) => t.label).sort());
+    expect(store.repo.queryPlaces({ limit: 100 })).toEqual([]);
+    expect(hasExamples(store)).toBe(false);
+    expect(seedStarterTags(store, (id) => TAGS[id].label)).toBe(false);
+  });
+
+  it('"Show me with examples": the example friend\'s places, in the local cache only (never in my document)', () => {
+    const { store } = openStore();
+    seedStarterTags(store, (id) => TAGS[id].label);
+    const before = store.snapshot();
+    const doc = store.exportDoc();
+    expect(seedExamples(store, opts)).toBe(true);
+    expect(seedExamples(store, opts)).toBe(false);
+    // My document (what is synced and published) did not change.
+    expect(store.isAt(before)).toBe(true);
+    expect(store.exportDoc()).toEqual(doc);
+    expect(store.repo.queryPlaces({ source: 'mine', limit: 100 })).toEqual([]);
+    const theirs = store.repo.queryPlaces({ source: 'friends', limit: 100 });
+    expect(theirs).toHaveLength(DEMO_PLACES.length);
+    expect(theirs.every((h) => isExamplePlace(h.id))).toBe(true);
+    expect(store.repo.getPerson(DEMO_FRIEND.id)?.displayName).toBe('Léa (example)');
+    // The friend's tags are named like mine, so they match them.
+    expect(store.repo.friendTags().map((t) => t.name)).toContain('Restaurant');
+    expect(hasExamples(store)).toBe(true);
+  });
+
+  it('"Delete the example places": all of them, the example friend too; my tags and my own places stay', () => {
+    const { store } = openStore();
+    seedStarterTags(store, (id) => TAGS[id].label);
+    seedExamples(store, opts);
+    const tag = store.repo.tags()[0]!.id;
+    store.change((tx) => tx.putSave({ place: { id: 'local:mybakery01', name: 'My bakery', geometry: { type: 'Point', coordinates: [2.35, 48.86] } }, tagIds: [tag], mainTagId: tag }));
+    const before = store.snapshot();
+    expect(deleteExamples(store)).toBe(DEMO_PLACES.length);
+    expect(store.isAt(before)).toBe(true);
+    expect(hasExamples(store)).toBe(false);
+    expect(store.repo.getPerson(DEMO_FRIEND.id)).toBeNull();
+    expect(store.repo.queryPlaces({ limit: 100 }).map((h) => h.name)).toEqual(['My bakery']);
+    expect(DEMO_PLACES.some((d) => store.repo.getPlace(d.id))).toBe(false);
+    expect(store.repo.tags()).toHaveLength(Object.keys(TAGS).length);
+  });
+
+  it('users of 0.9.0-beta.1 (examples seeded as my own saves): deleted from my document and the trash', () => {
+    const { store } = openStore();
+    seedDemoData(store, { tagName: (id) => TAGS[id].label, fixtures: false });
+    const one = DEMO_PLACES.find((d) => d.ownerIsMe)!;
+    store.change((tx) => tx.deleteSave(one.id)); // one of them already in the trash
+    expect(hasExamples(store)).toBe(true);
+    expect(deleteExamples(store)).toBe(DEMO_PLACES.length);
+    expect(hasExamples(store)).toBe(false);
+    expect(store.repo.queryPlaces({ limit: 100 })).toEqual([]);
+    expect(store.repo.trash()).toEqual([]);
+    // My document holds none of them any more: what my storage and friends get is their deletion.
+    const other = openStore().store;
+    other.merge(store.exportDoc());
+    expect(other.repo.queryPlaces({ limit: 100 })).toEqual([]);
+    expect(deleteExamples(store)).toBe(0);
   });
 });
 

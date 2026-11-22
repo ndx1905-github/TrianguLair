@@ -55,3 +55,4 @@ export { readImportFile, readCsvWithMapping, type ReadOutcome } from './detect.t
 export * from './match.ts';
 export * from './plan.ts';
 export * from './apply.ts';
+export { suggestTag, tagKey, editDistance, TAG_SYNONYMS, type TagSuggestion, type TagMatchReason, type MatchableTag } from './tagMatch.ts';

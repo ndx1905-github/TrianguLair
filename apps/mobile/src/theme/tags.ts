@@ -25,7 +25,8 @@ export const PALETTE = {
 } as const;
 
 /**
- * Demo vocabulary seeded on first launch (user-defined tags come with T-108).
+ * Starter tags, created on first launch (src/data/demo.ts `seedStarterTags`); the import's tag
+ * matching (packages/import tagMatch.ts) has a synonym group for each.
  * Names are i18n keys (`demoTag.<id>`), resolved in the device language when
  * the tags are created; after that they are the user's own data.
  */

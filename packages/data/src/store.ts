@@ -25,6 +25,7 @@ import {
   type TrashItemRef,
 } from './crdt/doc.ts';
 import { emptyTouched, projectAll, projectChanges, saveIdFor, trackChanges, type Touched } from './crdt/project.ts';
+import { applyBulkEdit, type BulkEdit, type BulkResult } from './bulk.ts';
 import { Repository } from './sqlite/repository.ts';
 import type { Capabilities } from './sqlite/schema.ts';
 import type { ListFilter, PlaceSnapshot } from './types.ts';
@@ -218,6 +219,14 @@ export class DataStore {
   change<T>(fn: (tx: DocTx) => T, message?: string): T {
     // `message` becomes the Yjs transaction origin (local only; Yjs updates carry no message).
     return this.apply((doc) => doc.transact(() => fn(new DocTx(doc, this.ctx)), message ?? 'local'));
+  }
+
+  /**
+   * The same edit on many places (the list's "Select" mode), in one change: one chunk, one
+   * projection, one publication. Only my saves are edited; the others are reported as skipped.
+   */
+  bulkEdit(placeIds: readonly string[], edit: BulkEdit): BulkResult {
+    return this.change((tx) => applyBulkEdit(tx, this.doc, placeIds, edit), `bulk ${edit.kind}`);
   }
 
   /**
