@@ -23,8 +23,11 @@ export interface BrowserStorage {
 
 export const PWA_ENABLED = false;
 
+/** One object: `useSyncExternalStore` needs the same snapshot each time, or it renders forever. */
+const NATIVE_STATE: PwaState = Object.freeze({ registered: false, updateReady: false });
+
 export function pwaState(): PwaState {
-  return { registered: false, updateReady: false };
+  return NATIVE_STATE;
 }
 
 export function subscribePwa(_fn: () => void): () => void {
