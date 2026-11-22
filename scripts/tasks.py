@@ -125,7 +125,7 @@ t("T-213","P2","Error cases from the spec",["app","sync"],"Implement every row o
 t("T-214","P2","External security audit",["crypto","maintainer"],"Audit of encryption and sync before release.",["Report published and fixes made"],deps=["T-209"])
 
 # ---------------- Phase 3 ----------------
-t("T-301","P3","Release on App Store, Play Store, F-Droid",["release","maintainer"],"Store listings, screenshots, reproducible F-Droid builds.",["Apps published"],deps=["T-214"])
+t("T-301","P3","Release on App Store, Play Store, F-Droid",["release","maintainer"],"Store listings, screenshots, reproducible F-Droid builds.",["[x] Android release build without Google Play services, Firebase or ML Kit: location on `modules/tl-location` (platform LocationManager), QR scanning on `modules/tl-qr-scanner` (CameraX + ZXing); `native-android.yml` fails on any such library; emulator smoke test without Google APIs finds a mock position","Reproducible F-Droid build, verified by F-Droid","fdroiddata recipe and metadata (description, screenshots, changelogs), source tree passing the F-Droid scanner","Apps published"],deps=["T-214"])
 t("T-302","P3","User and self-hosting documentation",["docs"],"Guides for Nextcloud, NAS, S3, self-hosted tiles.",["Guides reviewed by a non-technical person"])
 t("T-303","P3","Contribution guide, code of conduct, security policy",["docs"],"Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.",["[x] Files present and linked from the README"],status="done")
 t("T-304","P3","Funding: Liberapay / Open Collective, NLnet",["maintainer"],"Open donations, apply to NLnet.",["Application sent"])

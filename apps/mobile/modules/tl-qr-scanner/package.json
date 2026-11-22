@@ -1,0 +1,7 @@
+{
+  "name": "tl-qr-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MPL-2.0",
+  "description": "Android QR scanner on CameraX and ZXing (no ML Kit)"
+}

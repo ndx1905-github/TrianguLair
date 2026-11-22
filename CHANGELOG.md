@@ -37,6 +37,12 @@ and keep a copy of your places (list view › Import and export › Export). Wha
 - Import from Google Takeout (GeoJSON, CSV), Mapstr and Pin Drop (unverified formats, flagged as such), KML and any
   CSV (column-mapping wizard), matched to OpenStreetMap, without duplicates, undoable for 7 days. Full GeoJSON export.
 - Trash: Settings › My content › Trash (restore, delete forever), emptied after 30 days.
+- "Center on me" button on the map (◎): one position when pressed, never stored or sent; it says when the
+  permission is refused, location is off or no position was found.
+- Android without Google Play services: location uses Android's own location service and QR codes are read with
+  ZXing, instead of Google Play services location and ML Kit, so both work on phones without Google services
+  (tested on an emulator without Google APIs). The Android build contains no Google Play services, Firebase or ML
+  Kit library, and CI fails if one comes back (a step towards F-Droid).
 
 **Sharing with friends, end to end encrypted**
 
@@ -97,7 +103,7 @@ and keep a copy of your places (list view › Import and export › Export). Wha
   The self-hosted web app (`docs/self-host-web.md`) avoids the 7-day limit, with its own limits: data kept by the
   browser (keep the recovery kit), no background sync, a local database that is not encrypted, links to paste.
 - **Android**: the APK is signed with a test key. A later store or F-Droid version will need an uninstall (export your
-  places first). Not yet checked for F-Droid: some Google libraries (location, barcode scanning) may be included.
+  places first). Not on F-Droid yet: no reproducible build and no F-Droid recipe so far.
 - **Storage**: SFTP works only in desktop builds, not on phones. S3 on phones uses a new pure-JavaScript signer, so far
   tested against a local S3 emulator only. The Nextcloud browser login and automatic share link were tested against
   mocks, not a real Nextcloud. A storage is needed to share: there is no central server.

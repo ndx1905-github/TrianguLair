@@ -1,0 +1,36 @@
+// Android QR scanner: CameraX preview and frames, decoded with ZXing (Apache-2.0).
+// No ML Kit and no Google Play services (F-Droid). The group "com.google.zxing" is
+// the historical name of the open-source project, not a Google service.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'org.triangulair.qrscanner'
+version = '1.0.0'
+
+android {
+  namespace "org.triangulair.qrscanner"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+// CameraX needs the real ListenableFuture class at compile time; the React Native Gradle
+// plugin pulls in full Guava, which turns listenablefuture into an empty jar (as in expo-camera).
+configurations.configureEach {
+  resolutionStrategy.force "com.google.guava:listenablefuture:1.0"
+}
+
+dependencies {
+  def camerax_version = "1.6.0"
+  implementation "androidx.camera:camera-core:${camerax_version}"
+  implementation "androidx.camera:camera-camera2:${camerax_version}"
+  implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+  implementation "androidx.camera:camera-view:${camerax_version}"
+  implementation "com.google.zxing:core:3.5.3"
+}

@@ -50,7 +50,14 @@
     },
     "plugins": [
       "expo-router",
-      "@maplibre/maplibre-react-native",
+      [
+        "@maplibre/maplibre-react-native",
+        {
+          "android": {
+            "locationEngine": "default"
+          }
+        }
+      ],
       [
         "expo-sqlite",
         {

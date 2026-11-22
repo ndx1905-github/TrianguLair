@@ -40,6 +40,12 @@ export const fr: Messages = {
   'nav.list': 'Liste',
   'nav.listA11y': 'Afficher mes lieux en liste',
   'nav.addA11y': 'Ajouter un lieu',
+  'nav.locateA11y': 'Centrer la carte sur ma position',
+  'nav.locateBusyA11y': 'Recherche de votre position',
+  'locate.denied': 'TrianguLair n’a pas accès à votre position. Vous pouvez l’autoriser dans les réglages du téléphone.',
+  'locate.disabled': 'La localisation est désactivée sur cet appareil. Activez-la dans les réglages, puis réessayez.',
+  'locate.unavailable': 'Votre position est introuvable. Réessayez dans un instant, ou à l’extérieur.',
+  'locate.stale': 'Dernière position connue : elle n’est peut-être plus à jour.',
 
   'theme.label': 'Thème : {mode}',
   'theme.change': 'Thème : {mode}. Changer de thème',

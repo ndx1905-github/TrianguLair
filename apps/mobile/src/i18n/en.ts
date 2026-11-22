@@ -40,6 +40,12 @@ export const en: Messages = {
   'nav.list': 'List',
   'nav.listA11y': 'Show my places as a list',
   'nav.addA11y': 'Add a place',
+  'nav.locateA11y': 'Center the map on my position',
+  'nav.locateBusyA11y': 'Finding your position',
+  'locate.denied': 'TrianguLair may not use your location. You can allow it in the phone’s settings.',
+  'locate.disabled': 'Location is turned off on this device. Turn it on in the settings, then try again.',
+  'locate.unavailable': 'Your position could not be found. Try again in a moment, or outdoors.',
+  'locate.stale': 'Last known position: it may be out of date.',
 
   'theme.label': 'Theme: {mode}',
   'theme.change': 'Theme: {mode}. Change theme',

@@ -407,13 +407,14 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   - *First launch "I received an invitation link"*: checks the link before any identity exists (`verify.ts`), keeps it
     in the secret store (`pending-invitation`) and opens the answer once the first launch is done.
   - *Face to face*: the compact format is not specified (R-13), so the existing invitation link and return link are
-    exchanged as QR codes (scan with `expo-camera`, web: browser camera + BarcodeDetector when available, or paste);
+    exchanged as QR codes (scan with `expo-camera` on iOS, `modules/tl-qr-scanner` on Android (CameraX + ZXing, no ML Kit), web: browser camera + BarcodeDetector when available, or paste);
     both sides mark the other verified automatically.
   - *Contacts*: two switches, share scope, safety code as 12 × 5 digits or QR (`tlsafe1:` payload compared with
     `matchSafetyQr`), the "verified" mark (local, never sent), rename, remove (wraps gone, pack keys renewed), notices
     "… changed their key" (higher rotation) and "… changed their identity" (retired owner: the mark is removed).
   - *Follow a list by link*: see "Following a list by link" above (T-212).
-  - New native module: `expo-camera` (camera permission text in `app.json`); `app.json` also declares the
+  - New native module: `expo-camera` on iOS and web (camera permission text in `app.json`; not linked on Android, see
+    "Android without Google Play services" below); `app.json` also declares the
     `applinks:triangulair.app` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
     matching `apple-app-site-association` and `assetlinks.json`).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
@@ -549,8 +550,22 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
   (screenshots and end-to-end tests; the other shot scripts use it).
 
 New native modules (a new development build is needed): expo-secure-store, expo-local-authentication,
-expo-clipboard, expo-print, expo-image-picker, expo-image-manipulator, expo-location, expo-crypto; their
-permission texts are in `app.json`. `libsodium-wrappers-sumo` (asm.js on Hermes, not yet timed on a device)
+expo-clipboard, expo-print, expo-image-picker, expo-image-manipulator, expo-location (iOS and web), expo-crypto; their
+permission texts are in `app.json`.
+
+**Android without Google Play services (F-Droid).** `expo-location` (Play services location) and `expo-camera`
+(ML Kit barcode scanning) are not linked on Android (`package.json` `expo.autolinking.android.exclude`). Two local
+Expo modules (Kotlin) replace them there, for every Android build:
+- `modules/tl-location`: one position on the platform `LocationManager` (fused provider from Android 12, GPS,
+  network, passive), a recent last known position first, else `getCurrentLocation` (Android 11+) or
+  `requestLocationUpdates`, with a timeout. The permission is asked with `PermissionsAndroid`. JavaScript:
+  `src/location` (`locateMe()`, one interface; `backend.android.ts` / `backend.ts` with expo-location on iOS and web).
+- `modules/tl-qr-scanner`: a CameraX preview whose frames are decoded with ZXing core (Apache-2.0); front camera when
+  there is no back one. JavaScript: `src/contacts/Scanner.android.tsx` (iOS and web: `Scanner.tsx`, expo-camera;
+  shared frame: `ScannerFrame.tsx`).
+MapLibre's Android location engine is pinned to `default` (platform `LocationManager`) in `app.json`. CI
+(`native-android.yml`) fails if a Play services, Firebase, ML Kit or Play Core library reaches the release runtime
+classpath (`scripts/fdroid-deps.mjs --fail`). `libsodium-wrappers-sumo` (asm.js on Hermes, not yet timed on a device)
 and `@scure/bip39` are resolved from this app like the other packages' dependencies.
 
 ### OSM services, offline and fixture mode
@@ -701,6 +716,9 @@ image per color/icon combination (made at build time or with Skia) and engine-si
   scroll sideways and the card is a bottom sheet docked full width. Layout changes never reset state.
 - **Initial camera:** fits all places in the visible area (`src/places/camera.ts`), computed once; with no
   place yet, the position found at the first launch's location step.
+- **Center on me** (◎, above the List button, `src/location/LocateButton.tsx`): one position per press, never
+  stored or sent; a notice when the permission is refused, location is off or no fix came (15 s), and when only an
+  older last known position was found.
 - **T-117/T-118 pass** (`scripts/shots_first_launch.py adapt` and a matrix run of every screen at 320, 344,
   430, 690, 834 pt wide and 844×390 landscape, text at 1.0 / 1.5 / 2.0, light and dark, checking for text
   outside the window and cut text): headers wrap (title without a line limit, actions move to a second

@@ -34,6 +34,19 @@ PIDS=$!
 
 adb install -r -g "$APK" || { echo "::error::adb install failed"; exit 1; }
 
+# Location: on, with a mock GPS position (the emulator's console, `geo fix <lon> <lat>`), sent
+# again every 2 s so that a fix comes whenever the app asks. The image is AOSP without Google
+# APIs: the app's location (modules/tl-location, the platform LocationManager) must work without
+# Google Play services. The flow checks that "center on me" centers the map there.
+MOCK_LAT=48.85837
+MOCK_LON=2.29448
+adb shell cmd location set-location-enabled true 2>/dev/null || adb shell settings put secure location_mode 3 || true
+adb shell cmd location is-location-enabled 2>/dev/null | sed 's/^/location enabled: /' || true
+adb emu geo fix "$MOCK_LON" "$MOCK_LAT" || echo "::warning::adb emu geo fix failed"
+( while true; do adb emu geo fix "$MOCK_LON" "$MOCK_LAT" > /dev/null 2>&1; sleep 2; done ) &
+GEO=$!
+adb shell dumpsys location 2>/dev/null | grep -iE 'provider|last location' | head -20 > "$OUT/location-providers.txt" || true
+
 status=0
 ( cd "$OUT/screenshots" && maestro test \
     --format junit --output "$OUT/maestro/report.xml" \
@@ -49,7 +62,7 @@ fi
 
 # Let the last log lines arrive.
 sleep 3
-kill "$PIDS" "$LOGCAT" 2>/dev/null || true
+kill "$PIDS" "$LOGCAT" "$GEO" 2>/dev/null || true
 wait 2>/dev/null || true
 
 # The flow's screenshots and Maestro's own (taken when a step fails).
@@ -79,7 +92,7 @@ awk -v pkg="$PKG" -v pidfile="$OUT/pids.sorted" '
 {
   echo '## Android smoke test'
   echo
-  if [ "$status" -eq 0 ] && [ "$crashed" -eq 0 ]; then echo 'Passed: first launch, add a place, its card and pin on the map, the list and its search, cold restart.'; else echo "**Failed** (Maestro exit $status, crash: $crashed)."; fi
+  if [ "$status" -eq 0 ] && [ "$crashed" -eq 0 ]; then echo 'Passed: QR scanner, first launch with the location (mock GPS, no Play services), center on me, add a place, its card and pin on the map, the list and its search, cold restart.'; else echo "**Failed** (Maestro exit $status, crash: $crashed)."; fi
   echo
   echo "Screenshots: $(ls "$OUT/screenshots" | tr '\n' ' ')"
   if [ "$crashed" -eq 1 ]; then echo; echo '### Crash'; echo; echo '```'; head -60 "$OUT/crashes.txt"; echo '```'; fi
@@ -94,6 +107,8 @@ rm -f "$OUT/pids.txt" "$OUT/pids.sorted"
 [ -s "$OUT/crashes.txt" ] || rm -f "$OUT/crashes.txt"
 
 # The job log gets the essentials too (the artifacts are not always at hand).
+echo '--- Location providers (dumpsys location, before the flow) ---'
+cat "$OUT/location-providers.txt" 2>/dev/null || true
 echo '--- JavaScript logs (ReactNativeJS) ---'
 grep -E ' ReactNativeJS' "$OUT/logcat-app.txt" | cut -c1-600 | tail -80 || true
 echo '--- Warnings and errors of the app (other tags) ---'

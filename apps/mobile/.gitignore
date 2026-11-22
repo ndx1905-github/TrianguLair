@@ -6,6 +6,9 @@ dist-web/
 dist-pwa/
 ios/
 android/
+# The native code of the local Expo modules (modules/*) is source, not a prebuild output.
+!modules/*/android/
+!modules/*/ios/
 expo-env.d.ts
 # Copied from maplibre-gl on install and web export (scripts/maplibre-worker.mjs).
 public/maplibre-gl-worker.mjs
