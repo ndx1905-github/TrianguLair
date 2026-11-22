@@ -25,6 +25,9 @@ const PHOTO =
 export async function preparePage(page: Page, dark = false): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('console', (m) => {
+    if (m.type() === 'warning' || m.type() === 'error') consoleLog(page).push(`${m.type()}: ${m.text().slice(0, 300)}`);
+  });
   await page.clock.setSystemTime(NOW);
   await page.route('https://tiles.openfreemap.org/**', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: style(dark) }),
@@ -54,10 +57,29 @@ export function autostart(path: string): string {
   return path + (path.includes('?') ? '&' : '?') + 'autostart=1';
 }
 
+const consoleLogs = new WeakMap<Page, string[]>();
+function consoleLog(page: Page): string[] {
+  let l = consoleLogs.get(page);
+  if (!l) consoleLogs.set(page, (l = []));
+  return l;
+}
+
+/** What the page shows and logged, printed when an expectation fails (CI only gives the logs). */
+export async function diagnose(page: Page, what: string): Promise<void> {
+  const text = await page.evaluate(() => document.body.innerText.slice(0, 1500)).catch(() => '?');
+  const keys = await page.evaluate(() => Object.keys(localStorage).join(', ')).catch(() => '?');
+  console.log(`--- ${what} at ${page.url()}\n[text] ${text}\n[localStorage] ${keys}\n[console]\n${consoleLog(page).join('\n')}`);
+}
+
 /** Opens the map and waits for the demo pins. */
 export async function openMap(page: Page, path = '/'): Promise<void> {
   await page.goto(autostart(path));
-  await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
+  try {
+    await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
+  } catch (e) {
+    await diagnose(page, 'no pins');
+    throw e;
+  }
 }
 
 /** Moves the web map (MapLibre exposes itself as `window.__tlMap` for tests). */

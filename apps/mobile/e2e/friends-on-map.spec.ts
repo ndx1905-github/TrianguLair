@@ -8,7 +8,7 @@
  */
 import type { Page } from '@playwright/test';
 
-import { autostart, collapseFilters, demo, expect, jump, openMap, test } from './helpers';
+import { autostart, collapseFilters, demo, diagnose, expect, jump, openMap, test } from './helpers';
 
 const SHOTS = process.env['SHOTS'] === '1';
 const LEA = 'demo-friend-lea';
@@ -149,7 +149,10 @@ test('a friend\'s page: their colour on the dots, "See their places on the map"'
   await openMap(page);
   await page.goto(autostart(`/contacts/${LEA}`));
   const section = page.getByTestId('friend-on-map');
-  await expect(section).toBeVisible({ timeout: 30_000 });
+  await expect(section).toBeVisible({ timeout: 30_000 }).catch(async (e: unknown) => {
+    await diagnose(page, 'no friend section');
+    throw e;
+  });
   await section.getByTestId('friend-color-green').click();
   await expect(section.getByTestId('friend-color-green')).toHaveAttribute('aria-checked', 'true');
   await expect(section.getByTestId('friend-color-reset')).toBeVisible();
