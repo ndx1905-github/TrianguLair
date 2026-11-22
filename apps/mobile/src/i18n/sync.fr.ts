@@ -124,8 +124,6 @@ export const syncFr: Messages = {
   'friends.theirTags': 'Ses tags',
   'friends.picker.title': 'Lieux de qui',
   'friends.picker.lead': 'Choisissez de qui les lieux apparaissent sur votre carte et dans votre liste : les vôtres, un ami, plusieurs ou tout le monde.',
-  'friends.picker.all': 'Tous mes amis',
-  'friends.picker.none': 'Aucun',
   'friends.picker.search': 'Chercher un ami',
   'friends.picker.places': { one: '{count} lieu', other: '{count} lieux' },
   'friends.picker.done': 'Terminé',

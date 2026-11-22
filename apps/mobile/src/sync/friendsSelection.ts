@@ -94,8 +94,9 @@ export function selectionKind(s: FriendsSelection, everyone: readonly string[]):
   const all = s.mode === 'all' || (everyone.length > 0 && shown.length === everyone.length);
   if (s.me && all) return { kind: 'everyone', count: shown.length };
   if (s.me && shown.length === 0) return { kind: 'mine', count: 0 };
-  if (!s.me && all) return { kind: 'friends', count: shown.length };
+  // A single friend shown is "Only Léa", even when she is my only friend.
   if (!s.me && shown.length === 1) return { kind: 'one', friend: shown[0]!, count: 1 };
+  if (!s.me && all) return { kind: 'friends', count: shown.length };
   return { kind: 'custom', count: shown.length };
 }
 

@@ -88,11 +88,10 @@ export function dotLayout(dots: PinDots, opts: { scale?: number; maybeClosed?: b
     const fontSize = 7 * k;
     const h = 2 * outer;
     const w = Math.max(h, fontSize * 0.62 * text.length + 3 * k);
-    // Next to the last dot, along the outline.
-    angle += halfAngle(outer + gap / 2) + halfAngle(w / 2 + gap / 2);
-    const p = onHead(angle);
-    // Kept to the right of the head's axis, so it never covers the tip.
-    const cx = Math.max(p.x, HEAD.cx + w / 2);
+    // To the right of the last dot, on its line.
+    const last = circles[circles.length - 1];
+    const p = last ? { x: last.cx + outer + gap + w / 2, y: last.cy } : onHead(angle);
+    const cx = p.x;
     more = { cx: round(cx), cy: round(p.y), w: round(w), h: round(h), text, fontSize: round(fontSize) };
     minY = Math.min(minY, p.y - h / 2);
     maxX = Math.max(maxX, cx + w / 2);

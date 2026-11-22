@@ -70,6 +70,7 @@ describe('whose places: the selection', () => {
     expect(selectionKind({ mode: 'some', ids: ['a', 'b'], me: false }, all)).toEqual({ kind: 'custom', count: 2 });
     // A friend no longer followed does not count.
     expect(selectionKind({ mode: 'some', ids: ['gone'], me: true }, all).kind).toBe('mine');
+    expect(selectionKind({ mode: 'all', me: false }, ['a'])).toEqual({ kind: 'one', friend: 'a', count: 1 });
   });
 
   it('moves the old "Friends\' places" visibility filter into the selection', () => {

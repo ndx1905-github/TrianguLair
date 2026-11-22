@@ -275,10 +275,6 @@ function FriendsPicker({ people, onClose }: { people: FollowedPerson[]; onClose:
             <Pill label={t('whose.onlyMine')} selected={kind === 'mine'} onPress={() => pick(ONLY_MINE)} testID="whose-only-mine" />
             <Pill label={t('whose.onlyFriends')} selected={kind === 'friends'} onPress={() => pick({ mode: 'all', me: false })} testID="whose-only-friends" />
           </View>
-          <View style={styles.row}>
-            <Pill label={t('friends.picker.all')} selected={sel.mode === 'all'} onPress={() => setSelection({ mode: 'all', me: sel.me })} testID="friends-all" />
-            <Pill label={t('friends.picker.none')} selected={sel.mode === 'none'} onPress={() => setSelection({ mode: 'none', me: true })} testID="friends-none" />
-          </View>
           {people.length > 6 && (
             <TextInput
               value={q}

@@ -124,8 +124,6 @@ export const syncEn: Messages = {
   'friends.theirTags': 'Their tags',
   'friends.picker.title': 'Whose places',
   'friends.picker.lead': 'Choose whose places appear on your map and in your list: yours, one friend, several or everyone.',
-  'friends.picker.all': 'All my friends',
-  'friends.picker.none': 'None',
   'friends.picker.search': 'Search a friend',
   'friends.picker.places': { one: '{count} place', other: '{count} places' },
   'friends.picker.done': 'Done',

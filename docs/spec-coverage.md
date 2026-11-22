@@ -129,8 +129,10 @@ the web test build) from meeting a v1 promise.
 | MVP | Sharing section of the card: private / friends / lists | done | `SaveEditor.tsx` (sharing friends/private + hint), `app/components/ListsSection.tsx` (tick lists); shot `phone-card-lists.png` | — |
 | MVP | A private place never appears for others, in friends counters or in any list | done | `data/filter.ts`, `repository.ts` (`sharing <> 'private'`); data `crdt.property.test.ts` "a private save never enters a list"; e2e `zones-lists.spec.ts`, `sync.spec.ts` | — |
 | MVP | Follow and share in each direction: invitation link, return link, QR face to face, subscription to a list | done | `app/contacts/*`, `crypto/invitation.ts`; contacts `flow.test.ts`; e2e `invitations.spec.ts`, `lists-sharing.spec.ts` | — |
-| MVP | "Also at my friends'" filter, choice of friends shown (remembered) | done | `app/sync/FriendsPicker.tsx`, `friendsSelection.ts`; e2e `sync.spec.ts`; shot `phone-friends-picker.png` | — |
-| MVP | "3 friends" in the list, the card and the add screen (not on the pin) | done | list `list.friends`, card `FriendsSection.tsx`, add `add.friends`; pins without a badge | — |
+| MVP | "Also at my friends'" filter; "Whose places": mine, one friend, several, everyone (remembered) | done | `app/sync/FriendsPicker.tsx` (`WhoseRow`, panel), `friendsSelection.ts` (format 2, "me shown", migration); unit `friendsSelection.test.ts`; e2e `friends-on-map.spec.ts`, `sync.spec.ts`; shots `phone-whose-row.png`, `phone-whose-panel.png`, `phone-friends-picker.png` | — |
+| MVP | "3 friends" in the list, the card and the add screen (the count not on the pin) | done | list `list.friends`, card `FriendsSection.tsx`, add `add.friends` | — |
+| MVP | A colour per friend (palette, from their id, changeable on their page) | done | `app/sync/friendColors.ts`, `app/sync/FriendOnMap.tsx`; unit `friendsSelection.test.ts`; shot `phone-friend-colour.png` | — |
+| MVP | Card: "On the maps of: Ben, Léa", a name shows only theirs; friend's page "See their places on the map" | done | `FriendsSection.tsx`, `FriendOnMap.tsx`; e2e `friends-on-map.spec.ts`; shot `phone-card-on-maps.png` | — |
 | MVP | The mention opens who saved it, when, their comments | partial | On the card (`FriendsSection.tsx`, shot `phone-card-friends.png`). On the add screen and in list rows it is text only and opens nothing | Make the add-screen mention open the friends section |
 | MVP | What's new view since the last visit | partial | `app/sync/whatsNew.ts`, `app/app/whatsnew.tsx`; e2e `sync.spec.ts`. Kinds: added, comment, status, key, moved, identity, followed list's first places. Missing: lists shared with me, closures reported, new photo, later changes in a followed list | What's new kinds |
 | MVP | Lists from a saved filter or a manual selection | done | `app/lists/*`, `data` `evaluateList`; data `lists.test.ts`, `listLogic.test.ts` | — |
@@ -303,7 +305,7 @@ the web test build) from meeting a v1 promise.
 | Pins | Round badge with tip, main tag color, white icon outlined dark gray, white border | done | `app/pins/pinSvg.ts` | — |
 | Pins | Icon of the tag, else of the OSM category | done | `placeIcon` (`app/places/model.ts`) | — |
 | Pins | Sizes 34 / 40 selected / 24 zoomed out; 44 px touch target | partial | Scale factors (selected 1.3×, faded 0.72×), no 24 px zoomed-out size; touch target not checked | Pin sizes |
-| Pins | Friends' places: no badge | done | README "Friends' places" | — |
+| Pins | Friends' dots: one per friend shown, their colour, top right, up to 3 then "+n"; same pixel size on greyed pins; clusters unchanged; spoken label | done | `app/pins/dots.ts`, `pinSvg.ts` (`pinLayout`), `Map.web.tsx`, `Map.native.tsx`; unit `dots.test.ts`; e2e `friends-on-map.spec.ts`; shots `phone-pin-dots.png`, `pins-friend-dots.png` | — |
 | Pins | "Maybe closed": small gray cross | done | `pinSvg.ts` | — |
 | Pins | Clustering bubble with count, majority tag color | done | `app/components/map/cluster.ts`; `clustering.test.ts`; shot `phone-map-clusters.png` | — |
 | Colors | Palette of 17 colors; icon outline in the icon files | done | `app/theme/tags.ts`; `theme.test.ts` "tag palette" | — |
@@ -319,7 +321,7 @@ the web test build) from meeting a v1 promise.
 | Others' tags | Followed lists in their author's colors | partial | The preview uses the author's colors; on the map, followed lists look like friends' places, with no option | Followed lists, second pass |
 | Others' tags | Add to my places: tags pre-filled through the mappings | done | `addToMine` uses the mapped tag ids | — |
 | Screens | Map: search bar, filter bar, "+" | partial | Filter bar with text search and "+"; no separate address search bar on the map (search lives on the add screen) | Decide |
-| Screens | Bar collapses itself when the map is scrolled; the friends panel | done | README "Filter bar"; `FriendsPicker.tsx` | — |
+| Screens | Bar collapses itself when the map is scrolled; "Whose places" row and panel | done | README "Filter bar", "Whose places"; `FriendsPicker.tsx` | — |
 | Screens | Tag management: color, icon, count, OSM categories, mappings | done | `app/app/tags.tsx`; shot `phone-tags.png` | — |
 | Screens | Card as a bottom sheet (photo, name, status, tags, note, friends) | done | `PlaceSheet.tsx`, `PlaceCard.tsx` | — |
 | Screens | List: pills at the start, distance on the right | done | `app/app/list.tsx` | — |
