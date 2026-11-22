@@ -64,5 +64,12 @@ export const MAX_PIN_BANDS = 3;
 export const APP_VERSION = '0.0.1';
 export const APP_CONTACT_URL = 'https://github.com/triangulair/triangulair';
 
+/**
+ * The guide to hosting the web version and allowing it on a storage (CORS), linked from the web
+ * version when a storage does not answer (docs/self-host-web.md).
+ */
+export const WEB_HOSTING_GUIDE_URL: string =
+  process.env.EXPO_PUBLIC_WEB_GUIDE_URL ?? `${APP_CONTACT_URL}/blob/main/docs/self-host-web.md`;
+
 /** Force the UI language ("en" or "fr"); default: the device language. */
 export const FORCED_LOCALE: string | undefined = process.env.EXPO_PUBLIC_LOCALE || undefined;

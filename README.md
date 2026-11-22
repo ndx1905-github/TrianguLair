@@ -32,7 +32,7 @@ To try it: [docs/beta-testing.md](docs/beta-testing.md).
 | `packages/osm` | OpenStreetMap client: Overpass, Photon/Nominatim, place cards, closed places |
 | `packages/import` | Import (Google Takeout, Mapstr, Pin Drop, KML, CSV) and GeoJSON export |
 | `packages/sync` | Sync and sharing: publishing, friends, lists, devices, photos |
-| `apps/mobile` | Expo / React Native app (iOS, Android, web for testing) |
+| `apps/mobile` | Expo / React Native app (iOS, Android, and an installable web app) |
 | `docs/SPEC.md` | Full specification — the source of truth |
 | `docs/TASKS.md` | Spec broken down into tasks (also GitHub issues) |
 
@@ -71,10 +71,13 @@ zone, a filter list with a private place, GeoJSON import, export and re-import, 
 
 ## Releases
 
-Builds are published as GitHub Releases (APK for Android, unsigned .ipa for iPhone sideloading, SHA-256 checksums)
+Builds are published as GitHub Releases (APK for Android, unsigned .ipa for iPhone sideloading, the web app as two
+zips, for the root of a domain and for `/triangulair/`, SHA-256 checksums)
 by the manual *Release* workflow (`.github/workflows/release.yml`), with the matching [CHANGELOG.md](CHANGELOG.md)
 section as notes. Installing them: [docs/beta-testing.md](docs/beta-testing.md),
-[docs/run-on-android.md](docs/run-on-android.md), [docs/run-on-iphone.md](docs/run-on-iphone.md).
+[docs/run-on-android.md](docs/run-on-android.md), [docs/run-on-iphone.md](docs/run-on-iphone.md). Hosting the web app
+(installable on an iPhone from Safari, works offline) on YunoHost next to Nextcloud:
+[docs/self-host-web.md](docs/self-host-web.md).
 
 ## Contributing
 

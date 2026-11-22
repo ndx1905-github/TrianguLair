@@ -60,6 +60,19 @@ and keep a copy of your places (list view › Import and export › Export). Wha
 - On the phone: the local database is encrypted (SQLCipher, key in the system vault); keys and storage credentials
   live in the Keychain / Keystore.
 
+**Web app (PWA), to host yourself**
+
+- The web version is an installable web app that works offline: manifest and icons, Add to Home Screen on iPhone
+  (Safari › Share) and Install on Android and desktop browsers, a service worker that keeps the app's own files for
+  offline use (never storage requests or map tiles), "A new version is ready · Reload" after an update.
+- It asks the browser to keep its data; Settings › Storage in this browser shows whether it does, and why the recovery
+  kit matters more in a browser.
+- Built for the root of a domain or for a sub-path such as `/triangulair/` (`TL_WEB_BASE`); deep links work under
+  both. Releases include `TrianguLair-web-<version>-root.zip` and `TrianguLair-web-<version>.zip` (sub-path).
+- Guide for YunoHost next to Nextcloud (`docs/self-host-web.md`): "My webapp" and SFTP, the nginx CORS rule for
+  Nextcloud WebDAV and public share links (or the same domain, without CORS), installing on a phone, updating.
+- The web version says when a storage, yours or a friend's, probably does not allow it (CORS), and links to the guide.
+
 **Project**
 
 - Frozen encrypted format v4, specified byte for byte in `docs/format/`, with test vectors, fuzzing and a second
@@ -81,6 +94,8 @@ and keep a copy of your places (list view › Import and export › Export). Wha
 - **iPhone only through free sideloading**: an unsigned .ipa installed with Sideloadly or AltStore and a free Apple
   ID. The app stops opening after **7 days** and must be re-signed (installed again); at most 3 such apps per
   iPhone; no universal links, so invitation and list links open in the browser and must be pasted in the app.
+  The self-hosted web app (`docs/self-host-web.md`) avoids the 7-day limit, with its own limits: data kept by the
+  browser (keep the recovery kit), no background sync, a local database that is not encrypted, links to paste.
 - **Android**: the APK is signed with a test key. A later store or F-Droid version will need an uninstall (export your
   places first). Not yet checked for F-Droid: some Google libraries (location, barcode scanning) may be included.
 - **Storage**: SFTP works only in desktop builds, not on phones. S3 on phones uses a new pure-JavaScript signer, so far

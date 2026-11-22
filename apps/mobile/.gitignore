@@ -1,6 +1,9 @@
 node_modules/
 .expo/
 dist/
+# Web PWA exports (npm run export:web:pwa, export:web:pwa:fixtures).
+dist-web/
+dist-pwa/
 ios/
 android/
 expo-env.d.ts

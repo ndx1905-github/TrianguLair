@@ -58,13 +58,26 @@ export function s3CorsRules(origin: string | null): string {
   return JSON.stringify(rules, null, 2);
 }
 
-/** Apache (mod_headers) rules for the WebDAV write endpoint, for the web test build. */
+/**
+ * CORS for the owner's WebDAV endpoint (the web version's origin only, never `*`: the requests carry
+ * the password). Same lists as docs/self-host-web.md and packages/storage/README.md. The app uses
+ * GET, HEAD, PUT, DELETE, PROPFIND and MKCOL; MOVE, COPY, Destination and Overwrite are allowed for
+ * WebDAV clients in general. The server must answer the preflight (OPTIONS) itself, without a
+ * password: Nextcloud would answer 401.
+ */
+export const WEBDAV_CORS_METHODS = 'GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, MOVE, COPY, OPTIONS';
+export const WEBDAV_CORS_HEADERS = 'Authorization, Content-Type, Depth, Destination, Overwrite, If-Match, If-None-Match';
+export const WEBDAV_CORS_EXPOSE = 'ETag, OC-ETag, Content-Length, Last-Modified';
+export const CORS_MAX_AGE_S = 3600;
+
+/** Apache (mod_headers) rules for the WebDAV write endpoint, for the web version. */
 export function webDavCorsApache(origin: string): string {
   return [
     `Header always set Access-Control-Allow-Origin "${origin}"`,
-    'Header always set Access-Control-Allow-Methods "GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, OPTIONS"',
-    'Header always set Access-Control-Allow-Headers "Authorization, Content-Type, Depth, If-Match, If-None-Match"',
-    'Header always set Access-Control-Expose-Headers "ETag, OC-ETag, Content-Length"',
+    `Header always set Access-Control-Allow-Methods "${WEBDAV_CORS_METHODS}"`,
+    `Header always set Access-Control-Allow-Headers "${WEBDAV_CORS_HEADERS}"`,
+    `Header always set Access-Control-Expose-Headers "${WEBDAV_CORS_EXPOSE}"`,
+    `Header always set Access-Control-Max-Age "${CORS_MAX_AGE_S}"`,
     'Header always set Vary "Origin"',
     'RewriteEngine On',
     'RewriteCond %{REQUEST_METHOD} OPTIONS',
@@ -72,20 +85,24 @@ export function webDavCorsApache(origin: string): string {
   ].join('\n');
 }
 
-/** The same for nginx in front of Nextcloud or another WebDAV server. */
+/**
+ * The same for nginx in front of Nextcloud or another WebDAV server (in the location that serves
+ * WebDAV). On YunoHost, docs/self-host-web.md has a ready-made file that survives upgrades.
+ */
 export function webDavCorsNginx(origin: string): string {
   return [
     `add_header Access-Control-Allow-Origin "${origin}" always;`,
-    'add_header Access-Control-Allow-Methods "GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, OPTIONS" always;',
-    'add_header Access-Control-Allow-Headers "Authorization, Content-Type, Depth, If-Match, If-None-Match" always;',
-    'add_header Access-Control-Expose-Headers "ETag, OC-ETag, Content-Length" always;',
+    `add_header Access-Control-Allow-Methods "${WEBDAV_CORS_METHODS}" always;`,
+    `add_header Access-Control-Allow-Headers "${WEBDAV_CORS_HEADERS}" always;`,
+    `add_header Access-Control-Expose-Headers "${WEBDAV_CORS_EXPOSE}" always;`,
+    `add_header Access-Control-Max-Age ${CORS_MAX_AGE_S} always;`,
     'if ($request_method = OPTIONS) { return 204; }',
   ].join('\n');
 }
 
 /** Headers the read address must send so friends' web pages can read it (the content is encrypted). */
 export function readCorsHeaders(): string {
-  return ['Access-Control-Allow-Origin: *', 'Access-Control-Expose-Headers: ETag'].join('\n');
+  return ['Access-Control-Allow-Origin: *', 'Access-Control-Expose-Headers: ETag, Content-Length, Last-Modified'].join('\n');
 }
 
 export function s3Fixes(c: Pick<S3Config, 'bucket' | 'prefix'>) {

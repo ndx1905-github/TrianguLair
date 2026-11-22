@@ -10,6 +10,7 @@ import { ThemeProvider, useIsDark, useUiColors } from '../hooks/useUiColors';
 import { I18nProvider } from '../i18n';
 import { IdentityProvider } from '../identity/IdentityProvider';
 import { LockProvider } from '../identity/LockGate';
+import { PwaUpdatePrompt } from '../pwa/UpdatePrompt';
 import { AppStateProvider } from '../state/AppState';
 import { StorageProvider } from '../storage/StorageProvider';
 import { SyncProvider } from '../sync/SyncProvider';
@@ -44,6 +45,7 @@ export default function RootLayout() {
                   <LockProvider>
                     <ThemedStack />
                     <PendingInvitation />
+                    <PwaUpdatePrompt />
                   </LockProvider>
                 </ContactsProvider>
               </AppStateProvider>

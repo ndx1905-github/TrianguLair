@@ -79,13 +79,14 @@ Friends never write to someone else's storage, so there is no inbox. They send a
 - If a server sends no `ETag` header on `GET`/`HEAD`/`PUT`, the adapter falls back to `PROPFIND` `getetag`. Nextcloud returns `ETag`/`OC-ETag` on `PUT`.
 - `conditionalWrites` defaults to `true`. Nextcloud (sabre/dav) honours `If-Match`/`If-None-Match`. Set it to `false` for servers that ignore them. The npm `webdav-server` package is one; it is used in the tests to stand in for such lax servers.
 - **Friends' read URL**: a read-only public share link, or a public folder, passed as `publicBaseUrl`. For Nextcloud this is the public-share WebDAV URL, which still has to be validated against a real instance in T-202. Since everything is encrypted, a public link is acceptable.
-- **CORS (web build)**: the browser sends preflights for `PUT`, `DELETE`, `PROPFIND` and `MKCOL` and for the `Authorization`, `Depth`, `If-Match` and `If-None-Match` headers. The server must answer `OPTIONS` with:
-  - `Access-Control-Allow-Origin: <app origin>`
-  - `Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, OPTIONS`
-  - `Access-Control-Allow-Headers: Authorization, Content-Type, Depth, If-Match, If-None-Match`
-  - `Access-Control-Expose-Headers: ETag, OC-ETag, Content-Length`
+- **CORS (web build)**: the browser sends preflights for `PUT`, `DELETE`, `PROPFIND` and `MKCOL` and for the `Authorization`, `Depth`, `If-Match` and `If-None-Match` headers. The server must answer `OPTIONS` itself, without credentials, with:
+  - `Access-Control-Allow-Origin: <app origin>` (exact origin, never `*`: the requests carry the password; no `Allow-Credentials`, the adapter sends `Authorization` itself)
+  - `Access-Control-Allow-Methods: GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, MOVE, COPY, OPTIONS` (the adapter uses the first six; `MOVE`/`COPY` for WebDAV clients in general)
+  - `Access-Control-Allow-Headers: Authorization, Content-Type, Depth, Destination, Overwrite, If-Match, If-None-Match`
+  - `Access-Control-Expose-Headers: ETag, OC-ETag, Content-Length, Last-Modified`
+  - `Access-Control-Max-Age: 3600`
 
-  Without `Expose-Headers`, `ETag` is invisible to scripts. Stock Nextcloud does not send CORS headers on its DAV endpoint. You need a reverse-proxy rule or a CORS app, and this is still to be validated (T-007 needs it for the test build).
+  Without `Expose-Headers`, `ETag` is invisible to scripts. Stock Nextcloud sends no CORS headers on its DAV endpoint and answers an unauthenticated `OPTIONS` with `401`, so the reverse proxy must answer the preflight (`204`) before Nextcloud. A ready-made nginx file for YunoHost (`/etc/nginx/conf.d/<domain>.d/`, headers-more), which also covers the OCS and Login Flow v2 endpoints of the app's Nextcloud wizard and opens the public share WebDAV (`/public.php/dav/`) to any origin for reading, is in `docs/self-host-web.md`, with `curl` checks. The same lists are in the app's connection-test snippets (`apps/mobile/src/storage/fixes.ts`).
 - Nextcloud keeps file versions. Limit the version history on the TrianguLair folder (spec, "No duplicates, lightweight storages").
 
 ### S3-compatible (`S3Adapter`)
@@ -165,7 +166,7 @@ Each adapter also has tests for `AuthError` (bad credentials) and `NetworkError`
 ## Open questions
 
 - ~~SFTP on mobile~~ **Decided (T-202): SFTP is desktop/CLI only.** `ssh2` cannot run in React Native or Hermes, and a native SFTP bridge (Swift/Kotlin, Expo dev build, host-key handling) is not worth its cost now. On a phone the wizard shows SFTP as "Desktop only" and explains the alternative: keep the folder on the SFTP server in sync with a sync tool (or write it from the desktop) and use the HTTPS read mode on the phone. To revisit if users ask for it.
-- How does a web build reach Nextcloud with CORS: a recommended reverse-proxy snippet, or a Nextcloud app?
+- ~~How does a web build reach Nextcloud with CORS: a recommended reverse-proxy snippet, or a Nextcloud app?~~ **Decided: a reverse-proxy rule** (`docs/self-host-web.md`), or the web app on the same domain as Nextcloud (no CORS).
 - Do GitHub Pages and Codeberg Pages expose `ETag` to cross-origin scripts? If not, `fetchSnapshot` on the web falls back to a full `GET` (size and `Last-Modified` may also be hidden).
 - Should `fetchSnapshot` use a conditional `GET` (`If-None-Match`, `304`) instead of `HEAD` then `GET`? That saves a round trip when the index changed, but it needs CORS to allow the `If-None-Match` request header.
 

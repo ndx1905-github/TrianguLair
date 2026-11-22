@@ -8,7 +8,7 @@ export const privacyFr: Messages = {
   'myContent.title': 'Mon contenu',
   'myContent.db.sqlcipher': 'Vos lieux sont chiffrés sur cet appareil, avec une clé gardée dans le coffre-fort sécurisé du téléphone.',
   'myContent.db.unavailable': 'Cette version ne peut pas chiffrer vos lieux sur cet appareil (SQLCipher manque).',
-  'myContent.db.web-test': 'Version web de test : vos lieux ne sont pas chiffrés sur cet appareil. Ne l’utilisez pas pour vos vrais lieux.',
+  'myContent.db.web-test': 'Version web : vos lieux ne sont pas chiffrés sur cet appareil (les apps pour téléphone les chiffrent). Verrouillez l’app avec un code et gardez votre kit de récupération.',
 
   // Corbeille.
   'trash.title': 'Corbeille',

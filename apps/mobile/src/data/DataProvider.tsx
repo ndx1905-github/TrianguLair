@@ -29,6 +29,8 @@ export interface DataState {
   refresh: () => void;
   /** Deletes the database file (remote wipe, after `store.wipe()`). */
   erase: () => Promise<void>;
+  /** Saves pending changes now (web: before the page reloads on a new version). */
+  flush: () => Promise<void>;
 }
 
 /** Listeners of my own edits (the sync scheduler publishes them, debounced). */
@@ -126,7 +128,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
   const value = useMemo<DataState | null>(
-    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, encryption: app.encryption, mutate, refresh, erase: () => app.erase() } : null),
+    () => (app ? { store: app.store, repo: app.store.repo, version, persistence: app.persistence, encryption: app.encryption, mutate, refresh, erase: () => app.erase(), flush: () => app.flush() } : null),
     [app, version, mutate, refresh],
   );
 
