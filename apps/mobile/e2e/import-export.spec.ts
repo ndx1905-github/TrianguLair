@@ -98,3 +98,35 @@ test('export everything and re-import it on a fresh device', async ({ page, brow
   expect(errors).toEqual([]);
   await ctx.close();
 });
+
+test('tags of the file: my tag preselected for the same name, suggested for a synonym, all at once', async ({ page }) => {
+  await openMap(page);
+  await openImport(page);
+  const feature = (name: string, category: string, lon: number) => ({
+    type: 'Feature',
+    properties: { name, category },
+    geometry: { type: 'Point', coordinates: [lon, 48.85] },
+  });
+  const file = {
+    type: 'FeatureCollection',
+    features: [feature('Spot one', 'Cafés ☕', 2.30), feature('Spot two', 'Resto', 2.31), feature('Spot three', 'Sushi', 2.32)],
+  };
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('import-pick').click();
+  await (await chooser).setFiles({ name: 'tags.geojson', mimeType: 'application/geo+json', buffer: Buffer.from(JSON.stringify(file)) });
+  await expect(page.getByTestId('import-preview')).toBeVisible();
+
+  // Same name once case, accents, emoji and plural are ignored: my "Café", already chosen.
+  await expect(page.getByTestId('tag-Cafés ☕-map-Café')).toHaveAttribute('aria-checked', 'true');
+  // A synonym: "Suggested: Restaurant" first, not chosen; the file's tag stays new until then.
+  const suggested = page.getByTestId('tag-Resto-suggested');
+  await expect(suggested).toHaveText(/Suggested: Restaurant/);
+  await expect(suggested).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByTestId('tag-Resto-new')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-Sushi-suggested')).toHaveCount(0);
+
+  await page.getByTestId('import-tags-same').click();
+  await expect(suggested).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-Sushi-new')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('import-tags-same')).toHaveCount(0);
+});

@@ -355,6 +355,8 @@ export const en: Messages = {
   'import.tags.intro': 'What each list or tag of the file becomes.',
   'import.tags.new': 'New tag',
   'import.tags.skip': 'Don’t import',
+  'import.tags.suggested': 'Suggested: {name}',
+  'import.tags.sameAsMine': { one: 'Same as my tags where possible (1 tag)', other: 'Same as my tags where possible ({count} tags)' },
   'import.tags.count': { one: '{count} place', other: '{count} places' },
   'import.confirm': { one: 'Import {count} place', other: 'Import {count} places' },
   'import.writing': 'Saving your places…',

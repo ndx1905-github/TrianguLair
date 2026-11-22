@@ -354,6 +354,8 @@ export const fr: Messages = {
   'import.tags.intro': 'Ce que devient chaque liste ou étiquette du fichier.',
   'import.tags.new': 'Nouvelle étiquette',
   'import.tags.skip': 'Ne pas importer',
+  'import.tags.suggested': 'Suggéré : {name}',
+  'import.tags.sameAsMine': { one: 'Comme mes étiquettes quand c’est possible (1 étiquette)', other: 'Comme mes étiquettes quand c’est possible ({count} étiquettes)' },
   'import.tags.count': { one: '{count} lieu', other: '{count} lieux' },
   'import.confirm': { one: 'Importer {count} lieu', other: 'Importer {count} lieux' },
   'import.writing': 'Enregistrement de vos lieux…',
