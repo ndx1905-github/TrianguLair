@@ -12,7 +12,8 @@ All notable changes to TrianguLair are listed here. The format follows
 - The links the app hands out (invitations, answers, lists, devices) use a placeholder address, `example.org`, set
   at build time with `EXPO_PUBLIC_LINK_ORIGIN` (also for Android App Links and iOS Associated Domains). Use a domain
   you control: the keys are after the `#`, which the page served there could read. Links from any address are
-  recognised, since a friend's build may use another one.
+  recognised, since a friend's build may use another one. The GitHub builds read it from the repository variable
+  `LINK_ORIGIN`.
 
 ## [0.9.0-beta.2] - 2026-11-22
 
