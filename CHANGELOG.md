@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.2] - 2026-11-22
+
+Fixes from the first days on real devices.
+
 ### Added
 
 - An app icon and favicon: a white map pin on a blue gradient, with a triangle of three coloured places in its
@@ -15,6 +19,12 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ### Fixed
 
+- The phone apps crashed right after launch ("Maximum update depth exceeded", from the web app's update bar).
+- Android: "center on me" and QR scanning work without Google Play services; the APK contains no Google, Firebase
+  or ML Kit library (checked in CI), as F-Droid requires.
+- A Nextcloud share link used as the read address of a storage set up as generic WebDAV (any folder path) was read
+  as is: friends, and the web app's connection test, got Nextcloud's HTML page instead of your files. It is now
+  read through its public WebDAV address, also for storages already set up.
 - Two of your devices syncing at the same moment on a storage without atomic writes (WsgiDAV, SFTP) or with coarse
   ETags (Nextcloud) could leave one device's latest changes only on that device until it synced again. The device
   whose publication was overwritten now merges the other one at its next sync, the index is checked once more after
