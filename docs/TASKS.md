@@ -498,6 +498,9 @@ Store listings, screenshots, reproducible F-Droid builds.
 
 Acceptance criteria:
 
+- [x] Android release build without Google Play services, Firebase or ML Kit: location on `modules/tl-location` (platform LocationManager), QR scanning on `modules/tl-qr-scanner` (CameraX + ZXing); `native-android.yml` fails on any such library; emulator smoke test without Google APIs finds a mock position
+- [ ] Reproducible F-Droid build, verified by F-Droid
+- [ ] fdroiddata recipe and metadata (description, screenshots, changelogs), source tree passing the F-Droid scanner
 - [ ] Apps published
 
 Depends on: T-214

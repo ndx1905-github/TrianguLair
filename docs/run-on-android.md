@@ -34,11 +34,24 @@ means uninstalling first (export your data before).
 
 ## F-Droid check
 
-The same run's summary has an **F-Droid dependency check**: it lists Google
-Play Services, Firebase or ML Kit libraries in the APK and the module pulling
-each in (see [spec-coverage.md](spec-coverage.md), gap 9: `expo-location`,
-`expo-camera` barcode scanning, MapLibre's location engine). The full
-dependency tree is attached as the `android-dependencies-…` artifact.
+Before the APK is built, the **F-Droid dependency check** reads the release
+runtime classpath and **fails the build** if any Google Play services
+(`com.google.android.gms`), Firebase, ML Kit or Play Core
+(`com.google.android.play`) library is in it; the summary names the module
+that pulls each one in. `com.google.zxing:core` (Apache-2.0, the QR decoder)
+is allowed. The full dependency tree is attached as the
+`android-dependencies-…` artifact.
+
+On Android the app does not link `expo-location` (Play services location) or
+`expo-camera` (ML Kit barcode scanning): `apps/mobile/package.json`
+`expo.autolinking.android.exclude`. Two local modules replace them:
+`apps/mobile/modules/tl-location` (the platform `LocationManager`) and
+`apps/mobile/modules/tl-qr-scanner` (CameraX + ZXing). MapLibre's location
+engine is its `default` one (the platform `LocationManager`, pinned in
+`app.json`); the app does not use MapLibre's user-location layer. So location
+and QR scanning work on phones without Google Play services. iOS and web keep
+`expo-location` and `expo-camera`. See [spec-coverage.md](spec-coverage.md),
+gap 9.
 
 ## Smoke test on an emulator
 
@@ -46,9 +59,15 @@ After the build, the **Smoke test on an emulator** job installs the APK on an
 Android 14 emulator (x86_64, so `x86_64` must be in the ABI list) and runs the
 [Maestro](https://maestro.dev) flow in
 [`apps/mobile/.maestro/smoke.yaml`](../apps/mobile/.maestro/smoke.yaml): the
-app starts, first launch (profile, keys, app lock, location and import
-skipped), add a place by hand, see its card on the map and its row in the
-list, search it, and find it again after a cold restart. The job fails if a
+app starts, the QR scanner of "I already have my places" opens the camera
+(or says there is none), first launch (profile, keys, app lock skipped, the
+location allowed, import skipped), "center on me" after moving the map, add a
+place by hand at the map's center (it must be at the mock position), see its
+card on the map and its row in the list, search it, and find it again after a
+cold restart. The emulator image is AOSP **without Google APIs**, and
+`apps/mobile/scripts/android-smoke.sh` sends it a GPS position every 2 s
+(`adb emu geo fix`): the location test proves that it works without Google
+Play services. The job fails if a
 step fails or if the app crashed (Java exception, native signal or fatal
 JavaScript error).
 

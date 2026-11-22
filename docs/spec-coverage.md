@@ -51,12 +51,21 @@ the web test build) from meeting a v1 promise.
 8. **Trash** (Editing and deleting: "trash for 30 days, restorable"). Deleted items go to the trash in the
    document, but the only way back is a 15-second "Undo" (`app/components/TrashUndo.tsx`). There is no trash
    screen, and the app never calls `purgeTrash()`. *Task: a trash screen and a periodic purge.*
-9. **F-Droid: no proprietary services** (Tech stack). `expo-location` (Android: `play-services-location`) and
-   `expo-camera` barcode scanning (Android: ML Kit) probably pull in Google libraries. This needs checking in the
-   Gradle dependency tree, and MapLibre's location engine needs the same check. There is no reproducible build
-   yet. The *Native Android build* workflow (`.github/workflows/native-android.yml`) now reports these libraries
-   and the module pulling each in, in its job summary. *Task: act on that audit and an F-Droid flavor (T-301
-   prerequisite).*
+9. **F-Droid: no proprietary services** (Tech stack). *Done for the dependencies:* on Android, `expo-location`
+   (`play-services-location`) and `expo-camera` (ML Kit barcode scanning) are no longer linked
+   (`package.json` `expo.autolinking.android.exclude`). Two local Expo modules replace them for every Android build
+   (no separate flavor): `modules/tl-location` (platform `LocationManager`: fused, GPS, network and passive
+   providers, last known position, `getCurrentLocation` or `requestLocationUpdates`, timeout) and
+   `modules/tl-qr-scanner` (CameraX + ZXing core, Apache-2.0). MapLibre's location engine is its `default` one
+   (platform `LocationManager`, pinned in `app.json`), and the app does not use MapLibre's user-location layer.
+   iOS and web keep `expo-location` and `expo-camera`. The *Native Android build* workflow now **fails** if any
+   `com.google.android.gms`, `com.google.firebase`, `com.google.mlkit` or `com.google.android.play` library is in
+   the release runtime classpath (`scripts/fdroid-deps.mjs --fail`, unit test `app/fdroidDeps.test.ts`; ZXing
+   allowed). Its emulator smoke test runs on an AOSP image without Google APIs, with a mock GPS position: the
+   location step and "center on me" work there. *Still missing for F-Droid (T-301):* a reproducible build, the
+   fdroiddata metadata (build recipe, description, screenshots), and the F-Droid scanner's view of the source tree
+   (`node_modules/expo-location` and `expo-camera` still name Play services and ML Kit in their Gradle files, and
+   `expo-dev-launcher` has ML Kit as a debug-only dependency: the recipe must delete or patch them).
 10. **Map attribution** (Legal, Base map rules). The overlay reads "© OpenStreetMap contributors, OpenFreeMap".
     The "© OpenMapTiles" credit and the "Report an error" link to OpenStreetMap are both missing. *Task: a small fix
     in `app/config.ts` `MAP_ATTRIBUTION` and `app/components/MapAttribution.tsx`.*
@@ -103,7 +112,7 @@ the web test build) from meeting a v1 promise.
 | MVP | Clustered when zoomed out | partial | JS clustering `app/places/clustering.ts` (`clustering.test.ts`), majority color. Native draws `Marker` views, not engine layers, so 10k pins are out of reach (T-103 "to do") | T-103 native layers |
 | MVP | List view: sort recent / distance / name, text search | done | `app/app/list.tsx`, `data/sqlite/repository.ts` (FTS5 or fallback); data `repository.test.ts`, `perf.test.ts`; e2e `places.spec.ts` | — |
 | MVP | Add: known places around the visible area sorted by distance | done | `app/app/add.tsx`, `app/places/add.ts`; `add.test.ts`; shot `phone-add-nearby.png` | — |
-| MVP | Add: "or my position" / "current position" | partial | Nearby places use the map center, and long press and "Drop a point" work. There is no "my position" button on the add screen; the position is read only at first launch (`welcome/location.tsx`) | Add "Here" (current position) |
+| MVP | Add: "or my position" / "current position" | partial | Nearby places use the map center, and long press and "Drop a point" work. The map has "center on me" (`app/location/LocateButton.tsx`; e2e `locate.spec.ts`, Android smoke test), so the add screen opened next lists the places around the position; there is no "Here" button on the add screen itself | Add "Here" (current position) |
 | MVP | Add: search by name (Photon/Nominatim), long press | done | `osm/search.ts` (Photon, Nominatim fallback); `search.test.ts`; e2e `places.spec.ts` | — |
 | MVP | Each suggestion: already mine / saved by friends | done | `app/app/add.tsx` (`add.friends`: "Saved by N friends", "Already in my places") | — |
 | MVP | Add a zone: neighborhood, street segments, drawing by points or painting | done | `app/zones/*`; `zones.test.ts`; e2e `zones-lists.spec.ts`; shots `phone-zone-*.png` | — |
@@ -361,7 +370,7 @@ the web test build) from meeting a v1 promise.
 | Performance | Nearby under 1 s, local search under 300 ms | done | `perf.test.ts` "text search < 300 ms" | — |
 | Performance | 50 unchanged friends under 5 s; friend with 1k places under 10 s; decrypt 1k under 1 s | partial | Measured in Node (sync README "Measurements"); not against a real Nextcloud, not on Hermes (libsodium asm.js not timed) | Hermes timing |
 | Performance | App under 50 MB; cache capped at 500 MB, adjustable, photos evicted first | missing | No friends' cache cap or setting; app size not measured | Cache cap |
-| Performance | No background activity, no background location | done | Location only at first launch; no periodic task | — |
+| Performance | No background activity, no background location | done | Location only at first launch and when "center on me" is pressed (one fix, `app/location/locate.ts`); no periodic task | — |
 | Performance | Automated perf tests on a reference device on every release | missing | Node-only suites, not in the release flow | — |
 | Sync | On launch, during use (regular, pull to refresh), after closing, then nothing | done | `sync/scheduler.ts`; sync `units.test.ts` | — |
 | Sync | iOS grace period / Android one-off task for the last pass | missing | Pass on AppState "background" without `beginBackgroundTask` (README "Sync open questions") | Background task |
@@ -412,7 +421,7 @@ the web test build) from meeting a v1 promise.
 | Privacy | Default sharing is friends, adjustable to private in the preferences | partial | Default `friends` in the schema and form; no preference to change the default | Default sharing setting |
 | Privacy | Never public by default; public only through a list or a public comment | done | `public-lists.ts`; sync `lists.test.ts` | — |
 | Privacy | End-to-end encryption; only public lists in plaintext | done | `crypto/*`, `sync/*`; sync `adversarial.test.ts` | — |
-| Privacy | No continuous geolocation, no location history | done | Position read once at first launch, kept on the device | — |
+| Privacy | No continuous geolocation, no location history | done | Position read once at first launch (kept on the device to center the map) and once per "center on me" press (not stored); no tracking | — |
 | Privacy | Photos: EXIF removed before encryption | missing | No photos (the avatar goes through `expo-image-picker` crop; EXIF stripping not checked) | T-111b photos |
 | Privacy | Warning when a place looks like a home before a public list | done | `looksLikeHome`, `PublicWarning.tsx`, `HomeConfirm`; shot `phone-list-public-warning.png` | — |
 | Privacy | Weak point explained in the app (copies cannot be taken back) | missing | See Editing and deleting | Add the sentence |
@@ -423,7 +432,7 @@ the web test build) from meeting a v1 promise.
 | Moderation | Everyone only sees the content of people they accepted | done | By construction (wraps per accepted key) | — |
 | Moderation | Blocking a person deletes their key and places and removes all their accesses | partial | "Remove from my friends" does this; there is no block that refuses their future links | Block |
 | Moderation | Report a public list to its author and host | missing | Nothing | Report |
-| Tech stack | F-Droid: no Firebase or Play Services, no periodic task, reproducible builds | partial | No Firebase, no periodic task. To check: `expo-location` (Play Services location on Android), `expo-camera` barcode (ML Kit), MapLibre's location engine. No reproducible build | F-Droid dependency audit |
+| Tech stack | F-Droid: no Firebase or Play Services, no periodic task, reproducible builds | partial | No Firebase, no Play services, no ML Kit in the Android release build: location on `modules/tl-location` (platform `LocationManager`), QR scanning on `modules/tl-qr-scanner` (CameraX + ZXing), MapLibre's `default` location engine; `native-android.yml` fails on any such library (`scripts/fdroid-deps.mjs --fail`, `app/fdroidDeps.test.ts`), and its smoke test finds a mock position on an AOSP emulator without Google APIs. No periodic task. No reproducible build or fdroiddata recipe yet | Reproducible build and F-Droid metadata (T-301) |
 | Tech stack | Tile address configurable in settings or by a config update, without a release | partial | Build-time `EXPO_PUBLIC_MAP_STYLE_URL*` and fallback lists (`app/config.ts`); no setting | Tile address setting |
 | Tech stack | Custom style from Positron (tinted water and parks, gray shop dots that open the add flow), bundled; Liberty option | missing | OpenFreeMap styles loaded by URL | Custom map style |
 | Tech stack | User-Agent with name, version, contact; cache headers respected | done | `buildUserAgent` (`app/osm/client.ts`); osm `http.test.ts` | — |
