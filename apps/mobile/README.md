@@ -474,7 +474,7 @@ node scripts/check-pwa.mjs dist-web /triangulair  # the manifest, the service wo
   `public/icons/`, standalone, `start_url`/`scope` = the base path), manifest, icon and iOS tags in
   `index.html`, `sw.js` from `web/service-worker.js` with the list of exported files and a version
   hashed from them, a copy of `index.html` per static route and as `404.html` / `error/404.html` (static
-  hosts without a fallback). Icons: `scripts/pwa-icons.mjs` (the first-launch mark), committed PNGs.
+  hosts without a fallback). Icons: `scripts/app-icons.mjs` (one design for the phone and web apps), committed PNGs.
 - **Service worker** (`web/service-worker.js`): precaches the shell in one cache per build and scope,
   deletes the older ones on activation; the app's own files from the cache; navigations to the
   app's routes network first, the cached shell offline, after 6 s or on a 404; never answers or stores

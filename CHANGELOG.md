@@ -7,6 +7,12 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An app icon and favicon: a white map pin on a blue gradient, with a triangle of three coloured places in its
+  head. The phone apps had Expo's default icon; Android gets an adaptive icon and a themed (monochrome) icon, and
+  the web app's icons and favicon use the same design (`apps/mobile/scripts/app-icons.mjs`).
+
 ### Fixed
 
 - Two of your devices syncing at the same moment on a storage without atomic writes (WsgiDAV, SFTP) or with coarse
