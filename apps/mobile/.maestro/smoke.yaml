@@ -137,10 +137,25 @@ env:
           id: hint-dismiss
 - takeScreenshot: 04-map-empty
 
-# "Center on me": move the map away, then back to the position (modules/tl-location).
+# "Center on me": move the map away, then back to the position (modules/tl-location). The
+# recovery-kit card and the filters are folded first, so that the swipe moves the map.
+- runFlow:
+    when:
+      visible:
+        id: protect-later
+    commands:
+      - tapOn:
+          id: protect-later
+- runFlow:
+    when:
+      visible:
+        id: filter-panel
+    commands:
+      - tapOn:
+          id: filter-toggle
 - swipe:
-    start: 50%, 45%
-    end: 15%, 75%
+    start: 65%, 55%
+    end: 20%, 72%
     duration: 800
 - waitForAnimationToEnd:
     timeout: 5000
