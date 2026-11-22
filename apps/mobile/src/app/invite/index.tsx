@@ -20,6 +20,7 @@ import { Card, LinkActions, NameField, PasteField, ProblemBanner, QrCode, Strong
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { useReadyIdentity } from '../../identity/IdentityProvider';
+import { linkOriginIsPlaceholder } from '../../links/origin';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { StorageNeeded, useStorageForSharing } from '../../storage/useStorageForSharing';
 
@@ -126,6 +127,7 @@ function InviteScreen() {
         ) : (
           <>
             <Muted>{t('inviting.lead')}</Muted>
+            {linkOriginIsPlaceholder() && <Banner tone="warning" testID="invite-placeholder-links">{t('linkOrigin.placeholderWarning')}</Banner>}
             <NameField label={t('inviting.forWhom')} help={t('inviting.forWhomHelp')} value={name} onChange={setName} testID="invite-name" />
             {state.step === 'problem' && <ProblemBanner problem={state.problem} testID="invite-problem" />}
             {state.step === 'creating' && <Banner testID="invite-creating">{t('inviting.creating')}</Banner>}

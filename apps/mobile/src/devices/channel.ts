@@ -34,9 +34,9 @@
  */
 import _sodium from 'libsodium-wrappers-sumo';
 import { checkLocation, formatKey, fromB64Url, parseKey, toB64Url, type DeviceCert } from '@triangulair/crypto';
-import { LINK_ORIGIN } from '../config';
+import { linkOrigin } from '../links/origin';
 
-export const DEVICE_LINK_BASE = `${LINK_ORIGIN}/d`;
+export const deviceLinkBase = (): string => `${linkOrigin()}/d`;
 export const SLOT_BYTES = 16;
 export const OFFER_PREFIX = 'TLDA1:';
 export const REPLY_PREFIX = 'TLDB1:';
@@ -85,11 +85,11 @@ const LINK_INVITE = 1;
 const LINK_REQUEST = 2;
 
 function linkBytes(kind: number, slot: string, rest: Uint8Array): string {
-  return `${DEVICE_LINK_BASE}#${toB64Url(concat(Uint8Array.of(kind), fromB64Url(slot, 'slot', SLOT_BYTES), rest))}`;
+  return `${deviceLinkBase()}#${toB64Url(concat(Uint8Array.of(kind), fromB64Url(slot, 'slot', SLOT_BYTES), rest))}`;
 }
 
 function linkPayload(text: string, kind: number): { slot: string; rest: Uint8Array } {
-  const m = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?|triangulair:\/\/)\/d#([A-Za-z0-9_-]+)/.exec(text.trim());
+  const m = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._~-]+)*|triangulair:\/\/)\/d#([A-Za-z0-9_-]+)/.exec(text.trim());
   if (!m) throw new Error('bad-link');
   try {
     const b = fromB64Url(m[1], 'link');

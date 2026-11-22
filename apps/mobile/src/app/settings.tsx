@@ -30,6 +30,7 @@ import { THEME_MODES, type ThemeMode } from '../theme/themeMode';
 import { PhotoSettings } from '../photos/PhotoSettings';
 import { MyContentSection } from '../privacy/SettingsSection';
 import { BrowserStorageSection } from '../pwa/BrowserStorageSection';
+import { LinkOriginSection } from '../links/LinkOriginSection';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -163,6 +164,7 @@ function SettingsScreen() {
             <Muted>{t('settings.friendsHelp')}</Muted>
             <Button label={t('inviting.title')} onPress={() => router.push('/invite')} testID="settings-invite" />
             <Button kind="secondary" label={t('contacts.open')} onPress={() => router.push('/contacts')} testID="settings-contacts" />
+            <LinkOriginSection />
           </Section>
 
           <Section title={t('settings.lock')}>

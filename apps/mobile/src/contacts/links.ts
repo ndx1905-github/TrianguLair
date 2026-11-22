@@ -15,12 +15,12 @@
  */
 import { fromB64Url, toB64Url } from '@triangulair/crypto';
 
-import { LINK_ORIGIN } from '../config';
+import { linkOrigin } from '../links/origin';
 
-export { LINK_ORIGIN };
-export const INVITE_PREFIX = `${LINK_ORIGIN}/i#`;
-export const RETURN_PREFIX = `${LINK_ORIGIN}/r#`;
-export const LIST_PREFIX = `${LINK_ORIGIN}/l#`;
+/** Link prefixes, read at call time: the address is a setting of this device (src/links/origin.ts). */
+export const invitePrefix = (): string => `${linkOrigin()}/i#`;
+export const returnPrefix = (): string => `${linkOrigin()}/r#`;
+export const listPrefix = (): string => `${linkOrigin()}/l#`;
 
 /** Spec: the invitation link stays under 200 characters for a read address up to 80 (QR version ≤ 10). */
 export const MAX_INVITE_LINK_CHARS = 200;
@@ -37,20 +37,20 @@ export interface FoundLink {
 }
 
 const KIND_OF: Record<string, LinkKind> = { i: 'invitation', r: 'return', l: 'list' };
-const PREFIX_OF: Record<LinkKind, string> = { invitation: INVITE_PREFIX, return: RETURN_PREFIX, list: LIST_PREFIX };
+const PREFIX_OF: Record<LinkKind, () => string> = { invitation: invitePrefix, return: returnPrefix, list: listPrefix };
 const B64U = /^[A-Za-z0-9_-]+$/;
-// https://<any host>/i#…, triangulair://i#…, triangulair:///i#…. Any host: each build sets its own
-// link origin (EXPO_PUBLIC_LINK_ORIGIN), and a friend's link may come from another build. The
+// https://<any host>[/<sub-path>]/i#… (the web app links to its own address), triangulair://i#…, triangulair:///i#…. Any host: each build sets its own
+// link address (src/links/origin.ts), and a friend's link may come from another one. The
 // fragment is then checked by the crypto package, so a look-alike link from elsewhere goes nowhere.
-const LINK_RE = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?\/|triangulair:\/\/\/?)([irl])\/?#([A-Za-z0-9_-]+)/i;
+const LINK_RE = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?\/(?:[A-Za-z0-9._~-]+\/)*|triangulair:\/\/\/?)([irl])\/?#([A-Za-z0-9_-]+)/i;
 
 export function buildInvitationLink(fragment: string): string {
   if (!B64U.test(fragment)) throw new Error('invitation fragment: base64url expected');
-  return INVITE_PREFIX + fragment;
+  return invitePrefix() + fragment;
 }
 
 export function buildReturnLink(bytes: Uint8Array): string {
-  return RETURN_PREFIX + toB64Url(bytes);
+  return returnPrefix() + toB64Url(bytes);
 }
 
 /**
@@ -64,7 +64,7 @@ export function findLink(text: string): FoundLink | null {
   if (!m) return null;
   const kind = KIND_OF[m[1]!.toLowerCase()]!;
   const fragment = m[2]!;
-  return { kind, fragment, link: PREFIX_OF[kind] + fragment };
+  return { kind, fragment, link: PREFIX_OF[kind]() + fragment };
 }
 
 /** The bytes of a return link (any text holding one); throws on another kind or an oversized one. */

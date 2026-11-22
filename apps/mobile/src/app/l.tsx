@@ -9,7 +9,7 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 
-import { LIST_PREFIX, findLink } from '../contacts/links';
+import { listPrefix, findLink } from '../contacts/links';
 import { setPendingLink } from '../contacts/pending';
 import { useUiColors } from '../hooks/useUiColors';
 import { useIdentity } from '../identity/IdentityProvider';
@@ -22,7 +22,7 @@ function currentUrl(native: string | null): string | null {
     } catch {
       // Not allowed: harmless.
     }
-    return hash ? LIST_PREFIX + hash : null;
+    return hash ? listPrefix() + hash : null;
   }
   return native;
 }

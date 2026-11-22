@@ -7,17 +7,17 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
-### Changed
-
-- The links the app hands out (invitations, answers, lists, devices) use a placeholder address, `example.org`, set
-  at build time with `EXPO_PUBLIC_LINK_ORIGIN` (also for Android App Links and iOS Associated Domains). Use a domain
-  you control: the keys are after the `#`, which the page served there could read. Links from any address are
-  recognised, since a friend's build may use another one. The GitHub builds read it from the repository variable
-  `LINK_ORIGIN`.
-
 ## [0.9.0-beta.2] - 2026-11-22
 
 Fixes from the first days on real devices.
+
+### Changed
+
+- The links the app hands out (invitations, answers, lists, devices) open at an address you choose: asked at first
+  launch, changeable in Settings › Friends, kept on the device only. The web app suggests its own address; until one
+  is set, the phone apps use the placeholder `example.org` (reserved, no one can own it) and say so where you
+  invite. Choose a site you control: the keys are after the `#`, which the page served there could read. Links at
+  any address (sub-path included) are recognised, since friends may use another one.
 
 ### Added
 

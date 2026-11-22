@@ -13,7 +13,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useUiColors } from '../hooks/useUiColors';
 import { useIdentity } from '../identity/IdentityProvider';
 import { useContacts } from './ContactsProvider';
-import { findLink, INVITE_PREFIX, RETURN_PREFIX } from './links';
+import { findLink, invitePrefix, returnPrefix } from './links';
 import { setPendingLink } from './pending';
 
 /**
@@ -29,7 +29,7 @@ function currentUrl(kind: 'invitation' | 'return', native: string | null): strin
     } catch {
       // Not allowed: harmless.
     }
-    return hash ? (kind === 'invitation' ? INVITE_PREFIX : RETURN_PREFIX) + hash : null;
+    return hash ? (kind === 'invitation' ? invitePrefix() : returnPrefix()) + hash : null;
   }
   return native;
 }

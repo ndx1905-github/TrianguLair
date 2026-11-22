@@ -178,7 +178,7 @@ test('link-only list: followed without being a contact, cut by a new link; publi
   await a.getByTestId('share-create-link').click();
   await expect(a.getByTestId('share-link-ready')).toBeVisible({ timeout: 60_000 });
   const link = (await a.getByTestId('share-link-link').textContent())!;
-  expect(link).toMatch(/^https:\/\/example\.org\/l#[A-Za-z0-9_-]+$/);
+  expect(link).toMatch(/^https?:\/\/[^/#]+(?:\/[^#]*)?\/l#[A-Za-z0-9_-]+$/);
   expect(link.length).toBeLessThan(260);
   // The QR code holds the same link.
   await expect(a.getByTestId('share-qr')).toHaveAttribute('data-qr-value', link);
