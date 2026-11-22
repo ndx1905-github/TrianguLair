@@ -30,6 +30,12 @@ export const firstLaunchFr: Messages = {
   'profile.preparing': 'Création de votre clé sur cet appareil…',
   'profile.keyReady': 'Votre clé est créée sur cet appareil.',
   'profile.failed': 'Votre clé n’a pas pu être créée. Réessayez.',
+  'linkOrigin.label': 'Adresse de vos liens (facultatif)',
+  'linkOrigin.hint': 'Vos invitations et listes partagées s’ouvrent à cette adresse, pour les amis sans l’app : là où vous hébergez la version web de TrianguLair. Laissez vide si vous n’en avez pas ; vous pourrez la définir plus tard dans les Réglages.',
+  'linkOrigin.invalid': 'Adresse inutilisable : une adresse https:// comme triangulair.votre-domaine.org.',
+  'linkOrigin.placeholderWarning': 'Vos liens utilisent une adresse fictive (example.org) : vos amis ont besoin de l’app et doivent les y coller. Indiquez l’adresse de votre version web dans les Réglages pour qu’ils s’ouvrent pour tout le monde.',
+  'linkOrigin.save': 'Enregistrer l’adresse',
+  'linkOrigin.saved': 'Enregistré : vos prochains liens utilisent cette adresse. Les liens déjà envoyés gardent la leur.',
 
   'lockStep.title': 'Verrouiller l’app',
   'lockStep.noScreenLock': 'Votre téléphone n’a pas de verrouillage d’écran. Choisissez un code pour ouvrir TrianguLair, pour que personne ne voie vos lieux s’il prend votre téléphone.',

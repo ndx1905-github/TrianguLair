@@ -9,14 +9,14 @@ import { representativePoint, type ListFilter, type PlaceRecord } from '@triangu
 import { looksLikeHome, type FollowedListInfo, type ListGone, type PlaceFeature } from '@triangulair/sync';
 
 import type { MapPin } from '../components/map/types';
-import { findLink, LIST_PREFIX } from '../contacts/links';
+import { findLink, listPrefix } from '../contacts/links';
 import { shortKey } from '../contacts/model';
 import { iconPath, isIconName, UNTAGGED_COLOR } from '../theme/tags';
 
 /** `https://example.org/l#<fragment>`: opens the app (or the store page) on "Follow this list". */
 export function buildListLink(fragment: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(fragment)) throw new Error('list fragment: base64url expected');
-  return LIST_PREFIX + fragment;
+  return listPrefix() + fragment;
 }
 
 /** The fragment of the first list link in `text` (a pasted message, a QR code, a deep link), or null. */

@@ -135,7 +135,7 @@ async function invite(page: Page, forWhom: string): Promise<string> {
   await page.getByTestId('invite-create').click();
   await expect(page.getByTestId('invite-ready')).toBeVisible({ timeout: 30_000 });
   const link = (await page.getByTestId('invite-link').textContent())!;
-  expect(link).toMatch(/^https:\/\/example\.org\/i#[A-Za-z0-9_-]+$/);
+  expect(link).toMatch(/^https?:\/\/[^/#]+(?:\/[^#]*)?\/i#[A-Za-z0-9_-]+$/);
   expect(link.length).toBeLessThanOrEqual(200);
   // The QR code stays small (version ≤ 10).
   expect(Number(await page.getByTestId('invite-qr').getAttribute('data-qr-version'))).toBeLessThanOrEqual(10);
@@ -233,7 +233,7 @@ test.describe('between people', () => {
     await expect(bob.page.getByTestId('received-answered')).toBeVisible({ timeout: 30_000 });
     await shot(bob.page, 'phone-received-answer');
     const returnLink = (await bob.page.getByTestId('received-return-link').textContent())!;
-    expect(returnLink).toMatch(/^https:\/\/example\.org\/r#/);
+    expect(returnLink).toMatch(/^https?:\/\/[^/#]+(?:\/[^#]*)?\/r#/);
 
     // Alice pastes it: one answer, Bob has no storage so it cannot be checked; same code as Bob's.
     await alice.page.goto('/invite');

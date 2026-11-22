@@ -53,9 +53,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Address of the links the app hands out (src/config.ts LINK_ORIGIN): repository variable
-  # LINK_ORIGIN (Settings › Secrets and variables › Actions › Variables), e.g. a domain you control.
-  EXPO_PUBLIC_LINK_ORIGIN: ${{ vars.LINK_ORIGIN }}
   NODE_VERSION: '22'
   # Tag pushes have no inputs: build the sideloadable .ipa.
   BUILD: ${{ inputs.build || 'ipa' }}
