@@ -7,6 +7,29 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Select many places at once** in the list: "Select", then tick places or "Select all (N)", which takes the
+  places shown (search, zone and filters apply). The bottom bar deletes them (to the trash, restorable for 30 days,
+  after a confirmation with the count, with one Undo), adds them to a list, adds or removes a tag, or sets their
+  status. Only your own places change: friends' places in the selection are skipped, and the app says so. Each
+  action is one change, published once.
+- **Import: tags matched to yours.** A tag of the file with the same name as one of yours (ignoring case, accents,
+  emoji, spaces, punctuation and plurals) goes to it at once; a synonym ("Resto" for "Restaurant", "Coffee" for
+  "Café", "Jardin" for "Parc", in English and French) or a close name is shown first as "Suggested: …", and "Same
+  as my tags where possible" applies them all.
+- **"Show me with examples"** on the last first-launch step: sample places in Paris saved by an example friend,
+  "Léa (example)". They stay on this phone, are never synced or shared, and "Delete the example places" (on the
+  map, the list or in Settings › My content) removes them all in one tap.
+- **Friends from the list**: a "Friends" link in the list header opens the friends screen, which explains how to
+  invite when nobody is there yet.
+
+### Changed
+
+- A first launch no longer adds sample places and an invented friend to your data: only the starter tags. If you
+  installed 0.9.0-beta.1, its sample places were saved as yours (and so synced to your storage, if you connected
+  one): "Delete the example places" removes them, there too.
+
 ### Fixed
 
 - Web app: no base map on servers that send `.mjs` files with a non-JavaScript type (nginx before 1.25, as on

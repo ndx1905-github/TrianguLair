@@ -55,6 +55,9 @@ function ListScreen() {
   // "Select" mode: the ticked place ids (null: not selecting).
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // While selecting, the filter bar starts folded (room for the rows and the bottom bar), without
+  // changing the remembered choice.
+  const [selectFiltersOpen, setSelectFiltersOpen] = useState(false);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 5000);
@@ -204,8 +207,8 @@ function ListScreen() {
           summary={summary}
           filter={filter}
           onChange={setFilter}
-          open={filterOpen}
-          onOpenChange={setFilterOpen}
+          open={picked ? selectFiltersOpen : filterOpen}
+          onOpenChange={picked ? setSelectFiltersOpen : setFilterOpen}
           showTheme={false}
           tags={tags}
           personName={(id) => repo.getPerson(id)?.displayName || id}
@@ -217,6 +220,7 @@ function ListScreen() {
         keyExtractor={(r) => r.hit.id}
         renderItem={renderRow}
         extraData={picked}
+        style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 8 }}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
@@ -268,6 +272,7 @@ function ListScreen() {
               <Pressable
                 onPress={() => {
                   setPicked(picked ? null : new Set());
+                  setSelectFiltersOpen(false);
                   setSelected(null);
                 }}
                 accessibilityRole="button"

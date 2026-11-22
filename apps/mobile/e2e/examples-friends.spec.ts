@@ -51,13 +51,15 @@ test('"Show me with examples": the example friend’s places, local only, delete
   // They are the example friend's places, not mine: nothing to publish.
   await page.getByTestId('open-list').click();
   await expect(page.getByTestId('row-Le Baron Rouge')).toContainText('Friends’ place');
-  await expect(page.getByTestId('examples-banner')).toBeVisible();
+  // The map stays mounted under the list: only the visible banner counts.
+  const listBanner = page.getByTestId('examples-banner').filter({ visible: true });
+  await expect(listBanner).toHaveCount(1);
   await page.getByTestId('open-friends').click();
   await expect(page.getByTestId('contact-example')).toContainText('Léa (example)');
-  await page.getByTestId('back').click();
+  await page.getByTestId('back').filter({ visible: true }).click();
 
-  await page.getByTestId('examples-delete').click();
-  await expect(page.getByTestId('examples-deleted')).toHaveText(/15 example places deleted/);
+  await listBanner.getByTestId('examples-delete').click();
+  await expect(page.getByTestId('examples-deleted').filter({ visible: true })).toHaveText(/15 example places deleted/);
   await expect(page.getByTestId('row-Le Baron Rouge')).toHaveCount(0);
   await expect(page.getByTestId('place-list')).toContainText('No places yet');
   await page.getByTestId('open-friends').click();
