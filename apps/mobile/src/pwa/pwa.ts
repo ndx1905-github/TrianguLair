@@ -23,8 +23,12 @@ export interface BrowserStorage {
 
 export const PWA_ENABLED = false;
 
+// One frozen object: `useSyncExternalStore` needs the same snapshot on every call, or React
+// re-renders forever ("Maximum update depth exceeded" crashed the 0.9.0-beta.1 phone apps).
+const NATIVE_STATE: PwaState = Object.freeze({ registered: false, updateReady: false });
+
 export function pwaState(): PwaState {
-  return { registered: false, updateReady: false };
+  return NATIVE_STATE;
 }
 
 export function subscribePwa(_fn: () => void): () => void {
