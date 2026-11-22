@@ -71,7 +71,7 @@
     "yjs": "^13.6.33"
   },
   "devDependencies": {
-    "@babel/parser": "^7.29.14",
+    "@babel/parser": "^8.1.2",
     "@babel/types": "^7.29.14",
     "@playwright/test": "1.56.1",
     "@types/node": "^26.6.6",
