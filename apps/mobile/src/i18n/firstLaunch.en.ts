@@ -30,6 +30,12 @@ export const firstLaunchEn: Messages = {
   'profile.preparing': 'Creating your key on this device…',
   'profile.keyReady': 'Your key is created on this device.',
   'profile.failed': 'Your key could not be created. Try again.',
+  'linkOrigin.label': 'Address of your links (optional)',
+  'linkOrigin.hint': 'Your invitations and shared lists open at this address, for friends without the app: where you host the TrianguLair web app. Leave empty for now if you have none; you can set it later in Settings.',
+  'linkOrigin.invalid': 'Not a usable address: an https:// address such as triangulair.your-domain.org.',
+  'linkOrigin.placeholderWarning': 'Your links use a placeholder address (example.org): friends need the app and must paste them in it. Set the address of your web app in Settings to make them open for everyone.',
+  'linkOrigin.save': 'Save the address',
+  'linkOrigin.saved': 'Saved: your next links use this address. Links already sent keep theirs.',
 
   'lockStep.title': 'Lock the app',
   'lockStep.noScreenLock': 'Your phone has no screen lock. Choose a code to open TrianguLair, so whoever picks up your phone does not see your places.',

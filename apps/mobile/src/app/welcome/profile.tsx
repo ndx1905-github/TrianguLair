@@ -9,6 +9,8 @@ import { stepOf } from '../../firstLaunch/steps';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { useIdentity, type Profile } from '../../identity/IdentityProvider';
+import { LinkOriginField } from '../../links/LinkOriginField';
+import { linkOrigin, linkOriginIsPlaceholder, parseLinkOrigin, saveLinkOrigin } from '../../links/origin';
 
 /**
  * First name and photo (optional). The keys are created in the background
@@ -22,6 +24,9 @@ export default function ProfileStep() {
   const [profile, setProfile] = useState<Profile>({ name: '', avatar: null });
   const [keys, setKeys] = useState<'making' | 'ready' | 'failed'>('making');
   const [saving, setSaving] = useState(false);
+  // Prefilled with the web app's own address; empty on phones until the user gives one.
+  const [origin, setOrigin] = useState(() => (linkOriginIsPlaceholder() ? '' : linkOrigin()));
+  const originInvalid = origin.trim() !== '' && parseLinkOrigin(origin) === null;
 
   useEffect(() => {
     if (state.kind !== 'none') return;
@@ -39,8 +44,10 @@ export default function ProfileStep() {
   if (state.kind === 'ready' && !saving) return <Redirect href={state.onboarding === 'done' ? '/' : `/welcome/${state.onboarding}`} />;
 
   const next = async () => {
+    if (originInvalid) return;
     setSaving(true);
     try {
+      saveLinkOrigin(parseLinkOrigin(origin));
       await create({ name: profile.name.trim(), avatar: profile.avatar });
       router.replace('/welcome/lock');
     } catch (e) {
@@ -56,9 +63,10 @@ export default function ProfileStep() {
       lead={t('profile.lead')}
       step={stepOf('profile')}
       testID="welcome-profile"
-      actions={<Button label={t('common.continue')} onPress={() => void next()} disabled={saving || keys === 'failed'} testID="profile-continue" />}
+      actions={<Button label={t('common.continue')} onPress={() => void next()} disabled={saving || keys === 'failed' || originInvalid} testID="profile-continue" />}
     >
       <ProfileFields value={profile} onChange={setProfile} autoFocus />
+      <LinkOriginField value={origin} onChange={setOrigin} invalid={originInvalid} />
       {keys === 'failed' ? (
         <Banner tone="warning">{t('profile.failed')}</Banner>
       ) : (

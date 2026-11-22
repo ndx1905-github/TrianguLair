@@ -60,13 +60,6 @@ export const INITIAL_ZOOM = 12.3;
 /** Max number of color bands drawn on a multi-tag pin. */
 export const MAX_PIN_BANDS = 3;
 
-/**
- * Origin of the links the app hands out (invitations /i#, answers /r#, lists /l#, devices /d#).
- * The keys are after "#", which browsers never send, but the page served at that address could
- * read them: use a domain you control (the web app can be hosted there; it opens these links).
- * Set it at build time with EXPO_PUBLIC_LINK_ORIGIN; the placeholder is not a real site.
- */
-export const LINK_ORIGIN: string = (process.env.EXPO_PUBLIC_LINK_ORIGIN ?? 'https://example.org').replace(/\/+$/, '');
 
 /** Sent in the OSM services' User-Agent (their usage policies require a contact). */
 export const APP_VERSION = '0.0.1';
