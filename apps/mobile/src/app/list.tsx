@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PlaceHit } from '@triangulair/data';
 
 import { DataGate } from '../components/DataGate';
+import { ExamplesBanner } from '../components/ExamplesBanner';
 import { FilterBar } from '../components/FilterBar';
 import { PlaceOrZoneCard as PlaceCard } from '../zones/ZoneCard';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -138,6 +139,7 @@ function ListScreen() {
           testID="list-sort"
         />
         <TrashUndo />
+        <ExamplesBanner />
       </View>
       <View style={{ marginTop: 10, marginHorizontal: -gutter + gutter }}>
         <FilterBar

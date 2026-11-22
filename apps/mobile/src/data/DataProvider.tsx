@@ -6,12 +6,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { DataStore, Repository } from '@triangulair/data';
 
-import { OSM_FIXTURES } from '../config';
+import { DEMO_SEED, OSM_FIXTURES } from '../config';
 import { useI18n } from '../i18n';
 import { useIdentity } from '../identity/IdentityProvider';
 import { movedFrom } from '../devices/local';
 import { purgeExpired } from '../trash/model';
-import { seedDemoData } from './demo';
+import { DEMO_FRIEND, seedDemoData, seedExamples, seedStarterTags } from './demo';
+import { EXAMPLES_WANTED_KEY, exampleOptions } from './examples';
 import { getSetting, setSetting } from './deviceSettings';
 import { openAppStore, type AppStore } from './openStore';
 
@@ -72,17 +73,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
     openAppStore(meId, movedFrom(), secrets)
       .then((app) => {
         if (cancelled) return;
+        // First launch: the starter tags only (beta feedback: no sample places in real users' data).
+        // Test builds keep the former seed, which the end-to-end tests rely on.
         if (getSetting('demo-seeded') !== '1') {
           try {
-            seedDemoData(app.store, {
-              tagName: (id) => tRef.current(`demoTag.${id}`),
-              subTagName: (id) => tRef.current(`demoTag.${id}`),
-              fixtures: OSM_FIXTURES,
-            });
+            if (DEMO_SEED) {
+              seedDemoData(app.store, {
+                tagName: (id) => tRef.current(`demoTag.${id}`),
+                subTagName: (id) => tRef.current(`demoTag.${id}`),
+                fixtures: OSM_FIXTURES,
+              });
+            } else {
+              seedStarterTags(app.store, (id) => tRef.current(`demoTag.${id}`));
+            }
           } catch (e) {
-            console.warn('Demo data could not be seeded', e);
+            console.warn('Starter data could not be seeded', e);
           }
           setSetting('demo-seeded', '1');
+        }
+        try {
+          // "Show me with examples" chosen before the store was open: local only (demo.ts).
+          if (getSetting(EXAMPLES_WANTED_KEY) === '1') {
+            seedExamples(app.store, exampleOptions(tRef.current));
+            setSetting(EXAMPLES_WANTED_KEY, 'done');
+          }
+          // The example friend is marked as one (also for the 0.9.0-beta.1 seed, named "Léa").
+          const friend = app.store.repo.getPerson(DEMO_FRIEND.id);
+          const name = exampleOptions(tRef.current).friendName;
+          if (friend && friend.displayName !== name) app.store.repo.upsertPerson({ id: DEMO_FRIEND.id, displayName: name });
+        } catch (e) {
+          console.warn('Example places could not be prepared', e);
         }
         // Items in the trash for more than 30 days leave for good (spec "Editing and deleting"; the launch pass
         // publishes the purge to my other devices).

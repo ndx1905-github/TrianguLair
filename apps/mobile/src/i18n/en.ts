@@ -39,6 +39,8 @@ export const en: Messages = {
 
   'nav.list': 'List',
   'nav.listA11y': 'Show my places as a list',
+  'nav.friends': 'Friends',
+  'nav.friendsA11y': 'My friends and their places',
   'nav.addA11y': 'Add a place',
   'nav.locateA11y': 'Center the map on my position',
   'nav.locateBusyA11y': 'Finding your position',

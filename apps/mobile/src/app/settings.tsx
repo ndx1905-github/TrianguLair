@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DataGate } from '../components/DataGate';
+import { ExamplesSettings } from '../components/ExamplesSettings';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Banner, Button, SectionTitle, Segmented } from '../components/ui';
 import { CodeFields, codeProblem, type CodeDraft } from '../firstLaunch/CodeFields';
@@ -166,6 +167,8 @@ function SettingsScreen() {
             <Button kind="secondary" label={t('contacts.open')} onPress={() => router.push('/contacts')} testID="settings-contacts" />
             <LinkOriginSection />
           </Section>
+
+          <ExamplesSettings />
 
           <Section title={t('settings.lock')}>
             {lock.security === 'none' && !lock.settings.enabled && <Banner tone="warning">{t('settings.lockNoScreenLock')}</Banner>}

@@ -59,6 +59,16 @@ export const firstLaunchFr: Messages = {
   'importStep.lead': 'Depuis Google Takeout, Mapstr, un fichier KML, GeoJSON ou CSV. Vous pourrez aussi le faire plus tard depuis la liste.',
   'importStep.import': 'Importer un fichier',
   'importStep.later': 'Plus tard',
+  // Example places (src/data/demo.ts): only on request, local only, deleted in one tap.
+  'importStep.examples': 'Me montrer avec des exemples',
+  'importStep.examplesHelp': 'Des lieux d’exemple à Paris, enregistrés par une amie d’exemple. Ils restent sur ce téléphone, ne sont jamais partagés, et se suppriment en un geste.',
+  'examples.friendName': '{name} (exemple)',
+  'examples.banner': 'Ce sont des lieux d’exemple : ils restent sur ce téléphone et ne sont jamais partagés.',
+  'examples.delete': 'Supprimer les lieux d’exemple',
+  'examples.hide': 'Masquer',
+  'examples.deleted': { one: '{count} lieu d’exemple supprimé', other: '{count} lieux d’exemple supprimés' },
+  'examples.settingsTitle': 'Lieux d’exemple',
+  'examples.settingsHelp': 'Les lieux d’exemple et l’amie d’exemple affichés depuis le premier lancement. Vos propres lieux et étiquettes restent.',
 
   'hint.add': 'Touchez + pour ajouter votre premier lieu',
   'hint.dismiss': 'Compris',
