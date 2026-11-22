@@ -113,8 +113,6 @@ export const contactsFr: Messages = {
   'contacts.open': 'Amis et accès',
   'contacts.people': 'Personnes',
   'contacts.empty': 'Personne pour l’instant. Pour voir les lieux d’un ami, invitez-le : « Inviter un ami » crée un lien à lui envoyer (ou retrouvez-vous et scannez vos codes). Dès qu’il accepte, ses lieux apparaissent sur votre carte, et il est listé ici.',
-  'contacts.seePlaces': 'Voir ses lieux',
-  'contacts.seePlacesHelp': 'Sur la carte : les lieux de {name} en couleur, les vôtres estompés. Les pastilles de la barre de filtres l’annulent.',
   'contacts.example': '{name} n’est pas un vrai ami : c’est un exemple, pour montrer les lieux d’un ami. Il reste sur ce téléphone.',
   'contacts.friendsMeaning': 'Vos « amis » sont les personnes dont vous voyez les lieux : les filtres et Quoi de neuf s’appliquent à eux.',
   'contacts.add': 'Ajouter quelqu’un',

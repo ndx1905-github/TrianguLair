@@ -4,9 +4,9 @@ import { Text, View } from 'react-native';
 import { useExamples } from '../data/useExamples';
 import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
-import { Banner, Button, SectionTitle } from './ui';
+import { Banner, Button } from './ui';
 
-/** Settings › "Example places": the one-tap delete, while the examples are there (src/data/demo.ts). */
+/** Settings › My content › "Example places": the one-tap delete, while the examples are there (src/data/demo.ts). */
 export function ExamplesSettings() {
   const c = useUiColors();
   const { t } = useI18n();
@@ -15,7 +15,9 @@ export function ExamplesSettings() {
   if (!present && deleted == null) return null;
   return (
     <View style={{ gap: 10 }} testID="settings-examples">
-      <SectionTitle>{t('examples.settingsTitle')}</SectionTitle>
+      <Text style={{ color: c.text, fontSize: 15, fontWeight: '700' }} accessibilityRole="header" maxFontSizeMultiplier={2}>
+        {t('examples.settingsTitle')}
+      </Text>
       {deleted != null ? (
         <Banner testID="settings-examples-deleted">{t('examples.deleted', { count: deleted })}</Banner>
       ) : (

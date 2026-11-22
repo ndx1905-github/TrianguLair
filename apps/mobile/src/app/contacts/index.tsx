@@ -2,9 +2,9 @@
  * Friends and access (T-209, spec "Asymmetric relationships"): every contact with what goes each
  * way and their verified badge, the key-change notices ("Marie changed her key"), and the ways to
  * add someone (invite by link, face to face, open a link received) or to follow a list by link.
- * Reached from the map's "Friends" button and Settings. With nobody yet, it explains how to invite
+ * Reached from the list's "Friends" button and Settings. With nobody yet, it explains how to invite
  * and puts "Invite a friend" first; the example friend (src/data/demo.ts), when there, has a card
- * of its own with "See their places".
+ * of its own saying it is an example.
  */
 import { useEffect, useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -15,7 +15,6 @@ import { Banner, Button } from '../../components/ui';
 import { useContacts } from '../../contacts/ContactsProvider';
 import type { ContactView } from '../../contacts/service';
 import { Card, Strong, TrustBadge, shortKey } from '../../contacts/ui';
-import { useShowFriendPlaces } from '../../contacts/useShowFriendPlaces';
 import { useData } from '../../data/DataProvider';
 import { DEMO_FRIEND } from '../../data/demo';
 import { useUiColors } from '../../hooks/useUiColors';
@@ -61,7 +60,6 @@ function ContactsScreen() {
   const notices = svc?.notices() ?? [];
   const nameOf = (owner: string) => svc?.contact(owner)?.name || shortKey(owner);
   const { repo, version } = useData();
-  const showPlaces = useShowFriendPlaces();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const example = useMemo(() => repo.getPerson(DEMO_FRIEND.id), [repo, version]);
   return (
@@ -87,7 +85,6 @@ function ContactsScreen() {
           <Card testID="contact-example">
             <Strong>{example.displayName}</Strong>
             <Muted>{t('contacts.example', { name: example.displayName })}</Muted>
-            <Button kind="secondary" label={t('contacts.seePlaces')} onPress={() => showPlaces(example.id)} testID="contact-example-see-places" />
           </Card>
         )}
         <Muted>{t('contacts.friendsMeaning')}</Muted>

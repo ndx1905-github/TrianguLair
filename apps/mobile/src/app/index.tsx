@@ -13,6 +13,7 @@ import type { CameraTarget, LatLon, MapRegion } from '../components/map/types';
 import { MapAttribution } from '../components/MapAttribution';
 import { PlaceSheet } from '../components/PlaceSheet';
 import { DataGate } from '../components/DataGate';
+import { ExamplesBanner } from '../components/ExamplesBanner';
 import { TrashUndo } from '../components/TrashUndo';
 import { Banner } from '../components/ui';
 import { INITIAL_CENTER, INITIAL_ZOOM, OSM_FIXTURES } from '../config';
@@ -261,6 +262,7 @@ function MapScreen() {
         <View style={{ marginHorizontal: gutter, marginTop: 8 }} pointerEvents="box-none">
           <SyncBar />
         </View>
+        <ExamplesBanner style={{ marginHorizontal: gutter, marginTop: 8, maxWidth: wide ? 460 : undefined }} />
         <BaseMapNote style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }} />
         <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }}>
           <TrashUndo />
