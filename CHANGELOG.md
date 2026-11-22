@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.2] - 2026-11-22
+
+Fixes from the first days on real devices.
+
 ### Changed
 
 - The links the app hands out (invitations, answers, lists, devices) open at an address you choose: asked at first
@@ -14,10 +18,6 @@ All notable changes to TrianguLair are listed here. The format follows
   is set, the phone apps use the placeholder `example.org` (reserved, no one can own it) and say so where you
   invite. Choose a site you control: the keys are after the `#`, which the page served there could read. Links at
   any address (sub-path included) are recognised, since friends may use another one.
-
-## [0.9.0-beta.2] - 2026-11-22
-
-Fixes from the first days on real devices.
 
 ### Added
 
