@@ -16,7 +16,7 @@ export const firstLaunchEn: Messages = {
   'welcome.keysMissing.help': 'Nothing is sent or changed until you restore them. Enter the 12 words of your recovery kit, or add this device from another of yours.',
   'welcome.keysMissing.restore': 'Restore with my recovery kit',
   'welcome.invited': 'I received an invitation link',
-  'welcome.webTest': 'Web test build: your keys stay in this browser, less protected than on a phone. Don’t use it for your real places.',
+  'welcome.webTest': 'Web version: your keys stay in this browser, less protected than in the phone apps. Keep your recovery kit: it brings everything back if this browser loses its data.',
   'welcome.webMemory': 'This browser does not allow storage: your identity and your places last until the page is closed.',
 
   'profile.title': 'Your first name',
@@ -36,7 +36,7 @@ export const firstLaunchEn: Messages = {
   'lockStep.withScreenLock': 'Also ask for {method} to open TrianguLair?',
   'lockStep.methodBiometric': 'Face ID or your fingerprint',
   'lockStep.methodPasscode': 'your phone’s code',
-  'lockStep.web': 'In this web test build, you can lock the app with a code of your own.',
+  'lockStep.web': 'In the web version, you can lock the app with a code of your own.',
   'lockStep.enable': 'Lock TrianguLair',
   'lockStep.code': 'App code (4 to 12 digits)',
   'lockStep.codeAgain': 'The same code again',
@@ -169,8 +169,8 @@ export const firstLaunchEn: Messages = {
   'settings.lang.en': 'English',
   'settings.lang.fr': 'Français',
   'settings.secrets.keychain': 'Your keys are in the phone’s secure vault, readable only while the phone is unlocked.',
-  'settings.secrets.web-wrapped': 'Web test build: your keys are in this browser, encrypted with a browser key that any script on this page could use. Don’t use it for your real places.',
-  'settings.secrets.web-plain': 'Web test build: your keys are in this browser, not encrypted (this address has no WebCrypto). Don’t use it for your real places.',
+  'settings.secrets.web-wrapped': 'Web version: your keys are in this browser, encrypted with a browser key that a script running on this page could use. Less protected than in the phone apps; keep your recovery kit.',
+  'settings.secrets.web-plain': 'This address is not HTTPS: your keys are in this browser without encryption. Open the web version over HTTPS before using it for your real places.',
   'settings.secrets.memory': 'Your keys are in memory only: they are lost when the page is closed.',
 
   'lock.title': 'TrianguLair is locked',

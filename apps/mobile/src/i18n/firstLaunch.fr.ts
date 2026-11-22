@@ -16,7 +16,7 @@ export const firstLaunchFr: Messages = {
   'welcome.keysMissing.help': 'Rien n’est envoyé ni modifié tant que vous ne les avez pas restaurées. Saisissez les 12 mots de votre kit de secours, ou ajoutez cet appareil depuis un autre des vôtres.',
   'welcome.keysMissing.restore': 'Restaurer avec mon kit de secours',
   'welcome.invited': 'J’ai reçu un lien d’invitation',
-  'welcome.webTest': 'Version web de test : vos clés restent dans ce navigateur, moins protégées que sur un téléphone. Ne l’utilisez pas pour vos vrais lieux.',
+  'welcome.webTest': 'Version web : vos clés restent dans ce navigateur, moins protégées que dans les apps pour téléphone. Gardez votre kit de récupération : il ramène tout si ce navigateur perd ses données.',
   'welcome.webMemory': 'Ce navigateur n’autorise pas le stockage : votre identité et vos lieux durent jusqu’à la fermeture de la page.',
 
   'profile.title': 'Votre prénom',
@@ -36,7 +36,7 @@ export const firstLaunchFr: Messages = {
   'lockStep.withScreenLock': 'Demander aussi {method} pour ouvrir TrianguLair ?',
   'lockStep.methodBiometric': 'Face ID ou votre empreinte',
   'lockStep.methodPasscode': 'le code de votre téléphone',
-  'lockStep.web': 'Dans cette version web de test, vous pouvez verrouiller l’app avec un code à vous.',
+  'lockStep.web': 'Dans la version web, vous pouvez verrouiller l’app avec un code à vous.',
   'lockStep.enable': 'Verrouiller TrianguLair',
   'lockStep.code': 'Code de l’app (4 à 12 chiffres)',
   'lockStep.codeAgain': 'Le même code une seconde fois',
@@ -169,8 +169,8 @@ export const firstLaunchFr: Messages = {
   'settings.lang.en': 'English',
   'settings.lang.fr': 'Français',
   'settings.secrets.keychain': 'Vos clés sont dans le coffre sécurisé du téléphone, lisibles seulement quand il est déverrouillé.',
-  'settings.secrets.web-wrapped': 'Version web de test : vos clés sont dans ce navigateur, chiffrées avec une clé du navigateur que tout script de cette page pourrait utiliser. Ne l’utilisez pas pour vos vrais lieux.',
-  'settings.secrets.web-plain': 'Version web de test : vos clés sont dans ce navigateur, non chiffrées (cette adresse n’a pas WebCrypto). Ne l’utilisez pas pour vos vrais lieux.',
+  'settings.secrets.web-wrapped': 'Version web : vos clés sont dans ce navigateur, chiffrées avec une clé du navigateur qu’un script exécuté sur cette page pourrait utiliser. Moins protégée que les apps pour téléphone ; gardez votre kit de récupération.',
+  'settings.secrets.web-plain': 'Cette adresse n’est pas en HTTPS : vos clés sont dans ce navigateur sans chiffrement. Ouvrez la version web en HTTPS avant de l’utiliser pour vos vrais lieux.',
   'settings.secrets.memory': 'Vos clés sont en mémoire seulement : elles disparaissent à la fermeture de la page.',
 
   'lock.title': 'TrianguLair est verrouillé',

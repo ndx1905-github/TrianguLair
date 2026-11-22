@@ -964,10 +964,12 @@ No automatic sending. In case of a problem, the user can share the local technic
 
 **One codebase, three targets**: the app is developed with Expo (React Native), which produces from the same code the iOS and Android apps and a web version. Only the map has two implementations, behind a common interface: native MapLibre on phones, MapLibre GL JS in the browser.
 
-**The web version is for testing, not for publishing**:
+**The web version is a full client, less protected than the phone apps** (decided for 0.9: the owner uses the iOS, Android and web apps interchangeably with the same identity):
 
-- With every milestone, a web version is deployed on static hosting; opening a link is enough to test on any device, with no Mac or compilation.
-- Known limits of this test version: no SFTP, WebDAV and S3 reading only from storages configured to allow it (a dedicated test storage is provided), less reliable browser local storage, no receiving of places shared from other apps.
+- It is an installable, offline-capable web app (PWA), self-hosted as static files (docs/self-host-web.md); each release ships it as a zip.
+- Every screen says plainly what is weaker than on a phone: keys and the database live in the browser (keys wrapped with a non-extractable browser key, database not encrypted at rest), no Face ID or system keychain, and the browser may drop its data (deleting the Home Screen icon on iOS does). The recovery kit is the safety net, and the app lock with a code is offered.
+- Known limits: no SFTP; WebDAV and S3 only with storages that allow the web app's origin (CORS), the user's and each friend's; no receiving of places shared from other apps; links open in the browser, not in the installed app; sync only while it is open.
+- A non-HTTPS address (no WebCrypto) still says not to use it for real places.
 - It may later serve as the basis for the web viewing page planned for v2.
 
 **Native apps for real trials and publishing**: built in the cloud (Expo's build service, which also produces the iOS version without a Mac, with the Apple Developer account) or on a Mac; distributed for testing through TestFlight, the Play Store internal test and an Android installation file, then published on the App Store, the Play Store and F-Droid.

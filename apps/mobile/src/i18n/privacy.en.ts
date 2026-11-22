@@ -8,7 +8,7 @@ export const privacyEn: Messages = {
   'myContent.title': 'My content',
   'myContent.db.sqlcipher': 'Your places on this device are encrypted, with a key kept in the phone’s secure vault.',
   'myContent.db.unavailable': 'This build cannot encrypt your places on this device (SQLCipher is missing).',
-  'myContent.db.web-test': 'Web test build: your places on this device are not encrypted. Don’t use it for your real places.',
+  'myContent.db.web-test': 'Web version: your places on this device are not encrypted at rest (the phone apps encrypt them). Lock the app with a code, and keep your recovery kit.',
 
   // Trash (spec "Editing and deleting").
   'trash.title': 'Trash',
