@@ -9,12 +9,15 @@
  *   and smaller.
  * - Friends' places (not mine) use my tags linked to their OSM category, and
  *   are drawn lighter.
+ * - Every pin saved by friends shown carries their coloured dots (`colorOf`),
+ *   mine included ("Whose map").
  */
 import type { MapCluster, MapPin } from '../components/map/types';
 import type { Cluster } from '../places/clustering';
 import { filteredTagOf, type FilterState, type Match } from '../places/filters';
 import { placeIcon, type AppTag, type PlaceFacts } from '../places/model';
 import { iconPath, isIconName, UNTAGGED_COLOR } from '../theme/tags';
+import { pinDots } from './dots';
 
 export interface PinInput {
   facts: PlaceFacts;
@@ -27,6 +30,8 @@ export function buildPin(
   tags: readonly AppTag[],
   tagById: ReadonlyMap<string, AppTag>,
   filterActive: boolean,
+  /** A friend's colour; without it, no dots. */
+  colorOf?: (personId: string) => string,
 ): MapPin {
   const greyed = filterActive && match !== 'match';
   const filtered = filterActive && !greyed ? filteredTagOf(facts, filter, tags) : null;
@@ -54,12 +59,22 @@ export function buildPin(
     faded: !facts.mine,
     greyed,
     ...(facts.status === 'maybe_closed' ? { maybeClosed: true } : {}),
+    ...(colorOf && facts.friendIds?.length ? { dots: pinDots(facts.friendIds, colorOf) } : {}),
   };
 }
 
 /** Color a pin contributes to its cluster (null when greyed). */
 export function pinClusterColor(pin: MapPin): string | null {
   return pin.greyed ? null : (pin.colors[0] ?? null);
+}
+
+/**
+ * A pin's accessible label: the place's name, then whose maps it is on ("Le Perchoir, on Léa's map"
+ * / "on the maps of Léa and Ben"); my own places say nothing more.
+ */
+export function pinLabel(facts: Pick<PlaceFacts, 'name' | 'friendIds'>, names: (personId: string) => string, onMaps: (names: string[]) => string): string {
+  const ids = facts.friendIds ?? [];
+  return ids.length ? `${facts.name}, ${onMaps(ids.map(names))}` : facts.name;
 }
 
 export function toMapCluster(c: Cluster, label: string): MapCluster {

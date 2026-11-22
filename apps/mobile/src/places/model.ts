@@ -57,6 +57,8 @@ export interface PlaceFacts {
   friendTags?: FriendTagRef[];
   /** Friends (among those shown) who saved it: "3 friends" in the list and the card. */
   friendCount?: number;
+  /** Those friends' ids, by name: the dots on the pin and "On the maps of" on the card. */
+  friendIds?: string[];
 }
 
 /** A friend's tag not mapped to one of mine, on one place. */

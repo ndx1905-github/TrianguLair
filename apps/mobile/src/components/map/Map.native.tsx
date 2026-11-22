@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map as MLMap, Marker, type CameraRef, type LayerProps } from '@maplibre/maplibre-react-native';
 import { SvgXml } from 'react-native-svg';
 
-import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
+import { PIN_VIEWBOX, pinLayout, pinScale, pinSvg } from '../../pins/pinSvg';
 import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
 import { SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
 import { BaseMapFallback, specKey } from './baseMap';
@@ -28,22 +28,26 @@ const PIN_PRESS_GUARD_MS = 350;
 
 function PinMarker({ pin, selected, onPress }: { pin: MapPin; selected: boolean; onPress: (id: string) => void }) {
   const scale = pinScale(pin, selected);
-  const box = pin.badge ? BADGE_VIEWBOX : PIN_VIEWBOX;
-  const width = box.width * scale;
-  const height = box.height * scale;
-  const xml = useMemo(() => {
-    const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed };
-    return pin.badge ? badgeSvg(spec, { width, height }) : pinSvg(spec, { width, height });
-  }, [pin.colors, pin.iconPath, pin.faded, pin.greyed, pin.maybeClosed, pin.badge, width, height]);
-  // Pins: anchor "bottom" + offset so that the tip (not the view bottom) sits on the coordinate.
-  // Zone badges: centred.
-  const tipGap = height * (1 - PIN_ANCHOR.y);
+  const dotsKey = pin.dots ? `${pin.dots.colors.join(',')}+${pin.dots.more}` : '';
+  const { xml, width, height, offset } = useMemo(() => {
+    const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed, dots: pin.dots ?? null };
+    if (pin.badge) {
+      const size = { width: BADGE_VIEWBOX.width * scale, height: BADGE_VIEWBOX.height * scale };
+      return { xml: badgeSvg(spec, size), ...size, offset: [0, 0] as [number, number] };
+    }
+    // The canvas grows when friends' dots stick out; `offset` puts the tip (not the view's bottom
+    // centre) on the coordinate.
+    const layout = pinLayout(spec, scale);
+    return { xml: pinSvg(spec, { width: PIN_VIEWBOX.width * scale, height: PIN_VIEWBOX.height * scale }), width: layout.width, height: layout.height, offset: layout.offset };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin.colors, pin.iconPath, pin.faded, pin.greyed, pin.maybeClosed, pin.badge, dotsKey, scale]);
+  // Pins: anchor "bottom" + offset. Zone badges: centred.
   return (
     <Marker
       id={pin.id}
       lngLat={[pin.lon, pin.lat]}
       anchor={pin.badge ? 'center' : 'bottom'}
-      offset={pin.badge ? [0, 0] : [0, tipGap]}
+      offset={offset}
       onPress={() => onPress(pin.id)}
     >
       <View style={{ width, height }} accessible accessibilityRole="button" accessibilityLabel={pin.label}>

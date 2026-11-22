@@ -32,7 +32,7 @@ export function useExamples() {
     const sel = getSelection();
     if (sel.mode === 'some' && sel.ids.includes(DEMO_FRIEND.id)) {
       const ids = sel.ids.filter((id) => id !== DEMO_FRIEND.id);
-      setSelection(ids.length ? { mode: 'some', ids } : ALL_FRIENDS);
+      setSelection(ids.length ? { mode: 'some', ids, me: sel.me } : ALL_FRIENDS);
     }
     return n;
   }, [mutate]);

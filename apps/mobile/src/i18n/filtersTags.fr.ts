@@ -12,7 +12,7 @@ export const frFiltersTags: Messages = {
   'fb.section.practical': 'Pratique',
   'fb.section.diet': 'Régime',
   'fb.section.mine': 'Mes lieux',
-  'fb.section.sharing': 'Visibilité',
+  'fb.section.sharing': 'Les miens : visibilité',
   'fb.section.price': 'Prix',
   'fb.sub.kinds': 'Type',
   'fb.sub.cuisines': 'Cuisine',
@@ -52,7 +52,7 @@ export const frFiltersTags: Messages = {
 
   'placeStatus.maybe_closed': 'Peut-être fermé',
   'placeStatus.closed': 'Fermé',
-  'visibilityFilter.private': 'Moi seul',
+  'visibilityFilter.private': 'Privés',
   'visibilityFilter.shared': 'Partagés',
   'visibilityFilter.friendsOnly': 'Lieux de mes amis',
 

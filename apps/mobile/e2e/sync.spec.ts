@@ -272,6 +272,8 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   await expect(b.getByTestId('whatsnew-badge')).toHaveText('2', { timeout: 30_000 });
   await expect(b.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
   await jump(b, 48.8594, 2.3624, 16);
+  // Whose map: her shared place carries her dot, and says so (spec "Whose places").
+  await expect(b.locator(`[data-pin-id][aria-label="${SHARED}, on Anna’s map"]`)).toHaveAttribute('data-dots', '1');
   if (SHOTS) {
     // "Also at my friends'": friends' places in color, the bar folded.
     const t = b.getByTestId('filter-toggle').filter({ visible: true });
@@ -317,7 +319,7 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   await b.goto(autostart('/'));
   const bar = b.getByTestId('filter-toggle').filter({ visible: true });
   if ((await bar.getAttribute('aria-expanded')) === 'true') await bar.click();
-  await expect(b.getByTestId('filter-pill-friends-shown')).toContainText('Friends: 1');
+  await expect(b.getByTestId('filter-pill-friends-shown')).toContainText('Me + 1 friend');
   await b.getByTestId('filter-pill-friends-shown').getByRole('button').click();
   await settle(b);
   await b.goto(autostart('/list'));

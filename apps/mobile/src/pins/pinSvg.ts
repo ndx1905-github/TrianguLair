@@ -1,6 +1,7 @@
 import { MAX_PIN_BANDS } from '../config';
 import { GREYED_COLOR, UNTAGGED_COLOR } from '../theme/tags';
 import { computeBands } from './bands';
+import { dotLayout, type DotLayout, type PinDots } from './dots';
 
 /**
  * Teardrop pin as an SVG string. The same markup is used on web (inline SVG in
@@ -36,6 +37,30 @@ export interface PinSpec {
   greyed?: boolean;
   /** Maybe closed: a small grey cross badge at the top right. */
   maybeClosed?: boolean;
+  /** Friends shown who saved it: small dots in their colours at the head's top right. */
+  dots?: PinDots | null;
+}
+
+/**
+ * The drawn pin in pixels: its canvas (larger than the pin when friends' dots stick out, on the
+ * right and above) and where its tip is on it. A map anchors the canvas at its bottom centre, then
+ * moves it by `offset` so that the tip sits on the coordinate.
+ */
+export interface PinLayout {
+  width: number;
+  height: number;
+  offset: [number, number];
+  dots: DotLayout | null;
+  scale: number;
+}
+
+export function pinLayout(spec: Pick<PinSpec, 'dots' | 'maybeClosed'>, scale = 1): PinLayout {
+  const dots = spec.dots && (spec.dots.colors.length > 0 || spec.dots.more > 0) ? dotLayout(spec.dots, { scale, maybeClosed: !!spec.maybeClosed }) : null;
+  const w = PIN_VIEWBOX.width + (dots?.padRight ?? 0);
+  const h = PIN_VIEWBOX.height + (dots?.padTop ?? 0);
+  const tipX = 20;
+  const tipY = 49 + (dots?.padTop ?? 0);
+  return { width: w * scale, height: h * scale, offset: [(w / 2 - tipX) * scale, (h - tipY) * scale], dots, scale };
 }
 
 /** Pin scale factors (viewBox 40x52 = scale 1). */
@@ -48,11 +73,34 @@ export function pinScale(pin: { greyed?: boolean }, selected: boolean): number {
   return pin.greyed ? PIN_SCALE.greyed : PIN_SCALE.normal;
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function esc(s: string): string {
   return s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!);
 }
 
+function dotsSvg(d: DotLayout): string {
+  const circles = d.circles
+    .map((c) => `<circle cx="${c.cx}" cy="${c.cy}" r="${c.r}" fill="${esc(c.color)}" stroke="#FFFFFF" stroke-width="${d.stroke}"/>`)
+    .join('');
+  const m = d.more;
+  const more = m
+    ? `<rect x="${m.cx - m.w / 2}" y="${m.cy - m.h / 2}" width="${m.w}" height="${m.h}" rx="${m.h / 2}" fill="#FFFFFF" stroke="rgba(15,23,42,0.45)" stroke-width="${d.stroke / 2}"/>` +
+      `<text x="${m.cx}" y="${Math.round((m.cy + m.fontSize * 0.36) * 100) / 100}" font-size="${m.fontSize}" font-weight="700" font-family="system-ui, sans-serif" text-anchor="middle" fill="#1F2937">${esc(m.text)}</text>`
+    : '';
+  return `<g class="tl-dots">${circles}${more}</g>`;
+}
+
+/**
+ * The pin's SVG. `size` is the pin's own size in pixels (40 x 52 at scale 1); with friends' dots the
+ * canvas grows (see pinLayout), and so do the returned width and height.
+ */
 export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string {
+  const layout = pinLayout(spec, size.width / PIN_VIEWBOX.width);
+  const padRight = layout.dots?.padRight ?? 0;
+  const padTop = layout.dots?.padTop ?? 0;
   const bands = computeBands(spec.greyed ? [GREYED_COLOR] : spec.colors, {
     top: HEAD.cy - HEAD.r,
     bottom: HEAD.cy + HEAD.r,
@@ -78,8 +126,8 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
   const iconTransform = `translate(${HEAD.cx - 9} ${HEAD.cy - 9}) scale(0.75)`;
 
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" ` +
-    `viewBox="0 0 ${PIN_VIEWBOX.width} ${PIN_VIEWBOX.height}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${round2(size.width * (1 + padRight / PIN_VIEWBOX.width))}" height="${round2(size.height * (1 + padTop / PIN_VIEWBOX.height))}" ` +
+    `viewBox="0 ${-padTop} ${PIN_VIEWBOX.width + padRight} ${PIN_VIEWBOX.height + padTop}">` +
     `<defs><clipPath id="${CLIP_ID}"><path d="${PIN_PATH}"/></clipPath></defs>` +
     `<g opacity="${pinOpacity}">` +
     `<ellipse cx="20" cy="50" rx="5" ry="1.6" fill="rgba(0,0,0,0.25)"/>` +
@@ -94,6 +142,7 @@ export function pinSvg(spec: PinSpec, size = { width: 40, height: 52 }): string 
     `<path d="${icon}" fill="#FFFFFF"/>` +
     `</g>` +
     (spec.maybeClosed ? CLOSED_BADGE : '') +
+    (layout.dots ? dotsSvg(layout.dots) : '') +
     `</g></svg>`
   );
 }

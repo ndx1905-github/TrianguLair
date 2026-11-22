@@ -19,8 +19,7 @@ import {
 import type { AppTag } from '../places/model';
 import { tagPath } from '../tags/tree';
 import { nextThemeMode } from '../theme/themeMode';
-import { FriendsFilterPill, useFollowed } from '../sync/FriendsPicker';
-import { useFriendsSelection } from '../sync/friendsSelection';
+import { WhoseRow, WhoseSummaryPill, useWhoseFiltered } from '../sync/FriendsPicker';
 import { Pill } from './ui';
 
 interface Props {
@@ -101,11 +100,8 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
   );
 
   const pills = activePills(filter);
-  // Whose places are shown (spec: the friends panel); the pill renders nothing when I follow nobody.
-  const hasFriends = useFollowed().length > 0;
-  const friendsMode = useFriendsSelection().mode;
-  const friendsHidden = hasFriends && friendsMode !== 'all';
-  const friendsRow = hasFriends ? row('friends', t('fb.section.friends'), <FriendsFilterPill />) : null;
+  // Whose places are shown (spec "Whose places"): a row at the top of the panel, a pill when folded.
+  const friendsHidden = useWhoseFiltered();
 
   return (
     <View
@@ -179,7 +175,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
           accessibilityLabel={t('fb.summaryA11y')}
           testID="filter-summary"
         >
-          <FriendsFilterPill summary />
+          <WhoseSummaryPill />
           {pills.map((p) => {
             const { label, color } = pillLabel(p, { tagById, friendTag: (k) => { const f = friendByKey.get(k); return f ? { ...f, personName: who(f.personId) } : undefined; } }, tr);
             return (
@@ -199,6 +195,7 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
 
       {open && (
         <ScrollView style={{ maxHeight: maxHeight ?? 420 }} contentContainerStyle={{ paddingBottom: 4 }} keyboardShouldPersistTaps="handled" testID="filter-panel">
+          <WhoseRow />
           {shown.length > 0 &&
             row(
               'tags',
@@ -236,7 +233,6 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
                 )),
             ),
           )}
-          {friendsRow}
           {summary.friendTags.length > 0 &&
             row(
               'friendTags',
@@ -353,7 +349,8 @@ export function FilterBar({ summary, filter, onChange, open, onOpenChange, showT
             )),
           ])}
           {row('sharing', t('fb.section.sharing'), [
-            ...summary.visibility.map(({ value, count }) => (
+            // "Friends' places" is now "Whose places"; still offered to remove it if it is on.
+            ...summary.visibility.filter(({ value }) => value !== 'friendsOnly' || (filter.visibility ?? []).includes(value)).map(({ value, count }) => (
               <Pill
                 key={value}
                 label={t(`visibilityFilter.${value}`)}

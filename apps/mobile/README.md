@@ -82,8 +82,8 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   author's color, categories (OSM groups) then their sub-filters (type, cuisine, museum type, shop
   type), practical criteria (open now, happy hour, terrace, takes reservations, free entry,
   second-hand, organic, also at my friends'), diets (all chosen ones required), "entry ≤ €X", my
-  status, "maybe closed" / "closed" (closed places are hidden unless chosen), visibility (only me /
-  shared / friends' places), price level, text. Groups ANDed, values ORed; a place lacking source
+  status, "maybe closed" / "closed" (closed places are hidden unless chosen), visibility of my places
+  (private / shared), price level, text. Whose places are shown is the first row (below). Groups ANDed, values ORed; a place lacking source
   info is "unknown" and drawn faded. Collapses to one line of removable pills; moving the map folds
   it without changing the remembered choice. Filter and open state are kept per device (versioned
   JSON, parsed defensively; storage falls back to memory when blocked).
@@ -370,10 +370,20 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     moved forward at launch, each pass and every minute; reset only by a successful sync), and a clock set back more
     than 10 minutes before a time already seen (the last sync, the option, the mark) locks at once ("the clock was set
     back").
-- **Friends' places** (T-210): one pin per place (no badge); "Also at my friends'" filter; a friends row in the
-  filter bar opens "Friends shown" (all, none or a selection, with search, avatar and number of places; remembered
-  per device, `friendsSelection.ts`; a friend's place of nobody shown is not displayed, and a removable pill shows the
-  selection in the folded bar); "N friends" in the list rows, on the card and on the add screen. The card's friends
+- **Friends' places** (T-210): one pin per place; "Also at my friends'" filter; "N friends" in the list rows, on the
+  card and on the add screen.
+- **Whose places** (`FriendsPicker.tsx`, `friendsSelection.ts`, `friendColors.ts`, `pins/dots.ts`): the filter bar's
+  first row, "Me" and each friend as chips (avatar or initial in the friend's colour) to tick several; a long press
+  shows only that person's places, and "▾" opens the panel with the shortcuts (Everyone, Only mine, Only my friends,
+  "Only" on each row), a search and the number of places per friend. Remembered per device (format 2 adds "me shown";
+  format 1 is read with my places shown, and the old "Friends' places" visibility filter moves here once). A place of
+  nobody shown is not displayed; with my places hidden, one of mine stays when a friend shown has it. The folded bar
+  shows the choice as a removable pill ("Only Léa"). Each friend has a colour from the tag palette, chosen from their
+  id (FNV-1a) and changeable on their page (kept per device). Pins saved by friends shown carry their dots (about 9 px
+  with a white outline, at the head's top right, up to 3 then "+n", the same pixel size on smaller greyed pins; the
+  canvas grows on the right and above so the tip stays on the point); clusters are unchanged; pin labels say "on Léa's
+  map". The card says "On the maps of: Ben, Léa" (a name shows only theirs), and a friend's page has their colour and
+  "See their places on the map". The card's friends
   section (`FriendsSection.tsx`) opens who saved it, when, their status, comment (within its visibility) and their
   tags in their author's color.
 - **What's new** (`/whatsnew`, `whatsNew.ts`): built from the reader's differences after each pass and kept in the sync
@@ -897,14 +907,31 @@ password, CORS diagnosis, private read address refused, connect, lossless move o
 index (byte for byte on the new storage, old one untouched, redirect listed), and a move onto a folder with other
 content that overwrites nothing.
 
+Whose places (`e2e/friends-on-map.spec.ts` with `SHOTS=1`, on the demo data: me and the demo friend Léa):
+
+| File | Shows |
+| --- | --- |
+| `docs/phone-whose-row.png` | The filter bar's first row: "Me" and Léa as chips, "Everyone" |
+| `docs/phone-whose-panel.png` | The panel: Everyone, Only mine, Only my friends, "Only" on each row |
+| `docs/phone-whose-only-friend.png` | "Only Léa": her places, the folded bar's pill |
+| `docs/phone-pin-dots.png` | Léa's dot on her place and on one of mine she has too; none on mine only |
+| `docs/pins-friend-dots.png` | Pins with 1 to 3 dots, "+n" and "maybe closed", greyed, normal and selected (`pinSvg` in Chromium) |
+| `docs/phone-card-on-maps.png` | The card: "On the maps of: Léa" with her dot |
+| `docs/phone-friend-colour.png` | Léa's page: her colour, "See their places on the map" |
+
+End-to-end: `e2e/friends-on-map.spec.ts`: chips, "Me" off (mine leave, ours stays), the last one shown cannot be
+unticked, long press "Only mine", the panel's shortcuts and "Only", the folded pill remembered after a reload, dots and
+pin labels, the card's names, the friend's colour on her dots and "See their places on the map", and an older device's
+"Friends' places" filter becoming "Only Léa" (in French).
+
 Sync and friends' places (`e2e/sync.spec.ts` with `SHOTS=1`, against the Apache WebDAV server, two browser
 contexts: Anna and Ben):
 
 | File | Shows |
 | --- | --- |
-| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color; What's new badge |
+| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color, with Anna's dot; What's new badge |
 | `docs/phone-card-friends.png`, `docs/tablet-fr-card-friends.png` | "1 friend" on the card, opened: who, when, status, comment, their tag in their color |
-| `docs/phone-friends-picker.png` | Friends shown: all, none or a selection, with places per friend |
+| `docs/phone-friends-picker.png` | Whose places: shortcuts, me and each friend, with places per friend |
 | `docs/phone-whatsnew.png`, `docs/phone-fr-whatsnew.png` | What's new: a comment and a favorite (unseen dots), her first places as one item |
 | `docs/phone-sync-status.png`, `docs/phone-dark-sync-status.png` | Sync status: my storage up to date, Anna updated just now |
 | `docs/phone-sync-offline.png` | Offline · 1 change pending |
@@ -914,7 +941,7 @@ End-to-end: `e2e/sync.spec.ts` (skipped without Apache): both connect a storage 
 invitation screen, Ben opens the link in his browser context, names her and answers, Anna pastes his return link and
 accepts (the name she typed when inviting is his contact name); Ben sees her shared place and not her private one, with "1 friend" and her
 comment on the card; Anna edits the comment and marks it favorite, Ben gets both in What's new (badge, dots, "See on the
-map"); the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
+map"); her pin carries her dot; the friends panel hides and shows her places; offline with a pending change, then a 401 ("Reconnect your
 storage", back to normal after "Sync now"); Anna sets "They see my places" to nothing on Ben's contact and Ben's cache
 drops her places. Passes are triggered with "Sync now" on the sync status screen (no test hook).
 

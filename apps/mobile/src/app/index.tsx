@@ -27,7 +27,7 @@ import { usePrunedFilter } from '../filters/usePrunedFilter';
 import { useLayout } from '../hooks/useLayout';
 import { useIsDark, useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
-import { buildPin, pinClusterColor, toMapCluster } from '../pins/build';
+import { buildPin, pinClusterColor, pinLabel, toMapCluster } from '../pins/build';
 import { fitCamera } from '../places/camera';
 import { clusterPins, expansionZoom } from '../places/clustering';
 import { EMPTY_FILTER, expandTagSelection, isFilterActive, matchPlace, summarize } from '../places/filters';
@@ -37,6 +37,8 @@ import { MapShortcuts } from '../zones/MapShortcuts';
 import { useZonePlaces } from '../zones/useZonePlaces';
 import { zoneShapes } from '../zones/zoneLayer';
 import { SyncBar } from '../sync/SyncBar';
+import { useFriendColors } from '../sync/friendColors';
+import { joinNames, usePersonName } from '../sync/FriendsPicker';
 import { LocateButton, useLocate } from '../location/LocateButton';
 import { zoomForFix, type Fix } from '../location';
 
@@ -129,6 +131,14 @@ function MapScreen() {
   const now = useMemo(() => new Date(), [facts, filter]); // re-evaluated with the data or the filter
   const summary = useMemo(() => summarize(facts, filter, tags, now, country), [facts, filter, tags, now, country]);
 
+  // Whose maps each place is on: friends' dots on the pins, and in their accessible labels.
+  const colorOf = useFriendColors();
+  const nameOf = usePersonName();
+  const onMaps = useCallback(
+    (names: string[]) => (names.length === 1 ? t('pin.onMapOf', { name: names[0]! }) : t('pin.onMapsOf', { names: joinNames(names, t) })),
+    [t],
+  );
+
   const { pins, clusters, shapes } = useMemo(() => {
     const ctx = { tagSet: expandTagSelection(filter.tagIds, tags), now, ...(country ? { country } : {}) };
     const all = facts.flatMap((f) => {
@@ -137,7 +147,8 @@ function MapScreen() {
       // Closed places stay in my places but leave the map (unless the "Closed" status is chosen).
       if (match === 'hidden') return [];
       return [{
-        ...buildPin({ facts: f, match }, filter, tags, byId, filterActive),
+        ...buildPin({ facts: f, match }, filter, tags, byId, filterActive, colorOf),
+        label: pinLabel(f, nameOf, onMaps),
         // Zones get a square badge and are not clustered (their shape is drawn anyway).
         ...(zones.has(f.id) ? { badge: true } : {}),
       }];
@@ -151,7 +162,7 @@ function MapScreen() {
       clusters: res.clusters,
       shapes: zoneShapes([...zones.values()], new globalThis.Map(all.map((p) => [p.id, p])), selectedId),
     };
-  }, [facts, zones, filter, tags, byId, filterActive, highlighted, selectedId, region?.zoom, initial.zoom, now, country]);
+  }, [facts, zones, filter, tags, byId, filterActive, highlighted, selectedId, region?.zoom, initial.zoom, now, country, colorOf, nameOf, onMaps]);
 
   const mapClusters = useMemo(
     () => clusters.map((cl) => toMapCluster(cl, t('map.cluster', { count: cl.count }))),

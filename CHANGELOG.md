@@ -23,15 +23,27 @@ All notable changes to TrianguLair are listed here. The format follows
   map, the list or in Settings › My content) removes them all in one tap.
 - **Friends from the list**: a "Friends" link in the list header opens the friends screen, which explains how to
   invite when nobody is there yet.
+- Whose places: the filter bar's first row shows "Me" and each friend as chips, to show your places, one friend's,
+  several or everyone's. A long press on a chip shows only that person's places; the "▾" panel has the shortcuts
+  (Everyone, Only mine, Only my friends, "Only" for each person) and a search. The choice is remembered on the device.
+- Each friend has a colour, from the tag palette, the same on every device; you can change it on their page. A small
+  dot in that colour, at the top right of a pin, says the place is on their map (up to three dots, then "+n"); pins
+  read aloud say whose maps they are on.
+- The place card says "On the maps of: Ben, Léa"; a name shows only that person's places. A friend's page has "See
+  their places on the map".
 
 ### Changed
 
 - A first launch no longer adds sample places and an invented friend to your data: only the starter tags. If you
   installed 0.9.0-beta.1, its sample places were saved as yours (and so synced to your storage, if you connected
   one): "Delete the example places" removes them, there too.
+- The filter bar's "Friends' places" visibility is now part of "Whose places" ("Only my friends"); a filter saved with
+  it on is moved there. The visibility filter is about your own places: "Private" (was "Only me") and "Shared".
 
 ### Fixed
 
+- Web app: what the first launch sets up (the starter tags) is saved at once; a page reloaded or closed in the first
+  moment could keep an empty map.
 - Web app: no base map on servers that send `.mjs` files with a non-JavaScript type (nginx before 1.25, as on
   YunoHost): the map worker is now served as `.js`. Base map errors are logged in the console with their URL.
 

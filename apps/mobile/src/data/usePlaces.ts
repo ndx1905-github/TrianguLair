@@ -44,8 +44,8 @@ export function useFriendTags(): FriendTagIndex {
 
 /**
  * Facts of a place by id (cached for the current data version). Friends' saves count only for the
- * friends shown (the friends panel: all, none or a selection); a friend's place of nobody shown is
- * null (not displayed).
+ * friends shown ("Whose places": me, all friends, none or a selection); a place of nobody shown is
+ * null (not displayed). With my places hidden, one of mine stays when a friend shown has it too.
  */
 export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceFacts | null {
   const { repo, version } = useData();
@@ -55,6 +55,20 @@ export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceF
   return useMemo(() => {
     const cache = new Map<string, PlaceFacts | null>();
     const active = new Set(byId.keys());
+    const names = new Map<string, string>();
+    const nameOf = (id: string) => {
+      let n = names.get(id);
+      if (n === undefined) {
+        n = foldText(repo.getPerson(id)?.displayName ?? '');
+        names.set(id, n);
+      }
+      return n;
+    };
+    const byName = (a: string, b: string) => {
+      const x = nameOf(a);
+      const y = nameOf(b);
+      return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
+    };
     return (placeId: string, friends?: boolean) => {
       if (cache.has(placeId)) return cache.get(placeId)!;
       const place = repo.getPlace(placeId);
@@ -66,13 +80,14 @@ export function useFactsLookup(): (placeId: string, friends?: boolean) => PlaceF
           friends === false && live
             ? []
             : repo.savesForPlace(placeId).filter((s) => s.ownerId !== repo.meId && s.sharing !== 'private' && s.deletedAt === null && isShown(selection, s.ownerId));
-        if (!live && others.length === 0) {
+        if ((!live || !selection.me) && others.length === 0) {
           cache.set(placeId, null);
           return null;
         }
         const hasFriends = others.length > 0;
         facts = placeFacts(place, live, hasFriends, active);
         facts.friendCount = others.length;
+        facts.friendIds = [...new Set(others.map((s) => s.ownerId))].sort(byName);
         if (!facts.mine) {
           // A friend's place takes my tags: through their tags (mapping, name), then its OSM category
           // (spec "Others' tags"); their other tags keep their author's color.
