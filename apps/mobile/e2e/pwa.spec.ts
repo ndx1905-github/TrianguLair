@@ -73,7 +73,7 @@ test('the manifest is served and valid, with the icons and iOS tags; the service
   const origin = new URL(page.url()).origin;
   expect(cached).toContain(`${origin}${BASE}/index.html`);
   expect(cached.some((u) => /\/_expo\/static\/js\/web\/entry-[0-9a-f]+\.js$/.test(u))).toBe(true);
-  expect(cached).toContain(`${origin}${BASE}/maplibre-gl-worker.mjs`);
+  expect(cached).toContain(`${origin}${BASE}/maplibre-gl-worker.js`);
 
   // Settings › Storage in this browser.
   await page.goto(autostart(`${BASE}/settings`));
@@ -129,7 +129,7 @@ test('works under a sub-path: routes, deep links, assets and the map worker', as
   const own = requests.filter((u) => u.startsWith(origin));
   expect(own.length).toBeGreaterThan(3);
   expect(own.filter((u) => !u.startsWith(`${origin}${BASE}/`))).toEqual([]);
-  expect(own.some((u) => u.startsWith(`${origin}${BASE}/maplibre-gl-worker.mjs`))).toBe(true);
+  expect(own.some((u) => u.startsWith(`${origin}${BASE}/maplibre-gl-worker.js`))).toBe(true);
 
   // In-app navigation keeps the sub-path.
   await page.getByTestId('open-list').click();

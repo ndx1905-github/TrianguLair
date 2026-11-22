@@ -7,6 +7,11 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Web app: no base map on servers that send `.mjs` files with a non-JavaScript type (nginx before 1.25, as on
+  YunoHost): the map worker is now served as `.js`. Base map errors are logged in the console with their URL.
+
 ## [0.9.0-beta.2] - 2026-11-22
 
 Fixes from the first days on real devices.

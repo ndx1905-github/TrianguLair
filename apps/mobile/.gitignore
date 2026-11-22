@@ -11,7 +11,7 @@ android/
 !modules/*/ios/
 expo-env.d.ts
 # Copied from maplibre-gl on install and web export (scripts/maplibre-worker.mjs).
-public/maplibre-gl-worker.mjs
+public/maplibre-gl-worker.js
 
 # Playwright (e2e)
 playwright-report/

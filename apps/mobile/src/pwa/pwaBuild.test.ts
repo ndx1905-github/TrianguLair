@@ -33,7 +33,7 @@ function fakeExport(base: string): string {
   writeFileSync(join(dir, '_expo/static/js/web/entry-0123abcd.js'), 'console.log(1)');
   writeFileSync(join(dir, '_expo/static/js/web/entry-0123abcd.js.map'), '{}');
   writeFileSync(join(dir, 'metadata.json'), '{}');
-  writeFileSync(join(dir, 'maplibre-gl-worker.mjs'), 'self.onmessage = () => {}');
+  writeFileSync(join(dir, 'maplibre-gl-worker.js'), 'self.onmessage = () => {}');
   for (const f of ['icon-192.png', 'icon-512.png', 'maskable-512.png', 'icon.svg', 'apple-touch-icon.png', 'favicon-32.png']) {
     writeFileSync(join(dir, 'icons', f), f);
   }
@@ -89,7 +89,7 @@ describe('scripts/pwa.mjs', () => {
     expect(sw.base).toBe(base);
     expect(sw.files).toContain('index.html');
     expect(sw.files).toContain('manifest.webmanifest');
-    expect(sw.files).toContain('maplibre-gl-worker.mjs');
+    expect(sw.files).toContain('maplibre-gl-worker.js');
     expect(sw.files).toContain('_expo/static/js/web/entry-0123abcd.js');
     // Never source maps, Expo's metadata, the service worker itself, or the route copies.
     expect(sw.files.filter((f) => f.endsWith('.map') || f === 'metadata.json' || f === 'sw.js' || f === 'l/index.html')).toEqual([]);
@@ -115,7 +115,7 @@ describe('scripts/pwa.mjs', () => {
     run(dir, '');
     expect(swConfig(dir)).toEqual(first);
     expect(readFileSync(join(dir, 'index.html'), 'utf8')).toBe(html);
-    writeFileSync(join(dir, 'maplibre-gl-worker.mjs'), 'self.onmessage = () => { /* new */ }');
+    writeFileSync(join(dir, 'maplibre-gl-worker.js'), 'self.onmessage = () => { /* new */ }');
     run(dir, '');
     expect(swConfig(dir).version).not.toBe(first.version);
   });
