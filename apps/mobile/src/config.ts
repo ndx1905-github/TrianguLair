@@ -66,7 +66,7 @@ export const MAX_PIN_BANDS = 3;
  * read them: use a domain you control (the web app can be hosted there; it opens these links).
  * Set it at build time with EXPO_PUBLIC_LINK_ORIGIN; the placeholder is not a real site.
  */
-export const LINK_ORIGIN: string = (process.env.EXPO_PUBLIC_LINK_ORIGIN ?? 'https://example.org').replace(/\/+$/, '');
+export const LINK_ORIGIN: string = (process.env.EXPO_PUBLIC_LINK_ORIGIN || 'https://example.org').replace(/\/+$/, '');
 
 /** Sent in the OSM services' User-Agent (their usage policies require a contact). */
 export const APP_VERSION = '0.0.1';
