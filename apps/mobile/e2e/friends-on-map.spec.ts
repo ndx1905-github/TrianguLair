@@ -147,25 +147,6 @@ test('the card says whose maps a place is on; a name shows only theirs', async (
 
 test('a friend\'s page: their colour on the dots, "See their places on the map"', async ({ page }) => {
   await openMap(page);
-  if (process.env['CI']) {
-    // Diagnostics (CI only): is the database file saved before the next page loads?
-    const size = () =>
-      page.evaluate(
-        () =>
-          new Promise<string>((resolve) => {
-            const r = indexedDB.open('triangulair', 1);
-            r.onsuccess = () => {
-              const g = r.result.transaction('files').objectStore('files').get('main.sqlite');
-              g.onsuccess = () => resolve(String((g.result as Uint8Array | undefined)?.byteLength ?? 'none'));
-              g.onerror = () => resolve('error');
-            };
-            r.onerror = () => resolve('open-error');
-          }),
-      );
-    console.log(`[idb] at pins: ${await size()}`);
-    await page.waitForTimeout(1500);
-    console.log(`[idb] 1.5 s later: ${await size()}; pins ${await page.locator('[data-pin-id]').count()}; ${await page.getByTestId('filter-count').textContent()}`);
-  }
   await page.goto(autostart(`/contacts/${LEA}`));
   const section = page.getByTestId('friend-on-map');
   await expect(section).toBeVisible({ timeout: 30_000 }).catch(async (e: unknown) => {

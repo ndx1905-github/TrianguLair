@@ -42,6 +42,8 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ### Fixed
 
+- Web app: what the first launch sets up (the starter tags) is saved at once; a page reloaded or closed in the first
+  moment could keep an empty map.
 - Web app: no base map on servers that send `.mjs` files with a non-JavaScript type (nginx before 1.25, as on
   YunoHost): the map worker is now served as `.js`. Base map errors are logged in the console with their URL.
 

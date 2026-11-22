@@ -75,7 +75,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         // First launch: the starter tags only (beta feedback: no sample places in real users' data).
         // Test builds keep the former seed, which the end-to-end tests rely on.
-        if (getSetting('demo-seeded') !== '1') {
+        const firstLaunch = getSetting('demo-seeded') !== '1';
+        if (firstLaunch) {
           try {
             if (DEMO_SEED) {
               seedDemoData(app.store, {
@@ -107,6 +108,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // Items in the trash for more than 30 days leave for good (spec "Editing and deleting"; the launch pass
         // publishes the purge to my other devices).
         purgeExpired(app.store);
+        // The first launch's data is saved at once, not after the usual short delay: a page reloaded
+        // or closed meanwhile kept "demo-seeded" but lost what it was set for (seen as an empty map).
+        if (firstLaunch) void app.flush();
         setStatus({ kind: 'ready', app });
       })
       .catch((error: unknown) => {
