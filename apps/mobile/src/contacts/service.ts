@@ -153,6 +153,8 @@ export interface ContactsService {
   contacts(): ContactView[];
   contact(owner: string): ContactView | undefined;
   rename(owner: string, name: string): void;
+  /** A name from my vault (given on another device, or before a restore): taken only when I gave none here. */
+  adoptName(owner: string, name: string): void;
   setFollow(owner: string, on: boolean): Promise<void>;
   setShare(owner: string, scope: ShareScope): Promise<void>;
   setVerified(owner: string, on: boolean): void;
@@ -540,7 +542,8 @@ class Service implements ContactsService {
       .map((c) => ({
         owner: c.owner,
         name: loc.names[c.owner] ?? '',
-        verified: !!loc.verified[c.owner],
+        // The mark is also in the vault record (my other devices, a device restored with the kit).
+        verified: !!loc.verified[c.owner] || c.verified,
         checkable: c.sharingCert.location !== undefined,
         follow: c.policy.follow,
         share: scopeOf(c.policy.share),
@@ -555,6 +558,12 @@ class Service implements ContactsService {
   }
 
   rename(owner: string, name: string): void {
+    this.setName(owner, name);
+    this.emit();
+  }
+
+  adoptName(owner: string, name: string): void {
+    if (this.name(owner) || !cleanName(name)) return;
     this.setName(owner, name);
     this.emit();
   }
@@ -587,6 +596,9 @@ class Service implements ContactsService {
       if (on) s.verified[owner] = true;
       else delete s.verified[owner];
     });
+    // And in the vault record, so that my other devices and a restore with the kit keep it.
+    const rec = this.port.records().contacts.find((c) => c.owner === owner);
+    if (rec && rec.verified !== on) this.port.updateRecords((r) => ({ ...r, contacts: r.contacts.map((c) => (c.owner === owner ? { ...c, verified: on } : c)) }));
   }
 
   setVerified(owner: string, on: boolean): void {

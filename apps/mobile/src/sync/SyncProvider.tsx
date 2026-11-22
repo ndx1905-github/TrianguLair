@@ -142,6 +142,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       author: () => nameRef.current || undefined,
       invitationName: (id) => registeredContactsService()?.invitationName(id),
       contactName: (owner) => registeredContactsService()?.contact(owner)?.name,
+      adoptContactName: (owner, name) => registeredContactsService()?.adoptName(owner, name),
       friendKeys: async () => {
         const now = Date.now();
         const received = parseReceived(await secrets.get('invitations-received'), now);

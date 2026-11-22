@@ -12,12 +12,15 @@ import {
 import { translate } from '../i18n/core';
 import { en } from '../i18n/en';
 import { fr } from '../i18n/fr';
+import { qrMatrix, qrPath } from '../contacts/qr';
 import { checkStoredIdentity, createIdentity, parseDeviceKeys, parseIdentityRecord, primaryFromPhrase } from './create';
 import {
   checkWords,
   clipboardFields,
   keyFingerprint,
   kitEntry,
+  kitQrSvg,
+  parseKitText,
   passwordManagerText,
   phraseWords,
   pickCheckIndexes,
@@ -150,6 +153,50 @@ describe('recovery kit', () => {
     expect(html).toContain('November 2, 2026');
     expect(html).toContain(tEn('kit.localOnlyNote'));
     expect(html).not.toMatch(/https?:\/\//); // no external resource
+  });
+
+  it('puts a QR code of the read address (never the phrase) on the printed page', () => {
+    const address = 'https://cloud.example.org/s/a&b';
+    const html = printableKitHtml({ ...kit, readAddress: address, protocol: 'WebDAV' }, tEn, 'en');
+    const svg = /<svg[^>]*>[\s\S]*?<\/svg>/.exec(html)![0];
+    expect(svg).toContain('data-kit-qr="https://cloud.example.org/s/a&amp;b"');
+    expect(svg).toContain(`aria-label="${tEn('kit.qrLabel')}"`);
+    // The modules are those of the address itself, at level M.
+    expect(svg).toContain(`d="${qrPath(qrMatrix(address, 'M'))}"`);
+    expect(kitQrSvg(address, 'x')).toBe(svg.replace(`aria-label="${tEn('kit.qrLabel')}"`, 'aria-label="x"'));
+    for (const w of new Set(PHRASE.split(' '))) expect(svg).not.toContain(w);
+    expect(html).not.toContain(tEn('kit.localOnlyNote'));
+    expect(html).not.toMatch(/<(img|link|script)\b|src=/); // still no external resource
+  });
+
+  it('picks the 12 words and the address out of a pasted kit', () => {
+    const address = 'https://cloud.example.org/s/abc/';
+    for (const [t, name] of [[tEn, 'Alex'], [tFr, 'Léa']] as const) {
+      const entry = kitEntry({ ...kit, name, readAddress: address, protocol: 'Nextcloud' }, t);
+      // The password-manager entry, whole.
+      expect(parseKitText(passwordManagerText(entry, t))).toEqual({ phrase: PHRASE, address });
+      // The fields copied one by one, pasted in a note.
+      expect(parseKitText(clipboardFields(entry, t).map((f) => f.value).join('\n'))).toEqual({ phrase: PHRASE, address });
+    }
+    // The printed page's text: numbered words in cells, the address in a sentence.
+    const cells = PHRASE.split(' ').map((w, i) => `${i + 1}\n${w}`).join('\n');
+    expect(parseKitText(`Recovery phrase (12 words)\n${cells}\nURL\n(${address}).`)).toEqual({ phrase: PHRASE, address });
+    // The bare words, loosely typed; a bare address (a scanned QR code).
+    expect(parseKitText(`  ${PHRASE.toUpperCase().replace(/ /g, '   ')}  `)).toEqual({ phrase: PHRASE, address: null });
+    expect(parseKitText(address)).toEqual({ phrase: null, address });
+    // The local-only entry has no address.
+    expect(parseKitText(passwordManagerText(kitEntry(kit, tEn), tEn))).toEqual({ phrase: PHRASE, address: null });
+  });
+
+  it('guesses nothing: a bad checksum, 11 words, two phrases or other words give no phrase', () => {
+    const words = PHRASE.split(' ');
+    expect(parseKitText([...words.slice(0, 11), 'legal'].join(' ')).phrase).toBeNull(); // checksum
+    expect(parseKitText(words.slice(0, 11).join(' ')).phrase).toBeNull();
+    const other = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+    expect(parseKitText(`Password: ${PHRASE}\nPassword: ${other}`).phrase).toBeNull();
+    expect(parseKitText(`Password: ${PHRASE}\nagain: ${PHRASE}`).phrase).toBe(PHRASE);
+    expect(parseKitText('Title: my shopping list\nNotes: milk, eggs').phrase).toBeNull();
+    expect(parseKitText('')).toEqual({ phrase: null, address: null });
   });
 
   it('asks 3 distinct words and checks them leniently', () => {

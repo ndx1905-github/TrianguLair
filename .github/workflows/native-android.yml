@@ -20,6 +20,8 @@ on:
         default: ''
   push:
     tags: ['v*']
+  # Called by release.yml (default ABIs).
+  workflow_call:
 
 permissions:
   contents: read

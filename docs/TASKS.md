@@ -48,11 +48,11 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 
 | ID | Task | Areas | Depends on | Status |
 |---|---|---|---|---|
-| T-201 | Final v1 encrypted format and test vectors | crypto | T-002 | to do |
+| T-201 | Final v1 encrypted format and test vectors | crypto | T-002 | done |
 | T-202 | Production storage adapters and tests against real servers | storage | T-003 | done |
 | T-203 | Storage settings and migration between storages | app, storage | T-202 | done |
 | T-204 | Sync: publishing and reading packs | sync | T-102, T-201, T-202 | done |
-| T-205 | Recovery kit and first launch | crypto, app | T-201 | to do |
+| T-205 | Recovery kit and first launch | crypto, app | T-201 | done |
 | T-206 | Adding a device (transfer code, QR) | crypto, app | T-205, T-204 | done |
 | T-207 | Loss and theft: key rotation, remote wipe | crypto, sync | T-206 | done |
 | T-208 | Invitation by link, QR code and return link | crypto, app | T-204 | done |
@@ -69,7 +69,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 |---|---|---|---|---|
 | T-301 | Release on App Store, Play Store, F-Droid | release, maintainer | T-214 | to do |
 | T-302 | User and self-hosting documentation | docs | — | to do |
-| T-303 | Contribution guide, code of conduct, security policy | docs | — | to do |
+| T-303 | Contribution guide, code of conduct, security policy | docs | — | done |
 | T-304 | Funding: Liberapay / Open Collective, NLnet | maintainer | — | to do |
 
 ## Details
@@ -357,7 +357,7 @@ Acceptance criteria:
 - [x] Fuzz and property tests of every parser (fixed seed in CI, `npm run fuzz:long`)
 - [x] Map from each spec promise to the code that enforces it (docs/format/promises.md)
 - [x] A second minimal reader (Python, docs/format/reference-reader/) checks the signed-index, pack and invitation-link vectors
-- [ ] Vectors checked by a second implementation
+- [x] Vectors checked by a second implementation: the Python reader implements every op and agrees on all 473 vectors (`npm run reader`, in CI)
 
 Depends on: T-002
 
@@ -398,7 +398,7 @@ Three entry points, 12-word phrase, recovery kit, standard flow.
 
 Acceptance criteria:
 
-- [ ] End-to-end flow
+- [x] End-to-end flow: e2e `recovery.spec.ts` against Apache WebDAV: places, a photo and a friend, the kit saved, browser storage wiped, restored on a fresh launch from the pasted kit or the printed page (words, QR code of the address): places, photos, friends, names and storage access back
 
 Depends on: T-201
 
@@ -516,7 +516,7 @@ Complete CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.
 
 Acceptance criteria:
 
-- [ ] Files present and linked from the README
+- [x] Files present and linked from the README
 
 ### T-304 — Funding: Liberapay / Open Collective, NLnet
 

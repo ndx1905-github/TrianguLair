@@ -70,7 +70,7 @@ import { MB, cacheCapMb } from '../photos/model';
 import { engineSyncPort, type SyncPort } from '../contacts/port';
 import { slotFiles } from '../devices/channel';
 import { JOURNAL_KEY, addEntry, diffSaves, markReverted, ownSaves, revertChange, type JournalEntry, type SaveMap } from '../devices/journal';
-import { VALUE_PROFILE, VALUE_STORAGE } from '../devices/sessions';
+import { MAX_CONTACT_NAME, VALUE_CONTACT_NAMES, VALUE_PROFILE, VALUE_STORAGE } from '../devices/sessions';
 import { parseConfig, sameWriteTarget, type StorageConfig } from '../storage/config';
 import type { OpenInvitationSummary, StorageAccess, StorageMoveHooks } from '../storage/interfaces';
 import type { SyncKeys } from './keys';
@@ -116,6 +116,8 @@ export interface ControllerDeps {
   invitationName?(id: string): string | undefined;
   /** Name I gave a contact (T-208, kept on this device), for their person row when it has none. */
   contactName?(owner: string): string | undefined;
+  /** A contact name found in my vault value, for a contact this device has no name for (contacts service). */
+  adoptContactName?(owner: string, name: string): void;
   /**
    * Extra keys per friend, loaded before every pass (T-208: the invitation keys of links I
    * answered, `invitations-received`, until my answer is accepted).
@@ -194,6 +196,17 @@ export class ForeignIndexError extends Error {
     super('the storage already holds the index of another identity');
     this.name = 'ForeignIndexError';
   }
+}
+
+/** The contact names of the vault value (`VALUE_CONTACT_NAMES`), read defensively: strings only, bounded. */
+export function vaultContactNames(engine: Pick<SyncEngine, 'value'>): Record<string, string> {
+  const v = engine.value<unknown>(VALUE_CONTACT_NAMES)?.value;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, string> = {};
+  for (const [owner, name] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof name === 'string' && name.trim() && owner.startsWith('ed25519:')) out[owner] = name.trim().slice(0, MAX_CONTACT_NAME);
+  }
+  return out;
 }
 
 export class SyncController implements StorageMoveHooks {
@@ -383,6 +396,8 @@ export class SyncController implements StorageMoveHooks {
     if (cfg) put(VALUE_STORAGE, cfg);
     const name = this.d.author?.();
     if (name) put(VALUE_PROFILE, { name });
+    const names = this.contactNames(engine);
+    if (Object.keys(names).length) put(VALUE_CONTACT_NAMES, names);
     this.d.state.set(WRITTEN_KEY, written);
     try {
       const rc = this.d.recoveryCopy ? await this.d.recoveryCopy(own.sharing) : undefined;
@@ -570,6 +585,8 @@ export class SyncController implements StorageMoveHooks {
       if (cfg) values[VALUE_STORAGE] = cfg;
       const name = this.d.author?.();
       if (name) values[VALUE_PROFILE] = { name };
+      const names = this.contactNames(engine);
+      if (Object.keys(names).length) values[VALUE_CONTACT_NAMES] = names;
       const res = await engine.rotateKey(r.sharing, { cancelInvitations: opts.cancelInvitations, recoveryCopy: r.vaultCopy, values });
       this.d.state.set(WRITTEN_KEY, Object.fromEntries(Object.entries(values).map(([k, v]) => [k, canonicalize(v as never)])));
       this.d.state.set(RECOVERY_KEY, packHash(r.vaultCopy));
@@ -848,13 +865,31 @@ export class SyncController implements StorageMoveHooks {
    */
   private syncPeople(engine: SyncEngine): void {
     const repo = this.d.store.repo;
+    const fromVault = vaultContactNames(engine);
     for (const c of engine.contacts()) {
       const p = repo.getPerson(c.owner);
-      const name = p?.displayName ? undefined : this.d.contactName?.(c.owner) || undefined;
+      if (fromVault[c.owner] && !this.d.contactName?.(c.owner)) this.d.adoptContactName?.(c.owner, fromVault[c.owner]);
+      const name = p?.displayName ? undefined : this.d.contactName?.(c.owner) || fromVault[c.owner] || undefined;
       if (!p || p.iFollow !== c.policy.follow || name) {
         repo.upsertPerson({ id: c.owner, publicKey: c.owner, readUrl: c.sharingCert.location ?? null, iFollow: c.policy.follow, ...(name && { displayName: name }) });
       }
     }
+  }
+
+  /**
+   * The names of my current contacts for the vault value: those of the vault (written by my other
+   * devices), then the names given on this device (person rows), which win.
+   */
+  private contactNames(engine: SyncEngine): Record<string, string> {
+    const repo = this.d.store.repo;
+    const fromVault = vaultContactNames(engine);
+    const out: Record<string, string> = {};
+    for (const c of [...engine.contacts()].sort((a, b) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0))) {
+      const here = repo.getPerson(c.owner)?.displayName?.trim() || this.d.contactName?.(c.owner)?.trim();
+      const name = (here || fromVault[c.owner] || '').slice(0, MAX_CONTACT_NAME);
+      if (name) out[c.owner] = name;
+    }
+    return out;
   }
 
   /** A name given on the contacts screens (invitation, answer, rename): their person row. */

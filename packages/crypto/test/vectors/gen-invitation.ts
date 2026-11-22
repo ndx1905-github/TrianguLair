@@ -311,6 +311,16 @@ export function vaultVectors(sh: Shared): VectorFile {
   b.add('merge', 'Union of answers and retired owners; verified if either says so; accepted and app from a.', 'merge_vaults', { a_hex: hex(v1), b_hex: hex(v2), owner: alice.id.owner, vault_key_hex: k }, 'ok');
   const minorSide = raw({ ...plain(otherSide), minor: 3, x_new: { kept: true } });
   b.add('merge-newer-minor', 'b written by a newer minor: its minor and unknown field are kept (V4-07).', 'merge_vaults', { a_hex: hex(v1), b_hex: hex(minorSide), owner: alice.id.owner, vault_key_hex: k }, 'ok');
+  // R5-03: more than 16 answers in the union. Junk written with the vault data key alone (a stolen
+  // device) never evicts a genuine answer: Bob's (accepted) and Carol's are kept, then a's junk, then b's.
+  const junk = (from: number, n: number) => Array.from({ length: n }, (_, i) => toB64Url(Uint8Array.of(from + i, from + i, from + i)));
+  const junkA = raw({ ...base, invitations: [{ ...inv, answers: [...(inv['answers'] as string[]), ...junk(0, 8)].sort() }] });
+  const junkB = raw({ ...plain(otherSide), invitations: [{ ...((plain(otherSide)['invitations'] as JsonObj[])[0] as JsonObj), answers: [toB64Url(r2), ...junk(100, 9)].sort() }] });
+  b.add('merge-more-than-16-answers', 'Union of 19 answers (2 genuine, 17 junk): the genuine ones first (the accepted responder, then the others), then a\'s junk, then b\'s, 16 kept (R5-03).', 'merge_vaults', { a_hex: hex(junkA), b_hex: hex(junkB), owner: alice.id.owner, vault_key_hex: k }, 'ok', undefined, (e) => {
+    const rec = JSON.parse(((e['ok'] as JsonObj)['records'] as string)) as { invitations: { answers: string[] }[] };
+    const kept = rec.invitations[0]!.answers;
+    if (kept.length !== 16 || !kept.includes(toB64Url(r1)) || !kept.includes(toB64Url(r2)) || junk(0, 8).some((j) => !kept.includes(j))) throw new Error('merge-more-than-16-answers: unexpected answers kept');
+  });
   void s;
   return b.file;
 }

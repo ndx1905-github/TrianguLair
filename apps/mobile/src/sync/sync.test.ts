@@ -23,7 +23,7 @@ import type { StorageConfig } from '../storage/config';
 import type { StorageAccess } from '../storage/interfaces';
 import { memoryKV, memorySecrets } from '../contacts/local';
 import { createContactsService, type ContactsService } from '../contacts/service';
-import { ForeignIndexError, SyncController, clearStaleIndex, type ControllerDeps } from './controller';
+import { ForeignIndexError, SyncController, clearStaleIndex, vaultContactNames, type ControllerDeps } from './controller';
 import { ALL_FRIENDS, isShown, parseSelection, serializeSelection, toggleFriend } from './friendsSelection';
 import { openSyncKeys, parseSyncKeys, serializeSyncKeys } from './keys';
 import { ageParts, friendNote, ownNote, sinceParts } from './problems';
@@ -373,6 +373,20 @@ describe('SyncController', () => {
     expect(s!.keys).toBeGreaterThan(0);
     expect(s!.total).toBe(s!.places + s!.document + s!.lists + s!.public + s!.photos + s!.keys + s!.other);
     expect(await makeUser('lou').ctl.spaceUsed()).toBeNull(); // not built yet: nothing listed
+  });
+});
+
+describe('contact names in the vault (restore with the kit)', () => {
+  const A = 'ed25519:' + 'A'.repeat(43);
+  const B = 'ed25519:' + 'B'.repeat(43);
+  const of = (value: unknown) => vaultContactNames({ value: <T,>() => (value === undefined ? undefined : { value: value as T, at: 0, by: A }) });
+  it('reads the names given on my other devices, defensively', () => {
+    expect(of({ [A]: ' Ben ', [B]: 'Léa' })).toEqual({ [A]: 'Ben', [B]: 'Léa' });
+    expect(of(undefined)).toEqual({});
+    expect(of(['Ben'])).toEqual({});
+    expect(of('Ben')).toEqual({});
+    expect(of({ [A]: 42, notAKey: 'x', [B]: '   ' })).toEqual({});
+    expect(of({ [A]: 'x'.repeat(500) })[A]).toHaveLength(80);
   });
 });
 

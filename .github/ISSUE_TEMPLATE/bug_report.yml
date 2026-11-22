@@ -1,0 +1,72 @@
+name: Bug report
+description: Something does not work as expected (beta testers welcome, see docs/beta-testing.md)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Please do **not** paste your 12 recovery words, your recovery kit, a storage password,
+        an invitation link or screenshots showing private places. A security problem? Do not report it here: see
+        SECURITY.md.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Brand and model
+      placeholder: "Pixel 8, Samsung Galaxy A54, iPhone 13, …"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      description: "Android: Settings › About phone › Android version. iPhone: Settings › General › About › iOS Version."
+      placeholder: "Android 15, iOS 26.1, …"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: The release you installed, as written on its download page or file name
+      placeholder: "0.9.0-beta.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options:
+        - Android APK
+        - iPhone with Sideloadly
+        - iPhone with AltStore
+        - iPhone with Xcode
+        - Web build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, one step per line
+      placeholder: |
+        1. Open a place's card
+        2. Tap "Add a photo"
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        How often it happens, whether you use a storage (Nextcloud, other WebDAV, S3, none), screenshots with nothing
+        private on them, or the technical log (Settings › Sync status › Technical log: it never contains your places,
+        comments or keys).
