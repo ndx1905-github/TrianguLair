@@ -924,7 +924,7 @@ contexts: Anna and Ben):
 
 | File | Shows |
 | --- | --- |
-| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color; What's new badge |
+| `docs/phone-friends-map.png` | Ben's map with "Also at my friends'": friends' places in color, with Anna's dot; What's new badge |
 | `docs/phone-card-friends.png`, `docs/tablet-fr-card-friends.png` | "1 friend" on the card, opened: who, when, status, comment, their tag in their color |
 | `docs/phone-friends-picker.png` | Whose places: shortcuts, me and each friend, with places per friend |
 | `docs/phone-whatsnew.png`, `docs/phone-fr-whatsnew.png` | What's new: a comment and a favorite (unseen dots), her first places as one item |
