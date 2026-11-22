@@ -26,7 +26,7 @@ type MapLibreModule = typeof import('maplibre-gl');
 
 function workerUrl(lib: MapLibreModule): string {
   // The version keeps a browser from reusing the worker of another maplibre-gl (as maplibre-gl does).
-  return `${process.env.EXPO_BASE_URL ?? ''}/maplibre-gl-worker.mjs?v=${lib.getVersion()}`;
+  return `${process.env.EXPO_BASE_URL ?? ''}/maplibre-gl-worker.js?v=${lib.getVersion()}`;
 }
 
 function glStyle(s: BaseMapStyle): string | StyleSpecification {
@@ -180,6 +180,9 @@ export default function Map({
       });
       // The style, or the base map's tiles, failed and the cache had nothing: next address.
       map.on('error', (e) => {
+        // Say what failed (URL, status), so a self-hoster can tell a blocked worker or style apart.
+        const err = (e as { error?: { message?: string; url?: string; status?: number } }).error;
+        console.warn('[map] base map error', err?.status ?? '', err?.url ?? '', err?.message ?? e);
         const fb = fallbackRef.current;
         if (!fb?.error(e as { sourceId?: string; tile?: unknown }, [SHAPES_SOURCE])) return;
         setBaseStatus(fb.status());
