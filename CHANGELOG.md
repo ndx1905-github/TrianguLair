@@ -7,6 +7,13 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Two of your devices syncing at the same moment on a storage without atomic writes (WsgiDAV, SFTP) or with coarse
+  ETags (Nextcloud) could leave one device's latest changes only on that device until it synced again. The device
+  whose publication was overwritten now merges the other one at its next sync, the index is checked once more after
+  a publication, and your document's old files are kept one publication longer so the storage always holds it whole.
+
 ## [0.9.0-beta.1] - 2026-11-21
 
 First beta, for a small group of friends. It is the first time the app is installed on real phones: expect bugs,

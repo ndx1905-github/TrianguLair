@@ -21,16 +21,22 @@
  * my other devices too), packs, public file, a content check of the index
  * (coarse-ETag servers), the index (with If-Match), then the index is read
  * back: storage compare-and-swap is best effort on some servers (T-202), so
- * the publication counts only if the storage now holds our exact index;
- * otherwise we pull (a full GET), merge and publish again. Unused files are
- * deleted only after a successful publication.
+ * the publication counts only if the storage now holds our exact index
+ * (without native conditional writes: read once more after a short random
+ * delay); otherwise we pull (a full GET), merge and publish again. Unused
+ * files are deleted only after a successful publication, my document's own
+ * files one publication later (another device's index may still list them).
+ * A lost update no check can see (the other device's PUT lands after all of
+ * them) shows up as a fork at the overwritten device's next pass, which reads
+ * the index in full after a publication: it merges the fork and republishes.
  *
  * Trust in my own index (T-204 review R-01): an index of mine is imported
  * (its own-document updates merged, its packs reused) only when it is at or
  * after my anchor and under my current sharing certificate (not an older
- * rotation, not signed by a device my certificate revokes). A rolled-back,
- * forked or older-rotation index only triggers a republication from the local
- * state; nothing it lists is fetched. The anchor is local, or, on a device
+ * rotation, not signed by a device my certificate revokes). A fork of my
+ * anchor (same seq) meeting the same rules is merged too. A rolled-back,
+ * untrusted fork or older-rotation index only triggers a republication from
+ * the local state; nothing it lists is fetched. The anchor is local, or, on a device
  * that has none yet (restored from the recovery kit), the one recorded in the
  * vault (sealed with the current vault data key, which a revoked device does
  * not have); the certificate rule holds without any anchor.
@@ -182,7 +188,7 @@ export interface OwnSyncOptions {
    * Storage without native conditional writes (`capabilities.conditionalWrites === false`: WsgiDAV,
    * SFTP; emulated HEAD + PUT): after the read-back, wait about this long (randomised between half and
    * all of it), then read the index once more before the publication counts; also the upper bound of
-   * the random pause before retrying a lost race on such a storage. 0 turns both off. Default 1000 ms.
+   * the random pause before retrying a lost race on such a storage. 0 turns both off. Default 500 ms.
    */
   raceCheckMs?: number;
   /** Author name written in the public lists file. */
@@ -747,7 +753,7 @@ export class OwnSync {
     await listsReady();
     let conflicts = 0;
     const orphans = new Set<string>(this.st.get<string[]>('own:garbage') ?? []);
-    const raceCheck = this.storage.capabilities.conditionalWrites ? 0 : Math.max(0, this.o.raceCheckMs ?? 1000);
+    const raceCheck = this.storage.capabilities.conditionalWrites ? 0 : Math.max(0, this.o.raceCheckMs ?? 500);
     for (let attempt = 1; attempt <= 5; attempt++) {
       // After a lost race, never trust an unchanged ETag (coarse ETags: the winner's index may have the same one).
       const pull = await this.pull({ full: attempt > 1 });

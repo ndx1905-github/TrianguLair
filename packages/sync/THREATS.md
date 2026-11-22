@@ -61,8 +61,11 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   can sign one that verifies) and opens with my key; sealed boxes alone would not authenticate the sender.
   "Non-revoked" is judged against **my current certificate**, not the one in that index (review R-01): an index
   of an older rotation (which a device declared lost can still sign, with the storage credentials it keeps until
-  step 4 of the declaration), one older than my anchor, a fork, or one signed by a device my certificate revokes
-  is never imported. It only makes my device republish from its local state, and the files it lists are deleted.
+  step 4 of the declaration), one older than my anchor, a fork under another certificate, or one signed by a
+  device my certificate revokes is never imported. It only makes my device republish from its local state, and
+  the files it lists are deleted. A fork of my anchor (same `seq`, the other side of a non-atomic
+  compare-and-swap) signed under my current certificate by a device it does not revoke is merged: that device
+  could as well have signed the next `seq`, which would be imported.
 - **Anchor of a restored device**: a device restored from the recovery kit has my current sharing certificate
   (from the vault's phrase-sealed copy) but no local anchor. The certificate rule above already refuses every
   older-rotation index. For rollbacks within the current rotation, my devices record my own anchor in the vault
@@ -177,10 +180,14 @@ friends share a pack with them. Wraps stay anonymous (crypto).
   see two indexes with the same `seq` (fork), which it reports and then moves past.
 - Coarse ETags (R-08): before writing the index, the index on the storage is downloaded and compared with the one
   this attempt is based on, and a retry after a lost race always downloads the index in full. What is left is the
-  window between that check and the write; a loss there shows up as a fork at the other device, which republishes
-  its document (nothing is lost; friends may see a 404 on a superseded pack until then).
-- Superseded files are deleted right after a successful publication. A friend reading at that moment may get a 404
-  for a pack of the previous index: it keeps its cache and reads again at the next pass.
+  window between that check and the write; a loss there shows up as a fork at the other device, which reads the
+  index in full at the pass after a publication, merges the fork and republishes (nothing is lost; friends may see
+  a 404 on a superseded pack until then). Without native conditional writes the index is also read once more after
+  a short random delay, which catches most such losses in the same pass. Superseded files of my own document are
+  deleted one publication late, so the surviving index never lists a missing one.
+- Superseded files are deleted right after a successful publication (those of my own document, sealed to my key
+  only, at the next one). A friend reading at that moment may get a 404 for a pack of the previous index: it keeps
+  its cache and reads again at the next pass.
 
 ## Known limits (review notes not fixed in this round)
 
