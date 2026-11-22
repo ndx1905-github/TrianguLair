@@ -70,30 +70,30 @@ const interleavings: Interleaving[] = [
   { name: 'at the first garbage deletion', step: 'delete', nth: 1, anyPath: true },
 ];
 
-function setup(opts: { fullCheckMs: number }) {
+function setup(opts: { fullCheckMs: number; raceCheckMs?: number }) {
   const w = new World();
   const mem = new MemoryAdapter();
-  let inject: ((step: Step, path: string) => Promise<void>) | null = null;
-  const plain = wsgidavLike(mem, async () => {});
-  const user = makeUser(w, 'alice', { storage: plain });
-  const hooked = wsgidavLike(mem, async (s, p) => {
-    if (inject) await inject(s, p);
-  });
-  // Every 2 deltas a full snapshot: the other device's publication drops the base's own-document files.
-  const common = { fullCheckMs: opts.fullCheckMs, maxOwnDeltas: 2, raceCheckMs: 0 };
-  const a = addDevice(w, user, { ...common, storage: hooked });
-  const a2 = addDevice(w, user, { ...common, storage: plain });
-  const arm = (it: Interleaving, other: Device) => {
+  const inject = new Map<string, (step: Step, path: string) => Promise<void>>();
+  const adapter = (name: string) => wsgidavLike(mem, async (s, p) => inject.get(name)?.(s, p));
+  const user = makeUser(w, 'alice', { storage: adapter('setup') });
+  const common = { fullCheckMs: opts.fullCheckMs, raceCheckMs: opts.raceCheckMs ?? 0 };
+  const a = addDevice(w, user, { ...common, storage: adapter('a') });
+  // a2 writes a full snapshot once 2 document files are listed: its publication drops the base's
+  // document files, which a's index (built on the same base, adding a delta) still lists.
+  const a2 = addDevice(w, user, { ...common, maxOwnDeltas: 2, storage: adapter('a2') });
+  /** Runs `other`'s whole sync at `it` in `late`'s next publication. */
+  const arm = (it: Interleaving, late: Device, other: Device) => {
+    const name = late === a ? 'a' : 'a2';
     let n = 0;
-    inject = async (s, p) => {
+    inject.set(name, async (s, p) => {
       if (s !== it.step || (!it.anyPath && p !== 'index.json')) return;
       if (++n !== it.nth) return;
-      inject = null;
+      inject.delete(name);
       const r = await other.engine.sync();
       expect(r.problems).toEqual([]);
-    };
+    });
   };
-  return { w, mem, user, a, a2, arm };
+  return { w, mem, user, a, a2, arm, inject };
 }
 
 /** Every file the index on the storage lists exists (an index never points to a missing file). */
@@ -105,6 +105,15 @@ async function missingListed(mem: MemoryAdapter, d: Device): Promise<string[]> {
   return out;
 }
 
+/** Files of my document (media/: own document, manifest) listed by the index on the storage and missing from it. */
+async function missingDocFiles(mem: MemoryAdapter): Promise<string[]> {
+  const g = await mem.get('index.json');
+  const packs = (JSON.parse(new TextDecoder().decode(g!.data)) as { packs: { file: string }[] }).packs;
+  const out: string[] = [];
+  for (const p of packs) if (p.file.startsWith('media/') && !(await mem.head(p.file))) out.push(p.file);
+  return out;
+}
+
 async function restoredFromStorage(w: World, d: Device): Promise<string> {
   const c = addDevice(w, d.user);
   await c.engine.sync();
@@ -112,9 +121,9 @@ async function restoredFromStorage(w: World, d: Device): Promise<string> {
 }
 
 describe('concurrent publishers on a coarse-ETag server with emulated conditions (WsgiDAV)', () => {
-  for (const fullCheckMs of [0, 3_600_000]) {
+  for (const fullCheckMs of [0, 3_600_000]) for (const lateName of ['a', 'a2'] as const) {
     for (const it_ of interleavings) {
-      it(`${it_.name}; ${fullCheckMs ? 'ETag shortcut on' : 'index read in full'}: no update lost, converges at the next passes`, async () => {
+      it(`${lateName} late, ${it_.name}; ${fullCheckMs ? 'ETag shortcut on' : 'index read in full'}: no update lost, converges at the next passes`, async () => {
         const { w, mem, a, a2, arm } = setup({ fullCheckMs });
         for (let i = 1; i <= 6; i++) a.store.putSave({ place: point(i, `P${i}`) });
         expect((await a.engine.sync()).ok).toBe(true);
@@ -126,11 +135,15 @@ describe('concurrent publishers on a coarse-ETag server with emulated conditions
 
         a.store.putSave({ place: point(200, 'from a') });
         a2.store.putSave({ place: point(300, 'from a2') });
-        // a is the late writer: a2's whole publication runs inside a's.
-        arm(it_, a2);
-        const r = await a.engine.sync();
+        // The other device's whole publication runs inside the late writer's.
+        const [late, other] = lateName === 'a' ? [a, a2] : [a2, a];
+        arm(it_, late, other);
+        const r = await late.engine.sync();
         expect(r.problems).toEqual([]);
         expect(r.ok).toBe(true);
+        // Whichever index survived, the files of my document it lists are all there: the storage
+        // alone holds every save that index carries (friends' packs may 404 until the next pass).
+        expect(await missingDocFiles(mem)).toEqual([]);
 
         // Settle exactly as real-servers.test.ts does: a, a2, a.
         for (const d of [a, a2, a]) {
@@ -152,15 +165,18 @@ describe('concurrent publishers on a coarse-ETag server with emulated conditions
     for (let i = 1; i <= 6; i++) a.store.putSave({ place: point(i, `P${i}`) });
     await a.engine.sync();
     await a2.engine.sync();
+    // A second document file: a2's next publication replaces both with a full snapshot.
+    a.store.updateSave('osm:node/1', { comment: 'edited' });
+    await a.engine.sync();
+    await a2.engine.sync();
     a.store.putSave({ place: point(200, 'from a') });
     a2.store.putSave({ place: point(300, 'from a2') });
-    arm(interleavings[1]!, a2);
+    arm(interleavings[1]!, a, a2);
     expect((await a.engine.sync()).ok).toBe(true);
     // a's index replaced a2's after a2 read its own back: a2's save is only on a2 now.
     expect(new TextDecoder().decode((await mem.get('index.json'))!.data)).toBe(serialize(a.engine.own!.index!));
     // The files of my document that the surviving index lists are all there (none deleted by a2).
-    const docFiles = a.engine.own!.index!.packs.filter((p) => p.file.startsWith('media/')).map((p) => p.file);
-    for (const f of docFiles) expect(await mem.head(f)).not.toBeNull();
+    expect(await missingDocFiles(mem)).toEqual([]);
     // a2's next pass (nothing changed on a2, ETag shortcut on): sees the other index, merges it, republishes both.
     const r2 = await a2.engine.sync();
     expect(r2.problems).toEqual([]);
@@ -172,5 +188,43 @@ describe('concurrent publishers on a coarse-ETag server with emulated conditions
     await a.engine.sync();
     expect(a.store.repo.dumpOwnData()).toBe(a2.store.repo.dumpOwnData());
     expect(await missingListed(mem, a)).toEqual([]);
+  });
+
+  it('the check after the read-back (emulated conditions) catches an overwrite within the same pass', async () => {
+    const { w, mem, a, a2, inject } = setup({ fullCheckMs: 3_600_000, raceCheckMs: 30 });
+    for (let i = 1; i <= 6; i++) a.store.putSave({ place: point(i, `P${i}`) });
+    await a.engine.sync();
+    await a2.engine.sync();
+    a.store.putSave({ place: point(200, 'from a') });
+    a2.store.putSave({ place: point(300, 'from a2') });
+    // a2's If-Match check passes before a's PUT; a2's PUT lands right after a's read-back.
+    let a2Checked!: () => void;
+    let aReadBack!: () => void;
+    const checked = new Promise<void>((r) => (a2Checked = r));
+    const readBack = new Promise<void>((r) => (aReadBack = r));
+    let aPut = false;
+    inject.set('a', async (s, p) => {
+      if (p !== 'index.json') return;
+      if (s === 'checked') await checked;
+      if (s === 'put') aPut = true;
+      if (s === 'got' && aPut) aReadBack();
+    });
+    inject.set('a2', async (s, p) => {
+      if (p !== 'index.json' || s !== 'checked') return;
+      inject.delete('a2');
+      a2Checked();
+      await readBack;
+    });
+    const [ra, ra2] = await Promise.all([a.engine.sync(), a2.engine.sync()]);
+    inject.clear();
+    expect([ra.problems, ra2.problems]).toEqual([[], []]);
+    expect(ra.own!.conflicts).toBeGreaterThanOrEqual(1);
+    // Already in this pass: the storage alone holds both saves, nothing listed is missing.
+    const restored = await restoredFromStorage(w, a);
+    expect(restored).toContain('osm:node/200');
+    expect(restored).toContain('osm:node/300');
+    expect(await missingDocFiles(mem)).toEqual([]);
+    await a2.engine.sync();
+    expect(a2.store.repo.dumpOwnData()).toBe(a.store.repo.dumpOwnData());
   });
 });
