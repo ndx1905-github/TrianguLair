@@ -182,6 +182,13 @@ export function nextcloudDavUrl(server: string, user: string): string | null {
  * ("https://x.org/public.php/dav/files/AbC123/", Nextcloud 29 and later), which
  * serves files anonymously by path. A URL that is already a public DAV URL is kept.
  */
+/** Only a share link ("…/s/<token>", "…/index.php/s/<token>") → its public WebDAV folder. */
+export function nextcloudShareLinkReadUrl(link: string): string | null {
+  const u = parseUrl(link);
+  if (!u || !/\/s\/[A-Za-z0-9]+\/?$/.test(u.pathname)) return null;
+  return nextcloudShareReadUrl(link);
+}
+
 export function nextcloudShareReadUrl(link: string): string | null {
   const u = parseUrl(link);
   if (!u) return null;
@@ -271,7 +278,10 @@ export function buildConfig(d: StorageDraft): { config: StorageConfig | null; pr
     const p = readUrlProblem(readInput);
     if (p) problems.push({ field: readField, code: p, level: 'error' });
   }
-  const readU = parseUrl(readInput);
+  // A Nextcloud share link ("…/s/<token>") only serves an HTML page: whatever the storage type
+  // chosen (Nextcloud, or a Nextcloud folder set up as generic WebDAV), read through its public
+  // WebDAV address instead.
+  const readU = parseUrl((d.choice === 'nextcloud' || d.choice === 'webdav' ? nextcloudShareLinkReadUrl(readInput) : null) ?? readInput);
   const readUrl = readU ? folderUrl(readU) : '';
   let config: StorageConfig | null = null;
 
@@ -412,13 +422,15 @@ export function parseConfig(v: unknown): StorageConfig {
   const conditionalWrites = o['conditionalWrites'] !== false;
   if (o['kind'] === 'webdav') {
     const nc = o['nextcloud'] as Record<string, unknown> | undefined;
+    // 0.9.0-beta.1 kept a share link pasted as the read address of a generic WebDAV storage as is.
+    const shareRead = nextcloudShareLinkReadUrl(readUrl);
     return {
       kind: 'webdav',
       flavor: o['flavor'] === 'nextcloud' ? 'nextcloud' : 'generic',
       url: str(o, 'url'),
       username: str(o, 'username'),
       password: str(o, 'password'),
-      readUrl,
+      readUrl: shareRead ?? readUrl,
       conditionalWrites,
       ...(nc && typeof nc === 'object'
         ? { nextcloud: { server: str(nc, 'server'), user: str(nc, 'user'), shareLink: str(nc, 'shareLink'), ...(typeof nc['userId'] === 'string' && nc['userId'] ? { userId: nc['userId'] } : {}) } }
