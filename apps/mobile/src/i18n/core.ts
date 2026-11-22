@@ -1,6 +1,7 @@
 /**
  * Tiny i18n core (pure, unit-tested): flat message keys, `{name}`
- * placeholders and plural forms chosen with Intl.PluralRules. Enough for v1's
+ * placeholders and plural forms chosen with Intl.PluralRules (built-in rules
+ * where the engine has none, as on Hermes). Enough for v1's
  * English and French; the messages can move to ICU files (Weblate) later
  * without changing call sites.
  */
@@ -30,14 +31,32 @@ function interpolate(text: string, params: Params | undefined): string {
   );
 }
 
-const pluralRules = new Map<string, Intl.PluralRules>();
+/**
+ * Cardinal plural rules of the supported locales (CLDR), for engines without
+ * Intl.PluralRules: Hermes, the phone's JavaScript engine, only has Collator,
+ * DateTimeFormat and NumberFormat. Integers and decimals as `count` gives them.
+ */
+export function fallbackPluralCategory(locale: string, n: number): Intl.LDMLPluralRule {
+  const abs = Math.abs(n);
+  const integer = Number.isInteger(abs);
+  if (locale.toLowerCase().split(/[-_]/)[0] === 'fr') {
+    // one: i = 0,1; many: e = 0 and i != 0 and i % 1000000 = 0 (and v = 0 for integers).
+    if (abs < 2) return 'one';
+    if (integer && abs % 1_000_000 === 0) return 'many';
+    return 'other';
+  }
+  // English (and the default): one: i = 1 and v = 0.
+  return abs === 1 && integer ? 'one' : 'other';
+}
+
+const pluralRules = new Map<string, Intl.PluralRules | null>();
 function pluralCategory(locale: string, n: number): Intl.LDMLPluralRule {
   let r = pluralRules.get(locale);
-  if (!r) {
-    r = new Intl.PluralRules(locale);
+  if (r === undefined) {
+    r = typeof Intl !== 'undefined' && typeof Intl.PluralRules === 'function' ? new Intl.PluralRules(locale) : null;
     pluralRules.set(locale, r);
   }
-  return r.select(n);
+  return r ? r.select(n) : fallbackPluralCategory(locale, n);
 }
 
 /**

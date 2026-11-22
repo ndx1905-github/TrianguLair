@@ -40,6 +40,28 @@ each in (see [spec-coverage.md](spec-coverage.md), gap 9: `expo-location`,
 `expo-camera` barcode scanning, MapLibre's location engine). The full
 dependency tree is attached as the `android-dependencies-…` artifact.
 
+## Smoke test on an emulator
+
+After the build, the **Smoke test on an emulator** job installs the APK on an
+Android 14 emulator (x86_64, so `x86_64` must be in the ABI list) and runs the
+[Maestro](https://maestro.dev) flow in
+[`apps/mobile/.maestro/smoke.yaml`](../apps/mobile/.maestro/smoke.yaml): the
+app starts, first launch (profile, keys, app lock, location and import
+skipped), add a place by hand, see its card on the map and its row in the
+list, search it, and find it again after a cold restart. The job fails if a
+step fails or if the app crashed (Java exception, native signal or fatal
+JavaScript error).
+
+The `android-smoke-…` artifact has the screenshots of each step,
+`logcat-app.txt` (the app's processes, `ReactNativeJS`, `AndroidRuntime`),
+`crashes.txt` when it crashed, the whole logcat and Maestro's report. The job
+log and summary repeat the JavaScript logs and the crash.
+
+To iterate on the test without rebuilding, run the workflow with
+**apk_from_run** set to the id of an earlier run (its APK is reused, kept 7
+days). Locally, with an emulator or a phone connected over `adb` and Maestro
+installed: `apps/mobile/scripts/android-smoke.sh TrianguLair.apk /tmp/smoke`.
+
 ## What to try
 
 See [run-on-iphone.md](run-on-iphone.md#what-to-try): the same applies.

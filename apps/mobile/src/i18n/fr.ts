@@ -59,7 +59,7 @@ export const fr: Messages = {
   'filters.collapse': 'Replier les filtres',
   'filters.expand': 'Déplier les filtres',
   'filters.remove': 'Retirer le filtre {name}',
-  'filters.tagA11y': '{name}, {count} lieux',
+  'filters.tagA11y': { one: '{name}, {count} lieu', other: '{name}, {count} lieux' },
 
   'criterion.openNow': 'Ouvert maintenant',
   'criterion.terrace': 'Terrasse',
