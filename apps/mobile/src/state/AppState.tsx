@@ -11,6 +11,23 @@ import type { MapRegion } from '../components/map/types';
 import { getSetting, setSetting } from '../data/deviceSettings';
 import { FILTER_SETTING_KEY, parseFilter, serializeFilter } from '../filters/storage';
 import type { FilterState } from '../places/filters';
+import { getSelection, migrateFriendsOnly, setSelection } from '../sync/friendsSelection';
+
+/**
+ * The remembered filter. Its old "Friends' places" visibility moved to "Whose places" (my places
+ * hidden): done once, when the filter is read.
+ */
+function initialFilter(): FilterState {
+  const f = parseFilter(getSetting(FILTER_SETTING_KEY));
+  const moved = migrateFriendsOnly(f.visibility, getSelection());
+  if (!moved) return f;
+  const next = { ...f };
+  if (moved.visibility.length) next.visibility = moved.visibility;
+  else delete next.visibility;
+  setSelection(moved.selection);
+  setSetting(FILTER_SETTING_KEY, serializeFilter(next));
+  return next;
+}
 
 export interface AppUiState {
   filter: FilterState;
@@ -33,7 +50,7 @@ export interface AppUiState {
 const Ctx = createContext<AppUiState | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [filter, setFilterState] = useState<FilterState>(() => parseFilter(getSetting(FILTER_SETTING_KEY)));
+  const [filter, setFilterState] = useState<FilterState>(initialFilter);
   const setFilter = useCallback((next: FilterState | ((f: FilterState) => FilterState)) => {
     setFilterState((prev) => {
       const f = typeof next === 'function' ? next(prev) : next;

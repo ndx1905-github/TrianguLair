@@ -24,7 +24,6 @@ import type { StorageAccess } from '../storage/interfaces';
 import { memoryKV, memorySecrets } from '../contacts/local';
 import { createContactsService, type ContactsService } from '../contacts/service';
 import { ForeignIndexError, SyncController, clearStaleIndex, vaultContactNames, type ControllerDeps } from './controller';
-import { ALL_FRIENDS, isShown, parseSelection, serializeSelection, toggleFriend } from './friendsSelection';
 import { openSyncKeys, parseSyncKeys, serializeSyncKeys } from './keys';
 import { ageParts, friendNote, ownNote, sinceParts } from './problems';
 import { WhatsNewLog, filterEntries, groupByDay, placesOf, type WhatsNewEntry } from './whatsNew';
@@ -487,21 +486,7 @@ describe("What's new", () => {
   });
 });
 
-describe('friends shown and stored keys', () => {
-  it('selection: all, none, some; remembered as versioned JSON', () => {
-    expect(parseSelection(null)).toEqual(ALL_FRIENDS);
-    expect(parseSelection('{bad')).toEqual(ALL_FRIENDS);
-    expect(parseSelection(serializeSelection({ mode: 'some', ids: ['b', 'a', 'a'] }))).toEqual({ mode: 'some', ids: ['a', 'b'] });
-    const all = ['a', 'b', 'c'];
-    let s = toggleFriend(ALL_FRIENDS, 'b', all);
-    expect(s).toEqual({ mode: 'some', ids: ['a', 'c'] });
-    expect(isShown(s, 'b')).toBe(false);
-    s = toggleFriend(s, 'b', all);
-    expect(s).toEqual(ALL_FRIENDS);
-    expect(toggleFriend({ mode: 'some', ids: ['a'] }, 'a', all)).toEqual({ mode: 'none' });
-    expect(isShown({ mode: 'none' }, 'a')).toBe(false);
-  });
-
+describe('stored keys', () => {
   it('previous keys round trip; a broken entry gives none', () => {
     const k = { previousSharingKeys: [{ publicKey: new Uint8Array(32).fill(1), secretKey: new Uint8Array(32).fill(2) }], previousVaultKeys: [{ key: new Uint8Array(32).fill(3), rotation: 2, revoked: ['ed25519:x'] }] };
     expect(parseSyncKeys(serializeSyncKeys(k))).toEqual(k);

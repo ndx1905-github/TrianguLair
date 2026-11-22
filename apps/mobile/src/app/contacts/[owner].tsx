@@ -20,6 +20,7 @@ import { useLayout } from '../../hooks/useLayout';
 import { useI18n } from '../../i18n';
 import { Muted, Section, StorageScreen } from '../../storage/components';
 import { BlockSection } from '../../privacy/BlockSection';
+import { FriendOnMap } from '../../sync/FriendOnMap';
 
 function ContactScreen() {
   const { t, locale } = useI18n();
@@ -40,9 +41,18 @@ function ContactScreen() {
   const [saved, setSaved] = useState(false);
 
   if (!svc || !c) {
+    // Not a contact, but someone whose places I see (a list followed by link, the demo friend): their
+    // colour and their places on the map still apply.
+    const person = owner ? repo.getPerson(owner) : null;
+    const known = person && !person.isMe ? person.displayName || shortKey(owner) : null;
     return (
-      <StorageScreen title={t('contacts.title')} testID="contact-screen">
+      <StorageScreen title={known ?? t('contacts.title')} testID="contact-screen">
         <Muted testID="contact-missing">{t('contacts.missing')}</Muted>
+        {known && (
+          <Section title={t('contacts.mapTitle')}>
+            <FriendOnMap owner={owner} name={known} />
+          </Section>
+        )}
         <Button kind="secondary" label={t('contacts.open')} onPress={() => router.replace('/contacts')} />
       </StorageScreen>
     );
@@ -81,6 +91,10 @@ function ContactScreen() {
       <Section title={t('contacts.nameTitle')}>
         <NameField label={t('contacts.nameLabel')} help={t('contacts.nameHelp')} value={name} onChange={setName} testID="contact-name" />
         {name.trim() !== c.name && <Button kind="secondary" label={t('contacts.rename')} onPress={() => svc.rename(owner, name)} testID="contact-rename" />}
+      </Section>
+
+      <Section title={t('contacts.mapTitle')}>
+        <FriendOnMap owner={owner} name={label} />
       </Section>
 
       <Section title={t('contacts.access')}>

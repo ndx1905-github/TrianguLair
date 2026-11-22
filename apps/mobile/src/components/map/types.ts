@@ -1,5 +1,6 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
+import type { PinDots } from '../../pins/dots';
 import type { MapShape } from '../../zones/shapes';
 import type { BaseMapSpec } from './baseMap';
 
@@ -27,6 +28,8 @@ export interface MapPin extends LatLon {
   maybeClosed?: boolean;
   /** Zone badge: a rounded square without a tip, centred on the point (spec "Zones"). */
   badge?: boolean;
+  /** Friends shown who saved it: their coloured dots at the head's top right (spec "Pins" > "Whose map"). */
+  dots?: PinDots | null;
 }
 
 /** A bubble standing for several pins when zoomed out. */

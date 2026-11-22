@@ -14,7 +14,9 @@ import { useData } from '../data/DataProvider';
 import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { UNTAGGED_COLOR } from '../theme/tags';
-import { Avatar } from './FriendsPicker';
+import { useFriendColors } from './friendColors';
+import { onlyFriend, setSelection } from './friendsSelection';
+import { Avatar, FriendDot } from './FriendsPicker';
 
 /** "Léa", "Léa and Sam", "Léa, Sam and 2 others". */
 export function namesPreview(names: readonly string[], t: (k: string, p?: Record<string, string | number>) => string): string {
@@ -34,6 +36,7 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
   const { t, locale } = useI18n();
   const { repo, version } = useData();
   const [open, setOpen] = useState(initiallyOpen);
+  const colorOf = useFriendColors();
   const saves = useMemo(() => friendSavesOf(repo.savesForPlace(placeId), repo.meId), [repo, placeId, version]);
   const tags = useMemo(() => {
     const m = new Map<string, { name: string; color: string | null }[]>();
@@ -51,7 +54,34 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
   const names = saves.map((s) => nameOf(s.ownerId));
   const date = (ms: number) => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms));
 
+  // "On the maps of: Ben, Léa": one name per person (by name), each in their colour; a tap shows
+  // only that person's places.
+  const owners = [...new Set(saves.map((s) => s.ownerId))].sort((a, b) => nameOf(a).localeCompare(nameOf(b), locale));
+
   return (
+    <>
+    <View style={styles.onMaps} testID="card-on-maps">
+      <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2}>
+        {t('card.onMapsOf')}
+      </Text>
+      {owners.map((id, i) => (
+        <Pressable
+          key={id}
+          onPress={() => setSelection(onlyFriend(id))}
+          style={({ pressed }) => [styles.onMapsName, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel={t('card.onlyTheirs', { name: nameOf(id) })}
+          hitSlop={6}
+          testID={`card-on-map-${repo.getPerson(id)?.displayName ?? id}`}
+        >
+          <FriendDot color={colorOf(id)} />
+          <Text style={{ color: c.accent, fontSize: 14, fontWeight: '600' }} maxFontSizeMultiplier={2}>
+            {nameOf(id)}
+            {i < owners.length - 1 ? ',' : ''}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
     <View style={[styles.box, { borderColor: c.border, backgroundColor: c.surfaceAlt }]} testID="card-friends">
       <Pressable
         onPress={() => setOpen(!open)}
@@ -64,7 +94,7 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
         <View style={styles.faces}>
           {saves.slice(0, 3).map((s, i) => (
             <View key={s.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
-              <Avatar name={nameOf(s.ownerId)} uri={repo.getPerson(s.ownerId)?.avatar ?? null} size={28} />
+              <Avatar name={nameOf(s.ownerId)} uri={repo.getPerson(s.ownerId)?.avatar ?? null} size={28} color={colorOf(s.ownerId)} />
             </View>
           ))}
         </View>
@@ -87,7 +117,7 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
           return (
             <View key={s.id} style={[styles.friend, { borderColor: c.border }]} testID={`card-friend-${nameOf(s.ownerId)}`}>
               <View style={styles.friendHead}>
-                <Avatar name={nameOf(s.ownerId)} uri={repo.getPerson(s.ownerId)?.avatar ?? null} />
+                <Avatar name={nameOf(s.ownerId)} uri={repo.getPerson(s.ownerId)?.avatar ?? null} color={colorOf(s.ownerId)} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: c.text, fontWeight: '700', fontSize: 15 }} maxFontSizeMultiplier={2}>
                     {nameOf(s.ownerId)}
@@ -119,11 +149,14 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
           );
         })}
     </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  box: { marginTop: 16, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12, gap: 10 },
+  onMaps: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 4, marginTop: 14 },
+  onMapsName: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32 },
+  box: { marginTop: 10, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12, gap: 10 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
   faces: { flexDirection: 'row' },
   count: { fontSize: 16, fontWeight: '700' },

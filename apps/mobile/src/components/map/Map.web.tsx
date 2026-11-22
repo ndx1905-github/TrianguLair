@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import type { Map as GLMap, Marker as GLMarker, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { PIN_ANCHOR, PIN_VIEWBOX, pinScale, pinSvg } from '../../pins/pinSvg';
+import { PIN_VIEWBOX, pinLayout, pinScale, pinSvg } from '../../pins/pinSvg';
 import { BADGE_VIEWBOX, badgeSvg } from '../../zones/badgeSvg';
 import { PRESSABLE_LAYERS, SHAPE_LAYERS, SHAPES_SOURCE, shapesToGeoJSON } from '../../zones/shapes';
 import { BaseMapFallback, specKey, type BaseMapStatus, type BaseMapStyle } from './baseMap';
@@ -34,18 +34,24 @@ function glStyle(s: BaseMapStyle): string | StyleSpecification {
 }
 
 function pinKey(pin: MapPin, selected: boolean): string {
-  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, pin.badge, selected].join('|');
+  const dots = pin.dots ? `${pin.dots.colors.join(',')}+${pin.dots.more}` : '';
+  return [pin.lat, pin.lon, pin.colors.join(','), pin.iconPath.length, pin.faded, pin.greyed, !!pin.maybeClosed, pin.badge, dots, pin.label, selected].join('|');
 }
 
 function clusterKey(c: MapCluster): string {
   return [c.lat, c.lon, c.count, c.color].join('|');
 }
 
+/** Size of the marker element and its offset from the bottom-centre anchor (the tip on the point). */
+function pinBox(pin: MapPin, selected: boolean): { width: number; height: number; offset: [number, number] } {
+  const scale = pinScale(pin, selected);
+  if (pin.badge) return { width: BADGE_VIEWBOX.width * scale, height: BADGE_VIEWBOX.height * scale, offset: [0, 0] };
+  return pinLayout({ dots: pin.dots ?? null, maybeClosed: !!pin.maybeClosed }, scale);
+}
+
 function makePinElement(pin: MapPin, selected: boolean, onPress: (id: string) => void): HTMLElement {
   const scale = pinScale(pin, selected);
-  const box = pin.badge ? BADGE_VIEWBOX : PIN_VIEWBOX;
-  const width = box.width * scale;
-  const height = box.height * scale;
+  const { width, height } = pinBox(pin, selected);
   const el = document.createElement('button');
   el.type = 'button';
   el.setAttribute('aria-label', pin.label);
@@ -53,11 +59,12 @@ function makePinElement(pin: MapPin, selected: boolean, onPress: (id: string) =>
   el.dataset.pinId = pin.id;
   if (pin.greyed) el.dataset.greyed = '1';
   if (pin.badge) el.dataset.badge = '1';
+  if (pin.dots) el.dataset.dots = `${pin.dots.colors.length + pin.dots.more}`;
   el.style.cssText =
     `width:${width}px;height:${height}px;padding:0;margin:0;border:0;background:none;` +
     `cursor:pointer;display:block;z-index:${selected ? 3 : pin.greyed ? 0 : 1}`;
-  const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed };
-  el.innerHTML = pin.badge ? badgeSvg(spec, { width, height }) : pinSvg(spec, { width, height });
+  const spec = { colors: pin.colors, iconPath: pin.iconPath, faded: pin.faded, greyed: pin.greyed, maybeClosed: !!pin.maybeClosed, dots: pin.dots ?? null };
+  el.innerHTML = pin.badge ? badgeSvg(spec, { width, height }) : pinSvg(spec, { width: PIN_VIEWBOX.width * scale, height: PIN_VIEWBOX.height * scale });
   el.addEventListener('click', (ev) => {
     ev.stopPropagation();
     onPress(pin.id);
@@ -263,11 +270,10 @@ export default function Map({
       if (existing?.key === key) continue;
       existing?.marker.remove();
       const el = makePinElement(pin, selected, (id) => cb.current.onPinPress?.(id));
-      const height = PIN_VIEWBOX.height * pinScale(pin, selected);
       const marker = new lib.Marker({
         element: el,
         anchor: pin.badge ? 'center' : 'bottom',
-        offset: pin.badge ? [0, 0] : [0, height * (1 - PIN_ANCHOR.y)],
+        offset: pinBox(pin, selected).offset,
       })
         .setLngLat([pin.lon, pin.lat])
         .addTo(map);
