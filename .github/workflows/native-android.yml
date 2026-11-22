@@ -2,8 +2,8 @@ name: Native Android build
 
 # Manual (plus version tags). Actions › "Native Android build" › Run workflow.
 # Produces an installable APK (release build, JS bundle embedded, signed with the
-# debug keystore of the Expo template: fine for testing, not for a store) and an
-# F-Droid dependency report in the job summary, then runs a smoke test of the APK
+# debug keystore of the Expo template: fine for testing, not for a store) after an
+# F-Droid dependency check (fails on proprietary Google libraries), then runs a smoke test of the APK
 # on an Android emulator (job "smoke"). See docs/run-on-android.md.
 on:
   workflow_dispatch:
@@ -93,13 +93,16 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json', 'apps/mobile/android/gradle/wrapper/gradle-wrapper.properties', 'apps/mobile/android/**/*.gradle', 'apps/mobile/android/gradle.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # F-Droid audit (docs/spec-coverage.md, gap 9): which proprietary Google
-      # libraries end up in the release APK, and which module pulls them in.
+      # F-Droid gate (docs/spec-coverage.md, gap 9): the build fails if any Google Play
+      # services, Firebase, ML Kit or Play Core library is in the release runtime classpath
+      # (the job summary names the module that pulls it in). ZXing is allowed (Apache-2.0).
+      # Location and QR scanning use modules/tl-location and modules/tl-qr-scanner on Android;
+      # expo-location and expo-camera are not linked there (package.json expo.autolinking).
       - name: F-Droid dependency check
         working-directory: apps/mobile/android
         run: |
           ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > ../build-deps.txt
-          node ../scripts/fdroid-deps.mjs ../build-deps.txt "$GITHUB_STEP_SUMMARY"
+          node ../scripts/fdroid-deps.mjs --fail ../build-deps.txt "$GITHUB_STEP_SUMMARY"
 
       - name: Build the release APK
         working-directory: apps/mobile/android
@@ -135,7 +138,9 @@ jobs:
           retention-days: 7
 
   # Installs the release APK on an emulator and runs apps/mobile/.maestro/smoke.yaml: the app
-  # starts, first launch, add a place, see it on the map and in the list, cold restart.
+  # starts, the QR scanner opens (or says there is no camera), first launch with the location,
+  # "center on me" on a mock position, add a place, see it on the map and in the list, cold restart.
+  # The emulator image is AOSP without Google APIs: location works without Play services.
   # Screenshots and logcat are attached as the android-smoke-… artifact.
   smoke:
     name: Smoke test on an emulator

@@ -1,10 +1,15 @@
 # Smoke test of the release APK on an Android emulator (see .github/workflows/native-android.yml
-# and scripts/android-smoke.sh): first launch, add a place by hand, see it on the map and in the list.
+# and scripts/android-smoke.sh): the QR scanner opens, first launch with the location, "center on
+# me", add a place by hand, see it on the map and in the list.
 # Selectors are the components' testID (Maestro's `id` on Android).
+# The emulator is an AOSP image without Google APIs, and android-smoke.sh sends it a GPS position
+# (48.85837, 2.29448) every 2 s: finding it proves that location needs no Google Play services.
 appId: org.triangulair.app
-name: First launch, add a place, see it
+name: First launch, center on me, add a place, see it
 env:
   PLACE: Smoke Test Cafe
+  # The mock position as the add form shows it ("At 48.85837, 2.29448"), to 3 decimals (~100 m).
+  HERE: .*48\.858\d*, 2\.294\d*.*
 ---
 - launchApp:
     clearState: true
@@ -22,6 +27,59 @@ env:
       id: welcome-start
     timeout: 90000
 - takeScreenshot: 01-welcome
+
+# The QR scanner (modules/tl-qr-scanner: CameraX + ZXing, no ML Kit) loads and opens the camera,
+# or says that there is none; either way the app does not crash. "I already have my places" › QR.
+- tapOn:
+    id: welcome-device
+- extendedWaitUntil:
+    visible:
+      id: device-qr
+    timeout: 20000
+- tapOn:
+    id: device-qr
+- extendedWaitUntil:
+    visible:
+      id: device-qr-showing
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: device-qr-scan-start
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: device-qr-scan-start
+# The preview is a square as wide as the screen: "Stop" may be below it.
+- scrollUntilVisible:
+    element:
+      id: device-qr-scan-(stop|unavailable)
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: 01b-qr-scanner
+- runFlow:
+    when:
+      visible:
+        id: device-qr-scan-stop
+    commands:
+      - tapOn:
+          id: device-qr-scan-stop
+- scrollUntilVisible:
+    element:
+      id: device-back
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: device-back
+- extendedWaitUntil:
+    visible:
+      id: device-qr
+    timeout: 20000
+- tapOn:
+    id: device-back
+- extendedWaitUntil:
+    visible:
+      id: welcome-start
+    timeout: 20000
 - tapOn:
     id: welcome-start
 
@@ -54,12 +112,14 @@ env:
     visible:
       id: welcome-location
     timeout: 20000
+# Location: allowed (adb install -g granted the permission), the position is found and the
+# step goes on by itself (on failure it would stay, with a "Location is off" banner).
 - tapOn:
-    id: location-skip
+    id: location-allow
 - extendedWaitUntil:
     visible:
       id: welcome-import
-    timeout: 20000
+    timeout: 45000
 - tapOn:
     id: import-later
 
@@ -77,7 +137,27 @@ env:
           id: hint-dismiss
 - takeScreenshot: 04-map-empty
 
-# Add a place by hand at the map's center (no network needed).
+# "Center on me": move the map away, then back to the position (modules/tl-location).
+- swipe:
+    start: 50%, 45%
+    end: 15%, 75%
+    duration: 800
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: locate-me
+- extendedWaitUntil:
+    visible:
+      id: locate-me
+      enabled: true
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: locate-notice
+- takeScreenshot: 04b-map-centered
+
+# Add a place by hand at the map's center (no network needed): the center is the position.
 - tapOn:
     id: open-add
 - extendedWaitUntil:
@@ -90,6 +170,7 @@ env:
     visible:
       id: manual-name
     timeout: 20000
+- assertVisible: ${HERE}
 - tapOn:
     id: manual-name
 - inputText: ${PLACE}

@@ -5,6 +5,16 @@
   "license": "MPL-2.0",
   "description": "TrianguLair app (Expo / React Native, phase-0 skeleton)",
   "main": "expo-router/entry",
+  "expo": {
+    "autolinking": {
+      "android": {
+        "exclude": [
+          "expo-location",
+          "expo-camera"
+        ]
+      }
+    }
+  },
   "scripts": {
     "start": "expo start --dev-client",
     "postinstall": "node scripts/maplibre-worker.mjs",

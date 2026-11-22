@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
 
 import { Banner, Button } from '../../components/ui';
 import { setSetting } from '../../data/deviceSettings';
@@ -9,10 +8,12 @@ import { stepOf } from '../../firstLaunch/steps';
 import { useOnboardingGuard } from '../../firstLaunch/useOnboardingGuard';
 import { useI18n } from '../../i18n';
 import { useIdentity } from '../../identity/IdentityProvider';
+import { locateMe } from '../../location';
 
 /**
  * Location (optional), explained before the system prompt (spec): only to
- * center the map, kept on the device (`start-position`), never sent.
+ * center the map, kept on the device (`start-position`), never sent. `locateMe` works without
+ * Google Play services on Android (src/location).
  */
 export default function LocationStep() {
   const guard = useOnboardingGuard('location');
@@ -31,13 +32,12 @@ export default function LocationStep() {
   const allow = async () => {
     setBusy(true);
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (!perm.granted) {
+      const r = await locateMe();
+      if (!r.ok) {
         setDenied(true);
         return;
       }
-      const pos = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-      setSetting('start-position', JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
+      setSetting('start-position', JSON.stringify({ lat: r.fix.lat, lon: r.fix.lon }));
       next();
     } catch {
       setDenied(true);

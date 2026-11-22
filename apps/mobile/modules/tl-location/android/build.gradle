@@ -1,0 +1,19 @@
+// Android location on the platform LocationManager: no Google Play services (F-Droid).
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'org.triangulair.location'
+version = '1.0.0'
+
+android {
+  namespace "org.triangulair.location"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}

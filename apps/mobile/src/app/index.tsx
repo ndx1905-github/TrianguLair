@@ -36,6 +36,8 @@ import { MapShortcuts } from '../zones/MapShortcuts';
 import { useZonePlaces } from '../zones/useZonePlaces';
 import { zoneShapes } from '../zones/zoneLayer';
 import { SyncBar } from '../sync/SyncBar';
+import { LocateButton, useLocate } from '../location/LocateButton';
+import { zoomForFix, type Fix } from '../location';
 
 /** Places are loaded for the visible area plus this margin on each side. */
 const VIEWPORT_MARGIN = 0.25;
@@ -179,6 +181,14 @@ function MapScreen() {
     snoozedAt,
   });
 
+  // "Center on me" (spec: the position only centers the map; read once per press, kept nowhere).
+  const regionZoom = region?.zoom;
+  const centerOn = useCallback(
+    (fix: Fix) => setCamera({ center: { lat: fix.lat, lon: fix.lon }, zoom: zoomForFix(fix, regionZoom), key: Date.now() }),
+    [regionZoom],
+  );
+  const locate = useLocate(centerOn);
+
   const openAdd = () => {
     if (hintAdd) dismissHint();
     const center = region?.center ?? initial.center;
@@ -255,6 +265,13 @@ function MapScreen() {
         <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start' }}>
           <TrashUndo />
         </View>
+        {locate.notice && (
+          <View style={{ marginHorizontal: gutter, marginTop: 8, alignSelf: 'flex-start', maxWidth: wide ? 460 : undefined }} pointerEvents="none">
+            <Banner tone={locate.notice === 'locate.stale' ? 'info' : 'warning'} testID="locate-notice">
+              {t(locate.notice)}
+            </Banner>
+          </View>
+        )}
       </View>
 
       <View
@@ -269,17 +286,20 @@ function MapScreen() {
         ]}
         pointerEvents="box-none"
       >
-        <Pressable
-          onPress={() => router.push('/list')}
-          style={[styles.listButton, { backgroundColor: c.surface, borderColor: c.border, shadowColor: c.shadow }]}
-          accessibilityRole="button"
-          accessibilityLabel={t('nav.listA11y')}
-          testID="open-list"
-        >
-          <Text style={[styles.listText, { color: c.text }]} maxFontSizeMultiplier={2}>
-            ☰ {t('nav.list')}
-          </Text>
-        </Pressable>
+        <View style={styles.leftColumn} pointerEvents="box-none">
+          <LocateButton busy={locate.busy} onPress={() => void locate.run()} />
+          <Pressable
+            onPress={() => router.push('/list')}
+            style={[styles.listButton, { backgroundColor: c.surface, borderColor: c.border, shadowColor: c.shadow }]}
+            accessibilityRole="button"
+            accessibilityLabel={t('nav.listA11y')}
+            testID="open-list"
+          >
+            <Text style={[styles.listText, { color: c.text }]} maxFontSizeMultiplier={2}>
+              ☰ {t('nav.list')}
+            </Text>
+          </Pressable>
+        </View>
         <MapShortcuts />
         <Pressable
           onPress={openAdd}
@@ -344,6 +364,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   listText: { fontSize: 15, fontWeight: '700' },
+  leftColumn: { alignItems: 'flex-start', gap: 10 },
   fab: {
     width: 58,
     height: 58,
