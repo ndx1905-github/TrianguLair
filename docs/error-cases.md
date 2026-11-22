@@ -1,7 +1,8 @@
 # Error cases: traceability (T-213)
 
-Every error case of the app (failures of the storage, the network, the map, the OSM services, sync and
-background work), mapped to the code that implements it and to the tests that check it.
+Every row of the spec's [Error cases](SPEC.md#error-cases) table, and the error-related rows of
+[Synchronization and background](SPEC.md#synchronization-and-background), mapped to the code that
+implements it and to the tests that check it.
 
 Each row has a dedicated test in one of these two files, named after the row:
 

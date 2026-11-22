@@ -1,9 +1,9 @@
-# Security promises and what enforces them
+# Spec promises and what enforces them
 
-Each security-relevant promise of the app, the function and check of `packages/crypto` that enforces it (with
+Each security-relevant promise of `docs/SPEC.md`, the function and check of `packages/crypto` that enforces it (with
 the error it raises), the **app rules** it relies on (which the format cannot enforce), and the vectors that exercise
 it. "App" means the application layer that is not written yet (T-204 onwards); every app rule listed here is a
-requirement on it.
+requirement on it. Section names are those of SPEC.md.
 
 ## Architecture: principle, storage, encrypted sharing, organization on the storage
 

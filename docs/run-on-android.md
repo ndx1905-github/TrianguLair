@@ -50,7 +50,8 @@ On Android the app does not link `expo-location` (Play services location) or
 engine is its `default` one (the platform `LocationManager`, pinned in
 `app.json`); the app does not use MapLibre's user-location layer. So location
 and QR scanning work on phones without Google Play services. iOS and web keep
-`expo-location` and `expo-camera`.
+`expo-location` and `expo-camera`. See [spec-coverage.md](spec-coverage.md),
+gap 9.
 
 ## Smoke test on an emulator
 

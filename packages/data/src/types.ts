@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * Domain types shared by the SQLite layer, the Yjs document and the
- * list filters. Field names follow the data model of the specification.
+ * list filters. Field names follow docs/SPEC.md, "Data model".
  */
 import type { Geometry, LineString, MultiLineString, MultiPolygon, Point, Polygon } from 'geojson';
 

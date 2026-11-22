@@ -4,8 +4,8 @@ Thanks for your interest! The project is in its first beta; contributions are by
 
 ## Getting started
 
-1. Read the package READMEs, the encrypted format in [docs/format/](docs/format/) and the threat models
-   (`packages/*/THREATS.md`): together they describe what the app promises and how.
+1. Read the [specification](docs/SPEC.md): it is the source of truth. [docs/spec-coverage.md](docs/spec-coverage.md)
+   says what is implemented and what is not.
 2. Pick a task in [docs/TASKS.md](docs/TASKS.md) or in the issues (`T-xxx` in the title) that is "to do" and whose
    dependencies are done.
 3. Comment on the issue to claim it, so nobody works on the same thing twice.
@@ -89,8 +89,8 @@ Android and iOS JavaScript bundles, the fixture web export and the end-to-end te
 
 - **One branch per task**, named `t-xxx-short-description`.
 - **Tests are the contract**: new behavior comes with tests, and a PR is merged only when CI is green.
-- **Discuss first**: any change of behavior or format is discussed in an issue before it is coded, and the docs
-  that describe it (`docs/format/`, the package README and THREATS) change in the same PR.
+- **Spec first**: any change of behavior or format goes through a PR on `docs/SPEC.md`, discussed before it is
+  coded.
 - **The encrypted format is frozen.** `packages/crypto` implements format v4, frozen after five reviews
   (`docs/format/`, `docs/reviews/`). Do not change its byte layouts, JSON shapes, checks, primitives or their order,
   and do not regenerate the vectors to make a test pass. A real format change needs a spec PR, a new format version
@@ -110,7 +110,7 @@ Android and iOS JavaScript bundles, the fixture web export and the end-to-end te
 2. Keep the PR to one task; reference its issue (`Closes #n`).
 3. Run the type-check and tests of every package you touched (and the e2e suite if you changed the app).
 4. Fill in the PR template: what it does, how it was tested, what is left open.
-5. Update the docs that describe what you changed (the package README, `docs/format/`, THREATS,
+5. Update the docs that describe what you changed (the package README, `docs/SPEC.md`, `docs/spec-coverage.md`,
    `CHANGELOG.md` under "Unreleased").
 6. A maintainer reviews; sensitive areas also need the independent review above. PRs are merged once CI is green and
    the review comments are resolved.

@@ -106,7 +106,7 @@ Caveats:
   browser on the web test build (`npx expo start --web`).
 - Report anything odd: this is the first time the native app runs on a device.
 
-## Known gaps on phones
+## Known gaps on phones (see docs/spec-coverage.md)
 
 S3 storage, SFTP and the Nextcloud browser login are not ready on phones yet;
 "offline" detection, database encryption and the map at 10,000 pins are being
