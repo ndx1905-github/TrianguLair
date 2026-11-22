@@ -47,7 +47,7 @@ export interface WipeHooks {
 }
 
 export interface SyncEngineOptions
-  extends Pick<OwnSyncOptions, 'capacity' | 'maxOwnDeltas' | 'blur' | 'author' | 'onSharingKey' | 'newId' | 'random' | 'fullCheckMs' | 'move'> {
+  extends Pick<OwnSyncOptions, 'capacity' | 'maxOwnDeltas' | 'blur' | 'author' | 'onSharingKey' | 'newId' | 'random' | 'fullCheckMs' | 'raceCheckMs' | 'move'> {
   store: DataStore;
   state: SyncStateStore;
   /** My current sharing key (friends wrap their packs to it), with its certificate and the vault data key. */
@@ -140,7 +140,7 @@ export class SyncEngine {
             book: this.book,
             saveBook,
             media,
-            ...pick(o, ['capacity', 'maxOwnDeltas', 'blur', 'author', 'onSharingKey', 'newId', 'random', 'fullCheckMs', 'concurrency', 'now', 'limits', 'move']),
+            ...pick(o, ['capacity', 'maxOwnDeltas', 'blur', 'author', 'onSharingKey', 'newId', 'random', 'fullCheckMs', 'raceCheckMs', 'concurrency', 'now', 'limits', 'move']),
           })
         : null;
     this.reader = new FriendReader({

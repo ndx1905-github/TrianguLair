@@ -106,12 +106,45 @@ ETags, emulated conditions on SFTP), so a publication counts only if the storage
 otherwise the pass pulls again (merging the other device's document), and republishes (up to 5 attempts). Right before
 the index write, the index on the storage is downloaded and compared with the one the attempt is based on (servers
 with coarse ETags, Nextcloud and WsgiDAV, can show another device's index under the same ETag), and a retry always
-downloads the index in full. A lost race that still goes unnoticed (both devices read back their own index, then
-one overwrote the other in the window after the check) shows up as a fork at the other device, which republishes
-its whole document from its local state; files superseded meanwhile can give friends a 404 until then (they keep
-their cache). Files that a publication superseded, and the files of our lost attempts, are
+downloads the index in full. Files that a publication superseded, and the files of our lost attempts, are
 deleted only after a successful publication; other unlisted files are left alone (they may be another device's
 upload in progress).
+
+**Concurrent writers on servers without atomic compare-and-swap** (WsgiDAV and SFTP: conditions emulated with a
+HEAD before the PUT; Nextcloud and WsgiDAV: ETags of whole seconds + size, so another device's index written in the
+same second with the same size carries our ETag). Two of my devices publishing at once can both pass every check
+and both read back their own index, while the later PUT replaced the earlier index: a lost update that no read-back
+can see, because the other device's check was made before our PUT and its PUT lands after our last read. What the
+engine does about it:
+
+- Without native conditional writes (`capabilities.conditionalWrites === false`), the index is read once more after
+  a short random delay (`raceCheckMs`, default 500 ms: between 250 and 500 ms) before the publication counts, and a
+  lost race is retried after a random pause, so that two devices do not retry in step. This catches the usual case,
+  where the other device's PUT lands within a request or two, in the same pass. Servers with native conditions
+  (Nextcloud, Apache, S3) pay nothing for it.
+- After a publication, the next pull downloads the index in full once, even if its ETag is unchanged (a coarse
+  ETag would hide the other index until the next full check, 10 minutes later). It costs one GET instead of one
+  HEAD on the pass after a publication, on every server.
+- The overwritten device finds a **fork** there: another index with the `seq` of its anchor. When it is signed under
+  my current sharing certificate by a device the certificate does not revoke, it is exactly as trusted as the next
+  index that device would publish, so it is **merged** (its own-document changes imported) and built upon; the
+  device then republishes with both devices' changes. (Before, the fork was never imported: the device republished
+  its local state only and deleted the other device's changes from the storage, which came back only when that
+  device published again; a, a2, a did not converge when a2's index was the lost one.) A fork under another
+  certificate of my rotation is still never imported.
+- Files of **my document** (snapshot and deltas, sealed to my key only) that a publication supersedes are deleted
+  by the next publication, not right away: the other device's index, built on the same base, may replace ours after
+  every check and still list them, and the storage alone must always hold my whole document. Keeping them one more
+  publication shows nothing to anyone. Friends' packs, lists packs and photos are deleted right away (a photo is
+  re-sealed when someone loses access), so a friend may get a 404 on a superseded pack until the next pass (they
+  keep their cache); a listed pack found missing is rewritten by the next publication.
+
+So convergence takes at most **one more pass of each device**, started by the next normal sync (the scheduler's, or
+the next foreground), never by the user: the overwritten device merges at its next pass, the other one imports the
+result at its own. Nothing is lost on the way: each device keeps its changes locally until a publication that lists
+them is on the storage, and the storage never lists a missing file of my document. The window cannot be closed
+on the client side: only an atomic server (Nextcloud, if its file locking holds under concurrency, T-202) or a
+format change could.
 
 Incremental publication: only packs whose content changed are rewritten; a new place goes into the least filled
 pack of its group; two packs below a quarter of the capacity in a group are merged; when exactly one existing pack
@@ -119,8 +152,8 @@ would be replaced, one unchanged pack is rewritten too (spec: "blurs by grouping
 of 10,000 uploads 3 files (29 KB): its pack, one blurred pack and the document delta.
 
 Own devices: an index of mine is trusted only at or after my anchor and under my current sharing certificate
-(not an older rotation, not signed by a device it revokes); a rolled-back, forked or older-rotation index is never
-imported: my device republishes everything from its local state above the anchor and deletes the files it listed.
+(not an older rotation, not signed by a device it revokes); a fork of my anchor that meets the same rules is merged
+(above); a rolled-back, other-certificate fork or older-rotation index is never imported: my device republishes everything from its local state above the anchor and deletes the files it listed.
 A device without a local anchor (restored from the recovery kit) takes the anchor recorded in the vault. Then each
 pass imports the own-document files it has not seen (Yjs updates commute) and compares the local
 document with the snapshot of what the storage holds (`isAt`); if it differs, it publishes a delta
@@ -383,7 +416,7 @@ needed pack was fetched and verified: otherwise the last valid content stays. Th
 | Credentials rejected | `auth` | `blocked`: writes stop (queue kept) until `resume()`; friends are still refreshed on launch, foreground and pull to refresh (`publish: false`) |
 | Quota full (507/413) | `quota` | retried, nothing lost; photos wait and the text is published (`report.own.photos`); `OwnSync.spaceUsed()` gives the bytes by content type for the app's suggestions |
 | Interrupted write | — | packs first, index last; the packs of an attempt are recorded as garbage before they are written (deleted later if the index never lists them); a listed pack found missing (checked by listing at the first pull and every full check) is rewritten from local state |
-| Two of my devices write at the same time | `conflict` | If-Match + read-back, pull, merge, republish |
+| Two of my devices write at the same time | `conflict` | If-Match + read-back (once more after a short delay without native conditions), pull, merge, republish; a lost update no check sees is merged as a fork at the overwritten device's next pass |
 | A friend's storage unreachable | `unreachable` | their cache stays; `lastSuccess(owner)` for "Updated 12 days ago" |
 | A friend changes storage | (`movedTo`) | redirect followed to the certified address only |
 | Tampered content | `tampered` / `rollback` | rejected, last valid version kept |
@@ -404,6 +437,11 @@ Every row of the spec's table, with the app's side (messages, the 3-month offer,
   private remove); revocation (re-encrypted packs, old files deleted, other friends unaffected); a friend limited
   to one list; removing a friend; two own devices converging (concurrent edits on one save, a deletion, contacts
   through the vault, nothing republished when idle); own-document compaction.
+- `races.test.ts`: two of my devices publishing at once on a **coarse-ETag server with emulated conditions**
+  (WsgiDAV), each step interleaved deterministically (index read, content check, emulated If-Match then PUT,
+  read-back, garbage deletion), either device late, with and without the ETag shortcut: no save lost, the storage
+  never lists a missing file of my document, convergence by a, a2, a; the lost update that every read-back misses
+  (merged as a fork at the next pass); an overwrite right after the read-back caught in the same pass.
 - `adversarial.test.ts`: concurrent publishers on an atomic and on a **non-atomic** server (both changes land, a
   fresh device restores everything, no listed file missing); a lost race retried after merging; **coarse ETags**
   (a same-ETag change is caught by the periodic full read); **rollback** of the index refused by friends and

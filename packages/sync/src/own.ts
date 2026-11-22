@@ -21,16 +21,22 @@
  * my other devices too), packs, public file, a content check of the index
  * (coarse-ETag servers), the index (with If-Match), then the index is read
  * back: storage compare-and-swap is best effort on some servers (T-202), so
- * the publication counts only if the storage now holds our exact index;
- * otherwise we pull (a full GET), merge and publish again. Unused files are
- * deleted only after a successful publication.
+ * the publication counts only if the storage now holds our exact index
+ * (without native conditional writes: read once more after a short random
+ * delay); otherwise we pull (a full GET), merge and publish again. Unused
+ * files are deleted only after a successful publication, my document's own
+ * files one publication later (another device's index may still list them).
+ * A lost update no check can see (the other device's PUT lands after all of
+ * them) shows up as a fork at the overwritten device's next pass, which reads
+ * the index in full after a publication: it merges the fork and republishes.
  *
  * Trust in my own index (T-204 review R-01): an index of mine is imported
  * (its own-document updates merged, its packs reused) only when it is at or
  * after my anchor and under my current sharing certificate (not an older
- * rotation, not signed by a device my certificate revokes). A rolled-back,
- * forked or older-rotation index only triggers a republication from the local
- * state; nothing it lists is fetched. The anchor is local, or, on a device
+ * rotation, not signed by a device my certificate revokes). A fork of my
+ * anchor (same seq) meeting the same rules is merged too. A rolled-back,
+ * untrusted fork or older-rotation index only triggers a republication from
+ * the local state; nothing it lists is fetched. The anchor is local, or, on a device
  * that has none yet (restored from the recovery kit), the one recorded in the
  * vault (sealed with the current vault data key, which a revoked device does
  * not have); the certificate rule holds without any anchor.
@@ -133,6 +139,12 @@ interface IndexState {
   text: string;
   etag: string | null;
   checkedAt: number;
+  /**
+   * Set by a publication: the next pull downloads the index even if its ETag is unchanged. On a
+   * coarse-ETag server another device's index written in the same second with the same size has
+   * our ETag, and a lost update would stay hidden until the next full check.
+   */
+  recheck?: boolean;
 }
 
 /** A vault data key this device used before a rotation (R-10), with the revocations known then. */
@@ -172,6 +184,13 @@ export interface OwnSyncOptions {
   blur?: boolean;
   /** Re-read the index even when its ETag is unchanged after this long (coarse ETags; default 10 min). */
   fullCheckMs?: number;
+  /**
+   * Storage without native conditional writes (`capabilities.conditionalWrites === false`: WsgiDAV,
+   * SFTP; emulated HEAD + PUT): after the read-back, wait about this long (randomised between half and
+   * all of it), then read the index once more before the publication counts; also the upper bound of
+   * the random pause before retrying a lost race on such a storage. 0 turns both off. Default 500 ms.
+   */
+  raceCheckMs?: number;
   /** Author name written in the public lists file. */
   author?: string;
   /** Called when this device adopts a new sharing key (persist it in the system vault). */
@@ -230,8 +249,16 @@ export interface PullResult {
    * device my certificate revokes: nothing it lists was imported; republished from the local state.
    */
   rolledBack: boolean;
-  /** The storage holds another index with the seq we published (lost compare-and-swap). */
+  /**
+   * The storage holds another index with the seq we published that cannot be trusted as mine now
+   * (another certificate of my current rotation): not imported, republished from the local state.
+   */
   forked: boolean;
+  /**
+   * The storage holds another index with the seq we published, signed under my current certificate
+   * by a device it does not revoke (a lost update on a non-atomic server): merged and built upon.
+   */
+  forkMerged?: boolean;
   /** Own-document updates merged into the local store. */
   imported: number;
   /** Listed packs missing from the storage (healed by the next publication). */
@@ -261,6 +288,8 @@ const MANIFEST = 'manifest';
 
 /** My index on the storage is not even JSON (a truncated upload). */
 class DamagedIndex extends Error {}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function isJson(text: string): boolean {
   try {
@@ -327,6 +356,15 @@ export class OwnSync {
   private anchor(): IndexAnchor | undefined {
     return laterAnchor(this.st.get<IndexAnchor>('own:anchor'), this.book.ownAnchor());
   }
+  /** A fork of my anchor as trusted as a newer index would be: my current certificate, a signer it does not revoke. */
+  private mergeableFork(index: SignedIndex): boolean {
+    return (
+      index.sharing_cert.rotation === this.rot &&
+      index.sharing_cert.signature === this.sharing.cert.signature &&
+      !this.sharing.cert.revoked_devices.includes(index.device_cert.device)
+    );
+  }
+
   /** The last verified index of mine on the storage (null before the first publication). */
   get index(): SignedIndex | null {
     return this.current?.rolledBack || this.current?.forked ? null : (this.current?.index ?? null);
@@ -366,7 +404,7 @@ export class OwnSync {
     let text: string;
     let etag: string;
     try {
-      const f = await fetchSnapshot(this.storage, fresh && prev.etag ? prev.etag : null, { maxBytes: this.limits.indexBytes });
+      const f = await fetchSnapshot(this.storage, fresh && prev.etag && !prev.recheck ? prev.etag : null, { maxBytes: this.limits.indexBytes });
       if (!f.changed && prev) {
         text = prev.text;
         etag = f.etag;
@@ -406,13 +444,23 @@ export class OwnSync {
           index = null;
         } else if (e instanceof RollbackError) {
           // An older index of mine (a restored backup, a stale copy, an index of an older rotation
-          // signed by a device declared lost), or the loser of a non-atomic compare-and-swap (same
-          // seq): it only tells us to publish again above our anchor. Still check it is mine.
+          // signed by a device declared lost): it only tells us to publish again above our anchor.
+          // Still check it is mine.
           stale = e.fork ? 'forked' : 'rolledBack';
           try {
             index = verifyIndex(text, vo);
           } catch {
             index = null;
+          }
+          // A fork: another index with the seq of our anchor, the other side of a compare-and-swap the
+          // server did not make atomic (emulated HEAD + PUT, coarse ETags): both devices read back their
+          // own index, and the one that was overwritten finds the other here. Signed under my current
+          // certificate by a device it does not revoke, it is as trusted as the next index that device
+          // would publish: merge it and build on it. Republishing from the local state alone would
+          // delete the other device's changes from the storage until that device publishes again.
+          if (stale === 'forked' && index && this.mergeableFork(index)) {
+            stale = null;
+            res.forkMerged = true;
           }
         } else if (e instanceof SignatureError && e.code === 'REVOKED') {
           // Signed by a device my certificate (the one in that index) revokes: overwrite it.
@@ -705,6 +753,7 @@ export class OwnSync {
     await listsReady();
     let conflicts = 0;
     const orphans = new Set<string>(this.st.get<string[]>('own:garbage') ?? []);
+    const raceCheck = this.storage.capabilities.conditionalWrites ? 0 : Math.max(0, this.o.raceCheckMs ?? 500);
     for (let attempt = 1; attempt <= 5; attempt++) {
       // After a lost race, never trust an unchanged ETag (coarse ETags: the winner's index may have the same one).
       const pull = await this.pull({ full: attempt > 1 });
@@ -756,10 +805,19 @@ export class OwnSync {
           if (!cur || base === null || new TextDecoder().decode(cur.data) !== base) throw new PreconditionFailed(INDEX_PATH, { detail: 'index changed (content check)' });
         }
         await this.storage.put(INDEX_PATH, bytes, pull.etag ? { ifMatch: pull.etag, contentType: 'application/json' } : { ifNoneMatch: '*', contentType: 'application/json' });
-        const back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
+        let back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
         ok = !!back && bytesEqual(back.data, bytes);
+        if (ok && raceCheck > 0) {
+          // Emulated conditions (HEAD, then PUT): a device whose check passed before our PUT can still
+          // overwrite our index after our read-back. Most such writes land within a request or two;
+          // read once more before anything is committed or deleted.
+          await sleep(raceCheck * (0.5 + 0.5 * Math.random()));
+          back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
+          ok = !!back && bytesEqual(back.data, bytes);
+        }
         if (ok) {
-          this.st.set('own:index', { text, etag: back!.etag, checkedAt: this.nowMs() } satisfies IndexState);
+          // The next pull reads the index in full once (a later lost update may carry our ETag).
+          this.st.set('own:index', { text, etag: back!.etag, checkedAt: this.nowMs(), recheck: true } satisfies IndexState);
         }
       } catch (e) {
         if (!(e instanceof PreconditionFailed)) throw e;
@@ -769,9 +827,20 @@ export class OwnSync {
         conflicts++;
         for (const p of b.writes.keys()) orphans.add(p);
         this.st.set('own:garbage', [...orphans]);
+        // Two devices retrying in step would meet again: a random pause on non-atomic storages.
+        if (raceCheck > 0) await sleep(raceCheck * Math.random());
         continue;
       }
       // Committed.
+      // Files of my document listed by the index this attempt was built on, and by my previous
+      // publication, under my current key (after a rotation the old files go at once).
+      const before = this.packs();
+      const docFiles = (packs: readonly IndexPackEntry[], cache: Record<string, PackInfo>) => packs.filter((p) => cache[p.hash]?.k === 'own-doc').map((p) => p.file);
+      const lastDocs = this.st.get<{ rot: number; files: string[] }>('own:docs');
+      const priorDocs = new Set([
+        ...(pull.index?.sharing_cert.rotation === this.rot ? docFiles(pull.index.packs, before) : []),
+        ...(lastDocs?.rot === this.rot ? lastDocs.files : []),
+      ]);
       this.current = { text, index: b.index };
       const anchor = indexAnchor(b.index);
       this.st.set('own:anchor', anchor);
@@ -790,8 +859,15 @@ export class OwnSync {
       // Files of a stale index (a rolled-back copy, a fork, a revoked device's) are superseded too.
       const garbage = [...new Set([...b.drop, ...last, ...orphans, ...pull.staleFiles])].filter((f) => !listed.has(f));
       if (!b.index.public && pull.index?.public) garbage.push(PUBLIC_LISTS_PATH);
-      const left: string[] = [];
-      await mapLimit(garbage, this.o.concurrency ?? 6, async (f) => {
+      // Files of my document that this publication supersedes are deleted by the next one, not now:
+      // on a server without atomic compare-and-swap another device's index built on the same base can
+      // still replace ours after every check we can make, and it lists them (the storage alone must
+      // always hold my whole document). They are sealed to my key only, so keeping them one more
+      // publication shows nothing to anyone; everything else (friends' packs, photos re-sealed because
+      // someone lost access) is deleted at once.
+      const deferred = garbage.filter((f) => priorDocs.has(f));
+      const left: string[] = [...deferred];
+      await mapLimit(garbage.filter((f) => !priorDocs.has(f)), this.o.concurrency ?? 6, async (f) => {
         try {
           await this.storage.delete(f);
           report.filesDeleted++;
@@ -801,6 +877,7 @@ export class OwnSync {
       });
       this.st.set('own:garbage', left);
       this.st.set('own:published', [...listed]);
+      this.st.set('own:docs', { rot: this.rot, files: docFiles(b.index.packs, b.cache) });
       for (const f of listed) this.pendingPhotos.delete(f);
       for (const h of Object.keys(b.cache)) if (!b.index.packs.some((p) => p.hash === h)) this.st.delete(`own:doc:${h}`);
       await this.pushVault();

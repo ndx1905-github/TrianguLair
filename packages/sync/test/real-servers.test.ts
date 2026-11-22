@@ -99,10 +99,14 @@ if (ON) {
         // On failure, show which problem the losing device reported (intermittent on CI runners).
         expect(both.map((x) => x.problems)).toEqual([[], []]);
         expect(both.every((x) => x.ok)).toBe(true);
-        await a.engine.sync();
-        await a2.engine.sync();
-        await a.engine.sync();
+        // Bounded settle: one more pass of each device, then a. On WsgiDAV (emulated conditions, coarse
+        // ETags) both can read back their own index while one replaced the other, after every check
+        // (test/races.test.ts). The overwritten device merges the other index (a fork) at its next pass,
+        // and the other device imports the result at its own; whichever device was overwritten, a, a2, a
+        // is enough. More passes would hide a regression, so the bound is exact.
+        for (const d of [a, a2, a]) expect((await d.engine.sync()).problems).toEqual([]);
         expect(a2.store.repo.dumpOwnData()).toBe(a.store.repo.dumpOwnData());
+        expect(a2.store.repo.getMySaveForPlace('osm:node/200')).not.toBeNull();
         expect(a.store.repo.getMySaveForPlace('osm:node/300')).not.toBeNull();
         await bob.engine.sync();
         expect(friendSaves(bob, user.owner).size).toBe(52);

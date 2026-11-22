@@ -361,6 +361,9 @@ describe('R-08: lost races on coarse-ETag servers', () => {
     a.store.putSave({ place: point(1, 'base') });
     await a.engine.sync();
     await b.engine.sync();
+    // A pass without publication: the index read in full once after a's own publication is behind
+    // us, a's next pass trusts the unchanged ETag.
+    await a.engine.sync();
     b.store.putSave({ place: point(2, 'B') });
     expect((await b.engine.sync()).own!.published).toBe(true);
     a.store.putSave({ place: point(3, 'A') });
