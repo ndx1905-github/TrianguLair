@@ -8,7 +8,7 @@ import { loadFixtures } from './fixtures';
 const FIXTURES = loadFixtures();
 const client = () =>
   createOsmClient({
-    userAgent: 'TrianguLair-tests/0.0.1 (+https://github.com/triangulair/triangulair)',
+    userAgent: 'TrianguLair-tests/0.0.1 (+https://github.com/ndx1905-github/TrianguLair)',
     fetch: createFixtureFetch(FIXTURES, { delayMs: 0 }),
     platform: 'web',
     rateLimits: { overpass: { minIntervalMs: 0, maxConcurrent: 4 }, nominatim: { minIntervalMs: 0, maxConcurrent: 4 } },

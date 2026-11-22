@@ -62,7 +62,8 @@ export const MAX_PIN_BANDS = 3;
 
 /** Sent in the OSM services' User-Agent (their usage policies require a contact). */
 export const APP_VERSION = '0.0.1';
-export const APP_CONTACT_URL = 'https://github.com/triangulair/triangulair';
+export const APP_CONTACT_URL: string =
+  process.env.EXPO_PUBLIC_APP_CONTACT_URL ?? 'https://github.com/ndx1905-github/TrianguLair';
 
 /**
  * The guide to hosting the web version and allowing it on a storage (CORS), linked from the web

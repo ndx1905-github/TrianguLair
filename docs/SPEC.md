@@ -964,7 +964,7 @@ No automatic sending. In case of a problem, the user can share the local technic
 
 **One codebase, three targets**: the app is developed with Expo (React Native), which produces from the same code the iOS and Android apps and a web version. Only the map has two implementations, behind a common interface: native MapLibre on phones, MapLibre GL JS in the browser.
 
-**The web version is a full client, less protected than the phone apps** (decided for 0.9: the owner uses the iOS, Android and web apps interchangeably with the same identity):
+**The web version is a full client, less protected than the phone apps** (decided for 0.9: the iOS, Android and web apps can be used interchangeably with the same identity):
 
 - It is an installable, offline-capable web app (PWA), self-hosted as static files (docs/self-host-web.md); each release ships it as a zip.
 - Every screen says plainly what is weaker than on a phone: keys and the database live in the browser (keys wrapped with a non-extractable browser key, database not encrypted at rest), no Face ID or system keychain, and the browser may drop its data (deleting the Home Screen icon on iOS does). The recovery kit is the safety net, and the app lock with a code is offered.
