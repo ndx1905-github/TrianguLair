@@ -24,15 +24,15 @@
  * 3. **Public**: the plaintext `public/lists.geojson` (public-lists.ts).
  *
  * Why the key in the fragment never reaches a server: the part of a URL after `#` is not part of
- * the HTTP request target (RFC 3986 §3.5, RFC 9110 §7.1), so neither the `triangulair.app` web
+ * the HTTP request target (RFC 3986 §3.5, RFC 9110 §7.1), so neither the `example.org` web
  * server (when the app is not installed, the browser asks for `/l` only) nor any proxy sees it; on
  * a phone with the app, the system hands the whole URL to the app without any request (universal
  * links / app links). The app then reads only the author's storage (index and packs), whose host
- * never sees the link either. What must hold on our side: the `triangulair.app` site must never
+ * never sees the link either. What must hold on our side: the `example.org` site must never
  * send `location.hash` anywhere (the app's web export reads it on `/l`, by design, and removes it
  * from the address bar at once), and the app never logs links.
  *
- * Link bytes (version 1), then base64url after `https://triangulair.app/l#`:
+ * Link bytes (version 1), then base64url after `https://example.org/l#`:
  *
  *   0   1   version = 1
  *   1   1   kind: 1 = link-only, 2 = public
@@ -153,7 +153,7 @@ export function decodeListLink(b: Uint8Array): ListLink {
   return secret ? { kind: 'link', owner, location, secret } : { kind: 'public', owner, location, listId: listId! };
 }
 
-/** The base64url fragment of a list link (what follows `https://triangulair.app/l#`). */
+/** The base64url fragment of a list link (what follows `https://example.org/l#`). */
 export function listLinkFragment(l: ListLink): string {
   return toB64Url(encodeListLink(l));
 }

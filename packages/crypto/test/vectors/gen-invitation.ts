@@ -65,7 +65,7 @@ export function invitationLinkVectors(sh: Shared): VectorFile {
     ),
     full_link: LINK_PREFIX + f1,
   });
-  parse('link-full-url', 'The full https://triangulair.app/i#... link: everything after "#" is the fragment.', LINK_PREFIX + f1, 'ok');
+  parse('link-full-url', 'The full https://example.org/i#... link: everything after "#" is the fragment.', LINK_PREFIX + f1, 'ok');
   parse('link-expired', 'Reader clock = expires.', f1, 'EXPIRED', inv1.expires);
   parse('link-max-ahead', 'expires exactly 7 days + 5 minutes after the reader\'s clock.', L(linkBytes(ownerPk, inv1.seed, 0, secs(NOW) + 7 * 86400 + 300, addr)), 'ok');
   parse('link-too-far-ahead', 'expires 7 days + 5 minutes + 1 s after the reader\'s clock.', L(linkBytes(ownerPk, inv1.seed, 0, secs(NOW) + 7 * 86400 + 301, addr)), 'FORMAT');

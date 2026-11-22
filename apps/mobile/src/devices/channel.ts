@@ -7,11 +7,11 @@
  *     `transfer/<slot>.bin` on my storage the frozen TLTX blob (Argon2id from the code, 15-minute
  *     authenticated expiry) of an **invitation to enrol**: `{owner, location, slot, channel key}`,
  *     no secret of mine (no sharing key, no vault data key, no storage access);
- *   - the **device link** `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>` tells
+ *   - the **device link** `https://example.org/d#<b64url(1 | slot 16 B | read address)>` tells
  *     the new device where to fetch it anonymously; it holds no secret ("the link alone allows
  *     nothing");
  *   - the new device opens the blob with the 6 words and answers with a **request link**
- *     `https://triangulair.app/d#<b64url(2 | slot 16 B | sealed request)>`: its public device keys
+ *     `https://example.org/d#<b64url(2 | slot 16 B | sealed request)>`: its public device keys
  *     and name, sealed under the channel key; the user sends it back to the old device (the new
  *     device cannot write to my storage: the storage access is in the vault, not released yet);
  *   - the old device opens the request, shows the name and a 12-digit number of the new device key
@@ -34,8 +34,9 @@
  */
 import _sodium from 'libsodium-wrappers-sumo';
 import { checkLocation, formatKey, fromB64Url, parseKey, toB64Url, type DeviceCert } from '@triangulair/crypto';
+import { LINK_ORIGIN } from '../config';
 
-export const DEVICE_LINK_BASE = 'https://triangulair.app/d';
+export const DEVICE_LINK_BASE = `${LINK_ORIGIN}/d`;
 export const SLOT_BYTES = 16;
 export const OFFER_PREFIX = 'TLDA1:';
 export const REPLY_PREFIX = 'TLDB1:';
@@ -88,7 +89,7 @@ function linkBytes(kind: number, slot: string, rest: Uint8Array): string {
 }
 
 function linkPayload(text: string, kind: number): { slot: string; rest: Uint8Array } {
-  const m = /triangulair\.app\/d#([A-Za-z0-9_-]+)/.exec(text.trim());
+  const m = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?|triangulair:\/\/)\/d#([A-Za-z0-9_-]+)/.exec(text.trim());
   if (!m) throw new Error('bad-link');
   try {
     const b = fromB64Url(m[1], 'link');

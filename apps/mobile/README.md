@@ -126,7 +126,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   (`HomeConfirm`, review M-02).
 - **Sharing a list** (`/lists/share?id=`, "Share" on a list, T-211/T-212; logic in `@triangulair/sync`, see its
   README "Lists"): *link only*: "Create the link" makes the list's key (in my document, all my devices) and publishes
-  before showing `https://triangulair.app/l#…` with its QR code, share / copy; "New link" (confirmed: everyone with
+  before showing `https://example.org/l#…` with its QR code, share / copy; "New link" (confirmed: everyone with
   the old link loses it) and "Stop sharing by link"; *public*: the warning first (`PublicWarning.tsx`, with the places
   that look like a home: a dwelling category, no category, a point placed by hand, the sync package's
   `looksLikeHome`; on a filter list, confirming includes them), the places a public filter list took by itself but
@@ -322,10 +322,10 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
     that device id for good and cancels the open invitations). The transfer is cancelled when the screen closes, and
     its files are deleted at expiry by the controller anyway.
   - *App-level wrappers* (`channel.ts`, not crypto formats; the crypto package is unchanged). Link + code: the
-    **device link** `https://triangulair.app/d#<b64url(1 | slot 16 B | read address)>`; `transfer/<slot>.bin` = the
+    **device link** `https://example.org/d#<b64url(1 | slot 16 B | read address)>`; `transfer/<slot>.bin` = the
     frozen TLTX blob (Argon2id from the 6 words, 15-minute authenticated expiry) of an invitation to enrol `{owner,
     read address, slot, random channel key}` (no key of mine), fetched anonymously at the read address; the new
-    device answers with a **request link** `https://triangulair.app/d#<b64url(2 | slot | request)>` (its public keys
+    device answers with a **request link** `https://example.org/d#<b64url(2 | slot | request)>` (its public keys
     and name, XChaCha20-Poly1305 under the channel key), which the user sends back to the old device (the new device
     has no storage access yet); the old device drops `transfer/<slot>.ok` = {device cert, TLSK sealed to the new
     device} under the channel key; the new device deletes the files once it has them. QR: the new device shows
@@ -401,7 +401,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   - *Received*: the link (pasted, any text holding it, or the deep link: the fragment is removed from the address bar
     and passed in memory) is checked against the inviter's index read only at the link's address; I name the person
     (no format carries names: names are petnames kept on this device), see the safety code, optionally share back,
-    and get the return link (`https://triangulair.app/r#<b64url>`, app-level wrapper of the frozen bytes) with QR.
+    and get the return link (`https://example.org/r#<b64url>`, app-level wrapper of the frozen bytes) with QR.
     Their places show right away with the invitation key (kept in the secret store, `invitations-received`;
     `invitationKeysFor(owner)` gives the SyncProvider the extra keys to read with until acceptance).
   - *First launch "I received an invitation link"*: checks the link before any identity exists (`verify.ts`), keeps it
@@ -415,7 +415,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   - *Follow a list by link*: see "Following a list by link" above (T-212).
   - New native module: `expo-camera` on iOS and web (camera permission text in `app.json`; not linked on Android, see
     "Android without Google Play services" below); `app.json` also declares the
-    `applinks:triangulair.app` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
+    `applinks:example.org` associated domain and Android intent filters for `/i` and `/r` (the site must serve the
     matching `apple-app-site-association` and `assetlinks.json`).
 - **Lists on the place card** (`components/ListsSection.tsx`): every list with a tick; manual lists are
   toggled, filter lists say why the place is in or out ("Does not match: tags") with "Add by hand",

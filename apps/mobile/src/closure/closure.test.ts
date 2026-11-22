@@ -90,7 +90,7 @@ describe('closed-place check against the fixtures (run.ts)', () => {
     const store = DataStore.open({ driver: new SqlJsDriver(new SQL.Database()), meId: 'ed25519:test-owner', actor: 'bb'.repeat(16), newId: () => `id${++n}` });
     seedDemoData(store, { tagName: (id) => TAGS[id].label, fixtures: true, now: NOW.getTime() });
     const osm = createOsmClient({
-      userAgent: 'TrianguLair-tests/0.0.1 (+https://github.com/triangulair/triangulair)',
+      userAgent: 'TrianguLair-tests/0.0.1 (+https://github.com/ndx1905-github/TrianguLair)',
       fetch: createFixtureFetch(loadFixtures(), { delayMs: 0 }),
       platform: 'web',
       rateLimits: { overpass: { minIntervalMs: 0, maxConcurrent: 4 }, osmApi: { minIntervalMs: 0, maxConcurrent: 4 } },

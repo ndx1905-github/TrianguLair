@@ -149,7 +149,7 @@ describe('invitation by link and return link', () => {
     expect(opened.safety).toEqual(alice.svc.safetyCode(bob.owner));
     expect(opened.safety).toHaveLength(12);
     const { link: returnLink } = await bob.svc.answerInvitation(opened.token, { name: 'Alice', shareBack: true });
-    expect(returnLink.startsWith('https://triangulair.app/r#')).toBe(true);
+    expect(returnLink.startsWith('https://example.org/r#')).toBe(true);
     // Her shared place is visible right away (invitation key); the private one never.
     expect(friendPlaces(bob, alice.owner)).toEqual(['osm:node/1']);
     expect(bob.svc.contacts()).toMatchObject([{ owner: alice.owner, name: 'Alice', follow: true, share: { kind: 'all' }, verified: false, checkable: true }]);
@@ -299,7 +299,7 @@ describe('invitation by link and return link', () => {
     const f = findLink(inv.link)!.fragment;
     const bytes = Uint8Array.from(atob(f.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (f.length % 4)) % 4)), (c) => c.charCodeAt(0));
     bytes[57] = bytes[57]! ^ 1;
-    expect(await problemOf(bob.svc.openInvitation(`https://triangulair.app/i#${toB64Url(bytes)}`))).toBe('no-longer-works');
+    expect(await problemOf(bob.svc.openInvitation(`https://example.org/i#${toB64Url(bytes)}`))).toBe('no-longer-works');
     // An answer to someone else's invitation.
     const carol = await user(w, 'carol');
     await carol.engine.sync();

@@ -10,7 +10,7 @@
       "bundleIdentifier": "org.triangulair.app",
       "supportsTablet": true,
       "associatedDomains": [
-        "applinks:triangulair.app"
+        "applinks:example.org"
       ]
     },
     "android": {
@@ -23,17 +23,17 @@
           "data": [
             {
               "scheme": "https",
-              "host": "triangulair.app",
+              "host": "example.org",
               "path": "/i"
             },
             {
               "scheme": "https",
-              "host": "triangulair.app",
+              "host": "example.org",
               "path": "/r"
             },
             {
               "scheme": "https",
-              "host": "triangulair.app",
+              "host": "example.org",
               "path": "/l"
             }
           ],

@@ -154,7 +154,7 @@ friends share a pack with them. Wraps stay anonymous (crypto).
 - **My vault and followed lists**: the vault holds the link (and so the key) of every list I follow; an unfollowed
   list keeps only its id and the time (L-02), and the entry goes after 180 days. Whoever opens my vault (recovery
   phrase, an unlocked stolen device) learns the lists I follow now, not the ones I followed before.
-- **The fragment** never reaches a server (RFC 3986 §3.5): the `triangulair.app` site must never send
+- **The fragment** never reaches a server (RFC 3986 §3.5): the `example.org` site must never send
   `location.hash` anywhere (the app's own web export reads it on `/l` by design and removes it from the address bar
   at once; Info 4), links are never logged.
 - **Replay to a new holder** (Info 5): indexes do not expire, so a storage host that kept an old index and its old

@@ -152,7 +152,7 @@ test('works under a sub-path: routes, deep links, assets and the map worker', as
   const fragment = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA';
   await page.goto(`${autostart(`${BASE}/l`)}#${fragment}`);
   await expect(page.getByTestId('follow-list-screen')).toBeVisible();
-  await expect(page.getByTestId('follow-input')).toHaveValue(`https://triangulair.app/l#${fragment}`);
+  await expect(page.getByTestId('follow-input')).toHaveValue(`https://example.org/l#${fragment}`);
   expect(new URL(page.url()).pathname).toBe(`${BASE}/lists/follow`);
   expect(page.url()).not.toContain(fragment);
 

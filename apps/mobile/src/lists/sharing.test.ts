@@ -9,10 +9,10 @@ const placeRec = (p: Partial<PlaceRecord>): PlaceRecord => ({ id: 'osm:node/1', 
 describe('list links', () => {
   it('builds and finds list links in any text', () => {
     const l = buildListLink('AQEabc_-');
-    expect(l).toBe('https://triangulair.app/l#AQEabc_-');
+    expect(l).toBe('https://example.org/l#AQEabc_-');
     expect(listFragmentOf(`Look: ${l} (my brunch list)`)).toBe('AQEabc_-');
     expect(listFragmentOf('triangulair://l#AQEabc')).toBe('AQEabc');
-    expect(listFragmentOf('https://triangulair.app/i#AQEabc')).toBeNull(); // an invitation
+    expect(listFragmentOf('https://example.org/i#AQEabc')).toBeNull(); // an invitation
     expect(listFragmentOf('nothing')).toBeNull();
     expect(() => buildListLink('a b')).toThrow();
   });

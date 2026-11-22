@@ -301,7 +301,7 @@ devices in three ways:
   my Yjs document, so all my devices publish the same packs). The list pack (definition and places, public comments
   only: a link can be forwarded) is sealed with the frozen `sealPack` to my sharing key and the list's public key, a
   plain direct recipient (never a group: re-sealing really cuts it), and listed in my signed index. The link
-  `https://triangulair.app/l#<b64url>` carries version, kind, my master key, the list secret and my read address
+  `https://example.org/l#<b64url>` carries version, kind, my master key, the list secret and my read address
   (`encodeListLink`, about 170 characters for a typical address). Whoever holds it reads my index at that address
   (verified for that master key; a signed redirect is followed once, only to the address it certifies; then never
   older than the last index accepted for this list), tries my `packs/` with the list key only, and checks every pack
@@ -316,7 +316,7 @@ devices in three ways:
   instead of a key): the file is checked against the hash in the verified index, filtered by list id.
 
 **Why the key never reaches a server**: the fragment (after `#`) is not part of an HTTP request (RFC 3986 §3.5,
-RFC 9110 §7.1): the `triangulair.app` site gets `/l` only when the app is missing, and a phone with the app hands the
+RFC 9110 §7.1): the `example.org` site gets `/l` only when the app is missing, and a phone with the app hands the
 whole URL to it without a request. The reader then contacts only my storage (index, packs), never with the link. What
 must hold: the site never sends `location.hash` anywhere (the app's web export reads it on its `/l` route, by design,
 and removes it from the address bar at once), links are

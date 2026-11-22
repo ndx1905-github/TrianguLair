@@ -9,7 +9,7 @@ import { HttpClient, type HttpClientOptions } from '../../src/http/client.ts';
 import type { Clock } from '../../src/http/limiter.ts';
 import type { FetchLike } from '../../src/types.ts';
 
-export const TEST_UA = 'TrianguLair-tests/0.0.1 (+https://github.com/triangulair/triangulair)';
+export const TEST_UA = 'TrianguLair-tests/0.0.1 (+https://github.com/ndx1905-github/TrianguLair)';
 
 export function fixture(name: string): string {
   return readFileSync(fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url)), 'utf8');

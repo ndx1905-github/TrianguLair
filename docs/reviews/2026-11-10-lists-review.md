@@ -2,7 +2,7 @@
 
 Independent security and correctness review of `git diff origin/main...origin/t-211-shared-lists` (head `f6cab4f`):
 link-only lists (per-list X25519 key in `linkKey`, lists packs sealed with the frozen `sealPack`, links
-`https://triangulair.app/l#…`), lists shared with friends ("some lists" and "pick who"), the public lists file and
+`https://example.org/l#…`), lists shared with friends ("some lists" and "pick who"), the public lists file and
 the uMap link, following lists by link (vault records, tombstones, "new link" rotation) and the app screens.
 
 Read: packages/sync README and THREATS (new sections), packages/crypto README and THREATS, docs/format/*.md,
@@ -167,7 +167,7 @@ Fix:
    all key handling in the audited package.
 3. Android app links: `pathPrefix "/l"` (`app.json:37`) also catches `/lists`, `/legal`, `/login` and so on. The
    same holds for `/i` and `/r`. Prefer `"path": "/l"` (or `pathPattern`).
-4. README/THREATS say "the `triangulair.app` site must not read `location.hash`". If the Expo web export is served
+4. README/THREATS say "the `example.org` site must not read `location.hash`". If the Expo web export is served
    from that origin, its `/l` route reads the hash by design (`l.tsx:19`) and then removes it, which the e2e test
    checks at `lists-sharing.spec.ts:195`. Say "must never send it anywhere" to match the code.
 5. A storage host that kept an old index and old pack files can replay them to someone holding an old link who

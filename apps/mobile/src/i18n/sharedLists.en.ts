@@ -77,7 +77,7 @@ export const sharedListsEn: Messages = {
   'follow.already': 'You already follow this list.',
   'follow.see': 'See the list',
   'follow.privacy': 'Following asks nothing of the author: your app reads the list where it is published. They do not know who follows it; their storage host sees your IP address, as for any web page.',
-  'follow.problem.not-a-list': 'This is not a list link. A list link starts with https://triangulair.app/l#',
+  'follow.problem.not-a-list': 'This is not a list link. A list link starts with https://example.org/l#',
   'follow.problem.mine': 'This list is yours: it is in My lists.',
   'follow.problem.unreachable': 'The list could not be read right now (no network, or the author’s storage did not answer). Try again later.',
   'follow.problem.not-followed': 'The list could not be read just now, so it is not followed. Check your connection and tap “Follow this list” again.',

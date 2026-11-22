@@ -27,7 +27,7 @@ requirement on it. Section names are those of SPEC.md.
 
 | # | Promise | Enforced by | Relies on (app) | Vectors |
 |---|---|---|---|---|
-| I1 | The link is short (about 150 characters) and carries only key, address, secret, rotation, expiry | link v5 layout (invitation-link.md §1); 750-character bound | the `https://triangulair.app/i#` prefix | `invitation-link/link-ok` |
+| I1 | The link is short (about 150 characters) and carries only key, address, secret, rotation, expiry | link v5 layout (invitation-link.md §1); 750-character bound | the `https://example.org/i#` prefix | `invitation-link/link-ok` |
 | I2 | "My device publishes an index that lists the invitation … this listing … is what proves the link comes from me" | `checkInvitationIndex` step 7 (NOT_LISTED); only a non-revoked device's index verifies (`verifyIndex` step 11, REVOKED) | publishing the listing index **before** sending the link | `invitation-link/accept-ok`, `accept-not-listed`, `accept-revoked-device-index` |
 | I3 | Every field of the link is covered by the listed hash: "a forged link … is therefore refused, not redirected" | token v2 (invitation-link.md §3) | — | `accept-tampered-expiry`, `accept-tampered-seed`, `accept-rewritten-address-followed` |
 | I4 | "The device that creates an invitation also signs its record … my other devices list only invitations really created by one of my devices that is not declared lost; an invitation lasts at most 7 days" | `checkOwnerInvitation` (SIGNATURE, FORMAT); `listable` → `"invalid"`, `"revoked"` | passing every vault record to `signIndex` | `invitation-record/status-*`, `vault/vault-invitation-*` |

@@ -3,7 +3,7 @@
  * app", "Encrypted sharing"):
  *
  * - **Link only**: "Create the link" makes the list's key and publishes (the link works the moment
- *   it is handed out), then the link `https://triangulair.app/l#…` (the key is after the `#`,
+ *   it is handed out), then the link `https://example.org/l#…` (the key is after the `#`,
  *   never sent to a server), its QR code, share / copy; "New link" cuts everyone who has the old
  *   one; "Stop sharing by link".
  * - **Public**: a warning first (anyone can read it, the author is responsible, places that look

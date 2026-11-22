@@ -167,7 +167,7 @@ export function makeIndex(o: IndexSpec): string {
 // Binary structures
 // ---------------------------------------------------------------------------------------------
 
-export const LINK_PREFIX = 'https://triangulair.app/i#';
+export const LINK_PREFIX = 'https://example.org/i#';
 
 export function linkBytes(ownerPk: Uint8Array, seed: Uint8Array, rotation: number, expiresS: number, address: string, version = 5, magic = 0x49): Uint8Array {
   return concat(Uint8Array.of(magic, version), ownerPk, seed, u32be(rotation), u32be(expiresS), utf8(address));

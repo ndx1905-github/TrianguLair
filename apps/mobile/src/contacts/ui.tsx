@@ -103,7 +103,7 @@ export function PasteField({
       <TextInput
         value={value}
         onChangeText={onChange}
-        placeholder="https://triangulair.app/…"
+        placeholder="https://example.org/…"
         placeholderTextColor={c.textMuted}
         autoCapitalize="none"
         autoCorrect={false}

@@ -345,7 +345,7 @@ describe('invitations', () => {
     const { invitation, fragment } = createInvitation(alice.signer, alice.user.sharing.cert);
     alice.engine.addInvitation(invitation);
     await alice.engine.sync(); // publish the index that lists it BEFORE sending the link
-    const received = parseInvitationLink(`https://triangulair.app/i#${fragment}`);
+    const received = parseInvitationLink(`https://example.org/i#${fragment}`);
     const carol = addDevice(w, makeUser(w, 'carol'));
     const r = await carol.engine.reader.read({ owner: received.owner, location: received.location, extraKeys: [received.keyPair] });
     expect(r.status).toBe('updated');
