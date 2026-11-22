@@ -135,7 +135,7 @@ async function invite(page: Page, forWhom: string): Promise<string> {
   await page.getByTestId('invite-create').click();
   await expect(page.getByTestId('invite-ready')).toBeVisible({ timeout: 30_000 });
   const link = (await page.getByTestId('invite-link').textContent())!;
-  expect(link).toMatch(/^https:\/\/triangulair\.app\/i#[A-Za-z0-9_-]+$/);
+  expect(link).toMatch(/^https:\/\/example\.org\/i#[A-Za-z0-9_-]+$/);
   expect(link.length).toBeLessThanOrEqual(200);
   // The QR code stays small (version ≤ 10).
   expect(Number(await page.getByTestId('invite-qr').getAttribute('data-qr-version'))).toBeLessThanOrEqual(10);
@@ -168,12 +168,12 @@ test.describe('without a storage', () => {
     await page.getByTestId('answer-input').fill('hello');
     await page.getByTestId('answer-open').click();
     await expect(page.getByTestId('answer-problem')).toContainText('not a complete TrianguLair link');
-    await page.getByTestId('answer-input').fill('https://triangulair.app/i#SQUAAAAA');
+    await page.getByTestId('answer-input').fill('https://example.org/i#SQUAAAAA');
     await page.getByTestId('answer-open').click();
     await expect(page.getByTestId('answer-problem')).toContainText('another kind of link');
 
     await page.goto('/invite/received');
-    await page.getByTestId('received-input').fill('https://triangulair.app/i#SQU');
+    await page.getByTestId('received-input').fill('https://example.org/i#SQU');
     await page.getByTestId('received-open').click();
     await expect(page.getByTestId('received-problem')).toContainText('not a complete');
     await expect(page.getByTestId('received-problem')).toContainText('Ask for a new link');
@@ -183,7 +183,7 @@ test.describe('without a storage', () => {
     await page.getByTestId('contacts-follow-list').click();
     await expect(page.getByTestId('follow-list-screen')).toBeVisible();
     // An invitation pasted where a list link goes is refused in plain words (T-212).
-    await page.getByTestId('follow-input').fill('https://triangulair.app/i#SQU');
+    await page.getByTestId('follow-input').fill('https://example.org/i#SQU');
     await page.getByTestId('follow-open').click();
     await expect(page.getByTestId('follow-problem-not-a-list')).toBeVisible();
 
@@ -196,7 +196,7 @@ test.describe('without a storage', () => {
   test('first launch: "I received an invitation link" refuses a broken link', async ({ browser }) => {
     const a = await person(browser);
     await a.page.goto('/welcome/invitation');
-    await a.page.getByTestId('welcome-invite-input').fill('https://triangulair.app/i#SQU');
+    await a.page.getByTestId('welcome-invite-input').fill('https://example.org/i#SQU');
     await a.page.getByTestId('welcome-invite-open').click();
     await expect(a.page.getByTestId('welcome-invite-problem')).toBeVisible();
     await expect(a.page.getByTestId('invite-continue')).toHaveCount(0);
@@ -233,7 +233,7 @@ test.describe('between people', () => {
     await expect(bob.page.getByTestId('received-answered')).toBeVisible({ timeout: 30_000 });
     await shot(bob.page, 'phone-received-answer');
     const returnLink = (await bob.page.getByTestId('received-return-link').textContent())!;
-    expect(returnLink).toMatch(/^https:\/\/triangulair\.app\/r#/);
+    expect(returnLink).toMatch(/^https:\/\/example\.org\/r#/);
 
     // Alice pastes it: one answer, Bob has no storage so it cannot be checked; same code as Bob's.
     await alice.page.goto('/invite');
@@ -314,7 +314,7 @@ test.describe('between people', () => {
     const bytes = Buffer.from(f, 'base64url');
     bytes[57] = bytes[57]! ^ 1;
     await eve.page.goto('/invite/received');
-    await eve.page.getByTestId('received-input').fill(`https://triangulair.app/i#${bytes.toString('base64url')}`);
+    await eve.page.getByTestId('received-input').fill(`https://example.org/i#${bytes.toString('base64url')}`);
     await eve.page.getByTestId('received-open').click();
     await expect(eve.page.getByTestId('received-problem')).toContainText('This link no longer works', { timeout: 30_000 });
     await shot(eve.page, 'phone-received-problem');

@@ -76,7 +76,7 @@ export { INVITATION_MAX_TTL_MS } from './invitation-listing';
  *   54   4   expires, unix seconds (at most 7 days + 5 min after the reader's clock)
  *   58   ..  read address without its "https://" prefix (UTF-8, 1..504 bytes; checkLocation)
  * The token listed in the index binds every field, the address included (invitation-listing.ts).
- * 58 + (address length - 8) bytes: 146 characters with "https://triangulair.app/i#" and a 40-character
+ * 58 + (address length - 8) bytes: 142 characters with "https://example.org/i#" and a 40-character
  * address, 200 characters with an 80-character address. No certificate, no revocation list.
  *
  * Compact sharing certificate (in return links), big-endian:
@@ -236,7 +236,7 @@ function linkFragment(inv: OwnerInvitation, ownerPublicKey: Uint8Array): string 
  * and signs the invitation (the signature and its device certificate go into the vault record, so
  * that any device can check who created it before listing it: V4-01). Publish an index with
  * signIndex({ invitations: [..., invitation], vaultDataKey }) BEFORE sending the link: until then
- * the invitee refuses it. Returns the link fragment (put it after "https://triangulair.app/i#").
+ * the invitee refuses it. Returns the link fragment (put it after "https://example.org/i#").
  */
 export function createInvitation(
   signer: DeviceSigner,

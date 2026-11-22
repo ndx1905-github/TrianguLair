@@ -33,8 +33,7 @@ To try it: [docs/beta-testing.md](docs/beta-testing.md).
 | `packages/import` | Import (Google Takeout, Mapstr, Pin Drop, KML, CSV) and GeoJSON export |
 | `packages/sync` | Sync and sharing: publishing, friends, lists, devices, photos |
 | `apps/mobile` | Expo / React Native app (iOS, Android, and an installable web app) |
-| `docs/SPEC.md` | Full specification — the source of truth |
-| `docs/TASKS.md` | Spec broken down into tasks (also GitHub issues) |
+| `docs/TASKS.md` | The project broken down into tasks (also GitHub issues) |
 
 ## Stack
 

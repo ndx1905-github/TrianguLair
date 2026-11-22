@@ -33,15 +33,15 @@
     "id_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d69642d76310abe71b7eb3364fb60c1c8cefda56e7194",
     "secret_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d6b65792d76310abe71b7eb3364fb60c1c8cefda56e7194",
     "token_digest_input_hex": "547269616e67754c6169722d696e7669746174696f6e2d6c697374696e672d76320aaea6772bdaa23111558ea4e18079ffa41d87cfd77bb9ca78332f8984a72cf969c63d64bc58a256b4b48e9de6b03878476b355f34662c55cc6f522a7bdcbc9719000000006ae09240002268747470733a2f2f73746f726167652e6578616d706c652e6f72672f616c6963652f",
-    "full_link": "https://triangulair.app/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv"
+    "full_link": "https://example.org/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv"
    }
   },
   {
    "name": "link-full-url",
-   "description": "The full https://triangulair.app/i#... link: everything after \"#\" is the fragment.",
+   "description": "The full https://example.org/i#... link: everything after \"#\" is the fragment.",
    "op": "parse_invitation_link",
    "input": {
-    "link": "https://triangulair.app/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
+    "link": "https://example.org/i#SQWupncr2qIxEVWOpOGAef-kHYfP13u5yngzL4mEpyz5ab5xt-szZPtgwcjO_aVucZQAAAAAauCSQHN0b3JhZ2UuZXhhbXBsZS5vcmcvYWxpY2Uv",
     "now": "2026-10-20T13:00:00.000Z"
    },
    "expect": {

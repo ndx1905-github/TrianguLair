@@ -7,7 +7,7 @@ Code: `src/invitation.ts`, `src/invitation-listing.ts`.
 
 ## 1. Layout
 
-`https://triangulair.app/i#<fragment>`, fragment = b64u of (big-endian):
+`https://example.org/i#<fragment>`, fragment = b64u of (big-endian):
 
 | Offset | Size | Field |
 |---|---|---|

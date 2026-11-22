@@ -1,5 +1,5 @@
 /**
- * Deep link `https://triangulair.app/l#…` (a list link, T-212; also `triangulair://l#…`). The
+ * Deep link `https://example.org/l#…` (a list link, T-212; also `triangulair://l#…`). The
  * fragment holds the list key of a link-only list: it is read from the URL that opened the app
  * (web: the address bar, then removed from it and from the history entry), handed to "Follow a
  * list" in memory, never as a query parameter, and never sent anywhere.

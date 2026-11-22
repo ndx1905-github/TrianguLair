@@ -51,7 +51,7 @@ num = dict(existing)
 def body_of(x):
     deps = ", ".join(f"{d} (#{num[d]})" if d in num else d for d in x["deps"]) or "—"
     return (f"{x['desc']}\n\n**Acceptance criteria**\n\n" + "\n".join(checkbox(a) for a in x["accept"]) +
-            f"\n\n**Depends on**: {deps}\n\nSpec: [docs/SPEC.md](../blob/main/docs/SPEC.md) · Tasks: [docs/TASKS.md](../blob/main/docs/TASKS.md)")
+            f"\n\n**Depends on**: {deps}\n\nTasks: [docs/TASKS.md](../blob/main/docs/TASKS.md)")
 for x in T:  # create missing first so dependency links resolve
     if x["id"] not in num:
         num[x["id"]] = call("POST", f"repos/{REPO}/issues", {"title": f"{x['id']} — {x['title']}"})["number"]

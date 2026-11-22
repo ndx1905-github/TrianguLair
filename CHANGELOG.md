@@ -7,6 +7,13 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The links the app hands out (invitations, answers, lists, devices) use a placeholder address, `example.org`, set
+  at build time with `EXPO_PUBLIC_LINK_ORIGIN` (also for Android App Links and iOS Associated Domains). Use a domain
+  you control: the keys are after the `#`, which the page served there could read. Links from any address are
+  recognised, since a friend's build may use another one.
+
 ## [0.9.0-beta.2] - 2026-11-22
 
 Fixes from the first days on real devices.
@@ -131,7 +138,7 @@ and keep a copy of your places (list view › Import and export › Export). Wha
   tested against a local S3 emulator only. The Nextcloud browser login and automatic share link were tested against
   mocks, not a real Nextcloud. A storage is needed to share: there is no central server.
 - **Map**: on phones pins are drawn one by one; thousands of places will be slow (the 10,000-pin target is not met yet).
-- **Not done yet** (from `docs/spec-coverage.md`): for followed lists, "add all to my places", "ask to follow the
+- **Not done yet**: for followed lists, "add all to my places", "ask to follow the
   author", a per-list switch on the map and a "Source" filter; the friends' average price and the price in list rows;
   the "moved" answer for closed places and sharing friends' "closed" reports; e-mail and social buttons, Wikipedia
   excerpt and "contribute to OpenStreetMap" on the card; "my position" on the add screen; "open at a chosen time";

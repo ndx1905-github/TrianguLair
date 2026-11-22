@@ -1,6 +1,6 @@
 # Tasks
 
-The [specification](SPEC.md) broken down into tasks. Each task is also a GitHub issue (same ID in the title).
+The project broken down into tasks. Each task is also a GitHub issue (same ID in the title).
 Generated from `scripts/tasks.py`: edit that file, then run `python3 scripts/gen_tasks_md.py`.
 
 To contribute: pick a "to do" task whose dependencies are done, comment on the issue to claim it, then open a PR (see [CONTRIBUTING](../CONTRIBUTING.md)).

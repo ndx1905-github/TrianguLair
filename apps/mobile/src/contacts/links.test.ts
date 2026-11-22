@@ -10,7 +10,7 @@ beforeAll(async () => {
 
 describe('links', () => {
   it('builds the canonical invitation and return links', () => {
-    expect(buildInvitationLink('SQUAbc_-')).toBe('https://triangulair.app/i#SQUAbc_-');
+    expect(buildInvitationLink('SQUAbc_-')).toBe('https://example.org/i#SQUAbc_-');
     expect(() => buildInvitationLink('not base64!')).toThrow();
     const bytes = Uint8Array.of(0x52, 4, 1, 2, 255);
     const link = buildReturnLink(bytes);
@@ -20,12 +20,12 @@ describe('links', () => {
 
   it('finds the link inside a pasted message, a scheme link or with trailing text', () => {
     const msg = shareMessage('Marie invites you to see her places on TrianguLair:', `${INVITE_PREFIX}SQUAAA`);
-    expect(findLink(msg)).toEqual({ kind: 'invitation', fragment: 'SQUAAA', link: 'https://triangulair.app/i#SQUAAA' });
-    expect(findLink('triangulair://r#UgQx.')!.link).toBe('https://triangulair.app/r#UgQx');
+    expect(findLink(msg)).toEqual({ kind: 'invitation', fragment: 'SQUAAA', link: 'https://example.org/i#SQUAAA' });
+    expect(findLink('triangulair://r#UgQx.')!.link).toBe('https://example.org/r#UgQx');
     expect(findLink('see HTTPS://www.TrianguLair.app/l/#abc then')!.kind).toBe('list');
-    expect(findLink('https://example.org/i#SQUAAA')).toBeNull();
+    expect(findLink('https://example.org/x#SQUAAA')).toBeNull();
     expect(findLink('')).toBeNull();
-    expect(findLink('https://triangulair.app/i')).toBeNull();
+    expect(findLink('https://example.org/i')).toBeNull();
   });
 
   it('refuses another kind of link where an answer is expected, and oversized fragments', () => {

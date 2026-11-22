@@ -41,7 +41,8 @@ In scope:
 - the app, `apps/mobile` (key and credential storage, app lock, remote wipe, local database encryption, deep links,
   what is shown to whom);
 - the release builds and workflows in `.github/workflows/`;
-- disagreements between the code and the specification (`docs/SPEC.md`, `docs/format/`) that weaken a promise.
+- disagreements between the code and the documented format or threat models (`docs/format/`, `THREATS.md`) that
+  weaken a promise.
 
 Out of scope: the storage servers themselves (Nextcloud, S3 providers, …), OpenStreetMap and the other open-data
 services, and the sideloading tools used to install the iPhone beta (Sideloadly, AltStore). Report those to their
@@ -49,8 +50,7 @@ projects.
 
 ## Threat model
 
-The full threat model is in [docs/SPEC.md, "Threat model"](docs/SPEC.md#threat-model); the known limits of the format
-are in [packages/crypto/THREATS.md](packages/crypto/THREATS.md) and those of sync in
+The known limits of the format are in [packages/crypto/THREATS.md](packages/crypto/THREATS.md) and those of sync in
 [packages/sync/THREATS.md](packages/sync/THREATS.md). In short:
 
 **Protected against:**

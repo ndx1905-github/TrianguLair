@@ -93,7 +93,7 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json', 'apps/mobile/android/gradle/wrapper/gradle-wrapper.properties', 'apps/mobile/android/**/*.gradle', 'apps/mobile/android/gradle.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # F-Droid gate (docs/spec-coverage.md, gap 9): the build fails if any Google Play
+      # F-Droid gate: the build fails if any Google Play
       # services, Firebase, ML Kit or Play Core library is in the release runtime classpath
       # (the job summary names the module that pulls it in). ZXing is allowed (Apache-2.0).
       # Location and QR scanning use modules/tl-location and modules/tl-qr-scanner on Android;

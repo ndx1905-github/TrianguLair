@@ -13,7 +13,7 @@ import { findLink, LIST_PREFIX } from '../contacts/links';
 import { shortKey } from '../contacts/model';
 import { iconPath, isIconName, UNTAGGED_COLOR } from '../theme/tags';
 
-/** `https://triangulair.app/l#<fragment>`: opens the app (or the store page) on "Follow this list". */
+/** `https://example.org/l#<fragment>`: opens the app (or the store page) on "Follow this list". */
 export function buildListLink(fragment: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(fragment)) throw new Error('list fragment: base64url expected');
   return LIST_PREFIX + fragment;

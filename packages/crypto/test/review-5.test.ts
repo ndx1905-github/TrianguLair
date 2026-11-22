@@ -272,7 +272,7 @@ describe('new behaviour after the fifth review', () => {
     expect(te.encode(address).length).toBe(80);
     const p = person(address);
     const { fragment } = createInvitation(p.signer, p.cert, { now: t0 });
-    const link = `https://triangulair.app/i#${fragment}`;
+    const link = `https://example.org/i#${fragment}`;
     expect(link.length).toBeLessThanOrEqual(200);
     expect(parseInvitationLink(link, { now: t0 }).location).toBe(address);
   });

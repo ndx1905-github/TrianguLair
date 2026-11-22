@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// F-Droid dependency audit (spec-coverage gap 9).
+// F-Droid dependency audit.
 //
 // Reads the output of `./gradlew :app:dependencies --configuration releaseRuntimeClasspath`
 // and flags proprietary Google libraries (Play Services, Firebase, ML Kit), with the
@@ -88,7 +88,7 @@ export function report(findings, libraries) {
   out.push(
     `:warning: **${findings.length} proprietary librar${findings.length === 1 ? 'y' : 'ies'}** ` +
       `pulled in by: ${modules.map((m) => `\`${m}\``).join(', ')}. ` +
-      'F-Droid will not accept the build as is (see docs/spec-coverage.md, gap 9).',
+      'F-Droid will not accept the build as is.',
     '',
     '| Library | Kind | Pulled in by | Path |',
     '| --- | --- | --- | --- |',

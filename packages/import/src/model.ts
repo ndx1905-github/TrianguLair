@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * The common model every parser produces (docs/SPEC.md "Importing your
+ * The common model every parser produces (the specification's "Importing your
  * places"): one `ImportedPlace` per place found in the file, whatever the
  * source, plus the source's tags/lists with their colors when it has them.
  */

@@ -339,7 +339,7 @@ before parsing.
 
 ## Invitation (spec: "Invitation link and return link")
 
-The invitation link is **short** (version 5: 146 characters with `https://triangulair.app/i#` and a 40-character read
+The invitation link is **short** (version 5: 146 characters with `https://example.org/i#` and a 40-character read
 address, at most 200 up to an 80-character address, so a QR code of version 7 to 10 at level L or M) because it carries
 only what cannot be fetched: the owner's master key, the read address, a 16-byte secret seed and a compact expiry.
 Everything else (the master-signed sharing certificate with the certified address and the revocations, the device
@@ -347,7 +347,7 @@ certificate) is read from the owner's signed index at that address. The link is 
 owner is that the owner's current index **lists** it.
 
 **Link** (`createInvitation({ keys, cert }, currentSharingCert, { now?, ttlMs? }) → { invitation, fragment }`), binary,
-base64url in the URL **fragment** (`https://triangulair.app/i#<fragment>`), never sent to a server:
+base64url in the URL **fragment** (`https://example.org/i#<fragment>`), never sent to a server:
 
 ```
 0 0x49 "I" | 1 version=5 | 2 owner master pk 32B | 34 seed 16B | 50 rotation u32 | 54 expires u32 s |

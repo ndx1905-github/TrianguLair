@@ -134,9 +134,9 @@ describe('channel (app-level wrappers)', () => {
   it('device link and request link: round trip, found in a message, refused when damaged or of the other kind', () => {
     const slot = newSlot();
     const link = encodeDeviceLink({ slot, location: LOCATION });
-    expect(link.startsWith('https://triangulair.app/d#')).toBe(true);
+    expect(link.startsWith('https://example.org/d#')).toBe(true);
     expect(parseDeviceLink(`My link: ${link} (code by SMS)`)).toEqual({ slot, location: LOCATION });
-    expect(() => parseDeviceLink('https://triangulair.app/d#AAAA')).toThrow('bad-link');
+    expect(() => parseDeviceLink('https://example.org/d#AAAA')).toThrow('bad-link');
     expect(() => parseDeviceLink('hello')).toThrow('bad-link');
     expect(() => encodeDeviceLink({ slot, location: 'http://anna.example/' })).toThrow();
     const req = encodeRequestLink(slot, new Uint8Array(64).fill(7));

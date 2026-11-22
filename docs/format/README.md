@@ -25,7 +25,7 @@ that is a bug in one of them: report it. The key words MUST, MUST NOT, SHOULD an
 | [transfer-blob.md](transfer-blob.md) | transfer blob (`TLTX` 2), transfer code |
 | [key-export.md](key-export.md) | key-export payload (`key-export` v3) |
 | [safety-code.md](safety-code.md) | safety code and its QR payload |
-| [promises.md](promises.md) | each promise of `docs/SPEC.md` mapped to the function and check that enforces it, and the app rules it relies on |
+| [promises.md](promises.md) | each security promise mapped to the function and check that enforces it, and the app rules it relies on |
 | [vectors/](vectors/) | known-answer vectors (positive and negative) for every structure |
 | [reference-reader/](reference-reader/) | a second, minimal, independent reader in Python, run against the vectors |
 

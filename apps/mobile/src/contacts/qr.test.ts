@@ -4,7 +4,7 @@ import { qrMatrix, qrPath } from './qr';
 
 describe('QR codes', () => {
   it('an invitation link of 200 characters stays at version 10 or lower (level M)', () => {
-    const link = 'https://triangulair.app/i#' + 'A'.repeat(174);
+    const link = 'https://example.org/i#' + 'A'.repeat(178);
     expect(link).toHaveLength(200);
     const m = qrMatrix(link, 'M');
     expect(m.version).toBeLessThanOrEqual(10);
@@ -12,7 +12,7 @@ describe('QR codes', () => {
   });
 
   it('a return link of about 600 characters still fits (level L)', () => {
-    const m = qrMatrix('https://triangulair.app/r#' + 'B'.repeat(600), 'L');
+    const m = qrMatrix('https://example.org/r#' + 'B'.repeat(600), 'L');
     expect(m.version).toBeLessThanOrEqual(20);
   });
 

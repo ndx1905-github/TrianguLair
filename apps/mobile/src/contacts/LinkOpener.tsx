@@ -1,5 +1,5 @@
 /**
- * Deep links `https://triangulair.app/i#…` (invitation) and `/r#…` (return link), also
+ * Deep links `https://example.org/i#…` (invitation) and `/r#…` (return link), also
  * `triangulair://i#…`. The fragment is read from the URL that opened the app (web: the address
  * bar, then removed from it and from the history entry), handed to the screen in memory, never as
  * a query parameter. Before my identity exists (the app was installed from the link), the

@@ -1,12 +1,12 @@
 /**
  * The links that travel between people (spec "Invitation link and return link"):
  *
- * - invitation link: `https://triangulair.app/i#<fragment>`, the crypto package's link version 5
+ * - invitation link: `https://example.org/i#<fragment>`, the crypto package's link version 5
  *   (docs/format/invitation-link.md), at most 200 characters for a read address up to 80;
- * - return link: `https://triangulair.app/r#<b64url of the return-link bytes>` (response
+ * - return link: `https://example.org/r#<b64url of the return-link bytes>` (response
  *   version 4, docs/format/return-link.md). The bytes are the frozen format; the `/r#` wrapper is
  *   this app's (the format leaves the transport open), so the deep link opens the right screen;
- * - list link: `https://triangulair.app/l#…` is reserved for link-only lists (T-212).
+ * - list link: `https://example.org/l#…` is reserved for link-only lists (T-212).
  *
  * Everything after `#` is a URL fragment: never sent to a server, also when the link is opened in
  * a browser. People paste whole messages ("Marie invites you… https://…"), so `findLink` looks
@@ -15,7 +15,9 @@
  */
 import { fromB64Url, toB64Url } from '@triangulair/crypto';
 
-export const LINK_ORIGIN = 'https://triangulair.app';
+import { LINK_ORIGIN } from '../config';
+
+export { LINK_ORIGIN };
 export const INVITE_PREFIX = `${LINK_ORIGIN}/i#`;
 export const RETURN_PREFIX = `${LINK_ORIGIN}/r#`;
 export const LIST_PREFIX = `${LINK_ORIGIN}/l#`;
@@ -29,7 +31,7 @@ export type LinkKind = 'invitation' | 'return' | 'list';
 
 export interface FoundLink {
   kind: LinkKind;
-  /** Canonical `https://triangulair.app/<k>#<fragment>` form. */
+  /** Canonical `https://example.org/<k>#<fragment>` form. */
   link: string;
   fragment: string;
 }
@@ -37,8 +39,10 @@ export interface FoundLink {
 const KIND_OF: Record<string, LinkKind> = { i: 'invitation', r: 'return', l: 'list' };
 const PREFIX_OF: Record<LinkKind, string> = { invitation: INVITE_PREFIX, return: RETURN_PREFIX, list: LIST_PREFIX };
 const B64U = /^[A-Za-z0-9_-]+$/;
-// https://triangulair.app/i#…, triangulair://i#…, triangulair:///i#… (with or without "www.").
-const LINK_RE = /(?:https?:\/\/(?:www\.)?triangulair\.app\/|triangulair:\/\/\/?)([irl])\/?#([A-Za-z0-9_-]+)/i;
+// https://<any host>/i#…, triangulair://i#…, triangulair:///i#…. Any host: each build sets its own
+// link origin (EXPO_PUBLIC_LINK_ORIGIN), and a friend's link may come from another build. The
+// fragment is then checked by the crypto package, so a look-alike link from elsewhere goes nowhere.
+const LINK_RE = /(?:https?:\/\/[A-Za-z0-9.-]+(?::\d+)?\/|triangulair:\/\/\/?)([irl])\/?#([A-Za-z0-9_-]+)/i;
 
 export function buildInvitationLink(fragment: string): string {
   if (!B64U.test(fragment)) throw new Error('invitation fragment: base64url expected');

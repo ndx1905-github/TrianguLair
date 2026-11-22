@@ -35,7 +35,7 @@ const now = new Date('2026-10-13T12:00:00.000Z');
 const day = 24 * 3600 * 1000;
 const at = (ms: number) => new Date(now.getTime() + ms);
 const LOCATION = 'https://cloud.example.org/s/AbCdEfGh12345';
-const PREFIX = 'https://triangulair.app/i#';
+const PREFIX = 'https://example.org/i#';
 
 function bytesOf(fragment: string): Uint8Array {
   return new Uint8Array(Buffer.from(fragment, 'base64url'));
@@ -78,18 +78,18 @@ describe('invitation link (short, bound by the owner\'s index)', () => {
     const o = person(loc40);
     const link = `${PREFIX}${createInvitation(o.signer, o.cert, { now }).fragment}`;
     expect(bytesOf(link.slice(PREFIX.length)).length).toBe(58 + 40 - 8);
-    expect(link.length).toBe(146);
+    expect(link.length).toBe(142);
     // Revoked devices and the rotation do not make it longer (no certificate inside).
     const tablet = generateDeviceKeys();
     const signer = { keys: tablet, cert: issueDeviceCert(o.id, devicePublicKeys(tablet)) };
     const revoked = Array.from({ length: 20 }, () => generateDeviceKeys().id);
     const cert9 = issueSharingCert(o.id, o.sharing.publicKey, { rotation: 9, location: loc40, revokedDevices: [o.device.id, ...revoked] });
-    expect(`${PREFIX}${createInvitation(signer, cert9, { now }).fragment}`.length).toBe(146);
+    expect(`${PREFIX}${createInvitation(signer, cert9, { now }).fragment}`.length).toBe(142);
     // An 80-character address still fits in 200 characters (QR version 10 at level M or lower).
     const loc80 = `https://nextcloud.example-hosting.org/index.php/s/${'x'.repeat(30)}`;
     expect(loc80.length).toBe(80);
     const o80 = person(loc80);
-    expect(`${PREFIX}${createInvitation(o80.signer, o80.cert, { now }).fragment}`.length).toBe(200);
+    expect(`${PREFIX}${createInvitation(o80.signer, o80.cert, { now }).fragment}`.length).toBe(196);
   });
 
   it('expiry: rejected at/after 7 days', () => {
