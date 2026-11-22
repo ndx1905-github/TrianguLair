@@ -535,9 +535,14 @@ Before the first EAS build, run `eas init` to link a project (it adds `extra.eas
   the database file saved to IndexedDB after each write (debounced, and on page hide). When
   IndexedDB is unavailable the data stays in memory and the map says so. sql.js has no R*Tree/FTS5:
   the package's fallback indexes are used.
-- **Demo data**: on first launch the 15 sample places in Paris are seeded as tags, my saves (status,
-  price, comments), a friend's saves ("Léa") and illustrative OSM info (opening hours, terrace,
-  happy hours) so the filters have data (`src/data/demo.ts`).
+- **First-launch data** (`src/data/demo.ts`): a real build creates the starter tags only. "Show me
+  with examples" (import step) adds the 15 sample places in Paris as the saves of an example friend,
+  "Léa (example)", in the local cache only (never in my document: never synced or published);
+  "Delete the example places" (map and list banner, Settings › My content) removes them, and also
+  the 0.9.0-beta.1 seed. Test builds (fixture mode, or `EXPO_PUBLIC_DEMO_SEED=1`) keep the former
+  seed: tags, my saves (status, price, comments), Léa's saves and illustrative OSM info (opening
+  hours, terrace, happy hours) so the filters have data; `?autostart=1` hides its examples banner
+  (`&examplesBanner=1` keeps it), and `?demoSeed=0` on the first page makes a real first launch.
 - Owner id: my identity's master key (`ed25519:…`, see Identity); the document actor is a
   per-device random id kept in localStorage / expo-sqlite's kv-store.
 

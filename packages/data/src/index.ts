@@ -64,6 +64,7 @@ export {
   readTagMappings,
 } from './crdt/project.ts';
 export type { Touched, ProjectedSave } from './crdt/project.ts';
+export { applyBulkEdit, type BulkEdit, type BulkResult } from './bulk.ts';
 export { DataStore, DOC_FORMAT, PROJECTION_VERSION, snapshotOfUpdates } from './store.ts';
 export { reassignOwner, databaseOwner } from './owner.ts';
 export type { ReassignOwnerResult } from './owner.ts';

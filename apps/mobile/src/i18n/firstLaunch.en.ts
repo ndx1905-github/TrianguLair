@@ -59,6 +59,16 @@ export const firstLaunchEn: Messages = {
   'importStep.lead': 'From Google Takeout, Mapstr, a KML, GeoJSON or CSV file. You can also do it later from the list.',
   'importStep.import': 'Import a file',
   'importStep.later': 'Later',
+  // Example places (src/data/demo.ts): only on request, local only, deleted in one tap.
+  'importStep.examples': 'Show me with examples',
+  'importStep.examplesHelp': 'Sample places in Paris, saved by an example friend. They stay on this phone, are never shared, and you can delete them in one tap.',
+  'examples.friendName': '{name} (example)',
+  'examples.banner': 'These are example places: they stay on this phone and are never shared.',
+  'examples.delete': 'Delete the example places',
+  'examples.hide': 'Hide',
+  'examples.deleted': { one: '{count} example place deleted', other: '{count} example places deleted' },
+  'examples.settingsTitle': 'Example places',
+  'examples.settingsHelp': 'The sample places and the example friend shown since the first launch. Your own places and tags stay.',
 
   'hint.add': 'Tap + to add your first place',
   'hint.dismiss': 'Got it',

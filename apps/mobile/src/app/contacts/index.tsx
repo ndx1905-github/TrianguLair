@@ -2,8 +2,11 @@
  * Friends and access (T-209, spec "Asymmetric relationships"): every contact with what goes each
  * way and their verified badge, the key-change notices ("Marie changed her key"), and the ways to
  * add someone (invite by link, face to face, open a link received) or to follow a list by link.
+ * Reached from the list's "Friends" button and Settings. With nobody yet, it explains how to invite
+ * and puts "Invite a friend" first; the example friend (src/data/demo.ts), when there, has a card
+ * of its own saying it is an example.
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 
@@ -11,7 +14,9 @@ import { DataGate } from '../../components/DataGate';
 import { Banner, Button } from '../../components/ui';
 import { useContacts } from '../../contacts/ContactsProvider';
 import type { ContactView } from '../../contacts/service';
-import { Strong, TrustBadge, shortKey } from '../../contacts/ui';
+import { Card, Strong, TrustBadge, shortKey } from '../../contacts/ui';
+import { useData } from '../../data/DataProvider';
+import { DEMO_FRIEND } from '../../data/demo';
 import { useUiColors } from '../../hooks/useUiColors';
 import { useI18n } from '../../i18n';
 import { Muted, Section, StorageScreen } from '../../storage/components';
@@ -54,6 +59,9 @@ function ContactsScreen() {
   const contacts = svc?.contacts() ?? [];
   const notices = svc?.notices() ?? [];
   const nameOf = (owner: string) => svc?.contact(owner)?.name || shortKey(owner);
+  const { repo, version } = useData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const example = useMemo(() => repo.getPerson(DEMO_FRIEND.id), [repo, version]);
   return (
     <StorageScreen title={t('contacts.title')} testID="contacts-screen">
       {notices.map((n) => (
@@ -65,7 +73,20 @@ function ContactsScreen() {
         </View>
       ))}
       <Section title={t('contacts.people')}>
-        {contacts.length === 0 ? <Muted testID="contacts-empty">{t('contacts.empty')}</Muted> : contacts.map((c) => <ContactRow key={c.owner} c={c} />)}
+        {contacts.length === 0 ? (
+          <>
+            <Muted testID="contacts-empty">{t('contacts.empty')}</Muted>
+            <Button label={t('inviting.title')} onPress={() => router.push('/invite')} testID="contacts-empty-invite" />
+          </>
+        ) : (
+          contacts.map((c) => <ContactRow key={c.owner} c={c} />)
+        )}
+        {example && (
+          <Card testID="contact-example">
+            <Strong>{example.displayName}</Strong>
+            <Muted>{t('contacts.example', { name: example.displayName })}</Muted>
+          </Card>
+        )}
         <Muted>{t('contacts.friendsMeaning')}</Muted>
       </Section>
       <Section title={t('contacts.add')}>

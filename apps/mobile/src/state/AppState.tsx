@@ -29,6 +29,12 @@ function initialFilter(): FilterState {
   return next;
 }
 
+export interface Trashed {
+  placeId: string;
+  name: string;
+  placeIds?: string[];
+}
+
 export interface AppUiState {
   filter: FilterState;
   setFilter: (f: FilterState | ((f: FilterState) => FilterState)) => void;
@@ -39,9 +45,12 @@ export interface AppUiState {
   /** A place the map should select and show (after adding it, "show on map"). */
   focus: { placeId: string; key: number } | null;
   focusPlace: (placeId: string) => void;
-  /** The place I last moved to the trash, offered for undo on the map and the list. */
-  trashed: { placeId: string; name: string; key: number } | null;
-  setTrashed: (t: { placeId: string; name: string } | null) => void;
+  /**
+   * The place I last moved to the trash, offered for undo on the map and the list; `placeIds` when
+   * the list's "Select" mode moved several at once (`placeId` is then the first of them).
+   */
+  trashed: (Trashed & { key: number }) | null;
+  setTrashed: (t: Trashed | null) => void;
   /** What's new "See on the map": these places stay in color, the others are faded. */
   highlight: { placeIds: string[]; key: number } | null;
   setHighlight: (placeIds: string[] | null) => void;
@@ -68,7 +77,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const focusPlace = useCallback((placeId: string) => setFocus({ placeId, key: Date.now() }), []);
   const [trashed, setTrashedState] = useState<AppUiState['trashed']>(null);
   const setTrashed = useCallback(
-    (t: { placeId: string; name: string } | null) => setTrashedState(t ? { ...t, key: Date.now() } : null),
+    (t: Trashed | null) => setTrashedState(t ? { ...t, key: Date.now() } : null),
     [],
   );
   const [highlight, setHighlightState] = useState<AppUiState['highlight']>(null);

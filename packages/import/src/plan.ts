@@ -22,6 +22,7 @@ import {
 } from '@triangulair/data';
 
 import type { MatchOutcome, OsmCandidate, ScoredCandidate } from './match.ts';
+import { suggestTag, type TagSuggestion } from './tagMatch.ts';
 import type { ExportExtras, ImportedPlace, ParseResult, ParseWarning, SourceFormat, SourceTag } from './model.ts';
 import { FORMAT_VERIFIED } from './model.ts';
 
@@ -67,6 +68,11 @@ export interface TagPlanEntry {
   /** Number of imported places with this tag. */
   count: number;
   action: TagAction;
+  /**
+   * The tag of mine this one matches (tagMatch.ts): the same name (then also the proposed
+   * action), a synonym or a close name (only suggested). Null when none.
+   */
+  suggestion: TagSuggestion | null;
 }
 
 export interface ImportPlan {
@@ -158,8 +164,10 @@ function tagPath(t: Pick<TagRecord, 'id' | 'name' | 'parentId'>, byId: Map<strin
 
 /**
  * Source tag → my tag with the same name (accent- and case-insensitive; for
- * sub-tags of an export, the same path), else a new tag with the source's
- * color or one of the palette.
+ * sub-tags of an export, the same path; for a top-level tag, also ignoring emoji,
+ * spaces, punctuation and a plural s or x: tagMatch.ts), else a new tag with the
+ * source's color or one of the palette. A synonym or a close name of one of my
+ * tags is kept as the entry's `suggestion`, not applied (`applyTagSuggestions`).
  */
 export function proposeTagActions(
   sourceTags: readonly SourceTag[],
@@ -194,13 +202,17 @@ export function proposeTagActions(
     }
     return DEFAULT_TAG_COLORS[color++ % DEFAULT_TAG_COLORS.length]!;
   };
+  const matchable = live.map((t) => ({ id: t.id, name: t.name, parentId: t.parentId }));
   return [...defs.values()].map((source) => {
     const path = tagPath(srcById.get(source.key)!, srcById);
     const existing = myByPath.get(path) ?? (source.deleted ? trashedByPath.get(path) : undefined);
-    const action: TagAction = existing
-      ? { kind: 'map', tagId: existing }
+    // Sub-tags of an export keep the path rule only; a deleted tag only meets my trashed one.
+    const suggestion = existing ? { tagId: existing, reason: 'same' as const } : source.parentKey || source.deleted ? null : suggestTag(source.name, matchable);
+    const mapTo = existing ?? (suggestion?.reason === 'same' ? suggestion.tagId : undefined);
+    const action: TagAction = mapTo
+      ? { kind: 'map', tagId: mapTo }
       : { kind: 'create', name: source.name, color: source.color ?? (palette ? nextColor() : null) };
-    return { source, count: counts.get(source.key) ?? 0, action };
+    return { source, count: counts.get(source.key) ?? 0, action, suggestion };
   });
 }
 
@@ -288,6 +300,23 @@ export function resolveItem(plan: ImportPlan, key: string, resolution: Resolutio
 
 export function setTagAction(plan: ImportPlan, sourceKey: string, action: TagAction): ImportPlan {
   return { ...plan, tags: plan.tags.map((t) => (t.source.key === sourceKey ? { ...t, action } : t)) };
+}
+
+/**
+ * "Same as my tags where possible": every tag of the file that would become a new tag and has a
+ * suggestion (same name, synonym or close name) is mapped to that tag of mine instead. Tags set
+ * to "Don't import" stay so.
+ */
+export function applyTagSuggestions(plan: ImportPlan): ImportPlan {
+  return {
+    ...plan,
+    tags: plan.tags.map((t) => (t.suggestion && t.action.kind === 'create' ? { ...t, action: { kind: 'map', tagId: t.suggestion.tagId } } : t)),
+  };
+}
+
+/** How many tags `applyTagSuggestions` would change. */
+export function pendingTagSuggestions(plan: ImportPlan): number {
+  return plan.tags.filter((t) => t.suggestion && t.action.kind === 'create').length;
 }
 
 export interface PlanSummary {

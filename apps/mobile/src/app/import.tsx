@@ -23,6 +23,8 @@ import {
   readImportFile,
   resolveItem,
   setTagAction,
+  applyTagSuggestions,
+  pendingTagSuggestions,
   summarizePlan,
   undoImport,
   type ColumnMapping,
@@ -375,6 +377,14 @@ function Preview({
           <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
             {t('import.tags.intro')}
           </Text>
+          {pendingTagSuggestions(plan) > 0 ? (
+            <Button
+              kind="secondary"
+              label={t('import.tags.sameAsMine', { count: pendingTagSuggestions(plan) })}
+              onPress={() => setStep({ ...step, plan: applyTagSuggestions(plan) })}
+              testID="import-tags-same"
+            />
+          ) : null}
           {plan.tags.map((entry) => (
             <TagMappingRow key={entry.source.key} entry={entry} myTags={myTags} onChange={(a) => setStep({ ...step, plan: setTagAction(plan, entry.source.key, a) })} />
           ))}

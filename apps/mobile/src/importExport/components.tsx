@@ -178,6 +178,9 @@ export function TagMappingRow({ entry, myTags, onChange }: { entry: TagPlanEntry
   const { t } = useI18n();
   const a = entry.action;
   const newColor = a.kind === 'create' ? (a.color ?? c.textMuted) : entry.source.color ?? c.textMuted;
+  // A synonym or a close name of one of my tags (tagMatch.ts): first, not preselected. A tag of
+  // the same name is already chosen and keeps its place in the list.
+  const suggested = entry.suggestion && entry.suggestion.reason !== 'same' ? myTags.find((tag) => tag.id === entry.suggestion!.tagId) : undefined;
   return (
     <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]} testID={`tag-row-${entry.source.name}`}>
       <View style={styles.rowHead}>
@@ -197,7 +200,16 @@ export function TagMappingRow({ entry, myTags, onChange }: { entry: TagPlanEntry
           onPress={() => onChange({ kind: 'create', name: entry.source.name, color: entry.source.color ?? (a.kind === 'create' ? a.color : null) ?? '#475569' })}
           testID={`tag-${entry.source.name}-new`}
         />
-        {myTags.map((tag) => (
+        {suggested ? (
+          <Pill
+            label={t('import.tags.suggested', { name: suggested.name })}
+            color={suggested.color}
+            selected={a.kind === 'map' && a.tagId === suggested.id}
+            onPress={() => onChange({ kind: 'map', tagId: suggested.id })}
+            testID={`tag-${entry.source.name}-suggested`}
+          />
+        ) : null}
+        {myTags.filter((tag) => tag.id !== suggested?.id).map((tag) => (
           <Pill
             key={tag.id}
             label={tag.name}

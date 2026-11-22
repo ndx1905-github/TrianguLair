@@ -25,6 +25,28 @@ function urlList(value: string | undefined): string[] {
 export const OSM_FIXTURES: boolean = process.env.EXPO_PUBLIC_OSM_FIXTURES === '1';
 
 /**
+ * Test builds: seed the sample places as my own saves and the example friend on first launch
+ * (src/data/demo.ts `seedDemoData`), as the end-to-end tests expect. Always on in fixture mode;
+ * EXPO_PUBLIC_DEMO_SEED=1 turns it on in another build (`?demoSeed=0` below turns it off). Real builds seed nothing but the starter
+ * tags; the user can ask for examples on the first launch ("Show me with examples").
+ */
+export const DEMO_SEED: boolean = (OSM_FIXTURES || process.env.EXPO_PUBLIC_DEMO_SEED === '1') && !noSeedRequested();
+
+/**
+ * Fixture mode on the web: `?demoSeed=0` on the first page loaded makes it a real user's first
+ * launch (no seed), so the end-to-end tests can go through "Show me with examples". Read once, at
+ * start-up: the first-launch screens drop the query.
+ */
+function noSeedRequested(): boolean {
+  if (!OSM_FIXTURES) return false;
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('demoSeed') === '0';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fallback base map styles (spec "Error cases", map tiles unavailable), tried in order when the
  * style above or its tiles cannot be loaded and the cache has nothing for the area: a mirror or a
  * self-hosted copy in the same OpenMapTiles schema. Comma or space separated. After the last one

@@ -178,6 +178,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
           setSetting(ONBOARDING_KEY, 'done');
           setSetting('hint-add', 'seen');
           setSetting('protect-snoozed', String(Date.now()));
+          // The test builds' seed counts as example places: their banner would cover the map in
+          // every test. `&examplesBanner=1` keeps it (e2e of the banner itself).
+          if (new URLSearchParams(globalThis.location?.search ?? '').get('examplesBanner') !== '1') setSetting('examples-banner', 'hidden');
           record = created.record;
         }
       }

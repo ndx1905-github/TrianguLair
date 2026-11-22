@@ -9,7 +9,10 @@ import { Banner, Button } from './ui';
 /** How long the undo stays offered after moving a place to the trash. */
 export const TRASH_UNDO_MS = 15_000;
 
-/** "… moved to the trash. Undo": shown on the map and the list after a place card's "Move to trash". */
+/**
+ * "… moved to the trash. Undo": shown on the map and the list after a place card's "Move to trash",
+ * or "12 places moved to the trash" after the list's "Select" mode.
+ */
 export function TrashUndo() {
   const { t } = useI18n();
   const { mutate } = useData();
@@ -20,16 +23,18 @@ export function TrashUndo() {
     return () => clearTimeout(timer);
   }, [trashed, setTrashed]);
   if (!trashed) return null;
+  const many = trashed.placeIds && trashed.placeIds.length > 1 ? trashed.placeIds : null;
   return (
     <View style={styles.row} testID="trash-notice">
       <View style={{ flexShrink: 1 }}>
-        <Banner>{t('card.trashed', { name: trashed.name })}</Banner>
+        <Banner>{many ? t('bulk.trashed', { count: many.length }) : t('card.trashed', { name: trashed.name })}</Banner>
       </View>
       <Button
         kind="secondary"
         label={t('card.undo')}
         onPress={() => {
-          mutate((s) => s.restoreSave(trashed.placeId));
+          // Several places (the list's "Select" mode): back in one change, as they left.
+          mutate((s) => (many ? s.bulkEdit(many, { kind: 'restore' }) : s.restoreSave(trashed.placeId)));
           setTrashed(null);
         }}
         testID="trash-undo"

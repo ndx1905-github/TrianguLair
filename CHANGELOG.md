@@ -9,6 +9,20 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ### Added
 
+- **Select many places at once** in the list: "Select", then tick places or "Select all (N)", which takes the
+  places shown (search, zone and filters apply). The bottom bar deletes them (to the trash, restorable for 30 days,
+  after a confirmation with the count, with one Undo), adds them to a list, adds or removes a tag, or sets their
+  status. Only your own places change: friends' places in the selection are skipped, and the app says so. Each
+  action is one change, published once.
+- **Import: tags matched to yours.** A tag of the file with the same name as one of yours (ignoring case, accents,
+  emoji, spaces, punctuation and plurals) goes to it at once; a synonym ("Resto" for "Restaurant", "Coffee" for
+  "Café", "Jardin" for "Parc", in English and French) or a close name is shown first as "Suggested: …", and "Same
+  as my tags where possible" applies them all.
+- **"Show me with examples"** on the last first-launch step: sample places in Paris saved by an example friend,
+  "Léa (example)". They stay on this phone, are never synced or shared, and "Delete the example places" (on the
+  map, the list or in Settings › My content) removes them all in one tap.
+- **Friends from the list**: a "Friends" link in the list header opens the friends screen, which explains how to
+  invite when nobody is there yet.
 - Whose places: the filter bar's first row shows "Me" and each friend as chips, to show your places, one friend's,
   several or everyone's. A long press on a chip shows only that person's places; the "▾" panel has the shortcuts
   (Everyone, Only mine, Only my friends, "Only" for each person) and a search. The choice is remembered on the device.
@@ -20,6 +34,9 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ### Changed
 
+- A first launch no longer adds sample places and an invented friend to your data: only the starter tags. If you
+  installed 0.9.0-beta.1, its sample places were saved as yours (and so synced to your storage, if you connected
+  one): "Delete the example places" removes them, there too.
 - The filter bar's "Friends' places" visibility is now part of "Whose places" ("Only my friends"); a filter saved with
   it on is moved there. The visibility filter is about your own places: "Private" (was "Only me") and "Shared".
 
