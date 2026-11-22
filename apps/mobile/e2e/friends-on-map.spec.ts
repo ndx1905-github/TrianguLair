@@ -12,6 +12,8 @@ import { autostart, collapseFilters, demo, expect, jump, openMap, test } from '.
 
 const SHOTS = process.env['SHOTS'] === '1';
 const LEA = 'demo-friend-lea';
+/** The example friend's name (main #10: marked as an example). */
+const NAME = 'Léa (example)';
 /** Mine only: Du Pain et des Idées. */
 const MINE = { id: demo(1), lat: 48.8713, lon: 2.3633 };
 /** Léa's only: Le Perchoir. */
@@ -53,7 +55,7 @@ test('whose places: me, a friend, everyone; dots on the pins; remembered', async
   await expandFilters(page);
   await expect(page.getByTestId('whose-label')).toHaveText('Everyone');
   await expect(page.getByTestId('whose-me')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByTestId('whose-friend-Léa')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId(`whose-friend-${NAME}`)).toHaveAttribute('aria-checked', 'true');
   // The old "Friends' places" visibility pill is gone: whose places are chosen here.
   await expect(page.getByTestId('filter-visibility-friendsOnly')).toHaveCount(0);
   await shot(page, 'phone-whose-row.png');
@@ -61,7 +63,7 @@ test('whose places: me, a friend, everyone; dots on the pins; remembered', async
   // Her place: one dot, her name in its label; mine only: no dot; ours: her dot too.
   expect(await shown(page, HERS)).toBe(true);
   await expect(pin(page, HERS.id)).toHaveAttribute('data-dots', '1');
-  await expect(pin(page, HERS.id)).toHaveAttribute('aria-label', 'Le Perchoir, on Léa’s map');
+  await expect(pin(page, HERS.id)).toHaveAttribute('aria-label', `Le Perchoir, on ${NAME}’s map`);
   expect(await shown(page, MINE)).toBe(true);
   await expect(pin(page, MINE.id)).not.toHaveAttribute('data-dots');
   expect(await shown(page, BOTH)).toBe(true);
@@ -70,13 +72,13 @@ test('whose places: me, a friend, everyone; dots on the pins; remembered', async
 
   // "Me" off: my own places leave the map, ours stays (it is on Léa's map).
   await page.getByTestId('whose-me').click();
-  await expect(page.getByTestId('whose-label')).toHaveText('Only Léa');
+  await expect(page.getByTestId('whose-label')).toHaveText(`Only ${NAME}`);
   expect(await shown(page, MINE)).toBe(false);
   expect(await shown(page, HERS)).toBe(true);
   expect(await shown(page, BOTH)).toBe(true);
   // The last one shown cannot be unticked: never an empty map.
-  await page.getByTestId('whose-friend-Léa').click();
-  await expect(page.getByTestId('whose-friend-Léa')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId(`whose-friend-${NAME}`).click();
+  await expect(page.getByTestId(`whose-friend-${NAME}`)).toHaveAttribute('aria-checked', 'true');
 
   // Long press on "Me": only mine.
   await longPress(page, 'whose-me');
@@ -96,16 +98,16 @@ test('whose places: me, a friend, everyone; dots on the pins; remembered', async
   await expect(page.getByTestId('friends-picker')).toHaveCount(0);
   await expect(page.getByTestId('whose-label')).toHaveText('Everyone');
   await page.getByTestId('friends-picker-open').click();
-  await page.getByTestId('friends-person-Léa-only').click();
-  await expect(page.getByTestId('whose-label')).toHaveText('Only Léa');
+  await page.getByTestId(`friends-person-${NAME}-only`).click();
+  await expect(page.getByTestId('whose-label')).toHaveText(`Only ${NAME}`);
 
   // Folded: one pill says it, and it is remembered on this device.
   await collapseFilters(page);
-  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText('Only Léa');
+  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText(`Only ${NAME}`);
   await page.waitForTimeout(1200);
   await page.reload();
   await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
-  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText('Only Léa');
+  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText(`Only ${NAME}`);
   expect(await shown(page, MINE)).toBe(false);
   await jump(page, 48.866, 2.356, 12);
   await shot(page, 'phone-whose-only-friend.png');
@@ -130,15 +132,15 @@ test('the card says whose maps a place is on; a name shows only theirs', async (
   const card = page.getByTestId('place-card');
   await expect(card).toBeVisible();
   await expect(card.getByTestId('card-on-maps')).toContainText('On the maps of:');
-  await expect(card.getByTestId('card-on-map-Léa')).toHaveAccessibleName('Show only Léa’s places');
+  await expect(card.getByTestId(`card-on-map-${NAME}`)).toHaveAccessibleName(`Show only ${NAME}’s places`);
   if (SHOTS) {
     await card.getByTestId('card-friends-toggle').click();
     await card.getByTestId('card-on-maps').scrollIntoViewIfNeeded();
     await shot(page, 'phone-card-on-maps.png');
   }
-  await card.getByTestId('card-on-map-Léa').click();
+  await card.getByTestId(`card-on-map-${NAME}`).click();
   await page.getByTestId('card-close').click();
-  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText('Only Léa');
+  await expect(page.getByTestId('filter-pill-friends-shown')).toContainText(`Only ${NAME}`);
   expect(await shown(page, MINE)).toBe(false);
   expect(await shown(page, HERS)).toBe(true);
 });
@@ -158,7 +160,7 @@ test('a friend\'s page: their colour on the dots, "See their places on the map"'
   await expect(pin(page, HERS.id).locator('.tl-dots circle')).toHaveAttribute('fill', '#16A34A');
   expect(await shown(page, MINE)).toBe(false);
   await expandFilters(page);
-  await expect(page.getByTestId('whose-label')).toHaveText('Only Léa');
+  await expect(page.getByTestId('whose-label')).toHaveText(`Only ${NAME}`);
 });
 
 test('an older device: the "Friends\' places" filter becomes "Only Léa"; French labels', async ({ page }) => {
@@ -171,9 +173,9 @@ test('an older device: the "Friends\' places" filter becomes "Only Léa"; French
   await openMap(page, '/?lang=fr');
   await expandFilters(page);
   await expect(page.getByTestId('whose-row')).toContainText('Lieux de qui');
-  await expect(page.getByTestId('whose-label')).toHaveText('Seulement Léa');
+  await expect(page.getByTestId('whose-label')).toHaveText('Seulement Léa (exemple)');
   await expect(page.getByTestId('filter-visibility-friendsOnly')).toHaveCount(0);
   expect(await shown(page, MINE)).toBe(false);
   expect(await shown(page, HERS)).toBe(true);
-  await expect(pin(page, HERS.id)).toHaveAttribute('aria-label', 'Le Perchoir, sur la carte de Léa');
+  await expect(pin(page, HERS.id)).toHaveAttribute('aria-label', 'Le Perchoir, sur la carte de Léa (exemple)');
 });
