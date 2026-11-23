@@ -25,7 +25,7 @@ const o = readImportFile({ name: file.name, bytes });        // detects the form
 // o.kind: 'parsed' | 'needsMapping' (generic CSV: confirm the guessed columns) | 'error'
 const result = o.kind === 'needsMapping' ? readCsvWithMapping(o.table, o.mapping, o.fileName) : o.result;
 const matches = await matchPlaces(result.places, osmLookupFromClient(osmClient), { signal, onProgress });
-let plan = buildPlan(result, matches, store.repo);             // preview, duplicates, existing saves, tag actions
+let plan = buildPlan(result, matches, store.repo, { closureSignals }); // preview, duplicates, existing saves, tag actions, maybe closed
 plan = resolveItem(plan, key, { kind: 'osm', candidate }, store.repo);   // user's choices
 plan = setTagAction(plan, 'Want to go', { kind: 'map', tagId });
 const report = await applyImport(store, plan, { batchSize: 200, signal, onProgress });
@@ -46,15 +46,71 @@ await applyImport(store, plan, { addPhoto: (placeId, p) => photos.add(placeId, {
 | KML (Google My Maps, Google Earth, Organic Maps…) and KMZ | `formats/kml.ts`, own tolerant XML reader (`xml.ts`), `fflate` unzip | Known format. Folders → tags with their colors (KML styles, My Maps style ids, Organic Maps color names); points → places, lines and polygons → zones; `ExtendedData` fields read |
 | GeoJSON (uMap export, overpass-turbo, any) | `formats/geojson.ts` | Property names guessed (name/title/nom, description/comment/notes, tags/category/list, status, url, created…); OSM ids (`@id`, `osm_type`/`osm_id`) kept; uMap layers → tags with colors |
 | Generic CSV / TSV | `formats/csv.ts` | `,` `;` or tab, decimal commas, day-first dates; `guessMapping` from headers (en/fr/de/es/it synonyms) and from values (two numeric columns, a "lat, lon" column, Google links); the app's column-mapping screen corrects it |
-| **Mapstr export** | `formats/unverified/mapstr.ts` | **UNVERIFIED** (no real export seen, T-009): best-effort CSV and GeoJSON readers on the generic path, plus guesses (JSON tag objects with colors, tag-color column, user/public comments). Every result carries an `unverified-format` warning; the app shows a banner |
+| Mapstr export (`mapstr.zip`, or its `mapstr.csv` / `mapstr.geojson` alone) | `formats/mapstr.ts` | Known format, checked on a real export (T-009); see "Mapstr" below |
 | **Pin Drop export** | `formats/unverified/pindrop.ts` | **UNVERIFIED** (T-009): KML through the KML reader, CSV through the generic reader plus guesses (`Group` → tag, `Visited` → tried) |
 | TrianguLair export | `formats/triangulair.ts` | This package's own format (below) |
 
-Because the Mapstr and Pin Drop readers sit on the generic paths, an unknown
-variant of their files still imports as long as it is CSV, GeoJSON or KML with
-recognizable columns. Fixtures: `test/fixtures` (all hand-made; the
-`hypothetical/` folder holds the guessed Mapstr and Pin Drop layouts, see its
-README).
+Because the Pin Drop reader sits on the generic paths, an unknown variant of
+its files still imports as long as it is CSV or KML with recognizable columns.
+A CSV named `mapstr.csv` without Mapstr's header goes to the column-mapping
+screen. Fixtures: `test/fixtures` (all hand-made; `mapstr/` mirrors a real
+Mapstr export with invented places, `hypothetical/` holds the guessed Pin Drop
+layouts; see its README).
+
+### Mapstr
+
+Mapstr exports a ZIP (`mapstr.zip`) holding `mapstr/mapstr.csv` and
+`mapstr/mapstr.geojson`, plus macOS junk (`__MACOSX/…`, `._*`, `.DS_Store`),
+which is ignored. Detection is by content: a ZIP holding either file (any
+name), a CSV with exactly Mapstr's header, a GeoJSON whose properties have
+`userComment` and `tags` objects `{name, color}`.
+
+| File | What it holds |
+| --- | --- |
+| `mapstr.csv` | UTF-8 with a BOM; header `date,name,address,icon,userComment,rating,tags,photos`. `date` is US style without seconds (`6/17/23 18:36`: month/day/2-digit year, local time). `icon` is Mapstr's category key (`restaurant`…). `rating` is often empty, scale not documented. `tags`: names separated by `#` (`Bar#Salon de thé / café#Restaurant`; names hold spaces, accents and `/`). `photos`: comma-separated URLs on Mapstr's image server. **No coordinates** |
+| `mapstr.geojson` | FeatureCollection of Points `[lon, lat]`; properties `name`, `address`, `icon`, `userComment`, `tags` as `[{name, color: "#ff5161"}]`. No date, rating or photos |
+
+- **Both files** (the ZIP): position, tag colors, icon and comment from the
+  GeoJSON; date, rating and photos from the CSV. Rows are joined by order when
+  both files have as many places and every name + address agrees, otherwise
+  by normalized name + address. A CSV row without a feature keeps no position
+  (`row-not-joined`); a feature without a row has no date.
+- **The CSV alone** has no positions: the matching step searches each place by
+  name and address (Photon), so places come out "to check" or without a
+  position; the preview says the ZIP (or the GeoJSON) gives exact positions
+  (`positions-from-address`).
+- **An invalid GeoJSON** (not valid JSON, e.g. cut short) is an error
+  (`invalid-json`) on its own; in the ZIP, the CSV is used and the preview says
+  why (`invalid-geojson`).
+- **Mapping.** name, address; `userComment` → comment; tags with their colors
+  (the tag step then maps them to my tags), the first one being the main tag;
+  `icon` → OSM category (`MAPSTR_ICON_CATEGORIES`: `restaurant` →
+  `amenity=restaurant`, `bar`, `cafe`, `museum`, `park`, `hotel`…; only
+  `restaurant` has been seen in a real export, an unknown key gives none);
+  `date` → creation date.
+- **Rating.** The data model has no rating, and Mapstr's scale is not known:
+  the rating is kept as written in `ImportedPlace.rating`, never written as
+  such. The preview offers "Add Mapstr's rating to the comment"
+  (`ratingsInComments`), off by default.
+- **Photos** stay on Mapstr: their URLs are kept in memory
+  (`ImportedPlace.remotePhotos`) only to count them ("N photos stay on
+  Mapstr", `remote-photos`), never downloaded (that would contact a third
+  party) and never written to my data.
+
+### Tags that are not categories
+
+`tagRole` (tagMatch.ts) recognizes, in English and French, tag names that
+stand for something else (owner feedback on Mapstr exports):
+
+- a **status**: "À essayer", "à tester", "to try" → the tag action
+  `{ kind: 'status', status: 'to_try' }`, preselected: places with it get the
+  status, and no tag is created. The user can make it a tag again.
+- a **practical criterion**: "Openair" / "terrasse" (terrace), "Vege friendly" /
+  "veggie" (vegetarian), "A emporter" / "takeaway" (takeaway). TrianguLair reads
+  criteria from OpenStreetMap only (a save has no criterion of its own), so
+  these stay tags; the tag step says why.
+
+No tag is ever preselected as "Don't import".
 
 ## Matching to OpenStreetMap
 
@@ -76,11 +132,29 @@ README).
   A place found by name only is never automatic. Places the source already ties
   to OSM (`@id`, TrianguLair export) and zones are not looked up.
 - **Duplicates** (spec "No duplicates"). In the file: same target OSM place, or
-  two manual points (or zones) within 30 m with similarity ≥ 0.6 (the data
-  package's rule) → folded (tags united, comments joined, best status, earliest
-  date). Against my saves: same place id, or a save of mine of the same kind
-  within 30 m with a similar name → merged: tags added, comment completed (never
-  replaced), status and price only if empty; a save in the trash is restored.
+  two manual points (or zones) within 50 m (`IMPORT_MERGE_RADIUS_M`; the data
+  package's duplicate suggestions use 30 m, but an app's pin and the OSM object
+  are often further apart) with similarity ≥ 0.6 → folded (tags united,
+  comments joined, best status, earliest date). Against my saves: same place
+  id, or a save of mine of the same kind within 50 m with a similar name →
+  "already in my places". Such places are left as they are unless the user
+  chooses to merge (`plan.mergeExisting`, `setMergeExisting`): then tags are
+  added, the comment completed (never replaced), status and price set only if
+  empty, and a save in the trash restored. Re-importing the same file writes
+  nothing (`counts.alreadySaved`, or `counts.unchanged` when merging).
+- **Maybe closed** (spec "Closed place detection"). `buildPlan(…, { closureSignals })`
+  takes the osm package's `osmSignals` (the app passes it; this package does not
+  depend on `@triangulair/osm`): a matched OSM object with a closed signal
+  (lifecycle prefix, `disused=yes`, vacant, `end_date` passed, hours `off`) is
+  flagged, and so is a manual point whose source gives a category while OSM
+  has no place of that name within 250 m (signal `not_found_nearby`, low;
+  never when OSM could not be reached). `PlanItem.closure` holds the signals,
+  `summarizePlan(…).maybeClosed` the count; `setMaybeClosedSkipped` leaves them
+  all out or keeps them (kept by default). Written places get the closure
+  system's flag (`status: 'maybe_closed'` and `closedSignals` in the place
+  cache), so the card shows the "Maybe closed" badge. No extra network query:
+  the tags come with the tile queries. The tile query returns live POIs only,
+  so a place mapped only as `disused:amenity=…` is seen as "not found nearby".
 
 ## Writing
 
@@ -139,8 +213,10 @@ ignored, warning); a higher `version` is refused.
 
 ## Open questions
 
-1. **Mapstr and Pin Drop formats** are guesses until T-009 provides real
-   exports (and tells whether Mapstr's export needs the paid plan).
+1. **Pin Drop format** is a guess until T-009 provides a real export. Mapstr's
+   is verified; whether its export needs the paid plan is not known.
+   Criteria from tags ("Openair" → terrace) would need a criterion of my own on
+   a save, which the data model does not have.
 2. **Google Saved CSV without coordinates.** Most list links carry only a
    feature id; the place is found by a Photon name search and always needs a
    check. Resolving the CID would need Google's API (not used).

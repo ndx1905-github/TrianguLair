@@ -7,6 +7,23 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Import from Mapstr, checked on a real export: pick Mapstr's ZIP as it comes (or its `mapstr.csv` or
+  `mapstr.geojson` alone). Places keep their position, address, comment, tags with their colors, category and the
+  date they were saved. Tags such as "À essayer" become the status "To try". The rating is added to the comment only
+  if you ask. Photos stay on Mapstr: the preview counts them, and nothing is downloaded. With the CSV alone, places
+  are found by their address, and the preview suggests the ZIP for exact positions.
+- The import preview counts new places, places already in my places and duplicates in the file. Places already
+  saved are left as they are unless you choose to add the file's tags and comments to them, so importing the same
+  file twice adds nothing.
+- The import preview counts places that may no longer exist according to OpenStreetMap (marked closed there, or
+  no place of that name nearby). You can keep them, with the "Maybe closed" badge, or leave them out.
+
+### Changed
+
+- A file that is not valid GeoJSON now says so ("it may be incomplete") instead of "could not be read".
+
 ## [0.9.0-beta.5] - 2026-11-23
 
 Tap the map to pick a place around that spot, and web sync to Nextcloud works.

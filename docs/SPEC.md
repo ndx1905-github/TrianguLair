@@ -181,7 +181,7 @@ All building blocks use an existing standard; the only project-specific format i
 | Address search | Nominatim / Photon API | Public or self-hosted services |
 | Export / import | GeoJSON (main), GPX, KML, CSV | Openable in uMap, QGIS, Google My Maps, Organic Maps |
 | Import from Google | Google Takeout "Saved places" (GeoJSON) | To migrate your favorites |
-| Import from Mapstr | Mapstr CSV export | Columns to verify on a real export |
+| Import from Mapstr | Mapstr export: a ZIP with `mapstr.csv` and `mapstr.geojson` | Checked on a real export (T-009); columns in "Importing your places" |
 
 A known limitation: OpenStreetMap identifiers are not perfectly stable (an object can be deleted or recreated). Each saved place therefore also keeps its coordinates and name as a local copy, the OSM ID being only an enrichment link.
 
@@ -292,7 +292,7 @@ Import is primarily meant to bring over users from Mapstr, Pin Drop or Google Ma
 | Source | Format | Status |
 | --- | --- | --- |
 | Google Maps | Google Takeout (GeoJSON, CSV) | Known format |
-| Mapstr | CSV export, mentioned in Mapstr's App Store listing | Columns and possible restriction to the paid plan to be verified on a real account |
+| Mapstr | ZIP export: `mapstr.csv` (`date,name,address,icon,userComment,rating,tags,photos`: US dates, `#`-separated tags, photo URLs, no coordinates) and `mapstr.geojson` (points with `name`, `address`, `icon`, `userComment`, `tags` as `{name, color}`) | Known format (checked on a real export, T-009); the CSV or the GeoJSON alone is accepted too. Whether the export needs the paid plan is not known |
 | Pin Drop and similar apps | KML or CSV depending on the app | Pin Drop export to be verified |
 | Other apps, spreadsheets | Generic CSV, with a column-mapping wizard (name, coordinates or address, note, tags) | — |
 | This app | GeoJSON | Known format |
@@ -301,7 +301,9 @@ Processing:
 
 - Each imported place is matched to an OpenStreetMap place by its name and position, or by its address. Confident matches are automatic; doubtful ones are presented for validation, on the map; with no match, the place becomes a manually placed point.
 - The source's tags become my tags, with their colors if the export contains them; notes become comments; known statuses (tried, to try) are carried over.
-- No duplicates: re-importing a file or importing from two sources merges identical places.
+- No duplicates: re-importing a file or importing from two sources never creates a place twice. Rows of one file for the same place are folded; a place already in my places (same OSM object, or same name within about 50 m) is shown as "already in my places" and left as it is, unless I choose to add the file's tags and comments to it.
+- A tag of the source that is really a status ("À essayer", "to try") becomes the status. Practical criteria (terrace, vegetarian, takeaway) come from OpenStreetMap, so such tags stay tags.
+- Places that may no longer exist according to OpenStreetMap (the matched object carries a closed signal of "Closed place detection", or the source gives a category and OSM has no place of that name nearby) are counted in the preview; I keep them, flagged "maybe closed", or leave them out. Nothing is dropped silently.
 - Final summary: number of places imported, linked to OSM, to check, ignored; import can be undone in one gesture for a few days.
 
 ### Closed place detection
@@ -316,6 +318,7 @@ Signals detected:
 | OpenStreetMap | Tag switched to a lifecycle prefix: `disused:shop`, `was:amenity`, `abandoned:` | High |
 | OpenStreetMap | Name or category changed at the same location (new business) | Medium |
 | OpenStreetMap | Opening hours removed or set to `off` | Low |
+| OpenStreetMap | At import: no OSM place of that name near the position the source gives, although it gives a category | Low |
 | Users | You or a friend report "closed" | Medium, high from 2 reports |
 | Friends | A friend's "closed" report, read from their shared content | Medium |
 
@@ -1027,7 +1030,7 @@ Flows to detail:
 - [ ] Error cases: decided (see Error cases)
 - [ ] Following a list without being a friend: decided (see Features)
 - [ ] Viewing without the app: decided (uMap for public lists in v1, custom page in v2)
-- [ ] Imports: decided (see Features); Mapstr and Pin Drop export formats to be verified
+- [ ] Imports: decided (see Features); Mapstr export format verified (T-009), Pin Drop's still to be verified
 
 Non-functional requirements:
 
@@ -1053,7 +1056,7 @@ Project:
 - [ ] Refresh frequency while the app stays open.
 - [ ] Offer a default storage to beginners (partner host), or only a wizard?
 - [ ] Project name: TrianguLair chosen; check the domains (triangulair, and triangulaire to redirect typos) and trademarks on TMview (classes 9 and 42).
-- [ ] Exact format of the Mapstr export (for import): to be verified on a real account.
+- [x] Exact format of the Mapstr export (for import): verified on a real export (T-009), see "Importing your places".
 - [ ] Funding for the Apple Developer account and the security audit.
 - [x] Community language: English (repository, issues, spec); the app is translated via Weblate.
 
