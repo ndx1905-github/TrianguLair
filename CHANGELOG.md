@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.3] - 2026-11-23
+
+Whose places on the map, editing many places at once, optional examples, and the web base map.
+
 ### Added
 
 - **Select many places at once** in the list: "Select", then tick places or "Select all (N)", which takes the
