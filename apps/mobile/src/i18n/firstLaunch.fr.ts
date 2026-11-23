@@ -61,9 +61,9 @@ export const firstLaunchFr: Messages = {
   'importStep.later': 'Plus tard',
   // Example places (src/data/demo.ts): only on request, local only, deleted in one tap.
   'importStep.examples': 'Me montrer avec des exemples',
-  'importStep.examplesHelp': 'Des lieux d’exemple à Paris, enregistrés par une amie d’exemple. Ils restent sur ce téléphone, ne sont jamais partagés, et se suppriment en un geste.',
+  'importStep.examplesHelp': 'Des lieux d’exemple à Paris, enregistrés par une amie d’exemple. Ils restent sur cet appareil, ne sont jamais partagés, et se suppriment en un geste.',
   'examples.friendName': '{name} (exemple)',
-  'examples.banner': 'Ce sont des lieux d’exemple : ils restent sur ce téléphone et ne sont jamais partagés.',
+  'examples.banner': 'Ce sont des lieux d’exemple : ils restent sur cet appareil et ne sont jamais partagés.',
   'examples.delete': 'Supprimer les lieux d’exemple',
   'examples.hide': 'Masquer',
   'examples.deleted': { one: '{count} lieu d’exemple supprimé', other: '{count} lieux d’exemple supprimés' },
@@ -90,7 +90,7 @@ export const firstLaunchFr: Messages = {
   'invite.open': 'Ouvrir l’invitation',
 
   'kit.title': 'Kit de récupération',
-  'kit.lead': 'Deux éléments suffisent pour tout retrouver si vous perdez ce téléphone : votre phrase de récupération de 12 mots et l’adresse de votre stockage. Gardez-les dans un gestionnaire de mots de passe ou sur papier.',
+  'kit.lead': 'Deux éléments suffisent pour tout retrouver si vous perdez cet appareil : votre phrase de récupération de 12 mots et l’adresse de votre stockage. Gardez-les dans un gestionnaire de mots de passe ou sur papier.',
   'kit.localOnlyNote': 'Local uniquement : vos lieux ne sont que sur cet appareil, la phrase ne suffit donc pas à les retrouver. Exportez de temps en temps un fichier de sauvegarde (Liste › Importer / exporter) et gardez-le en lieu sûr.',
   'kit.localOnlyProtocol': 'local uniquement, pas encore de stockage',
   'kit.phraseLabel': 'Phrase de récupération (12 mots)',

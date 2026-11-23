@@ -229,6 +229,28 @@ describe('scheduler', () => {
   }
   const ok = (): SyncReport => ({ own: null, friends: [], problems: [], ok: true, startedAt: 0, durationMs: 0 });
 
+  it('a pass that throws is reported as a problem, not as "idle, no problem"', async () => {
+    const ft = fakeTimers();
+    const errors: unknown[] = [];
+    const s = new SyncScheduler({
+      run: async () => {
+        throw new Error('unexpected');
+      },
+      timers: ft.timers,
+      onError: (e) => errors.push(e),
+    });
+    await s.appForeground('launch');
+    s.localChange();
+    await s.pullToRefresh();
+    const st = s.getStatus();
+    expect(st.problem?.kind).toBe('bug');
+    expect(st.problem?.detail).toContain('unexpected');
+    expect(st.lastSuccess).toBeNull();
+    expect(st.pending).toBe(1);
+    expect(errors.length).toBe(2);
+    s.stop();
+  });
+
   it('syncs on launch, regularly while in use, debounces changes, finishes on close, then nothing', async () => {
     const ft = fakeTimers();
     const runs: string[] = [];
