@@ -43,6 +43,7 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
   // Edit the status from its card (saved immediately).
   await row.click();
   const page2 = page.getByTestId('place-card').filter({ visible: true });
+  await expect(page2.getByTestId('card-my-comment')).toContainText('Terrace in the courtyard, ask for the cider.');
   await expect(page2).toBeVisible();
   await page2.getByTestId('status').getByRole('radio', { name: 'Favorite' }).click();
   await expect(page2.getByTestId('status').getByRole('radio', { name: 'Favorite' })).toBeChecked();

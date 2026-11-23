@@ -122,6 +122,14 @@ export async function pinIds(page: Page): Promise<string[]> {
   return page.locator('[data-pin-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-pin-id') ?? ''));
 }
 
+/** Band colors of each pin on the map, by place id (`data-colors` of the web markers). */
+export async function pinColors(page: Page): Promise<Record<string, string>> {
+  const pairs = await page
+    .locator('[data-pin-id]')
+    .evaluateAll((els) => els.map((e) => [e.getAttribute('data-pin-id') ?? '', e.getAttribute('data-colors') ?? ''] as const));
+  return Object.fromEntries(pairs);
+}
+
 /** Ids of the pins drawn as matching the filter (not greyed). */
 export async function matchingPinIds(page: Page): Promise<string[]> {
   return page

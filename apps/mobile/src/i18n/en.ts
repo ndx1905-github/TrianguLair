@@ -115,6 +115,7 @@ export const en: Messages = {
 
   'card.title': 'Place',
   'card.notFound': 'This place is no longer on this device.',
+  'card.myComment': 'My comment',
   'card.inMyPlaces': 'In my places',
   'card.maybeClosed': 'This place may be closed.',
   'card.website': 'Website',
