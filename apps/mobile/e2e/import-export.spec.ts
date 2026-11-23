@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { expect, openMap, preparePage, test } from './helpers';
+import { diagnose, expect, openMap, preparePage, test } from './helpers';
 
 const SMALL = path.join(__dirname, 'fixtures/small.geojson');
 /** The import package's INVENTED Mapstr export (4 places, macOS junk included). */
@@ -182,4 +182,18 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   await pickFile(page, MAPSTR_ZIP);
   await expect(page.getByTestId('preview-counts')).toHaveText('New: 0 · Already in my places: 4 · Duplicates in this file: 0');
   await expect(page.getByTestId('import-confirm')).toBeDisabled();
+  // What's new (from the map): the places the first import wrote "maybe closed", in one entry (not repeated).
+  await page.getByTestId('back').filter({ visible: true }).click();
+  await expect(page.getByTestId('import-pick')).toBeVisible();
+  await page.getByTestId('back').filter({ visible: true }).click();
+  await expect(page.getByTestId('list-search')).toBeVisible();
+  await page.getByTestId('back').filter({ visible: true }).click();
+  await page.getByTestId('open-whatsnew').click();
+  const news = page.getByTestId('whatsnew-item-closureImport');
+  await expect(news).toHaveCount(1).catch(async (e: unknown) => {
+    await diagnose(page, 'no grouped import entry in What’s new');
+    throw e;
+  });
+  await expect(news).toContainText('3 imported places may no longer exist according to OpenStreetMap');
+  await expect(news.getByTestId('whatsnew-unseen')).toBeVisible();
 });

@@ -43,8 +43,11 @@ import {
   type ParseResult,
   type PlanOptions,
 } from '@triangulair/import';
+import type { Repository } from '@triangulair/data';
 import { osmSignals } from '@triangulair/osm';
 
+import { readSignals } from '../closure/glue';
+import { recordDetections } from '../closure/run';
 import { DataGate } from '../components/DataGate';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Banner, Button, Pill, SectionTitle, Segmented } from '../components/ui';
@@ -75,6 +78,15 @@ const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'Abort
 /** "Maybe closed" signals of a matched OSM object: the monthly check's own rules (lifecycle tags, vacant, end date…). */
 const closureSignals: PlanOptions['closureSignals'] = (c, now) =>
   osmSignals({ kind: 'present', element: { type: c.ref.type, id: c.ref.id, tags: c.tags ?? {} } }, undefined, now);
+
+/** The places an import wrote (new or merged) that are flagged "maybe closed". */
+function importedMaybeClosed(repo: Repository, report: ImportReport) {
+  const ids = [...report.createdPlaceIds, ...report.merged.map((m) => m.placeId)];
+  return ids.flatMap((id) => {
+    const p = repo.getPlace(id);
+    return p && p.status === 'maybe_closed' ? [{ placeId: id, name: p.name, signals: readSignals(p) }] : [];
+  });
+}
 
 function ImportScreen() {
   const c = useUiColors();
@@ -176,6 +188,8 @@ function ImportScreen() {
             photos.add(placeId, { full: p.images.full, thumb: p.images.thumb, width: p.width ?? 0, height: p.height ?? 0 }, p.createdAt !== undefined ? { createdAt: p.createdAt } : {}),
         }),
       });
+      // Places written "maybe closed": one grouped What's new entry ("N imported places may no longer exist…").
+      recordDetections(store, importedMaybeClosed(store.repo, report), 'import');
       setSetting(LAST_IMPORT_KEY, serializeReport(report));
       setLastImport(undoableReport(serializeReport(report), Date.now()));
       setStep({ kind: 'done', report });

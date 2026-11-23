@@ -270,8 +270,10 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   await sync(anna);
   await sync(ben);
 
+  // Her two edits, and his own Chez Paulette, which the closed-place check (first run when his map
+  // opens) finds may no longer exist according to OpenStreetMap.
   await b.goto(autostart('/'));
-  await expect(b.getByTestId('whatsnew-badge')).toHaveText('2', { timeout: 30_000 });
+  await expect(b.getByTestId('whatsnew-badge')).toHaveText('3', { timeout: 30_000 });
   await expect(b.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
   await jump(b, 48.8594, 2.3624, 16);
   // Whose map: her shared place carries her dot, and says so (spec "Whose places").

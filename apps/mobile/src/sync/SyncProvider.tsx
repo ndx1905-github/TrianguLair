@@ -39,6 +39,7 @@ import { registerBlockedSource, type BlockedPerson, type ReportedList } from '..
 import { ContentDeleted, type ErasePhase } from '../privacy/ContentDeleted';
 import { openSyncKeys, sealForThisDevice, serializeSyncKeys } from './keys';
 import type { WhatsNewEntry } from './whatsNew';
+import { onClosureEvents } from '../closure/events';
 
 export interface SyncApi {
   snapshot: ControllerSnapshot | null;
@@ -177,10 +178,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       else if (s === 'background') void inBackgroundGrace(() => c.background());
     });
     const offEdit = onLocalEdit(() => c.localChange());
+    // A place of mine that may no longer exist (closed-place check, import): What's new and its badge.
+    const offClosures = onClosureEvents(() => {
+      if (alive) setSnapshot(c.snapshot());
+    });
     return () => {
       alive = false;
       sub.remove();
       offEdit();
+      offClosures();
       offNet();
       registerStorageMoveHooks(null);
       registerBlockedSource(null);

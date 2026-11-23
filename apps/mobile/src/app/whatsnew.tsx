@@ -2,12 +2,16 @@
  * What's new (spec "Interface", T-210): friends' activity since my last visit, grouped by day,
  * filterable by type and by friend; unseen items have a dot. "See on the map" highlights their places
  * (the others are faded). Pull to refresh runs a sync pass. Leaving the screen counts as the visit.
+ * My own places that may no longer exist according to OpenStreetMap (closed-place check, import) are
+ * listed too, with their own icon and type: tapping one opens its card, where I can answer.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { signalText } from '../closure/labels';
 import { DataGate } from '../components/DataGate';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Button, Pill } from '../components/ui';
@@ -19,14 +23,31 @@ import { useAppState } from '../state/AppState';
 import { Avatar } from '../sync/FriendsPicker';
 import { usePullToRefresh } from '../sync/usePullToRefresh';
 import { useSync } from '../sync/SyncProvider';
-import { filterEntries, groupByDay, placesOf, type WhatsNewEntry, type WhatsNewType } from '../sync/whatsNew';
+import { filterEntries, groupByDay, isOwnEntry, placesOf, type WhatsNewEntry, type WhatsNewType } from '../sync/whatsNew';
 import { PhotoStrip } from '../photos/PhotoStrip';
 
-const TYPES: WhatsNewType[] = ['all', 'places', 'comments', 'statuses', 'photos', 'people'];
+const TYPES: WhatsNewType[] = ['all', 'places', 'comments', 'statuses', 'photos', 'people', 'closures'];
+
+/** mdiMapMarkerOff (Material Design Icons, Apache License 2.0): a place that may be gone. */
+const MARKER_OFF =
+  'M16.37,16.1L11.75,11.47L11.64,11.36L3.27,3L2,4.27L5.18,7.45C5.06,7.95 5,8.46 5,9C5,14.25 12,22 12,22C12,22 13.67,20.15 15.37,17.65L18.73,21L20,19.72M12,6.5A2.5,2.5 0 0,1 14.5,9C14.5,9.73 14.17,10.39 13.67,10.85L17.3,14.5C18.28,12.62 19,10.68 19,9A7,7 0 0,0 12,2C10,2 8.24,2.82 6.96,4.14L10.15,7.33C10.61,6.82 11.26,6.5 12,6.5Z';
+
+/** The icon of my own entries (instead of a friend's avatar). */
+function ClosureIcon({ size = 36 }: { size?: number }) {
+  const c = useUiColors();
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c.warningBg, borderColor: c.warning, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }} testID="whatsnew-closure-icon">
+      <Svg width={size * 0.6} height={size * 0.6} viewBox="0 0 24 24">
+        <Path d={MARKER_OFF} fill={c.text} />
+      </Svg>
+    </View>
+  );
+}
 
 function WhatsNewScreen() {
   const c = useUiColors();
-  const { t, locale } = useI18n();
+  const tr = useI18n();
+  const { t, locale } = tr;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter, wide } = useLayout();
@@ -41,7 +62,7 @@ function WhatsNewScreen() {
   useEffect(() => () => sync.markVisited(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const entries = useMemo(() => sync.whatsNew(), [sync.snapshot]); // eslint-disable-line react-hooks/exhaustive-deps
-  const owners = useMemo(() => [...new Set(entries.map((e) => e.owner))], [entries]);
+  const owners = useMemo(() => [...new Set(entries.filter((e) => !isOwnEntry(e)).map((e) => e.owner))], [entries]);
   const shown = useMemo(() => filterEntries(entries, { type, owner }), [entries, type, owner]);
   const now = Date.now();
   const groups = useMemo(() => groupByDay(shown, now), [shown]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,8 +95,14 @@ function WhatsNewScreen() {
         return t('wn.moved', { name });
       case 'identity':
         return t('wn.identity', { name });
+      case 'closure':
+        return t('wn.closure', { place });
+      case 'closureImport':
+        return t('wn.closureImport', { count: e.count ?? e.placeIds?.length ?? 0 });
     }
   };
+  /** Second line: the reason of a closure entry, or the friend's comment. */
+  const detail = (e: WhatsNewEntry): string | null => (e.kind === 'closure' && e.signal ? signalText(e.signal, tr) : null);
 
   const seeOnMap = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -137,14 +164,19 @@ function WhatsNewScreen() {
                   onPress={() => open(e)}
                   style={({ pressed }) => [styles.item, { borderColor: c.border, backgroundColor: pressed ? c.surfaceAlt : c.surface }]}
                   accessibilityRole="button"
-                  accessibilityLabel={`${unseen ? `${t('wn.new')}. ` : ''}${text(e)}${e.comment ? `. ${e.comment}` : ''}`}
+                  accessibilityLabel={`${unseen ? `${t('wn.new')}. ` : ''}${text(e)}${e.comment ? `. ${e.comment}` : ''}${detail(e) ? `. ${detail(e)}` : ''}`}
                   testID={`whatsnew-item-${e.kind}`}
                 >
-                  <Avatar name={nameOf(e.owner)} uri={repo.getPerson(e.owner)?.avatar ?? null} size={36} />
+                  {isOwnEntry(e) ? <ClosureIcon /> : <Avatar name={nameOf(e.owner)} uri={repo.getPerson(e.owner)?.avatar ?? null} size={36} />}
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={2}>
                       {text(e)}
                     </Text>
+                    {detail(e) ? (
+                      <Text style={{ color: c.textMuted, fontSize: 14 }} maxFontSizeMultiplier={2} numberOfLines={2} testID="whatsnew-reason">
+                        {detail(e)}
+                      </Text>
+                    ) : null}
                     {e.comment ? (
                       <Text style={{ color: c.text, fontSize: 14, fontStyle: 'italic' }} maxFontSizeMultiplier={2} numberOfLines={3}>
                         “{e.comment}”

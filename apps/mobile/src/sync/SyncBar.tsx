@@ -25,7 +25,7 @@ export function SyncBar() {
   const snap = sync?.snapshot ?? null;
   if (!snap) return null;
   const note = ownNote(snap.status, snap.publishes);
-  const showNews = followed.length > 0 || snap.friends.length > 0 || snap.unseen > 0;
+  const showNews = followed.length > 0 || snap.friends.length > 0 || snap.unseen > 0 || snap.ownNews > 0;
   if (!note && !showNews && !highlight) return null;
   const toneBg = note?.tone === 'error' ? c.warningBg : note?.tone === 'warning' ? c.warningBg : c.surface;
   const toneBorder = note?.tone === 'error' ? c.danger : note?.tone === 'warning' ? c.warning : c.border;

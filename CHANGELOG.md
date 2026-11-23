@@ -7,6 +7,18 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- What's new lists my places that may no longer exist according to OpenStreetMap, dated when the check found
+  them, with the reason ("Marked “no longer in use” in OpenStreetMap"…). The check of my places runs while the app
+  is open, each place about once a month, and also when I open a place's card. Tapping the entry opens the card,
+  where I confirm it closed or still open. A place gets one entry, and a new one only if it is flagged again after I
+  said "Still open". Places an import marks "maybe closed" get one grouped entry. A "Closed?" filter shows them
+  alone; they count in the What's new badge, and the What's new button stays on the map while there are some, even
+  without friends. They are kept on this device only.
+- The closed-place check also runs from time to time while the app stays open (a browser tab left open for days),
+  not only when it opens or comes back to the foreground.
+
 ## [0.9.0-beta.6] - 2026-11-23
 
 Import from Mapstr checked on a real export, no duplicates at import, and comments first on a place's card.
