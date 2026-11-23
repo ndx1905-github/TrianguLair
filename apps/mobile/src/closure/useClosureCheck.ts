@@ -1,9 +1,13 @@
 /**
  * Monthly closed-place check while the app is open (T-113): a run when the
- * map opens and when the app returns to the foreground (at most every few
- * hours), aborted as soon as the app leaves the foreground. Never in the
- * background (spec "Synchronization and background"). Then the grouped
- * notice, at most once a month.
+ * map opens, when the app returns to the foreground, and from time to time
+ * while it stays open (a browser tab left open for days) — at most every few
+ * hours — aborted as soon as the app leaves the foreground. Never in the
+ * background (spec "Synchronization and background"). Each run checks the
+ * places due (last check over a month old, never-checked first), so every
+ * saved OSM place is checked again about once a month. Places newly found
+ * "maybe closed" go to What's new (`events.ts`); then the grouped notice, at
+ * most once a month.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
@@ -20,6 +24,8 @@ export interface ClosureNoticeState {
 }
 
 const LAST_RUN_KEY = 'closure-last-run';
+/** While the app stays in the foreground, look again this often (a run still waits RUN_EVERY_MS). */
+const TICK_MS = 3600_000;
 
 export function useClosureCheck(): { notice: ClosureNoticeState | null; dismiss: () => void } {
   const { repo, mutate } = useData();
@@ -72,7 +78,11 @@ export function useClosureCheck(): { notice: ClosureNoticeState | null; dismiss:
         ctrl.current = null;
       }
     });
+    const tick = setInterval(() => {
+      if (AppState.currentState === 'active') void run();
+    }, TICK_MS);
     return () => {
+      clearInterval(tick);
       sub.remove();
       ctrl.current?.abort();
       ctrl.current = null;

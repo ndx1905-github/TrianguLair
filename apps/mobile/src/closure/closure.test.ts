@@ -13,7 +13,7 @@ import { loadFixtures } from '../osm/fixtures';
 import { TAGS } from '../theme/tags';
 import { checkInputOf, dueCandidates, isDueOnCardOpen, noticeFor, parseResolutions, patchFromResolution, patchFromResult, readSignals, signalsSince } from './glue';
 import { signalText } from './labels';
-import { loadResolutions, myOsmPlaces, resolveClosure, runDueChecks } from './run';
+import { closureLogOf, loadResolutions, myOsmPlaces, resolveClosure, runDueChecks } from './run';
 
 const DAY = 24 * 3600_000;
 const NOW = new Date('2026-10-23T16:30:00Z');
@@ -106,6 +106,8 @@ describe('closed-place check against the fixtures (run.ts)', () => {
     expect(place.status).toBe('maybe_closed');
     expect(readSignals(place).map((s) => s.code)).toContain('lifecycle_prefix');
     expect(place.osmTags?.['disused:amenity']).toBe('restaurant');
+    // What's new: "may no longer exist according to OpenStreetMap", dated when detected, with the reason.
+    expect(closureLogOf(store).entries()).toMatchObject([{ kind: 'closure', placeId: closedId, name: place.name, at: NOW.getTime(), signal: { code: 'lifecycle_prefix' } }]);
 
     resolveClosure(place, 'still_open', mutate, NOW);
     expect(loadResolutions()[closedId]?.decision).toBe('still_open');
@@ -116,6 +118,7 @@ describe('closed-place check against the fixtures (run.ts)', () => {
     expect(await runDueChecks(store.repo, osm, mutate, new AbortController().signal, later)).toBeGreaterThan(0);
     place = store.repo.getPlace(closedId)!;
     expect(place.status).toBe('open');
+    expect(closureLogOf(store).entries()).toHaveLength(1);
 
     resolveClosure(place, 'closed', mutate, later);
     expect(store.repo.getPlace(closedId)!.status).toBe('closed');

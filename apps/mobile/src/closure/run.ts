@@ -5,6 +5,7 @@
  */
 import type { DataStore, PlaceRecord, Repository } from '@triangulair/data';
 import type { CheckResult, OsmClient } from '@triangulair/osm';
+import { SqliteStateStore } from '@triangulair/sync';
 
 import { getSetting, setSetting } from '../data/deviceSettings';
 import {
@@ -19,6 +20,7 @@ import {
   RUN_BATCH,
   type ResolutionMap,
 } from './glue';
+import { ClosureEventLog, type Detection } from './events';
 
 export function loadResolutions(): ResolutionMap {
   return parseResolutions(getSetting(RESOLUTIONS_KEY));
@@ -28,6 +30,23 @@ export function saveResolution(placeId: string, decision: 'closed' | 'still_open
   const all = loadResolutions();
   all[placeId] = { decision, decidedAt: now.toISOString() };
   setSetting(RESOLUTIONS_KEY, JSON.stringify(all));
+}
+
+/** What's new entries of my places that may no longer exist (local database, this device only). */
+export function closureLogOf(store: DataStore): ClosureEventLog {
+  return new ClosureEventLog(new SqliteStateStore(store.repo.db));
+}
+
+/** Records the places newly flagged "maybe closed" in What's new (never fails a check). */
+export function recordDetections(store: DataStore, found: readonly Detection[], how: 'check' | 'import', now = Date.now()): void {
+  if (found.length === 0) return;
+  try {
+    const log = closureLogOf(store);
+    if (how === 'import') log.recordImport(found, loadResolutions(), now);
+    else log.recordChecks(found, loadResolutions(), now);
+  } catch (e) {
+    console.warn('Could not record the closed-place news', e);
+  }
 }
 
 /** My saved places from OpenStreetMap (manual points are never checked). */
@@ -54,14 +73,19 @@ export async function checkPlaces(
   const results = await osm.closure.check(inputs, signal ? { signal } : {});
   if (signal?.aborted) return [];
   const byRef = new Map(places.map((p) => [`${p.osmType}/${p.osmId}`, p]));
-  mutate((store) =>
+  mutate((store) => {
+    const found: Detection[] = [];
     store.repo.transaction(() => {
       for (const r of results) {
         const p = byRef.get(`${r.ref.type}/${r.ref.id}`);
-        if (p) store.repo.updatePlaceOsmData(p.id, patchFromResult(r));
+        if (!p) continue;
+        store.repo.updatePlaceOsmData(p.id, patchFromResult(r));
+        if (r.assessment.status === 'maybe_closed') found.push({ placeId: p.id, name: p.name, signals: r.assessment.signals });
       }
-    }),
-  );
+    });
+    // "May no longer exist according to OpenStreetMap" in What's new, dated now.
+    recordDetections(store, found, 'check', Date.parse(results[0]?.checkedAt ?? '') || Date.now());
+  });
   return results;
 }
 

@@ -5,11 +5,17 @@
  * places added, comments, statuses, a friend's key change or move. The log lives in the sync
  * state (local database), so a remote wipe erases it with the rest.
  *
+ * My own places that may no longer exist according to OpenStreetMap (closed-place check, import)
+ * are listed with them: they come from their own log (`closure/events.ts`, same local database).
+ *
  * Pure apart from the small key-value store it is given; unit-tested.
  */
+import type { ClosureSignal } from '@triangulair/osm';
 import type { FriendReport, SyncStateStore } from '@triangulair/sync';
 
-export type WhatsNewKind = 'added' | 'comment' | 'status' | 'photo' | 'followed' | 'key' | 'moved' | 'identity';
+import { ClosureEventLog } from '../closure/events';
+
+export type WhatsNewKind = 'added' | 'comment' | 'status' | 'photo' | 'followed' | 'key' | 'moved' | 'identity' | 'closure' | 'closureImport';
 
 export interface WhatsNewEntry {
   id: string;
@@ -29,9 +35,16 @@ export interface WhatsNewEntry {
   placeIds?: string[];
   /** New photos (kind `photo`): their ids, for thumbnails. */
   mediaIds?: string[];
+  /** One of my places may no longer exist (kind `closure`): the main reason, when known. */
+  signal?: ClosureSignal;
 }
 
-export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'photos' | 'people';
+export type WhatsNewType = 'all' | 'places' | 'comments' | 'statuses' | 'photos' | 'people' | 'closures';
+
+/** My own entries (not a friend's): no avatar, no friend chip. */
+export function isOwnEntry(e: Pick<WhatsNewEntry, 'kind'>): boolean {
+  return e.kind === 'closure' || e.kind === 'closureImport';
+}
 
 export interface RecordContext {
   now: number;
@@ -51,9 +64,21 @@ const MEANINGFUL_STATUS = new Set(['tried', 'favorite']);
 type Kv = Pick<SyncStateStore, 'get' | 'set'>;
 
 export class WhatsNewLog {
-  constructor(private readonly kv: Kv) {}
+  readonly closures: ClosureEventLog;
 
+  constructor(private readonly kv: Kv) {
+    this.closures = new ClosureEventLog(kv);
+  }
+
+  /** Friends' news and my places that may no longer exist, newest first. */
   entries(): WhatsNewEntry[] {
+    const own = this.closures.entries();
+    const friends = this.friendEntries();
+    return own.length === 0 ? friends : [...friends, ...own].sort((a, b) => b.at - a.at);
+  }
+
+  /** Friends' news only (the log `record` writes). */
+  friendEntries(): WhatsNewEntry[] {
     const v = this.kv.get<WhatsNewEntry[]>(LOG_KEY);
     return Array.isArray(v) ? v : [];
   }
@@ -117,7 +142,7 @@ export class WhatsNewLog {
     }
     if (fresh.length === 0 && gone.size === 0) return [];
     // A place that left their shared places takes its earlier news with it.
-    const kept = this.entries().filter((e) => !(e.placeId && gone.has(`${e.owner} ${e.placeId}`)));
+    const kept = this.friendEntries().filter((e) => !(e.placeId && gone.has(`${e.owner} ${e.placeId}`)));
     this.kv.set(LOG_KEY, [...fresh.reverse(), ...kept].slice(0, MAX_ENTRIES));
     return fresh;
   }
@@ -130,7 +155,7 @@ export class WhatsNewLog {
   prunePhotos(exists: (mediaId: string) => boolean): boolean {
     let changed = false;
     const out: WhatsNewEntry[] = [];
-    for (const e of this.entries()) {
+    for (const e of this.friendEntries()) {
       if (e.kind !== 'photo' || !e.mediaIds) {
         out.push(e);
         continue;
@@ -149,7 +174,7 @@ export class WhatsNewLog {
 
   /** Someone I no longer follow: their news go too. */
   forget(owner: string): void {
-    this.kv.set(LOG_KEY, this.entries().filter((e) => e.owner !== owner));
+    this.kv.set(LOG_KEY, this.friendEntries().filter((e) => e.owner !== owner));
   }
 }
 
@@ -171,6 +196,8 @@ export function matchesType(e: WhatsNewEntry, type: WhatsNewType): boolean {
       return e.kind === 'photo';
     case 'people':
       return e.kind === 'key' || e.kind === 'moved' || e.kind === 'identity';
+    case 'closures':
+      return isOwnEntry(e);
   }
 }
 

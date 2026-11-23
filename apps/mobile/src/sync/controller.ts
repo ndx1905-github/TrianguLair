@@ -167,6 +167,8 @@ export interface ControllerSnapshot {
   wiped: boolean;
   friends: FriendLine[];
   unseen: number;
+  /** My own What's new entries (places that may no longer exist): the button stays without friends. */
+  ownNews: number;
   lastPassAt: number | null;
   /** Last pass where my storage worked (kept across launches; the scheduler's own value is per session). */
   lastOwnSuccess: number | null;
@@ -1361,6 +1363,7 @@ export class SyncController implements StorageMoveHooks {
       wiped: this.wiped || this.scheduler.getStatus().state === 'wiped',
       friends,
       unseen: this.wiped ? 0 : safe(() => this.whatsNew.unseen(), 0),
+      ownNews: this.wiped ? 0 : safe(() => this.whatsNew.closures.entries().length, 0),
       lastPassAt: this.lastPassAt,
       lastOwnSuccess: this.wiped ? null : safe(() => this.d.state.get<number>(OWN_OK_KEY) ?? null, null),
       recoveryCopyMissing: !this.wiped && !!e?.own && this.copyMissing,

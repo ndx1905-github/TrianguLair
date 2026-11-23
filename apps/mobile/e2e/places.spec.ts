@@ -70,3 +70,40 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
   await page.goto(autostart('/list'));
   await expect(page.getByTestId(`row-${NAME}`)).toContainText('Favorite');
 });
+
+test('a place of mine that may no longer exist shows up in What\'s new; its card asks', async ({ page }) => {
+  // The closed-place check runs when the map opens: the fixtures' Chez Paulette is tagged disused.
+  await openMap(page);
+  await expect(page.getByTestId('closure-notice')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('closure-notice-later').click();
+  await expect(page.getByTestId('whatsnew-badge')).toHaveText(/^[1-9]/);
+  await page.getByTestId('open-whatsnew').click();
+
+  const item = page.getByTestId('whatsnew-item-closure');
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText('“Chez Paulette” may no longer exist according to OpenStreetMap');
+  await expect(item.getByTestId('whatsnew-reason')).toContainText('Marked “no longer in use” in OpenStreetMap');
+  await expect(item.getByTestId('whatsnew-closure-icon')).toBeVisible();
+  await expect(item.getByTestId('whatsnew-unseen')).toBeVisible();
+  // Its own type; the friends' types leave it out.
+  await page.getByTestId('whatsnew-type-closures').click();
+  await expect(item).toBeVisible();
+  await page.getByTestId('whatsnew-type-comments').click();
+  await expect(item).toHaveCount(0);
+  await page.getByTestId('whatsnew-type-closures').click();
+
+  // Tapping it opens the card, where I answer.
+  await item.click();
+  const card = page.getByTestId('place-card').filter({ visible: true });
+  await expect(card).toContainText('Chez Paulette');
+  await expect(card.getByTestId('closure-maybe')).toBeVisible();
+  await card.getByTestId('closure-still-open').click();
+  await expect(card.getByTestId('closure-maybe')).toHaveCount(0);
+
+  // Seen: no badge nor dot any more, and no second entry for the same flag.
+  await page.getByTestId('card-close').click();
+  await expect(page.getByTestId('whatsnew-badge')).toHaveCount(0);
+  await page.getByTestId('open-whatsnew').click();
+  await expect(item).toHaveCount(1);
+  await expect(item.getByTestId('whatsnew-unseen')).toHaveCount(0);
+});
