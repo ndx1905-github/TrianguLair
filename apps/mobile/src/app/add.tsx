@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { SearchSession } from '@triangulair/osm';
+import type { CategoryId, SearchSession } from '@triangulair/osm';
 
 import { DataGate } from '../components/DataGate';
 import { SaveEditor } from '../components/SaveEditor';
@@ -33,6 +33,7 @@ import {
   type SaveForm,
 } from '../places/add';
 import { categoryLabel, formatDistance } from '../places/card';
+import { categoryCounts } from '../places/nearbyCategories';
 import { useAppState } from '../state/AppState';
 import { haversineM } from '@triangulair/data';
 
@@ -40,8 +41,10 @@ type Load = { kind: 'idle' } | { kind: 'loading' } | { kind: 'ok'; list: Candida
 
 /**
  * Add a place (T-105): known places around the map center, nearest first,
- * then search as you type (Photon), or a point dropped by long-pressing the
- * map. Each candidate says whether it is already in my places or saved by
+ * then search as you type (Photon), or a point dropped on the map. Long-pressing
+ * the map opens the places around that spot, nearest first and filterable by
+ * category, so an existing place is picked instead of a duplicate; "Create a
+ * point here" is first. Each candidate says whether it is already in my places or saved by
  * friends. Choosing one opens the form (tags, status, price, comment and its
  * visibility, sharing).
  */
@@ -62,11 +65,14 @@ function AddScreen() {
     const lon = Number(params.lon);
     return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : (region?.center ?? INITIAL_CENTER);
   }, [params.lat, params.lon, region?.center]);
+  // Long-press on the map: the places around that spot (a tight radius), not around the whole view.
+  const atPoint = params.manual === '1';
   const radius = useMemo(() => {
+    if (atPoint) return AT_POINT_RADIUS_M;
     if (!region) return nearbyRadius(null);
     const [w, s, e, n] = region.bbox;
     return nearbyRadius(haversineM({ lat: s, lon: w }, { lat: n, lon: e }));
-  }, [region]);
+  }, [region, atPoint]);
 
   const known = (placeId: string) => {
     const mine = repo.getMySaveForPlace(placeId);
@@ -79,12 +85,9 @@ function AddScreen() {
   const [nearby, setNearby] = useState<Load>({ kind: 'loading' });
   const [text, setText] = useState('');
   const [search, setSearch] = useState<Load>({ kind: 'idle' });
-  const [picked, setPicked] = useState<Candidate | null>(() =>
-    params.manual === '1' ? manualCandidate(center) : null,
-  );
-  const [form, setForm] = useState<SaveForm | null>(() =>
-    params.manual === '1' ? defaultForm(manualCandidate(center), []) : null,
-  );
+  const [picked, setPicked] = useState<Candidate | null>(null);
+  const [form, setForm] = useState<SaveForm | null>(null);
+  const [category, setCategory] = useState<CategoryId | null>(null);
 
   // Nearby places (Overpass), nearest first; on failure, the places on this device.
   useEffect(() => {
@@ -93,13 +96,17 @@ function AddScreen() {
     osmClient()
       .overpass.nearby(center, { radius, limit: 40, signal: ctrl.signal })
       .then((list) => {
-        const cands = list.map(fromNearby).filter((x): x is Candidate => x !== null);
-        setNearby({ kind: 'ok', list: annotate(cands, known).sort(byDistance) });
+        const cands = annotate(list.map(fromNearby).filter((x): x is Candidate => x !== null), known);
+        // At a point: also my places and my friends' there (points dropped by hand are not in OSM).
+        const seen = new Set(cands.map((x) => x.placeId).filter(Boolean));
+        const local = atPoint ? localNearby().filter((x) => (x.distance ?? Infinity) <= radius && !seen.has(x.placeId)) : [];
+        setNearby({ kind: 'ok', list: [...cands, ...local].sort(byDistance) });
       })
       .catch((e: unknown) => {
         const failure = classifyOsmError(e);
         if (failure !== 'aborted') setNearby({ kind: 'error', failure });
       });
+    setCategory(null);
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lon, radius]);
@@ -218,7 +225,7 @@ function AddScreen() {
     const manual = picked.source === 'manual' || !picked.ref;
     return (
       <View style={[styles.root, { backgroundColor: c.background }]}>
-        <ScreenHeader title={manual ? t('add.manualTitle') : t('add.formTitle')} onBack={() => (params.manual === '1' ? router.back() : setPicked(null))} />
+        <ScreenHeader title={manual ? t('add.manualTitle') : t('add.formTitle')} onBack={() => setPicked(null)} />
         <ScrollView
           contentContainerStyle={{ padding: gutter + 4, paddingBottom: insets.bottom + 40, maxWidth: wide ? 640 : undefined, width: '100%', alignSelf: 'center' }}
           keyboardShouldPersistTaps="handled"
@@ -259,12 +266,6 @@ function AddScreen() {
           <View style={{ marginTop: 24 }}>
             <Button label={t('add.save')} onPress={save} disabled={!canSave(picked, form)} testID="save-place" />
           </View>
-          {manual && nearby.kind === 'ok' && nearby.list.length > 0 && (
-            <>
-              <SectionTitle>{t('add.orExisting')}</SectionTitle>
-              <View style={{ gap: 8 }}>{nearby.list.slice(0, 5).map(renderCandidate)}</View>
-            </>
-          )}
         </ScrollView>
       </View>
     );
@@ -278,9 +279,11 @@ function AddScreen() {
     const localIds = new Set(localMatches.map((x) => x.placeId));
     sections.push({ title: t('add.results'), items: search.list.filter((x) => !localIds.has(x.placeId)) });
   }
-  if (!searching) {
-    if (nearby.kind === 'ok') sections.push({ title: t('add.nearby'), items: nearby.list });
-    if (nearby.kind === 'error') sections.push({ title: t('add.nearbyOnDevice'), items: localNearby() });
+  const nearbyList = nearby.kind === 'ok' ? nearby.list : nearby.kind === 'error' ? localNearby() : [];
+  const categories = categoryCounts(nearbyList);
+  if (!searching && nearby.kind !== 'loading') {
+    const items = category ? nearbyList.filter((x) => x.category === category) : nearbyList;
+    sections.push({ title: atPoint ? t('add.atPoint') : nearby.kind === 'ok' ? t('add.nearby') : t('add.nearbyOnDevice'), items });
   }
   const status =
     searching && search.kind === 'loading'
@@ -298,7 +301,7 @@ function AddScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
-      <ScreenHeader title={t('add.title')} onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
+      <ScreenHeader title={atPoint ? t('add.atPointTitle') : t('add.title')} onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
       <View style={{ paddingHorizontal: gutter, paddingTop: 10, gap: 8, maxWidth: wide ? 720 : undefined, width: '100%', alignSelf: 'center' }}>
         <TextInput
           value={text}
@@ -320,11 +323,37 @@ function AddScreen() {
           testID="add-search"
         />
         <View style={styles.inline}>
-          <Button kind="secondary" label={t('add.dropPoint')} onPress={() => pick(manualCandidate(center))} testID="drop-point" />
+          <Button
+            kind={atPoint ? 'primary' : 'secondary'}
+            label={atPoint ? t('add.createHere') : t('add.dropPoint')}
+            onPress={() => pick(manualCandidate(center))}
+            testID="drop-point"
+          />
         </View>
         <Text style={[styles.hint, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
-          {t('add.longPressHint')}
+          {atPoint ? t('add.atPointHint') : t('add.longPressHint')}
         </Text>
+        {!searching && categories.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} testID="nearby-categories">
+            {[{ key: null as CategoryId | null, count: nearbyList.length }, ...categories].map(({ key, count }) => {
+              const on = category === key;
+              return (
+                <Pressable
+                  key={key ?? 'all'}
+                  onPress={() => setCategory(key)}
+                  style={[styles.chip, { borderColor: on ? c.accent : c.border, backgroundColor: on ? c.accent : c.surface }]}
+                  accessibilityRole="button"
+                  aria-selected={on}
+                  testID={`nearby-category-${key ?? 'all'}`}
+                >
+                  <Text style={{ color: on ? '#FFFFFF' : c.text, fontSize: 14, fontWeight: '600' }} maxFontSizeMultiplier={1.6}>
+                    {`${key ? categoryLabel(key, tr) : t('add.allCategories')} · ${count}`}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
         {OSM_FIXTURES && <Banner>{t('osm.fixtureMode')}</Banner>}
         {error && <Banner tone="warning">{failureText(error, searching ? 'search' : 'nearby')}</Banner>}
       </View>
@@ -386,4 +415,10 @@ const styles = StyleSheet.create({
   dist: { fontSize: 14, fontWeight: '600' },
   loading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   attrib: { fontSize: 11, marginTop: 16 },
+  chips: { gap: 8, paddingVertical: 2 },
+  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, minHeight: 36, justifyContent: 'center' },
 });
+
+/** Radius around a long-pressed spot: the places a person may have meant. */
+const AT_POINT_RADIUS_M = 150;
+

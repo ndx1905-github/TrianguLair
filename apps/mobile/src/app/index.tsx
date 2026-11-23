@@ -219,7 +219,12 @@ function MapScreen() {
         selectedPinId={selectedId}
         onPinPress={setSelectedId}
         onClusterPress={onClusterPress}
-        onMapPress={() => setSelectedId(null)}
+        // A tap on the map: closes the open card; otherwise lists the places around that spot (to add one).
+        onMapPress={(at) => {
+          if (selectedId !== null) setSelectedId(null);
+          else if (barOpen) setAutoCollapsed(true);
+          else onLongPress(at);
+        }}
         onLongPress={onLongPress}
         onRegionChange={setRegion}
         onUserMoveStart={() => filterOpen && setAutoCollapsed(true)}
