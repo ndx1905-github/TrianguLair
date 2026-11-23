@@ -7,6 +7,11 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A place's card shows my comment and my friends' comments first, right under its name (each friend in their
+  colour), before the opening hours, address and photos. My comment is still edited further down.
+
 ### Fixed
 
 - Web app: the browser's bars (the iPhone status bar of a Home Screen app, the Android address bar) follow the app's

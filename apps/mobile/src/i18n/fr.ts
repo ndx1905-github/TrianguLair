@@ -114,6 +114,7 @@ export const fr: Messages = {
 
   'card.title': 'Lieu',
   'card.notFound': 'Ce lieu n’est plus sur cet appareil.',
+  'card.myComment': 'Mon commentaire',
   'card.inMyPlaces': 'Dans mes lieux',
   'card.maybeClosed': 'Ce lieu est peut-être fermé.',
   'card.website': 'Site web',
