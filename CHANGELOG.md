@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.6] - 2026-11-23
+
+Import from Mapstr checked on a real export, no duplicates at import, and comments first on a place's card.
+
 ### Added
 
 - Import from Mapstr, checked on a real export: pick Mapstr's ZIP as it comes (or its `mapstr.csv` or
