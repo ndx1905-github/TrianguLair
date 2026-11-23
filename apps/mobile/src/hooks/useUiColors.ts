@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { getSetting, setSetting } from '../data/deviceSettings';
@@ -33,6 +33,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }),
     [mode, system],
   );
+  const dark = value.dark;
+  // Web app: the browser's bars (the iPhone status bar of a Home Screen app, Android's address bar)
+  // take the app's theme, also when it differs from the system's (the page's meta follow the system).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const color = (dark ? DARK : LIGHT).background;
+    const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    if (metas.length === 0) {
+      const m = document.createElement('meta');
+      m.name = 'theme-color';
+      document.head.appendChild(m);
+      m.content = color;
+      return;
+    }
+    metas.forEach((m) => {
+      m.removeAttribute('media');
+      m.content = color;
+    });
+  }, [dark]);
   return createElement(ThemeContext.Provider, { value }, children);
 }
 

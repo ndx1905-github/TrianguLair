@@ -12,6 +12,13 @@ All notable changes to TrianguLair are listed here. The format follows
 - A place's card shows my comment and my friends' comments first, right under its name (each friend in their
   colour), before the opening hours, address and photos. My comment is still edited further down.
 
+### Fixed
+
+- Web app: the browser's bars (the iPhone status bar of a Home Screen app, the Android address bar) follow the app's
+  theme, also when it differs from the system's: no more white bar above a dark app.
+- Places around a spot: a third public Overpass server is tried when the first two fail (the main one often answers
+  502 when overloaded).
+
 ## [0.9.0-beta.5] - 2026-11-23
 
 Tap the map to pick a place around that spot, and web sync to Nextcloud works.
