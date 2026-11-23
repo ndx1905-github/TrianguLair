@@ -31,8 +31,8 @@ export const FORMAT_VERIFIED: Record<SourceFormat, boolean> = {
   csv: true,
   // Checked against a real Mapstr export (T-009).
   mapstr: true,
-  // UNVERIFIED: no real Pin Drop export has been seen yet (task T-009).
-  pindrop: false,
+  // Checked against a real Pin Drop export (T-009).
+  pindrop: true,
   triangulair: true,
 };
 
@@ -101,10 +101,21 @@ export interface ImportedPlace {
    */
   rating?: string;
   /**
-   * Photos the source keeps on its own server (Mapstr: URLs on its image host). Counted in the
-   * preview only: never downloaded (that would contact a third party) and never written.
+   * Photos the source keeps on its own server (Mapstr, Pin Drop). Counted in the preview; downloaded
+   * only if the user asks for it there (`setDownloadRemotePhotos`). Their URLs stay in memory: never
+   * written to my data or an export.
    */
-  remotePhotos?: string[];
+  remotePhotos?: RemotePhoto[];
+}
+
+/** A photo on the source's server (see `ImportedPlace.remotePhotos`). */
+export interface RemotePhoto {
+  /** URLs to try in order (full size first, then a smaller one). In memory only. */
+  urls: string[];
+  /** Stable name of the photo in the source (Pin Drop: its file name): a re-import does not add it twice. */
+  key: string;
+  /** Announced type (`image/jpeg`), when the source gives it. */
+  mime?: string;
 }
 
 /** One of my photos from a TrianguLair export. */
@@ -177,7 +188,11 @@ export interface ParseWarning {
     /** Mapstr ZIP: a CSV row with no matching GeoJSON feature (no position). */
     | 'row-not-joined'
     /** Photos left on the source's server (`detail`: how many). */
-    | 'remote-photos';
+    | 'remote-photos'
+    /** A place refers to tags that are not in the file (an edited export): those are left out. One per place. */
+    | 'missing-tags'
+    /** Places the source kept secret (Pin Drop): imported private. `detail`: how many. */
+    | 'secret-places';
   /** Place key or row number, when it concerns one entry. */
   at?: string;
   detail?: string;

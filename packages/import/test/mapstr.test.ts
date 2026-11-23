@@ -22,6 +22,7 @@ import {
   ratingsInComments,
   readImportFile,
   remotePhotoCount,
+  setDownloadRemotePhotos,
   setMaybeClosedSkipped,
   setMergeExisting,
   splitMapstrTags,
@@ -274,7 +275,7 @@ describe('Mapstr: tags that are not categories', () => {
 });
 
 describe('Mapstr: rating and photos', () => {
-  it('the rating is not written unless asked; photos stay on Mapstr and their URLs are never written', async () => {
+  it('the rating is not written unless asked; photos are not downloaded unless asked and their URLs are never written', async () => {
     const store = openStore();
     const r = read(ZIP);
     const plan = buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW });
@@ -288,6 +289,26 @@ describe('Mapstr: rating and photos', () => {
     expect(doc).not.toContain(PHOTO_HOST);
     expect(doc).not.toContain('Mapstr rating');
     expect(doc).toContain('Buckwheat crêpes, cider, friendly staff');
+  });
+});
+
+describe('Mapstr: photos downloaded on request', () => {
+  it('the same opt-in as Pin Drop: downloaded through the given fetcher, URLs never written', async () => {
+    const store = openStore();
+    const r = read(ZIP);
+    const plan = setDownloadRemotePhotos(buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW }), true);
+    const calls: string[] = [];
+    const report = await applyImport(store, plan, {
+      yieldFn: noYield,
+      fetchPhoto: async (url) => {
+        calls.push(url);
+        return new Uint8Array([0xff, 0xd8, 0xff]);
+      },
+      addDownloadedPhoto: async (placeId, _image, info) => store.addMedia(placeId, { id: info.id, file: `b2b256:${info.id}` }),
+    });
+    expect(report.counts).toMatchObject({ remotePhotos: 2, remotePhotosFailed: 0 });
+    expect(calls.every((u) => u.includes(PHOTO_HOST))).toBe(true);
+    expect(JSON.stringify(exportGeoJson(store))).not.toContain(PHOTO_HOST);
   });
 });
 

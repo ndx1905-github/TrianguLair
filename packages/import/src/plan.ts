@@ -100,6 +100,11 @@ export interface ImportPlan {
    * one from the trash.
    */
   mergeExisting: boolean;
+  /**
+   * Download the photos the source keeps on its server (`remotePhotos`) and add them to the saves.
+   * Off by default: it contacts the source's server. Their URLs are never written.
+   */
+  downloadRemotePhotos?: boolean;
   /** When the matching ran (ISO 8601): the date of the closure signals. */
   observedAt: string;
 }
@@ -340,6 +345,7 @@ export function buildPlan(result: ParseResult, matches: Map<string, MatchOutcome
     warnings: result.warnings,
     ...(result.extras && { extras: result.extras }),
     mergeExisting: false,
+    downloadRemotePhotos: false,
     observedAt: now.toISOString(),
   };
   return refreshPlan(plan, repo);
@@ -422,7 +428,12 @@ export function ratedCount(plan: ImportPlan): number {
   return plan.items.filter((it) => it.place.rating?.trim()).length;
 }
 
-/** Photos the source keeps on its server (counted, never downloaded). */
+/** Whether the photos the source keeps on its server are downloaded (the preview's choice). */
+export function setDownloadRemotePhotos(plan: ImportPlan, downloadRemotePhotos: boolean): ImportPlan {
+  return { ...plan, downloadRemotePhotos };
+}
+
+/** Photos the source keeps on its server (counted; downloaded only on request). */
 export function remotePhotoCount(plan: ImportPlan): number {
   return plan.items.reduce((n, it) => n + (it.place.remotePhotos?.length ?? 0), 0);
 }

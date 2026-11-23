@@ -21,7 +21,7 @@ import {
   type SaveStatus,
 } from '@triangulair/data';
 
-import type { ImportedPhoto, ImportedPlace, SourceFormat } from './model.ts';
+import type { ImportedPhoto, ImportedPlace, RemotePhoto, SourceFormat } from './model.ts';
 import { targetPlaceId, type ImportPlan, type PlanItem } from './plan.ts';
 
 export interface ApplyOptions {
@@ -39,6 +39,51 @@ export interface ApplyOptions {
    * Called after the batch that wrote the save; a throw skips that photo only.
    */
   addPhoto?: (placeId: string, photo: ImportedPhoto & { images: NonNullable<ImportedPhoto['images']> }) => string;
+  /**
+   * Downloads one photo the source keeps on its server (`ImportedPlace.remotePhotos`), when the
+   * preview asked for it (`plan.downloadRemotePhotos`). Resolves to the image file; rejects when
+   * it cannot. Throw `PhotoDownloadBlockedError` when the platform refuses the request itself (a
+   * browser's cross-origin rule): the remaining photos are then not tried.
+   */
+  fetchPhoto?: (url: string, signal: AbortSignal) => Promise<Uint8Array>;
+  /**
+   * Stores a downloaded image as one of my photos on a save (the app: decode, shrink, thumbnail,
+   * then `Photos.add` with the given `id`). Returns the photo id. A rejection counts the photo as
+   * not downloaded.
+   */
+  addDownloadedPhoto?: (placeId: string, image: Uint8Array, info: { id: string; mime?: string }) => Promise<string>;
+  /** Per download attempt (default 30 s). */
+  photoTimeoutMs?: number;
+  /** Downloads at once (default 3). */
+  photoConcurrency?: number;
+  /** Progress of the photo downloads, after the places are written. */
+  onPhotoProgress?: (done: number, total: number) => void;
+}
+
+/** Thrown by a `fetchPhoto` when the platform refuses the download itself (the web's cross-origin rule). */
+export class PhotoDownloadBlockedError extends Error {
+  constructor(message = 'the download was blocked by the platform') {
+    super(message);
+    this.name = 'PhotoDownloadBlockedError';
+  }
+}
+
+/**
+ * The id of a downloaded photo on a save: the same source photo on the same place always gets the
+ * same id, so a re-import (or a second device importing the same file) does not add it twice. A
+ * hash: neither the source's file name nor its URL is written.
+ */
+export function remotePhotoId(placeId: string, key: string): string {
+  // Two 32-bit FNV-1a passes with different seeds, as 13 base-36 digits.
+  const text = `${placeId}\n${key}`;
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x01000193 ^ 0x2f) >>> 0;
+  }
+  return `rp${a.toString(36).padStart(7, '0')}${b.toString(36).padStart(7, '0')}`;
 }
 
 export interface MergedSave {
@@ -75,6 +120,10 @@ export interface ImportReport {
     photos?: number;
     /** Photos not added: images not in the file, refused, or no photo support. */
     photosSkipped?: number;
+    /** Photos downloaded from the source's server (asked in the preview) and added. */
+    remotePhotos?: number;
+    /** Photos asked for that could not be downloaded or stored (network, timeout, not an image, blocked). */
+    remotePhotosFailed?: number;
     /** Already in my saves and left as they were (`plan.mergeExisting` off). */
     alreadySaved?: number;
     /** Already in my saves, merge asked, but the file added nothing new. */
@@ -82,6 +131,8 @@ export interface ImportReport {
     /** New places written with the "maybe closed" flag. */
     maybeClosed?: number;
   };
+  /** The platform refused the photo downloads (web: cross-origin rule); the places are imported. */
+  photoDownloadBlocked?: boolean;
 }
 
 const defaultYield = () => new Promise<void>((r) => setTimeout(r, 0));
@@ -107,6 +158,12 @@ function mergeImported(primary: ImportedPlace, others: readonly ImportedPlace[])
     ...(status && { status }),
     ...(created.length > 0 && { createdAt: Math.min(...created) }),
     ...(all.some((p) => p.media?.length) && { media: all.flatMap((p) => p.media ?? []).filter((m, i, a) => a.findIndex((x) => x.file === m.file) === i) }),
+    ...(all.some((p) => p.remotePhotos?.length) && {
+      remotePhotos: all.flatMap((p) => p.remotePhotos ?? []).filter((m, i, a) => a.findIndex((x) => x.key === m.key) === i),
+    }),
+    // A place kept private in one of the folded entries stays private.
+    ...(all.some((p) => p.sharing === 'private') && { sharing: 'private' as const }),
+    ...(all.some((p) => p.commentVisibility === 'private') && { commentVisibility: 'private' as const }),
   };
 }
 
@@ -188,7 +245,23 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
     merged: [],
     createdTagIds: [],
     createdListIds: [],
-    counts: { imported: 0, created: 0, merged: 0, linkedToOsm: 0, manual: 0, toCheck: 0, skipped: 0, duplicates: 0, photos: 0, photosSkipped: 0, alreadySaved: 0, unchanged: 0, maybeClosed: 0 },
+    counts: {
+      imported: 0,
+      created: 0,
+      merged: 0,
+      linkedToOsm: 0,
+      manual: 0,
+      toCheck: 0,
+      skipped: 0,
+      duplicates: 0,
+      photos: 0,
+      photosSkipped: 0,
+      remotePhotos: 0,
+      remotePhotosFailed: 0,
+      alreadySaved: 0,
+      unchanged: 0,
+      maybeClosed: 0,
+    },
   };
   const counts = report.counts as Required<ImportReport['counts']>;
   // Fold duplicates into their primary item.
@@ -218,6 +291,20 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       .filter((x): x is SaveStatus => !!x)
       .sort((a, b) => STATUS_RANK[b] - STATUS_RANK[a])[0];
   const closureFlags: { placeId: string; signals: PlanItem['closure'] }[] = [];
+  // Photos to download once the places are written (asked in the preview).
+  const downloads: PhotoJob[] = [];
+  const queued = new Set<string>();
+  const wantDownloads = plan.downloadRemotePhotos && !!opts.fetchPhoto && !!opts.addDownloadedPhoto;
+  const queue = (placeId: string, saveId: string | null, list: readonly RemotePhoto[] | undefined, merged?: MergedSave) => {
+    if (!wantDownloads || !list?.length) return;
+    const have = saveId ? new Set(store.repo.getMedia(saveId).map((m) => m.id)) : new Set<string>();
+    for (const photo of list) {
+      const id = remotePhotoId(placeId, photo.key);
+      if (have.has(id) || queued.has(id)) continue;
+      queued.add(id);
+      downloads.push({ placeId, id, photo, ...(merged && { merged }) });
+    }
+  };
   const osmCache: { placeId: string; tags: Record<string, string>; address?: string }[] = [];
 
   let written = 0;
@@ -265,6 +352,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
           }
           const have = new Set(store.repo.getMedia(cur.id).map((m) => m.file));
           for (const m of place.media ?? []) if (!have.has(m.file)) photos.push({ placeId: cur.placeId, photo: m, merged });
+          queue(cur.placeId, cur.id, place.remotePhotos, merged);
           report.merged.push(merged);
           report.counts.merged++;
         } else {
@@ -281,6 +369,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             ...(place.createdAt && { createdAt: place.createdAt }),
           });
           for (const m of place.media ?? []) photos.push({ placeId, photo: m });
+          queue(placeId, null, place.remotePhotos);
           if (place.trashed) tx.deleteSave(placeId);
           if (it.closure.length > 0) closureFlags.push({ placeId, signals: it.closure });
           report.createdPlaceIds.push(placeId);
@@ -350,6 +439,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       }
     }
   }
+  if (!report.cancelled && downloads.length > 0) await downloadPhotos(downloads, opts, report);
   // "Maybe closed", the closure system's flag (place cache): the card shows the badge and asks.
   for (const f of closureFlags) {
     try {
@@ -360,6 +450,78 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
     }
   }
   return report;
+}
+
+interface PhotoJob {
+  placeId: string;
+  /** The photo id it gets (`remotePhotoId`). */
+  id: string;
+  photo: RemotePhoto;
+  merged?: MergedSave;
+}
+
+/** One download, given up after `ms` or when `signal` aborts (even if the fetcher ignores its signal). */
+function fetchWithTimeout(fetchPhoto: NonNullable<ApplyOptions['fetchPhoto']>, url: string, ms: number, signal: AbortSignal | undefined): Promise<Uint8Array> {
+  const ac = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = () => ac.abort();
+  signal?.addEventListener('abort', onAbort);
+  const stop = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ac.abort();
+      reject(new Error('timeout'));
+    }, ms);
+    ac.signal.addEventListener('abort', () => reject(new Error('aborted')));
+  });
+  return Promise.race([fetchPhoto(url, ac.signal), stop]).finally(() => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  });
+}
+
+const isBlocked = (e: unknown) => e instanceof PhotoDownloadBlockedError || (e instanceof Error && e.name === 'PhotoDownloadBlockedError');
+
+/**
+ * Downloads the photos asked for, a few at a time, each URL of a photo in turn (full size, then
+ * smaller). A photo that fails is counted, never an error of the import. Stops on cancel, and on
+ * the first download the platform blocks (the others would be blocked too).
+ */
+async function downloadPhotos(jobs: readonly PhotoJob[], opts: ApplyOptions, report: ImportReport): Promise<void> {
+  const fetchPhoto = opts.fetchPhoto!;
+  const addPhoto = opts.addDownloadedPhoto!;
+  const timeout = opts.photoTimeoutMs ?? 30_000;
+  const counts = report.counts as Required<ImportReport['counts']>;
+  let next = 0;
+  let done = 0;
+  const stopped = () => opts.signal?.aborted || report.photoDownloadBlocked;
+  opts.onPhotoProgress?.(0, jobs.length);
+  const worker = async () => {
+    while (!stopped() && next < jobs.length) {
+      const job = jobs[next++]!;
+      let ok = false;
+      for (const url of job.photo.urls) {
+        if (stopped()) break;
+        try {
+          const image = await fetchWithTimeout(fetchPhoto, url, timeout, opts.signal);
+          if (stopped()) break;
+          const id = await addPhoto(job.placeId, image, { id: job.id, ...(job.photo.mime && { mime: job.photo.mime }) });
+          if (job.merged) (job.merged.addedMediaIds ??= []).push(id);
+          ok = true;
+          break;
+        } catch (e) {
+          if (isBlocked(e)) report.photoDownloadBlocked = true;
+          // else: the next URL of this photo
+        }
+      }
+      if (ok) counts.remotePhotos++;
+      done++;
+      opts.onPhotoProgress?.(done, jobs.length);
+    }
+  };
+  const n = Math.max(1, Math.min(opts.photoConcurrency ?? 3, jobs.length));
+  await Promise.all(Array.from({ length: n }, worker));
+  counts.remotePhotosFailed = jobs.length - counts.remotePhotos;
+  if (opts.signal?.aborted) report.cancelled = true;
 }
 
 /**

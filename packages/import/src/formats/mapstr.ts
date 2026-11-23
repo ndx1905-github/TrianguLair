@@ -33,8 +33,9 @@
  * alone is an error; inside the ZIP, the CSV is still used
  * (`invalid-geojson` warning).
  *
- * Photo URLs are kept in memory (`remotePhotos`) for the preview's count and
- * are never written: downloading them would contact Mapstr's server.
+ * Photo URLs are kept in memory (`remotePhotos`): counted in the preview, and
+ * downloaded only if the user asks for it there (that contacts Mapstr's
+ * server); never written.
  */
 import { normalizeText } from '@triangulair/data';
 import { strFromU8, unzipSync } from 'fflate';
@@ -344,7 +345,7 @@ export function parseMapstr(files: MapstrFiles): ParseResult {
       ...(c?.createdAt !== undefined && { createdAt: c.createdAt }),
       ...(category && { category }),
       ...(c?.rating && { rating: c.rating }),
-      ...(c && c.photos.length > 0 && { remotePhotos: c.photos }),
+      ...(c && c.photos.length > 0 && { remotePhotos: c.photos.map((url) => ({ urls: [url], key: url.replace(/[?#].*$/, '') })) }),
     });
   };
 

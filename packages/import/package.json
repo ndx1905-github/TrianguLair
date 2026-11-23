@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "license": "MPL-2.0",
-  "description": "TrianguLair import and export: Google Takeout, KML/KMZ, GeoJSON, CSV, Mapstr and Pin Drop (unverified) parsers, OSM matching, batched writes, full GeoJSON export",
+  "description": "TrianguLair import and export: Google Takeout, KML/KMZ, GeoJSON, CSV, Mapstr and Pin Drop parsers, OSM matching, batched writes, full GeoJSON export",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

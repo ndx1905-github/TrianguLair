@@ -141,7 +141,7 @@ the web test build) from meeting a v1 promise.
 | MVP | Closed places: monthly check and flagging | partial | See "Closed places" below | Closure, second pass |
 | MVP | Sharing a place, a zone or a list by web link | partial | Lists: done (`/l#…`). A single place or zone has no web link of its own (only through a list) | Decide: a place link, or a one-place list |
 | MVP | Directions in the navigation app; open in Maps / Google Maps | done | `app/places/directions.ts` (`geo:` on Android, Apple Maps on iOS); `directions.test.ts`; shot `phone-card-directions.png` | — |
-| MVP | Import from Google, Mapstr, Pin Drop (Takeout, CSV, KML, GeoJSON) | done | `import/*`; import `parsers.test.ts`, `match.test.ts`, `apply.test.ts`; e2e `import-export.spec.ts`. Mapstr verified on a real export (`formats/mapstr.ts`, `mapstr.test.ts`); the Pin Drop parser is unverified (T-009) | T-009 Pin Drop sample |
+| MVP | Import from Google, Mapstr, Pin Drop (Takeout, CSV, KML, GeoJSON) | done | `import/*`; import `parsers.test.ts`, `match.test.ts`, `apply.test.ts`; e2e `import-export.spec.ts`. Mapstr and Pin Drop verified on a real export each (`formats/mapstr.ts`, `formats/pindrop.ts`; `mapstr.test.ts`, `pindrop.test.ts`; T-009) | — |
 | MVP | Full GeoJSON export | done | `import/formats/triangulair.ts`; `roundtrip.test.ts`; e2e `import-export.spec.ts` (re-import on a fresh device) | — |
 | MVP | Android and iOS apps (React Native) | partial | Expo SDK 57 app, `eas.json`; native builds not yet run on a device (README: the native SQLite driver and libsodium on Hermes are not timed or run on a device) | Native smoke test on devices |
 | MVP | "View on uMap" for public lists | done | `umapUrl` (`app/lists/sharing.ts`); e2e `lists-sharing.spec.ts` checks the exact URL | — |
@@ -211,7 +211,7 @@ the web test build) from meeting a v1 promise.
 | --- | --- | --- | --- | --- |
 | Import | Google Takeout (GeoJSON, CSV) | done | `import/google.ts`; `parsers.test.ts` | — |
 | Import | Mapstr export (ZIP, CSV, GeoJSON) | done | `import/formats/mapstr.ts`, checked on a real export (T-009); `mapstr.test.ts` (join, dates, `#` tags, icons, macOS junk, invalid file, no duplicates, maybe closed); e2e `import-export.spec.ts` (Mapstr ZIP) | — |
-| Import | Pin Drop KML/CSV | partial | `import/formats/unverified/pindrop.ts`, flagged as unverified in the UI; real sample not checked (T-009) | T-009 |
+| Import | Pin Drop export (JSON) | done | `import/formats/pindrop.ts`, checked on a real export (T-009); `pindrop.test.ts` (tags by name and color, references to missing tags, favourite / wish list / "À essayer" statuses, secret pins private, microsecond dates, icons to categories, invalid file, no duplicates, maybe closed, photos downloaded on request with fallback, timeout, blocked, cancel, undo); e2e `import-export.spec.ts` (Pin Drop preview and import), `photos.spec.ts` (photo download, and a browser that blocks it) | — |
 | Import | Generic CSV with a column-mapping wizard | done | `import/formats/csv.ts`; shot `phone-import-mapping.png` | — |
 | Import | Matching to OSM (confident automatic, doubtful for validation, else manual point) | done | `import/match.ts`, `plan.ts`; `match.test.ts`; shot `phone-import-preview-check.png` (the check is a list, not "on the map") | — |
 | Import | Tags with colors, notes as comments, statuses carried over | done | `import/apply.ts`; `apply.test.ts` | — |

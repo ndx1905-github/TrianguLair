@@ -293,7 +293,7 @@ Import is primarily meant to bring over users from Mapstr, Pin Drop or Google Ma
 | --- | --- | --- |
 | Google Maps | Google Takeout (GeoJSON, CSV) | Known format |
 | Mapstr | ZIP export: `mapstr.csv` (`date,name,address,icon,userComment,rating,tags,photos`: US dates, `#`-separated tags, photo URLs, no coordinates) and `mapstr.geojson` (points with `name`, `address`, `icon`, `userComment`, `tags` as `{name, color}`) | Known format (checked on a real export, T-009); the CSV or the GeoJSON alone is accepted too. Whether the export needs the paid plan is not known |
-| Pin Drop and similar apps | KML or CSV depending on the app | Pin Drop export to be verified |
+| Pin Drop | One JSON file: `data` mixing `tag` (`id`, `name`, `color`, `icon`), `pin` (`name`, `lat`, `lng`, `description`, `tag_ids`, `date_dropped`, `favourite`, `wishList`, `isSecret`, `address`, `media`/`heroImage` photos on Pin Drop's server) and `message` items | Known format (checked on a real export, T-009). Secret pins are imported private; photos are downloaded only if asked in the preview |
 | Other apps, spreadsheets | Generic CSV, with a column-mapping wizard (name, coordinates or address, note, tags) | — |
 | This app | GeoJSON | Known format |
 
@@ -1030,7 +1030,7 @@ Flows to detail:
 - [ ] Error cases: decided (see Error cases)
 - [ ] Following a list without being a friend: decided (see Features)
 - [ ] Viewing without the app: decided (uMap for public lists in v1, custom page in v2)
-- [ ] Imports: decided (see Features); Mapstr export format verified (T-009), Pin Drop's still to be verified
+- [x] Imports: decided (see Features); Mapstr and Pin Drop export formats verified (T-009)
 
 Non-functional requirements:
 

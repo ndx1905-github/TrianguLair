@@ -61,3 +61,21 @@ export async function processImage(p: Picked, q: QualitySpec): Promise<PhotoInpu
     discard(p.uri);
   }
 }
+
+/**
+ * A photo downloaded during an import: written to a temporary file of the app's cache folder (the
+ * manipulator reads files), measured, then processed like a picked one (which deletes that file).
+ */
+export async function processDownloaded(bytes: Uint8Array, _mime: string | undefined, q: QualitySpec): Promise<PhotoInput> {
+  const f = new File(Paths.cache, `import-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.img`);
+  try {
+    f.create();
+    f.write(bytes);
+    const ref = await ImageManipulator.manipulate(f.uri).renderAsync();
+    return await processImage({ uri: f.uri, width: ref.width, height: ref.height }, q);
+  } catch (e) {
+    discard(f.uri);
+    if (e instanceof PhotoProcessError) throw e;
+    throw new PhotoProcessError(e instanceof Error ? e.message : String(e));
+  }
+}
