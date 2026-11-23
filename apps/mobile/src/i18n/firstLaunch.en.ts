@@ -61,9 +61,9 @@ export const firstLaunchEn: Messages = {
   'importStep.later': 'Later',
   // Example places (src/data/demo.ts): only on request, local only, deleted in one tap.
   'importStep.examples': 'Show me with examples',
-  'importStep.examplesHelp': 'Sample places in Paris, saved by an example friend. They stay on this phone, are never shared, and you can delete them in one tap.',
+  'importStep.examplesHelp': 'Sample places in Paris, saved by an example friend. They stay on this device, are never shared, and you can delete them in one tap.',
   'examples.friendName': '{name} (example)',
-  'examples.banner': 'These are example places: they stay on this phone and are never shared.',
+  'examples.banner': 'These are example places: they stay on this device and are never shared.',
   'examples.delete': 'Delete the example places',
   'examples.hide': 'Hide',
   'examples.deleted': { one: '{count} example place deleted', other: '{count} example places deleted' },
@@ -90,7 +90,7 @@ export const firstLaunchEn: Messages = {
   'invite.open': 'Open the invitation',
 
   'kit.title': 'Recovery kit',
-  'kit.lead': 'Two things bring everything back if you lose this phone: your 12-word recovery phrase and your storage address. Keep them in a password manager or on paper.',
+  'kit.lead': 'Two things bring everything back if you lose this device: your 12-word recovery phrase and your storage address. Keep them in a password manager or on paper.',
   'kit.localOnlyNote': 'Local only: your places are on this device alone, so the phrase is not enough to get them back. Export a backup file now and then (List › Import / export) and keep it somewhere safe.',
   'kit.localOnlyProtocol': 'local only, no storage yet',
   'kit.phraseLabel': 'Recovery phrase (12 words)',

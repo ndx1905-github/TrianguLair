@@ -239,6 +239,7 @@ export class SyncController implements StorageMoveHooks {
     this.scheduler = new SyncScheduler({
       run: (reason, opts) => this.pass(reason, opts),
       onStatus: () => d.onChange(),
+      onError: (e) => console.error('[sync] the sync pass failed', e),
       ...(d.timers && { timers: d.timers }),
       ...(d.intervalMs !== undefined && { intervalMs: d.intervalMs }),
       ...(d.debounceMs !== undefined && { debounceMs: d.debounceMs }),

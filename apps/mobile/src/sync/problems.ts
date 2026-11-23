@@ -76,6 +76,8 @@ export function ownNote(s: SyncStatus, hasStorage: boolean): Note | null {
   }
   if (p.retryable) {
     if (p.kind === 'quota') return { id: 'quota', key: 'sync.note.quota', tone: 'warning', action: 'sync' };
+    // Never sent yet: say so at once (waiting 24 h for the banner looked like "nothing happens").
+    if (s.lastSuccess === null) return { id: 'not-yet', key: 'sync.note.notYet', tone: 'warning', action: 'sync' };
     // Transient (unreachable, a lost race, a file not there yet): nothing until it lasts 24 h.
     if (s.banner) return { id: 'banner', key: 'sync.note.banner', tone: 'warning', action: 'sync' };
     return null;

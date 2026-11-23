@@ -22,7 +22,7 @@
  *
  * Timers are injectable so the policy is tested without waiting.
  */
-import type { SyncProblem } from './errors.ts';
+import { classifyError, type SyncProblem } from './errors.ts';
 import type { SyncReport } from './engine.ts';
 
 export interface Timers {
@@ -57,6 +57,8 @@ export interface SchedulerOptions {
   bannerAfterMs?: number;
   timers?: Timers;
   onReport?: (r: SyncReport) => void;
+  /** A pass threw an unexpected error (logged by the app; also reported as a problem in the status). */
+  onError?: (e: unknown) => void;
   onStatus?: (s: SyncStatus) => void;
 }
 
@@ -198,14 +200,19 @@ export class SyncScheduler {
     this.update({ state: 'syncing' });
     this.inFlight = (async () => {
       let report: SyncReport | null = null;
+      // A pass that throws (not a classified storage problem) used to end as "idle, no problem": the
+      // user saw "Up to date" with changes waiting and nothing happening. It is now a problem of its own.
+      let thrown: SyncProblem | null = null;
       try {
         report = await this.o.run(reason, { publish: !readOnly });
-      } catch {
+      } catch (e) {
         report = null;
+        thrown = classifyError(e, 'own', this.online);
+        this.o.onError?.(e);
       }
       this.inFlight = null;
       this.o.onReport && report && this.o.onReport(report);
-      const own = report?.problems.find((p) => p.about === 'own')?.problem ?? null;
+      const own = report?.problems.find((p) => p.about === 'own')?.problem ?? thrown;
       if (report?.wiped || own?.kind === 'device-revoked') {
         this.clearTimers();
         this.again = null;

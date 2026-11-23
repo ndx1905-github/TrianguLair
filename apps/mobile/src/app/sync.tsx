@@ -84,7 +84,7 @@ function SyncScreen() {
                 </Text>
               )}
               <Text style={{ color: c.text, fontSize: 16, fontWeight: '700' }} maxFontSizeMultiplier={2} testID="sync-state">
-                {status ? t(`sync.state.${status.state === 'idle' && note ? 'idle' : status.state}`) : t('sync.state.syncing')}
+                {status ? t(status.state === 'idle' && (status.pending > 0 || status.problem) ? 'sync.state.waiting' : `sync.state.${status.state}`) : t('sync.state.syncing')}
               </Text>
               <Text style={[styles.muted, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID="sync-last">
                 {lastOk ? t('sync.lastSuccess', { when: agoText(now - lastOk, t) }) : t('sync.never')}
@@ -103,6 +103,11 @@ function SyncScreen() {
                     </Text>
                   )}
                   {status.problem?.kind === 'unreachable' && <CorsHint who="own" />}
+                  {status.problem?.detail && note.tone !== 'info' && (
+                    <Text style={[styles.muted, { color: c.textMuted, fontSize: 13 }]} maxFontSizeMultiplier={2} selectable testID="sync-problem-detail">
+                      {t('sync.detail', { detail: status.problem.detail })}
+                    </Text>
+                  )}
                   {note.id === 'quota' &&
                     quotaTips(space).map((k) => (
                       <Text key={k} style={[styles.muted, { color: c.text }]} maxFontSizeMultiplier={2} testID="sync-quota-tip">

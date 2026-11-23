@@ -45,7 +45,7 @@ test('"Show me with examples": the example friend’s places, local only, delete
   await firstLaunch(page);
   await page.getByTestId('import-examples').click();
   const banner = page.getByTestId('examples-banner');
-  await expect(banner).toContainText('These are example places: they stay on this phone and are never shared.');
+  await expect(banner).toContainText('These are example places: they stay on this device and are never shared.');
   await expect(page.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
 
   // They are the example friend's places, not mine: nothing to publish.

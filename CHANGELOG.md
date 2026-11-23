@@ -7,6 +7,13 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Sync that never ran showed "Up to date" with changes waiting and no error: a pass that failed unexpectedly was
+  reported as "no problem". It is now a problem with its detail on the sync screen ("Not sent yet"), logged in the
+  console, and a storage that has never been reached is reported at once instead of after 24 hours.
+- Example places, the recovery kit and friends' texts say "this device", not "this phone" (the web app too).
+
 ## [0.9.0-beta.3] - 2026-11-23
 
 Whose places on the map, editing many places at once, optional examples, and the web base map.
