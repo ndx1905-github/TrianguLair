@@ -7,8 +7,17 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A place's card shows my comment and my friends' comments first, right under its name (each friend in their
+  colour), before the opening hours, address and photos. My comment is still edited further down.
+
 ### Fixed
 
+- Web app: the browser's bars (the iPhone status bar of a Home Screen app, the Android address bar) follow the app's
+  theme, also when it differs from the system's: no more white bar above a dark app.
+- Places around a spot: a third public Overpass server is tried when the first two fail (the main one often answers
+  502 when overloaded).
 - On a second device, the map could keep showing pins in the grey of untagged places (with the category icon) while
   their cards listed the right tags. When a sync brought changes from your other device, the screens were only told
   to read the data again if those changes arrived at the very end of the sync, which usually missed them. The map

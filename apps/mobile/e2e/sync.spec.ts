@@ -236,6 +236,8 @@ test('two people: publish, follow, shared places only, edits in What\'s new, rev
   // The card: "1 friend", which opens who saved it and her comment.
   await row.click();
   const card = b.getByTestId('place-card').filter({ visible: true });
+  // Comments first: Anna's comment is right under the place's name, before anything else.
+  await expect(card.getByTestId('card-friend-comment-top')).toContainText('Ask for the cider on the terrace.');
   await expect(card.getByTestId('card-friends-count')).toHaveText('1 friend');
   await card.getByTestId('card-friends-toggle').click();
   await expect(card.getByTestId('card-friend-Anna')).toContainText('Ask for the cider on the terrace.');

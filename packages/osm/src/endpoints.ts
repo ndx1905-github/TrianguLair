@@ -24,7 +24,12 @@ export interface Endpoints {
 }
 
 export const DEFAULT_ENDPOINTS: Endpoints = {
-  overpass: ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'],
+  // Public instances, tried in order: the main one is often overloaded (502/504), so two others follow.
+  overpass: [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ],
   photon: 'https://photon.komoot.io',
   nominatim: 'https://nominatim.openstreetmap.org',
   osmApi: 'https://api.openstreetmap.org',
