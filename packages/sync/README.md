@@ -178,6 +178,10 @@ Places (kind 1), version 1, a GeoJSON FeatureCollection (so a decrypted pack is 
 
 - `id` is the place id (OSM `osm:<type>/<id>` or `local:…`); optional properties are omitted when empty
   (`kind` only for `"zone"`, `edge` only for `"blurred"`). Personal data only, never the OSM record.
+- `rating` (places payload minor 2, declared only by packs where a place has one): the owner's rating, an integer
+  from 1 to 5. A reader of minor 0 or 1 reads such a pack leniently, without the ratings. Friends' packs only:
+  lists packs and the public lists file never carry it, because every earlier reader parses their features
+  strictly (minor 0) and would refuse the whole file.
 - Readers refuse duplicate keys and non-written forms (`JSON.stringify(JSON.parse(s)) === s`, the crypto rule for
   canonical JSON, which itself allows no floats), unknown fields unless `triangulair.minor` is higher than theirs,
   ids that are not place ids, invalid or oversized geometries (20,000 positions), more than 1,000 features, 32 tags,

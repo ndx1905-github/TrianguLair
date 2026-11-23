@@ -34,6 +34,7 @@ export function writeMySave(
       commentVisibility: fields.commentVisibility ?? 'friends',
       status: fields.status ?? null,
       priceLevel: fields.priceLevel ?? null,
+      rating: fields.rating ?? null,
       sharing: fields.sharing ?? 'friends',
       mainTagId: fields.mainTagId ?? tagIds[0] ?? null,
       tagIds,

@@ -67,6 +67,7 @@ function richStore(): DataStore {
     commentVisibility: 'public',
     status: 'favorite',
     priceLevel: 2,
+    rating: 5,
   });
   const m1 = s.addMedia('osm:node/9123456702', { id: 'm1', file: 'b2b256:full1', thumb: 'b2b256:thumb1', mime: 'image/webp', blurhash: 'LEHV6n', width: 1600, height: 1200 });
   imagesOf(s).set(m1, { full: img(1, 3000), thumb: img(2, 300), mime: 'image/webp' });
@@ -141,10 +142,10 @@ describe('full GeoJSON export and lossless re-import (T-115)', () => {
   it('is valid GeoJSON, readable by other tools (names, plain tags, OSM links)', () => {
     const doc = buildExport(richStore(), { now: () => Date.UTC(2026, 10, 2), app: 'TrianguLair test' });
     expect(doc.type).toBe('FeatureCollection');
-    expect(doc.triangulair).toMatchObject({ format: 'triangulair-export', version: 1, minor: 1, exported_at: '2026-11-02T00:00:00.000Z' });
+    expect(doc.triangulair).toMatchObject({ format: 'triangulair-export', version: 1, minor: 2, exported_at: '2026-11-02T00:00:00.000Z' });
     const t = doc.features.find((f) => f.id === 'osm:node/9123456702')!;
     expect(t.geometry).toEqual({ type: 'Point', coordinates: [2.3621507, 48.8591004] });
-    expect(t.properties).toMatchObject({ name: 'Trattoria Da Lucia', osm: 'node/9123456702', osm_url: 'https://www.openstreetmap.org/node/9123456702', tags: ['Pizza', 'Food'], status: 'favorite', price_level: 2 });
+    expect(t.properties).toMatchObject({ name: 'Trattoria Da Lucia', osm: 'node/9123456702', osm_url: 'https://www.openstreetmap.org/node/9123456702', tags: ['Pizza', 'Food'], status: 'favorite', price_level: 2, rating: 5 });
     expect(doc.features).toHaveLength(5);
     expect(exportFileName(Date.UTC(2026, 10, 2))).toBe('triangulair-2026-11-02.geojson');
   });

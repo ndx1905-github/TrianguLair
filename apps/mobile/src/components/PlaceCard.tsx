@@ -130,6 +130,7 @@ export function PlaceCard({ placeId, onClose, onDeleted }: Props) {
         tagIds: save.tagIds.filter((id) => tags.some((x) => x.id === id)),
         status: save.status,
         priceLevel: save.priceLevel,
+        rating: save.rating,
         comment,
         commentVisibility: save.commentVisibility,
         sharing: save.sharing,

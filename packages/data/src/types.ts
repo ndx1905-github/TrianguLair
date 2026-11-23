@@ -25,6 +25,8 @@ export type Sharing = 'private' | 'friends';
 export type ListVisibility = 'link' | 'public';
 export type ListKind = 'filter' | 'manual';
 export type PriceLevel = 1 | 2 | 3 | 4;
+/** My rating of a place, in stars (null: not rated). */
+export type Rating = 1 | 2 | 3 | 4 | 5;
 
 /** [west, south, east, north] in degrees. west > east crosses the antimeridian. */
 export type BBox = readonly [west: number, south: number, east: number, north: number];
@@ -110,6 +112,8 @@ export interface SaveRecord {
   commentVisibility: CommentVisibility;
   status: SaveStatus | null;
   priceLevel: PriceLevel | null;
+  /** The owner's rating, 1 to 5 stars (null: none). */
+  rating: Rating | null;
   sharing: Sharing;
   mainTagId: string | null;
   /** Main tag first, then the others by name. */

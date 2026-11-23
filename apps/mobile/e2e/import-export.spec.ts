@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { diagnose, expect, openMap, preparePage, test } from './helpers';
+import { autostart, diagnose, expect, openMap, preparePage, test } from './helpers';
 
 const SMALL = path.join(__dirname, 'fixtures/small.geojson');
 /** The import package's INVENTED Mapstr export (4 places, macOS junk included). */
@@ -144,9 +144,10 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   await expect(preview).toContainText('Mapstr export · 4 places in mapstr.zip');
   await expect(page.getByTestId('unverified-banner')).toHaveCount(0);
   await expect(page.getByTestId('preview-counts')).toHaveText('New: 4 · Already in my places: 0 · Duplicates in this file: 0');
-  // Photos stay on Mapstr; the rating is optional.
+  // Photos stay on Mapstr; ratings become my rating.
   await expect(page.getByTestId('preview-warning-remote-photos')).toHaveText('2 photos stay on Mapstr: they are not imported.');
-  await expect(page.getByTestId('preview-ratings')).toContainText('(2 places)');
+  await expect(page.getByTestId('preview-ratings')).toHaveText('★ 2 places with a rating');
+  await expect(page.getByTestId('preview-warning-unreadable-ratings')).toHaveCount(0);
   // Categorized places OpenStreetMap does not know there: flagged, kept by default.
   await expect(page.getByTestId('preview-closure')).toContainText('3 places may no longer exist according to OpenStreetMap');
   await expect(page.getByTestId('preview-closure-keep')).toHaveAttribute('aria-checked', 'true');
@@ -165,22 +166,25 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   await expect(done).toBeVisible();
   await expect(done).toContainText('4 places imported');
 
-  // The original date is kept (local time of the export, Europe/Paris here), photos and rating are not written.
+  // The original date is kept (local time of the export, Europe/Paris here), the rating is my rating, photos are not written.
   await page.getByText('Import another file').click();
   const download = page.waitForEvent('download');
   await page.getByTestId('export-all').click();
   const text = await readFile(await (await download).path(), 'utf8');
-  const data = JSON.parse(text) as { features: { properties: { name: string; comment?: string; created_at: string; status?: string | null } }[] };
+  const data = JSON.parse(text) as { features: { properties: { name: string; comment?: string; created_at: string; status?: string | null; rating?: number | null } }[] };
   const crepe = data.features.find((f) => f.properties.name === 'Crêperie des Lanternes');
   expect(crepe?.properties.created_at.startsWith('2022-03-05T18:07')).toBe(true);
   expect(crepe?.properties.comment).toBe('Buckwheat crêpes, cider, friendly staff');
   expect(crepe?.properties.status).toBe('to_try');
   expect(text).not.toContain('images.example.invalid');
-  expect(text).not.toContain('Mapstr rating');
+  expect(crepe?.properties.rating).toBeNull();
+  expect(data.features.find((f) => f.properties.name === 'Le Comptoir Inventé')?.properties.rating).toBe(4);
+  expect(data.features.find((f) => f.properties.name === 'Le Comptoir Inventé')?.properties.comment).toBe('Natural wines; ask for the "wine of the day"');
 
   // The same file again: everything is already in my places, nothing is written.
   await pickFile(page, MAPSTR_ZIP);
   await expect(page.getByTestId('preview-counts')).toHaveText('New: 0 · Already in my places: 4 · Duplicates in this file: 0');
+  // Their ratings are already set: nothing to fill in either.
   await expect(page.getByTestId('import-confirm')).toBeDisabled();
   // What's new (from the map): the places the first import wrote "maybe closed", in one entry (not repeated).
   await page.getByTestId('back').filter({ visible: true }).click();
@@ -196,4 +200,12 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   });
   await expect(news).toContainText('3 imported places may no longer exist according to OpenStreetMap');
   await expect(news.getByTestId('whatsnew-unseen')).toBeVisible();
+
+  // The card shows the imported rating as my stars.
+  await page.waitForTimeout(1500); // the database file is written after a short debounce
+  await page.goto(autostart('/list'));
+  await page.getByTestId('row-Le Comptoir Inventé').click();
+  const stars = page.getByTestId('place-card').filter({ visible: true }).getByTestId('rating');
+  await expect(stars.getByRole('radio', { name: '4 stars', exact: true })).toBeChecked();
+  await expect(stars.getByRole('radio', { name: '5 stars', exact: true })).not.toBeChecked();
 });

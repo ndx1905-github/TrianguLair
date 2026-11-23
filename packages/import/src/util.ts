@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /** Small value parsers shared by the format readers. */
-import { normalizeText, type SaveStatus } from '@triangulair/data';
+import { normalizeText, type Rating, type SaveStatus } from '@triangulair/data';
 import { strFromU8 } from 'fflate';
 
 /** A coordinate written with a dot or a decimal comma ("48,8566"); null when not a number. */
@@ -11,6 +11,45 @@ export function parseNumber(v: unknown): number | null {
   if (!/^[+-]?\d+([.,]\d+)?$/.test(s)) return null;
   const n = Number(s.replace(',', '.'));
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Ratings as a source writes them (one per place, `undefined` when empty) → stars, decided for the
+ * whole file at once, since a source does not say its scale:
+ *
+ * - a number with a dot or a decimal comma; `0` means "not rated" (an empty rating, not an error);
+ * - when every readable rating is at most 5, they are stars (decimals rounded: 3.5 → 4);
+ * - when some go above 5 but none above 10, the file rates out of 10: each is halved, then
+ *   rounded (7 → 4, 1 → 1), and `outOf10` says so;
+ * - anything else (text, negative, above 10, or below 0.5 once rounded) is left out and counted in
+ *   `unreadable`.
+ */
+export function normalizeRatings(raw: readonly (string | number | undefined)[]): {
+  ratings: (Rating | undefined)[];
+  outOf10: boolean;
+  unreadable: number;
+} {
+  const nums = raw.map((v) => (v === undefined || (typeof v === 'string' && v.trim() === '') ? undefined : parseNumber(v)));
+  let unreadable = 0;
+  const usable = nums.map((n) => {
+    if (n === undefined || n === 0) return undefined;
+    if (n === null || n < 0 || n > 10) {
+      unreadable++;
+      return undefined;
+    }
+    return n;
+  });
+  const outOf10 = usable.some((n) => n !== undefined && n > 5);
+  const ratings = usable.map((n) => {
+    if (n === undefined) return undefined;
+    const r = Math.round(outOf10 ? n / 2 : n);
+    if (r < 1) {
+      unreadable++;
+      return undefined;
+    }
+    return Math.min(5, r) as Rating;
+  });
+  return { ratings, outOf10, unreadable };
 }
 
 export function validLatLon(lat: number | null | undefined, lon: number | null | undefined): boolean {

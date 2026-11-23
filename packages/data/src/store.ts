@@ -51,7 +51,7 @@ export interface OpenStoreOptions {
 }
 
 /** Bump when the projection code changes in a way that needs a rebuild. */
-export const PROJECTION_VERSION = 3;
+export const PROJECTION_VERSION = 4;
 
 /** Encoding of the chunks in `doc_chunks` (recorded in `meta.doc_format`). */
 export const DOC_FORMAT = 'yjs-update-v1';

@@ -284,6 +284,16 @@ ALTER TABLE media ADD COLUMN bytes INTEGER;
 ALTER TABLE media ADD COLUMN upload TEXT;
 `;
 
+/**
+ * Version 4: my rating of a place (1 to 5 stars), on my saves and on the
+ * friends' saves I receive. Rows from before have none; the store rebuilds
+ * the projection of my document after the upgrade (PROJECTION_VERSION), so a
+ * rating written by a newer device of mine shows up right away.
+ */
+const V4 = `
+ALTER TABLE saves ADD COLUMN rating INTEGER CHECK (rating BETWEEN 1 AND 5);
+`;
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -304,6 +314,12 @@ const MIGRATIONS: readonly Migration[] = [
     version: 3,
     up(db) {
       db.exec(V3);
+    },
+  },
+  {
+    version: 4,
+    up(db) {
+      db.exec(V4);
     },
   },
 ];

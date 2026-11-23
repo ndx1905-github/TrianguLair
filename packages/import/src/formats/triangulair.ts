@@ -10,7 +10,8 @@
  * `id` is the place id (`osm:node/1`, `local:…`), the geometry is the saved
  * snapshot's, and the properties hold name, category, OSM reference, tags
  * (names for other tools, ids for re-import), comment and its visibility,
- * status, price, sharing, dates and my photos' metadata (place, author, date).
+ * status, price, my rating, sharing, dates and my photos' metadata (place,
+ * author, date).
  *
  * With photos, the export is a ZIP archive (`exportArchive`): this GeoJSON as
  * `triangulair.geojson`, and each of my photos decrypted, full image and
@@ -28,6 +29,7 @@ import {
   type ListFilter,
   type PlaceGeometry,
   type PriceLevel,
+  type Rating,
   type Repository,
   type SaveStatus,
   type Sharing,
@@ -41,8 +43,11 @@ import { locate } from './geojson.ts';
 
 export const EXPORT_FORMAT = 'triangulair-export';
 export const EXPORT_VERSION = 1;
-/** 1: photos carry their thumbnail, format, date and author, and the archive holds their images. */
-export const EXPORT_MINOR = 1;
+/**
+ * 1: photos carry their thumbnail, format, date and author, and the archive holds their images.
+ * 2: `rating` (my rating, 1 to 5 stars, or null). An earlier version reads such a file without it.
+ */
+export const EXPORT_MINOR = 2;
 /** Name of the GeoJSON document inside the archive. */
 export const ARCHIVE_DOCUMENT = 'triangulair.geojson';
 /** Largest image read from an archive (the format caps are far below: 1.5 MiB). */
@@ -121,6 +126,8 @@ export interface ExportProperties {
   comment_visibility: CommentVisibility;
   status: SaveStatus | null;
   price_level: PriceLevel | null;
+  /** My rating, 1 to 5 stars (minor 2). */
+  rating: Rating | null;
   sharing: Sharing;
   created_at: string;
   updated_at: string;
@@ -172,6 +179,7 @@ export function buildExport(source: DataStore | Repository, opts: ExportOptions 
       comment_visibility: s.commentVisibility,
       status: s.status,
       price_level: s.priceLevel,
+      rating: s.rating,
       sharing: s.sharing,
       created_at: iso(s.createdAt),
       updated_at: iso(s.updatedAt),
@@ -412,6 +420,7 @@ export function parseTriangulairExport(json: unknown, opts: { images?: Readonly<
       ...(createdAt && { createdAt }),
       ...(p.category && { category: p.category }),
       ...(p.price_level && [1, 2, 3, 4].includes(p.price_level) && { priceLevel: p.price_level }),
+      ...(p.rating && [1, 2, 3, 4, 5].includes(p.rating) && { rating: p.rating }),
       ...(p.sharing && (p.sharing === 'private' || p.sharing === 'friends') && { sharing: p.sharing }),
       ...(p.comment_visibility && VIS.includes(p.comment_visibility) && { commentVisibility: p.comment_visibility }),
       ...(p.kind && { kind: p.kind }),

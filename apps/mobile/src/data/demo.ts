@@ -24,6 +24,7 @@ import {
   saveIdFor,
   type DataStore,
   type PriceLevel,
+  type Rating,
   type SaveStatus,
 } from '@triangulair/data';
 
@@ -48,6 +49,8 @@ export interface DemoPlace {
   status?: SaveStatus;
   price?: PriceLevel;
   comment?: string;
+  /** The demo friend's rating of the place (stars). */
+  friendRating?: Rating;
   /** Days before the seed date (for the "recent" sort). */
   ageDays: number;
 }
@@ -69,7 +72,7 @@ export function isExamplePlace(placeId: string): boolean {
 /** Phase-0 sample places around Paris. Coordinates are approximate. */
 export const DEMO_PLACES: DemoPlace[] = [
   { id: p(1), name: 'Du Pain et des Idées', lat: 48.8713, lon: 2.3633, tags: ['bakery', 'cafe'], ownerIsMe: true, category: 'shop=bakery', osmTags: { shop: 'bakery', opening_hours: 'Mo-Fr 07:15-19:30', outdoor_seating: 'no' }, status: 'favorite', price: 1, comment: 'Escargot pistache-chocolat.', ageDays: 2 },
-  { id: p(2), name: 'Le Comptoir du Relais', lat: 48.8519, lon: 2.3388, tags: ['restaurant'], ownerIsMe: true, alsoFriend: true, category: 'amenity=restaurant', osmTags: { amenity: 'restaurant', cuisine: 'french;regional', opening_hours: 'Mo-Su 12:00-23:00', outdoor_seating: 'yes', reservation: 'recommended' }, status: 'tried', price: 3, ageDays: 40 },
+  { id: p(2), name: 'Le Comptoir du Relais', lat: 48.8519, lon: 2.3388, tags: ['restaurant'], ownerIsMe: true, alsoFriend: true, category: 'amenity=restaurant', osmTags: { amenity: 'restaurant', cuisine: 'french;regional', opening_hours: 'Mo-Su 12:00-23:00', outdoor_seating: 'yes', reservation: 'recommended' }, status: 'tried', price: 3, friendRating: 4, ageDays: 40 },
   { id: p(3), name: 'Musée d’Orsay', lat: 48.86, lon: 2.3266, tags: ['museum'], ownerIsMe: true, category: 'tourism=museum', osmTags: { tourism: 'museum', museum: 'art', opening_hours: 'Tu-Su 09:30-18:00; Th 09:30-21:45; Mo off', fee: 'yes', charge: '16 EUR' }, status: 'to_try', ageDays: 15 },
   { id: p(4), name: 'Jardin du Luxembourg', lat: 48.8462, lon: 2.3372, tags: ['park', 'view'], ownerIsMe: true, category: 'leisure=park', osmTags: { leisure: 'park', opening_hours: 'Mo-Su 07:30-20:30', fee: 'no' }, ageDays: 60 },
   { id: p(5), name: 'Sacré-Cœur steps', lat: 48.8867, lon: 2.3431, tags: ['view'], ownerIsMe: true, category: 'tourism=viewpoint', osmTags: { tourism: 'viewpoint' }, ageDays: 90 },
@@ -211,6 +214,7 @@ export function seedDemoData(store: DataStore, opts: SeedOptions): boolean {
           id: saveIdFor(DEMO_FRIEND.id, d.id),
           ownerId: DEMO_FRIEND.id,
           place,
+          ...(d.friendRating && { rating: d.friendRating }),
           theirTags: [...d.tags.map((t) => TAGS[t].label), ...(DEMO_FRIEND_EXTRA_TAGS[d.id] ?? [])],
           createdAt: now - d.ageDays * day,
           updatedAt: now - d.ageDays * day,
@@ -282,6 +286,7 @@ export function seedExamples(store: DataStore, opts: ExampleOptions): boolean {
         place,
         status: d.status ?? null,
         priceLevel: d.price ?? null,
+        ...(d.friendRating && { rating: d.friendRating }),
         ...(d.comment ? { comment: d.comment, commentVisibility: 'friends' as const } : {}),
         theirTags: [...d.tags.map((t) => opts.tagName(t)), ...(DEMO_FRIEND_EXTRA_TAGS[d.id] ?? [])],
         createdAt: now - d.ageDays * day,

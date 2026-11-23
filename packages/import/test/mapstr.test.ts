@@ -18,8 +18,9 @@ import {
   maybeClosedItems,
   parseCsv,
   parseMapstrDate,
+  parseMapstr,
+  undoImport,
   ratedCount,
-  ratingsInComments,
   readImportFile,
   remotePhotoCount,
   setMaybeClosedSkipped,
@@ -87,7 +88,7 @@ describe('Mapstr: reading', () => {
     });
     expect(crepe.rating).toBeUndefined();
     expect(crepe.remotePhotos).toHaveLength(2);
-    expect(byName(r, 'Le Comptoir Inventé')).toMatchObject({ rating: '4', comment: 'Natural wines; ask for the "wine of the day"', category: 'amenity=bar' });
+    expect(byName(r, 'Le Comptoir Inventé')).toMatchObject({ rating: 4, comment: 'Natural wines; ask for the "wine of the day"', category: 'amenity=bar' });
     // Unknown icon key: no category.
     expect(byName(r, 'Salon Thé Fictif').category).toBeUndefined();
     expect(byName(r, 'Salon Thé Fictif').comment).toBeUndefined();
@@ -185,7 +186,7 @@ describe('Mapstr: joining the CSV and the GeoJSON', () => {
     geo.features = [geo.features[3], geo.features[1], geo.features[0]];
     const r = parsed(readImportFile({ name: 'mapstr.zip', bytes: zipOf({ csv: fixtureText(CSV), geojson: JSON.stringify(geo) }) }));
     expect(r.places.map((p) => p.name)).toEqual(['Crêperie des Lanternes', 'Le Comptoir Inventé', 'Salon Thé Fictif', 'Musée des Objets Perdus']);
-    expect(byName(r, 'Musée des Objets Perdus')).toMatchObject({ lat: 48.8619, createdAt: local(2024, 7, 14, 8, 30), rating: '5' });
+    expect(byName(r, 'Musée des Objets Perdus')).toMatchObject({ lat: 48.8619, createdAt: local(2024, 7, 14, 8, 30), rating: 5 });
     expect(byName(r, 'Crêperie des Lanternes').remotePhotos).toHaveLength(2);
     const salon = byName(r, 'Salon Thé Fictif');
     expect(salon.lat).toBeUndefined();
@@ -274,20 +275,78 @@ describe('Mapstr: tags that are not categories', () => {
 });
 
 describe('Mapstr: rating and photos', () => {
-  it('the rating is not written unless asked; photos stay on Mapstr and their URLs are never written', async () => {
+  it('the rating becomes my rating (stars), never the comment; photos stay on Mapstr and their URLs are never written', async () => {
     const store = openStore();
     const r = read(ZIP);
     const plan = buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW });
     expect(ratedCount(plan)).toBe(2);
     expect(remotePhotoCount(plan)).toBe(2);
-    const withRatings = ratingsInComments(plan, (v) => `Mapstr rating: ${v}`);
-    expect(withRatings.items.find((i) => i.place.name === 'Le Comptoir Inventé')!.place.comment).toBe('Natural wines; ask for the "wine of the day"\n\nMapstr rating: 4');
-    expect(withRatings.items.find((i) => i.place.name === 'Crêperie des Lanternes')!.place.comment).toBe('Buckwheat crêpes, cider, friendly staff');
+    expect(r.warnings.map((w) => w.code)).not.toContain('unreadable-ratings');
     await applyImport(store, plan, { yieldFn: noYield });
+    const ratingOf = (name: string) => {
+      const hit = store.repo.queryPlaces({ source: 'mine' }).find((p) => p.name === name)!;
+      return store.repo.getMySaveForPlace(hit.id)!;
+    };
+    expect(ratingOf('Le Comptoir Inventé')).toMatchObject({ rating: 4, comment: 'Natural wines; ask for the "wine of the day"' });
+    expect(ratingOf('Musée des Objets Perdus').rating).toBe(5);
+    expect(ratingOf('Crêperie des Lanternes').rating).toBeNull();
     const doc = JSON.stringify(exportGeoJson(store));
     expect(doc).not.toContain(PHOTO_HOST);
-    expect(doc).not.toContain('Mapstr rating');
-    expect(doc).toContain('Buckwheat crêpes, cider, friendly staff');
+    expect(doc).toContain(String.raw`\"rating\": 4,`);
+  });
+
+  it('the scale is decided per file: stars up to 5 (rounded), out of 10 when some go above 5; the rest is counted', () => {
+    const header = 'date,name,address,icon,userComment,rating,tags,photos\n';
+    const rows = (ratings: string[]) => header + ratings.map((v, i) => `1/1/24 9:00,Place ${i},"${i} Rue Exemple",restaurant,,${v},,`).join('\n') + '\n';
+    const stars = (ratings: string[]) => parseMapstr({ csv: rows(ratings) });
+    const r5 = stars(['4', '3.5', '"2,4"', '', '0', 'great', '12', '-1']);
+    expect(r5.places.map((p) => p.rating)).toEqual([4, 4, 2, undefined, undefined, undefined, undefined, undefined]);
+    expect(r5.warnings).toContainEqual({ code: 'unreadable-ratings', detail: '3' });
+    expect(r5.warnings.map((w) => w.code)).not.toContain('ratings-out-of-10');
+    const r10 = stars(['8', '10', '1', '5', '7']);
+    expect(r10.places.map((p) => p.rating)).toEqual([4, 5, 1, 3, 4]);
+    expect(r10.warnings).toContainEqual({ code: 'ratings-out-of-10' });
+    expect(r10.warnings.map((w) => w.code)).not.toContain('unreadable-ratings');
+  });
+
+  it('a place already in my places gets the rating only when it has none, even without merging; re-import and undo', async () => {
+    const store = openStore();
+    // Two places of mine near the imported ones: one rated, one not.
+    store.change((tx) => {
+      tx.putSave({ place: { id: 'local:mine0001', name: 'Le Comptoir Inventé', category: null, kind: 'place', geometry: { type: 'Point', coordinates: [2.35788, 48.85908] } }, comment: 'Mine' });
+      tx.putSave({ place: { id: 'local:mine0002', name: 'Musée des Objets Perdus', category: null, kind: 'place', geometry: { type: 'Point', coordinates: [2.35455, 48.8619] } }, rating: 2 });
+    });
+    const r = read(ZIP);
+    const plan = buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW });
+    expect(plan.mergeExisting).toBe(false);
+    const report = await applyImport(store, plan, { yieldFn: noYield });
+    expect(report.counts).toMatchObject({ created: 2, alreadySaved: 2, merged: 0, ratingsAdded: 1 });
+    expect(store.repo.getMySaveForPlace('local:mine0001')).toMatchObject({ rating: 4, comment: 'Mine', tagIds: [] });
+    expect(store.repo.getMySaveForPlace('local:mine0002')!.rating).toBe(2); // never overwritten
+    // The same file again: nothing changes.
+    const heads = store.heads();
+    const again = await applyImport(store, buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW }), { yieldFn: noYield });
+    expect(again.counts).toMatchObject({ created: 0, ratingsAdded: 0, alreadySaved: 4 });
+    expect(store.heads()).toEqual(heads);
+    // Undo the first import: the rating it filled in is gone again, mine stays.
+    await undoImport(store, report, { yieldFn: noYield });
+    expect(store.repo.getMySaveForPlace('local:mine0001')).toMatchObject({ rating: null, comment: 'Mine' });
+    expect(store.repo.getMySaveForPlace('local:mine0002')!.rating).toBe(2);
+  });
+
+  it('with merging on, the rating fills an empty one too; a rating changed since is kept by undo', async () => {
+    const store = openStore();
+    store.change((tx) => {
+      tx.putSave({ place: { id: 'local:mine0001', name: 'Le Comptoir Inventé', category: null, kind: 'place', geometry: { type: 'Point', coordinates: [2.35788, 48.85908] } } });
+    });
+    const r = read(ZIP);
+    const plan = setMergeExisting(buildPlan(r, await matchPlaces(r.places, lookupWith()), store.repo, { now: NOW }), true);
+    const report = await applyImport(store, plan, { yieldFn: noYield });
+    expect(report.counts).toMatchObject({ merged: 1, ratingsAdded: 1 });
+    expect(store.repo.getMySaveForPlace('local:mine0001')!.rating).toBe(4);
+    store.updateSave('local:mine0001', { rating: 1 });
+    await undoImport(store, report, { yieldFn: noYield });
+    expect(store.repo.getMySaveForPlace('local:mine0001')!.rating).toBe(1);
   });
 });
 

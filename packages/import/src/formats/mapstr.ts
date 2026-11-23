@@ -10,8 +10,12 @@
  *   - `date`: US style without seconds, `6/17/23 18:36` (month/day/2-digit
  *     year, local time);
  *   - `icon`: Mapstr's category key (`restaurant`…);
- *   - `rating`: often empty; its scale is not documented, so it is kept as
- *     written (see `ImportedPlace.rating`);
+ *   - `rating`: often empty; its scale is not documented. It becomes my
+ *     rating (1 to 5 stars) by `normalizeRatings`, decided for the whole
+ *     file: stars when every rating is at most 5 (decimals rounded), out of
+ *     10 when some go above 5 but none above 10 (halved, then rounded;
+ *     `ratings-out-of-10` warning); `0` is "not rated"; anything else is
+ *     left out and counted (`unreadable-ratings` warning);
  *   - `tags`: tag names separated by `#` (`Bar#Salon de thé / café#Restaurant`);
  *     names hold spaces, accents and `/`, so only `#` separates them. The
  *     first one is the main tag;
@@ -41,7 +45,7 @@ import { strFromU8, unzipSync } from 'fflate';
 
 import { parseCsv, stripBom, type CsvTable } from '../csv.ts';
 import type { ImportedPlace, ParseResult, ParseWarning, SourceTag } from '../model.ts';
-import { normalizeColor, str, uniq, validLatLon } from '../util.ts';
+import { normalizeColor, normalizeRatings, str, uniq, validLatLon } from '../util.ts';
 
 export const MAPSTR_CSV_HEADER = ['date', 'name', 'address', 'icon', 'userComment', 'rating', 'tags', 'photos'] as const;
 
@@ -321,6 +325,7 @@ export function parseMapstr(files: MapstrFiles): ParseResult {
     if (color && !colors.has(k)) colors.set(k, color);
   };
   const places: ImportedPlace[] = [];
+  const rawRatings: (string | undefined)[] = [];
   const build = (c: CsvRow | null, g: GeoRow | null) => {
     const key = `m${places.length}`;
     const name = g?.name ?? c!.name;
@@ -343,9 +348,9 @@ export function parseMapstr(files: MapstrFiles): ParseResult {
       ids: {},
       ...(c?.createdAt !== undefined && { createdAt: c.createdAt }),
       ...(category && { category }),
-      ...(c?.rating && { rating: c.rating }),
       ...(c && c.photos.length > 0 && { remotePhotos: c.photos }),
     });
+    rawRatings.push(c?.rating);
   };
 
   if (csv && geo) {
@@ -366,6 +371,12 @@ export function parseMapstr(files: MapstrFiles): ParseResult {
     for (const g of geo) build(null, g);
   }
 
+  const { ratings, outOf10, unreadable } = normalizeRatings(rawRatings);
+  ratings.forEach((r, i) => {
+    if (r !== undefined) places[i]!.rating = r;
+  });
+  if (outOf10) warnings.push({ code: 'ratings-out-of-10' });
+  if (unreadable > 0) warnings.push({ code: 'unreadable-ratings', detail: String(unreadable) });
   const unlocated = places.filter((p) => p.lat === undefined).length;
   if (csv && unlocated > 0) warnings.push({ code: 'positions-from-address', detail: String(unlocated) });
   const photos = places.reduce((n, p) => n + (p.remotePhotos?.length ?? 0), 0);

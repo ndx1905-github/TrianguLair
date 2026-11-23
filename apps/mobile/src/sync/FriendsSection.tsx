@@ -127,6 +127,7 @@ export function FriendsSection({ placeId, initiallyOpen = false }: { placeId: st
                       t('friends.savedOn', { date: date(s.createdAt) }),
                       s.updatedAt - s.createdAt > 60_000 ? t('friends.updatedOn', { date: date(s.updatedAt) }) : null,
                       s.status ? t(`status.${s.status}`) : null,
+                      s.rating !== null ? `★ ${s.rating}` : null,
                     ]
                       .filter(Boolean)
                       .join(' · ')}

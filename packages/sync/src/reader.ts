@@ -375,6 +375,7 @@ export class FriendReader {
             if (before.comment !== input.comment) fields.push('comment');
             if (before.status !== (input.status ?? null)) fields.push('status');
             if (before.priceLevel !== (input.priceLevel ?? null)) fields.push('price_level');
+            if (before.rating !== (input.rating ?? null)) fields.push('rating');
             if (before.commentVisibility !== input.commentVisibility) fields.push('comment_visibility');
             if (fields.length === 0) fields.push('details'); // name, tags, geometry
             const meaningful = (fields.includes('comment') && !!input.comment) || (fields.includes('status') && MEANINGFUL_STATUS.has(input.status ?? '')) || newPhotos.length > 0;

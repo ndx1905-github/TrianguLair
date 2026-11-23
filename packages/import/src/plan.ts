@@ -97,7 +97,8 @@ export interface ImportPlan {
   /**
    * Places already in my saves: false (default) leaves them as they are ("already in my places");
    * true adds the file's tags, completes the comment, sets an empty status or price, restores
-   * one from the trash.
+   * one from the trash. Either way, a save without a rating gets the file's (a fill-in, never an
+   * overwrite).
    */
   mergeExisting: boolean;
   /** When the matching ran (ISO 8601): the date of the closure signals. */
@@ -401,25 +402,21 @@ export function setMergeExisting(plan: ImportPlan, mergeExisting: boolean): Impo
   return { ...plan, mergeExisting };
 }
 
-/**
- * The source's rating added to each place's comment, as one line made by `line` (the app gives a
- * translated "Mapstr rating: 4"). The data model has no rating field: the preview asks first.
- */
-export function ratingsInComments(plan: ImportPlan, line: (rating: string) => string): ImportPlan {
-  return {
-    ...plan,
-    items: plan.items.map((it) => {
-      const r = it.place.rating?.trim();
-      if (!r) return it;
-      const comment = [it.place.comment?.trim(), line(r)].filter(Boolean).join('\n\n');
-      return { ...it, place: { ...it.place, comment } };
-    }),
-  };
+/** Places that will be written with a rating (left-out places and duplicates not counted). */
+export function ratedCount(plan: ImportPlan): number {
+  return plan.items.filter((it) => it.place.rating !== undefined && it.resolution.kind !== 'skip' && !it.duplicateOf).length;
 }
 
-/** Places with a rating in the file. */
-export function ratedCount(plan: ImportPlan): number {
-  return plan.items.filter((it) => it.place.rating?.trim()).length;
+/**
+ * Places already in my saves that will only get the file's rating (merge off, the save has no rating
+ * yet): the import still has something to write for them.
+ */
+export function ratingsToFill(plan: ImportPlan, repo: Repository | null): number {
+  if (plan.mergeExisting || !repo) return 0;
+  return plan.items.filter((it) => {
+    if (it.resolution.kind === 'skip' || it.duplicateOf || !it.existing || it.place.rating === undefined) return false;
+    return repo.getMySaveForPlace(it.existing.placeId)?.rating === null;
+  }).length;
 }
 
 /** Photos the source keeps on its server (counted, never downloaded). */
