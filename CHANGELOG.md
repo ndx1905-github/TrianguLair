@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.4] - 2026-11-23
+
+Sync problems are never silent any more.
+
 ### Fixed
 
 - Sync that never ran showed "Up to date" with changes waiting and no error: a pass that failed unexpectedly was
