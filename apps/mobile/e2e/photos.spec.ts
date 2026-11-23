@@ -310,3 +310,62 @@ test('photos: add with EXIF removed, friend gets the thumbnail, full photo on op
   await anna.ctx.close();
   await ben.ctx.close();
 });
+
+/** The import package's INVENTED Pin Drop export: 2 photos on its (invented) image host, mocked below. */
+const PINDROP = path.join(__dirname, '../../../packages/import/test/fixtures/pindrop/pindrop.json');
+
+async function importPinDrop(p: Person, download: boolean): Promise<void> {
+  await p.page.goto(autostart('/import'));
+  const chooser = p.page.waitForEvent('filechooser');
+  await p.page.getByTestId('import-pick').click();
+  await (await chooser).setFiles(PINDROP);
+  await expect(p.page.getByTestId('import-preview')).toBeVisible({ timeout: 30_000 });
+  const toggle = p.page.getByTestId('preview-download-photos');
+  await expect(toggle).toHaveText('Download the 2 photos from Pin Drop');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(p.page.getByTestId('import-preview')).toContainText('This contacts Pin Drop’s server.');
+  if (download) await toggle.click();
+  await p.page.getByTestId('import-confirm').click();
+  await expect(p.page.getByTestId('import-done')).toBeVisible({ timeout: 60_000 });
+  await expect(p.page.getByTestId('import-done')).toContainText('4 places imported');
+}
+
+test('import: Pin Drop photos downloaded on request (shrunk, stored like mine); a browser that blocks them says so', async ({ browser }) => {
+  test.skip(!proxy, 'Apache WebDAV on 127.0.0.1:8081 is not running (packages/storage/scripts/real-servers.sh)');
+  // The image host answers with CORS: the photos come in.
+  const anna = await person(browser, 'Anna');
+  const asked: string[] = [];
+  await anna.page.route('https://pins.example.org/**', async (route) => {
+    asked.push(new URL(route.request().url()).searchParams.get('mode') ?? '');
+    await route.fulfill({ path: PHOTO2, contentType: 'image/jpeg', headers: { 'access-control-allow-origin': '*' } });
+  });
+  await importPinDrop(anna, true);
+  await expect(anna.page.getByTestId('import-done-remotePhotos')).toHaveText('2 photos downloaded');
+  await expect(anna.page.getByTestId('import-photos-blocked')).toHaveCount(0);
+  expect(asked).toEqual(['full', 'full']);
+  // On the café's card, like a photo I added.
+  await anna.page.goto(autostart('/list'));
+  await anna.page.getByTestId('list-search').fill('Pendule');
+  await anna.page.getByTestId('row-Café Pendule').click();
+  const card = anna.page.getByTestId('place-card').filter({ visible: true });
+  await expect(card.getByTestId('photos-mine').locator('img')).toHaveCount(1, { timeout: 30_000 });
+
+  // An image host without CORS (as most are): the browser refuses the request before any answer, a
+  // TypeError for the page (a request Playwright fulfills skips the CORS check, so it is aborted
+  // here, which the page sees the same way). The import is still done.
+  const ben = await person(browser, 'Ben');
+  let tries = 0;
+  await ben.page.route('https://pins.example.org/**', async (route) => {
+    tries++;
+    await route.abort('accessdenied');
+  });
+  await importPinDrop(ben, true);
+  await expect(ben.page.getByTestId('import-photos-blocked')).toContainText('this browser cannot download the photos from Pin Drop');
+  await expect(ben.page.getByTestId('import-done-remotePhotos')).toHaveCount(0);
+  await expect(ben.page.getByTestId('import-done-remotePhotosFailed')).toHaveCount(0);
+  // Stopped at the first refusal (3 downloads may have started at once).
+  expect(tries).toBeLessThanOrEqual(3);
+  expect([...anna.errors, ...ben.errors]).toEqual([]);
+  await anna.ctx.close();
+  await ben.ctx.close();
+});

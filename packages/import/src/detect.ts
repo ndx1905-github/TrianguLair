@@ -11,7 +11,7 @@ import { isGoogleLabeledPlaces, isGoogleSavedPlaces, parseGenericGeoJson, parseG
 import { isZip, looksLikeKml, parseKml, parseKmz } from './formats/kml.ts';
 import { isTriangulairArchive, isTriangulairExport, parseTriangulairArchive, parseTriangulairExport } from './formats/triangulair.ts';
 import { isMapstrCsv, isMapstrGeoJson, isMapstrZip, parseMapstr, parseMapstrZip } from './formats/mapstr.ts';
-import { isPinDropCsv, isPinDropKml, parsePinDropCsv, parsePinDropKml } from './formats/unverified/pindrop.ts';
+import { isPinDropJson, looksLikePinDropText, parsePinDrop } from './formats/pindrop.ts';
 import type { ImportFile, ParseResult } from './model.ts';
 import { baseName, bytesToText } from './util.ts';
 
@@ -19,8 +19,11 @@ export type ReadOutcome =
   | { kind: 'parsed'; result: ParseResult }
   /** A generic CSV: confirm or correct the mapping, then call `parseCsvWithMapping`. */
   | { kind: 'needsMapping'; table: CsvTable; mapping: ColumnMapping; unmapped: number[]; fileName: string }
-  /** `invalid-json`: the file starts like JSON (GeoJSON) but is not valid JSON, e.g. cut short. */
-  | { kind: 'error'; code: 'unreadable' | 'unknown-format' | 'empty' | 'too-new' | 'invalid-json'; detail?: string };
+  /**
+   * `invalid-json`: the file starts like JSON (GeoJSON) but is not valid JSON, e.g. cut short;
+   * `invalid-pindrop`: the same for a file that looks like a Pin Drop export.
+   */
+  | { kind: 'error'; code: 'unreadable' | 'unknown-format' | 'empty' | 'too-new' | 'invalid-json' | 'invalid-pindrop'; detail?: string };
 
 function textOf(file: ImportFile): string {
   if (file.text !== undefined) return stripBom(file.text);
@@ -61,7 +64,7 @@ export function readImportFile(file: ImportFile): ReadOutcome {
       try {
         json = JSON.parse(text);
       } catch {
-        return { kind: 'error', code: 'invalid-json' };
+        return { kind: 'error', code: looksLikePinDropText(text) ? 'invalid-pindrop' : 'invalid-json' };
       }
       if (isTriangulairExport(json)) {
         try {
@@ -73,13 +76,13 @@ export function readImportFile(file: ImportFile): ReadOutcome {
       if (isGoogleSavedPlaces(json)) return { kind: 'parsed', result: parseGoogleSavedPlaces(json) };
       if (isGoogleLabeledPlaces(json, name)) return { kind: 'parsed', result: parseGoogleLabeledPlaces(json) };
       if (isMapstrGeoJson(json)) return { kind: 'parsed', result: parseMapstr({ geojson: text }) };
+      if (isPinDropJson(json)) return { kind: 'parsed', result: parsePinDrop(json) };
       const r = parseGenericGeoJson(json);
       if (r.places.length === 0 && !(json as { type?: string }).type) return { kind: 'error', code: 'unknown-format' };
       return { kind: 'parsed', result: r };
     }
     if (head.startsWith('<')) {
       if (!looksLikeKml(head)) return { kind: 'error', code: 'unknown-format', detail: 'xml' };
-      if (isPinDropKml(head, name)) return { kind: 'parsed', result: parsePinDropKml(text) };
       return { kind: 'parsed', result: parseKml(text) };
     }
     // Anything else is read as CSV / TSV.
@@ -87,7 +90,6 @@ export function readImportFile(file: ImportFile): ReadOutcome {
     if (table.headers.length < 2 || table.rows.length === 0) return { kind: 'error', code: table.headers.length < 2 ? 'unknown-format' : 'empty' };
     if (isGoogleSavedCsv(table)) return { kind: 'parsed', result: parseGoogleSavedCsv(table, name) };
     if (isMapstrCsv(table)) return { kind: 'parsed', result: parseMapstr({ csv: text }) };
-    if (isPinDropCsv(table, name)) return { kind: 'parsed', result: parsePinDropCsv(text) };
     const { mapping, unmapped } = guessMapping(table);
     return { kind: 'needsMapping', table, mapping, unmapped, fileName: baseName(name) };
   } catch (e) {

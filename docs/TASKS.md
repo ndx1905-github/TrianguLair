@@ -17,7 +17,7 @@ To contribute: pick a "to do" task whose dependencies are done, comment on the i
 | T-006 | Continuous integration with GitHub Actions | infra | — | done |
 | T-007 | Automatic deployment of the web test build | infra, app | T-004, T-006 | to do |
 | T-008 | Administrative and legal checks | legal, maintainer | — | to do |
-| T-009 | Mapstr and Pin Drop export formats | import, maintainer | — | in progress |
+| T-009 | Mapstr and Pin Drop export formats | import, maintainer | — | done |
 | T-010 | Forgejo mirror of the repository | infra, maintainer | — | to do |
 
 ## Phase 1 — local app
@@ -150,14 +150,14 @@ Acceptance criteria:
 
 ### T-009 — Mapstr and Pin Drop export formats
 
-Get a real export from a Mapstr and a Pin Drop account, document columns and formats, anonymize a sample for tests. Mapstr: done (a ZIP with mapstr.csv and mapstr.geojson, read by packages/import/src/formats/mapstr.ts; invented fixtures that mirror it). Pin Drop: still to get.
+Get a real export from a Mapstr and a Pin Drop account, document columns and formats, anonymize a sample for tests. Mapstr: done (a ZIP with mapstr.csv and mapstr.geojson, read by packages/import/src/formats/mapstr.ts; invented fixtures that mirror it). Pin Drop: done (one JSON file with tags, pins and messages, read by packages/import/src/formats/pindrop.ts; invented fixtures that mirror it).
 
 Acceptance criteria:
 
 - [x] Mapstr: sample layout in packages/import/test/fixtures/mapstr/ (invented places)
 - [x] Mapstr: columns documented in the spec and the import README
-- [ ] Pin Drop: sample in packages/import/test/fixtures/
-- [ ] Pin Drop: columns documented in the spec
+- [x] Pin Drop: sample layout in packages/import/test/fixtures/pindrop/ (invented places)
+- [x] Pin Drop: fields documented in the spec and the import README
 
 ### T-010 — Forgejo mirror of the repository
 

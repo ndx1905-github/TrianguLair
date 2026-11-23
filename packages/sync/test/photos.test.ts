@@ -118,6 +118,13 @@ describe('photos: owner adds, friend sees the thumbnail and opens the full photo
     expect(() => alice.engine.photos.add(P1, { ...photo(1), full: webp(9 * 1024 * 1024) })).toThrow(/too large/);
     expect(() => alice.engine.photos.add('osm:node/99', photo(1))).toThrow(/save the place/);
   });
+
+  it('an import may give the photo id (the same source photo keeps the same id)', async () => {
+    const { alice } = await pair();
+    expect(alice.engine.photos.add(P1, photo(5), { id: 'rp0abc123def4567' })).toBe('rp0abc123def4567');
+    expect(alice.engine.photos.list(P1).map((m) => m.id)).toContain('rp0abc123def4567');
+    expect(() => alice.engine.photos.add(P1, photo(6), { id: 'bad id/' })).toThrow(PhotoError);
+  });
 });
 
 describe('photos: removal and revocation', () => {

@@ -248,19 +248,11 @@ describe('generic CSV with column mapping', () => {
   });
 });
 
-describe('HYPOTHETICAL Pin Drop exports (unverified layouts, T-009)', () => {
-  it('Pin Drop CSV: group as a tag, visited as status; flagged unverified', () => {
-    const r = parsed(read('hypothetical/pindrop-export.csv'));
-    expect(r.format).toBe('pindrop');
-    expect(r.warnings[0]?.code).toBe('unverified-format');
-    expect(byName(r, 'Fromagerie Martin')).toMatchObject({ tags: ['Food shops', 'cheese'], status: 'tried', comment: 'Comté', address: 'Rue de Bretagne, Paris' });
-    expect(byName(r, 'Librairie du Haut Marais').status).toBeUndefined();
-  });
-
-  it('Pin Drop KML: read by the KML reader, flagged unverified', () => {
-    const r = parsed(read('hypothetical/pindrop-export.kml'));
-    expect(r.format).toBe('pindrop');
-    expect(r.places[0]).toMatchObject({ name: 'Le Comptoir des Archives', tags: ['Paris bars'], comment: 'Great terrace' });
+describe('app exports on generic paths', () => {
+  it('a KML or CSV whose name mentions Pin Drop is read as plain KML / generic CSV (Pin Drop exports JSON)', () => {
+    const kml = '<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Pin Drop</name><Placemark><name>Café Pendule</name><Point><coordinates>2.3619902,48.8590377</coordinates></Point></Placemark></Document></kml>';
+    expect(parsed(readImportFile({ name: 'pindrop-export.kml', text: kml })).format).toBe('kml');
+    expect(readImportFile({ name: 'pindrop-export.csv', text: 'Name;Lat;Lng\nCafé Pendule;48,8590377;2,3619902\n' }).kind).toBe('needsMapping');
   });
 
   it('a CSV named mapstr.csv without the Mapstr header goes through the generic path', () => {

@@ -67,7 +67,7 @@ Wired to the workspace packages `@triangulair/data` (local SQLite + document) an
   same filter bar; two panes (list + card) on wide screens.
 - **Import / export** (`/import`, T-114/T-115; link "Import / export" in the list header): pick a
   file (Google Takeout, KML/KMZ, GeoJSON, CSV with a column-mapping step, Mapstr and Pin Drop
-  exports, which are **unverified** and flagged as such), match to OpenStreetMap with progress and
+  exports, whose photos on the app's server can be downloaded on request), match to OpenStreetMap with progress and
   cancel, preview (to check / found / manual points / no position, per-place choice among
   candidates, manual point or leave out; what each source tag becomes), batched write with
   progress and cancel, summary and undo for 7 days; export everything as GeoJSON (download or

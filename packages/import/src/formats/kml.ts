@@ -144,7 +144,7 @@ function extendedData(pm: XmlElement): Record<string, string> {
 
 export interface KmlOptions {
   /** Format id reported (the KMZ reader passes "kmz"). */
-  format?: 'kml' | 'kmz' | 'pindrop';
+  format?: 'kml' | 'kmz';
 }
 
 export function parseKml(text: string, opts: KmlOptions = {}): ParseResult {

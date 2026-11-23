@@ -26,6 +26,20 @@ All notable changes to TrianguLair are listed here. The format follows
   (even without merging), undo removes it, and importing the same file again changes nothing. TrianguLair's own
   export now carries the rating too.
 
+### Changed
+
+- Import from Pin Drop checked on a real export: Pin Drop's JSON export is recognized by its content and is no
+  longer flagged "not verified". Tags keep their names and colors, and their icons give the places a category
+  (café, bakery, bar…); "À essayer" and wish-list pins get the status To try, favourites Favorite; secret pins are
+  imported private (not shared, comment private). Places that refer to tags missing from the file are counted in the
+  preview, and a file cut short gets a clear message. The guessed Pin Drop KML / CSV readers are gone (such files
+  import as plain KML or through the column mapping).
+- Photos that Mapstr and Pin Drop keep on their servers can now be downloaded during the import: the preview offers
+  "Download the N photos", off by default, and says it contacts that server. They are shrunk like the photos I add,
+  their links are not kept, a re-import does not add them twice, and undo removes them. A photo that cannot be
+  downloaded is counted without stopping the import; in a browser that refuses the download, the import says photos
+  can be downloaded from the phone app.
+
 ## [0.9.0-beta.6] - 2026-11-23
 
 Import from Mapstr checked on a real export, no duplicates at import, and comments first on a place's card.

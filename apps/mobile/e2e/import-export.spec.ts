@@ -6,6 +6,9 @@ import { autostart, diagnose, expect, openMap, preparePage, test } from './helpe
 const SMALL = path.join(__dirname, 'fixtures/small.geojson');
 /** The import package's INVENTED Mapstr export (4 places, macOS junk included). */
 const MAPSTR_ZIP = path.join(__dirname, '../../../packages/import/test/fixtures/mapstr/mapstr.zip');
+/** The import package's INVENTED Pin Drop export (4 pins, 2 secret, 2 photos, references to tags not in the file). */
+const PINDROP = path.join(__dirname, '../../../packages/import/test/fixtures/pindrop/pindrop.json');
+const PINDROP_CUT = path.join(__dirname, '../../../packages/import/test/fixtures/pindrop/invalid.json');
 
 async function openImport(page: Page): Promise<void> {
   await page.getByTestId('open-list').click();
@@ -144,8 +147,8 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   await expect(preview).toContainText('Mapstr export · 4 places in mapstr.zip');
   await expect(page.getByTestId('unverified-banner')).toHaveCount(0);
   await expect(page.getByTestId('preview-counts')).toHaveText('New: 4 · Already in my places: 0 · Duplicates in this file: 0');
-  // Photos stay on Mapstr; ratings become my rating.
-  await expect(page.getByTestId('preview-warning-remote-photos')).toHaveText('2 photos stay on Mapstr: they are not imported.');
+  // Photos stay on Mapstr unless asked for (no photo store here, so not offered); ratings become my rating.
+  await expect(page.getByTestId('preview-warning-remote-photos')).toHaveText('2 photos are on Mapstr’s server: they are imported only if you download them below.');
   await expect(page.getByTestId('preview-ratings')).toHaveText('★ 2 places with a rating');
   await expect(page.getByTestId('preview-warning-unreadable-ratings')).toHaveCount(0);
   // Categorized places OpenStreetMap does not know there: flagged, kept by default.
@@ -208,4 +211,60 @@ test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second
   const stars = page.getByTestId('place-card').filter({ visible: true }).getByTestId('rating');
   await expect(stars.getByRole('radio', { name: '4 stars', exact: true })).toBeChecked();
   await expect(stars.getByRole('radio', { name: '5 stars', exact: true })).not.toBeChecked();
+});
+
+test('import a Pin Drop export: verified, statuses, secret places private, missing tags counted, photos not fetched', async ({ page }) => {
+  const photoRequests: string[] = [];
+  await page.route('https://pins.example.org/**', async (route) => {
+    photoRequests.push(route.request().url());
+    await route.abort();
+  });
+  await openMap(page);
+  await openImport(page);
+  await expect(page.getByTestId('import-screen')).toContainText('Pin Drop export (.json)');
+
+  // A file cut short: a clear error, nothing imported.
+  await pickFile(page, PINDROP_CUT);
+  await expect(page.getByTestId('import-message')).toHaveText('This Pin Drop export is not valid JSON: it may be incomplete or have been edited by hand. Export it again from Pin Drop.');
+
+  await pickFile(page, PINDROP);
+  const preview = page.getByTestId('import-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Pin Drop export · 4 places in pindrop.json');
+  await expect(page.getByTestId('unverified-banner')).toHaveCount(0);
+  await expect(page.getByTestId('preview-counts')).toHaveText('New: 4 · Already in my places: 0 · Duplicates in this file: 0');
+  await expect(page.getByTestId('preview-warning-missing-tags')).toHaveText('3 places refer to tags that are not in this file (an edited export?): those tags are left out.');
+  await expect(page.getByTestId('preview-warning-secret-places')).toHaveText('2 places were secret in Pin Drop: they are imported private (not shared with friends, comments private).');
+  await expect(page.getByTestId('preview-warning-remote-photos')).toHaveText('2 photos are on Pin Drop’s server: they are imported only if you download them below.');
+  // Tags: "À essayer" is the status; criteria explained; "Lire commentaire" is a tag like any other.
+  await expect(page.getByTestId('tag-À essayer-status')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-Openair-criterion')).toContainText('Terrace');
+  await expect(page.getByTestId('tag-Lire commentaire-new')).toHaveAttribute('aria-checked', 'true');
+
+  await page.getByTestId('import-confirm').click();
+  const done = page.getByTestId('import-done');
+  await expect(done).toBeVisible();
+  await expect(done).toContainText('4 places imported');
+  await expect(page.getByTestId('import-done-remotePhotos')).toHaveCount(0);
+
+  // Statuses, privacy, dates and comments as mapped; no photo URL written, none requested.
+  await page.getByText('Import another file').click();
+  const download = page.waitForEvent('download');
+  await page.getByTestId('export-all').click();
+  const text = await readFile(await (await download).path(), 'utf8');
+  type Props = { name: string; comment?: string; created_at: string; status?: string | null; sharing: string; comment_visibility: string };
+  const data = JSON.parse(text) as { features: { properties: Props }[] };
+  const of = (name: string) => data.features.find((f) => f.properties.name === name)?.properties;
+  expect(of('Café Pendule')).toMatchObject({ status: 'favorite', sharing: 'friends', comment: 'Quiet in the morning\nGood filter coffee' });
+  expect(of('Café Pendule')?.created_at.startsWith('2024-11-05T09:12:31')).toBe(true);
+  expect(of('Boulangerie des Remparts Fictifs')).toMatchObject({ status: 'to_try', sharing: 'private', comment_visibility: 'private' });
+  expect(of('Le Bar Imaginaire')).toMatchObject({ status: 'to_try' });
+  expect(of('Kiosque Sans Nom')).toMatchObject({ status: 'favorite', sharing: 'private' });
+  expect(text).not.toContain('pins.example.org');
+  expect(text).not.toContain('1c9e1534');
+  expect(photoRequests).toEqual([]);
+
+  // The same file again: nothing new.
+  await pickFile(page, PINDROP);
+  await expect(page.getByTestId('preview-counts')).toHaveText('New: 0 · Already in my places: 4 · Duplicates in this file: 0');
 });

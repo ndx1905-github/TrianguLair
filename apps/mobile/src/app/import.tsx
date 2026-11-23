@@ -11,7 +11,7 @@
  * "Maybe closed" (closure signals of the osm package), which I can leave out.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -32,6 +32,8 @@ import {
   ratingsToFill,
   setMaybeClosedSkipped,
   setMergeExisting,
+  setDownloadRemotePhotos,
+  remotePhotoCount,
   summarizePlan,
   undoImport,
   type ColumnMapping,
@@ -63,6 +65,9 @@ import { pickImportFile, saveExportFile } from '../importExport/files';
 import { firstGroup, GROUP_ORDER, itemsByGroup, LAST_IMPORT_KEY, previewWarnings, serializeReport, toWrite, undoableReport, UNDO_DAYS } from '../importExport/logic';
 import { osmClient } from '../osm/client';
 import { usePhotosService } from '../photos/usePhotos';
+import { processDownloaded } from '../photos/pick';
+import { photoQuality, QUALITY } from '../photos/model';
+import { fetchRemotePhoto } from '../importExport/photoDownload';
 
 type Step =
   | { kind: 'home' }
@@ -70,7 +75,7 @@ type Step =
   | { kind: 'mapping'; table: CsvTable; mapping: ColumnMapping; fileName: string }
   | { kind: 'matching'; done: number; total: number }
   | { kind: 'preview'; plan: ImportPlan; group: ItemGroup; fileName: string; offline: boolean }
-  | { kind: 'writing'; done: number; total: number }
+  | { kind: 'writing'; done: number; total: number; photos?: boolean }
   | { kind: 'done'; report: ImportReport };
 
 const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'AbortError';
@@ -187,6 +192,14 @@ function ImportScreen() {
           addPhoto: (placeId: string, p: { images: { full: Uint8Array; thumb: Uint8Array }; width?: number | null; height?: number | null; createdAt?: number }) =>
             photos.add(placeId, { full: p.images.full, thumb: p.images.thumb, width: p.width ?? 0, height: p.height ?? 0 }, p.createdAt !== undefined ? { createdAt: p.createdAt } : {}),
         }),
+        // Photos on the source app's server, when the preview asked for them: shrunk like a picked photo.
+        ...(photos &&
+          plan.downloadRemotePhotos && {
+            fetchPhoto: (url: string, signal: AbortSignal) => fetchRemotePhoto(url, signal, Platform.OS === 'web'),
+            addDownloadedPhoto: async (placeId: string, image: Uint8Array, info: { id: string; mime?: string }) =>
+              photos.add(placeId, await processDownloaded(image, info.mime, QUALITY[photoQuality()]), { id: info.id }),
+            onPhotoProgress: (done: number, total: number) => setStep({ kind: 'writing', done, total, photos: true }),
+          }),
       });
       // Places written "maybe closed": one grouped What's new entry ("N imported places may no longer exist…").
       recordDetections(store, importedMaybeClosed(store.repo, report), 'import');
@@ -278,10 +291,11 @@ function ImportScreen() {
           </Busy>
         );
       case 'preview':
-        return <Preview step={step} setStep={setStep} onConfirm={(p) => void confirm(p)} myTags={myTags} />;
+        // Downloaded photos go to the photo store: offered only when it is there.
+        return <Preview step={step} setStep={setStep} onConfirm={(p) => void confirm(p)} myTags={myTags} canDownload={!!photos} />;
       case 'writing':
         return (
-          <Busy text={t('import.writing')}>
+          <Busy text={t(step.photos ? 'import.downloadingPhotos' : 'import.writing')}>
             <ProgressBar done={step.done} total={step.total} testID="writing-progress" />
             <Text style={[styles.small, { color: c.textMuted, textAlign: 'center' }]}>{t('import.writingProgress', { done: step.done, total: step.total })}</Text>
             <Button label={t('import.cancel')} kind="secondary" onPress={() => abort.current?.abort()} testID="writing-cancel" />
@@ -293,6 +307,11 @@ function ImportScreen() {
           <View testID="import-done" style={{ gap: 10 }}>
             <SectionTitle>{t('import.done.title')}</SectionTitle>
             {step.report.cancelled ? <Banner tone="warning">{t('import.done.cancelled')}</Banner> : null}
+            {step.report.photoDownloadBlocked ? (
+              <Banner tone="warning" testID="import-photos-blocked">
+                {t('import.done.photosBlocked', { app: t(step.report.format === 'pindrop' ? 'import.app.pindrop' : 'import.app.mapstr') })}
+              </Banner>
+            ) : null}
             {(
               [
                 ['imported', n.imported],
@@ -306,12 +325,14 @@ function ImportScreen() {
                 ['ratingsAdded', n.ratingsAdded ?? 0],
                 ['photos', n.photos ?? 0],
                 ['photosSkipped', n.photosSkipped ?? 0],
+                ['remotePhotos', n.remotePhotos ?? 0],
+                ['remotePhotosFailed', step.report.photoDownloadBlocked ? 0 : (n.remotePhotosFailed ?? 0)],
                 ['skipped', n.skipped + n.duplicates],
               ] as const
             )
-              .filter(([k, count]) => count > 0 || !['photos', 'photosSkipped', 'alreadySaved', 'unchanged', 'maybeClosed', 'ratingsAdded'].includes(k))
+              .filter(([k, count]) => count > 0 || !['photos', 'photosSkipped', 'remotePhotos', 'remotePhotosFailed', 'alreadySaved', 'unchanged', 'maybeClosed', 'ratingsAdded'].includes(k))
               .map(([k, count]) => (
-              <Text key={k} style={[k === 'imported' ? styles.big : styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
+              <Text key={k} style={[k === 'imported' ? styles.big : styles.p, { color: c.text }]} maxFontSizeMultiplier={2} testID={`import-done-${k}`}>
                 {t(`import.done.${k}`, { count })}
               </Text>
             ))}
@@ -358,11 +379,13 @@ function Preview({
   setStep,
   onConfirm,
   myTags,
+  canDownload,
 }: {
   step: Extract<Step, { kind: 'preview' }>;
   setStep: (s: Step) => void;
   onConfirm: (plan: ImportPlan) => void;
   myTags: ReturnType<typeof useTags>['tags'];
+  canDownload: boolean;
 }) {
   const c = useUiColors();
   const { t } = useI18n();
@@ -375,6 +398,8 @@ function Preview({
   const closed = useMemo(() => maybeClosedItems(plan), [plan]);
   const closedSkipped = closed.length > 0 && closed.every((it) => it.resolution.kind === 'skip');
   const rated = ratedCount(plan);
+  const remote = remotePhotoCount(plan);
+  const app = t(plan.format === 'pindrop' ? 'import.app.pindrop' : 'import.app.mapstr');
   const count = toWrite(plan) + ratingsToFill(plan, repo);
   const shown = groups[step.group];
   const confirmPlan = () => onConfirm(plan);
@@ -393,10 +418,23 @@ function Preview({
       </Text>
       {step.offline ? <Banner tone="warning">{t('import.offline')}</Banner> : null}
       {warnings.map((w) => (
-        <Banner key={w.code} tone={w.code === 'remote-photos' || w.code === 'ratings-out-of-10' ? 'info' : 'warning'} testID={`preview-warning-${w.code}`}>
-          {t(`import.warning.${w.code}`, { count: w.count })}
+        <Banner key={w.code} tone={w.code === 'remote-photos' || w.code === 'secret-places' || w.code === 'ratings-out-of-10' ? 'info' : 'warning'} testID={`preview-warning-${w.code}`}>
+          {t(`import.warning.${w.code}`, { count: w.count, app })}
         </Banner>
       ))}
+      {remote > 0 && canDownload ? (
+        <View style={{ gap: 6 }}>
+          <Pill
+            label={t('import.remotePhotos.toggle', { count: remote, app })}
+            selected={!!plan.downloadRemotePhotos}
+            onPress={() => setStep({ ...step, plan: setDownloadRemotePhotos(plan, !plan.downloadRemotePhotos) })}
+            testID="preview-download-photos"
+          />
+          <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
+            {t('import.remotePhotos.hint', { app })}
+          </Text>
+        </View>
+      ) : null}
       {summary.toMerge > 0 ? (
         <View style={{ gap: 6 }} testID="preview-existing">
           <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>

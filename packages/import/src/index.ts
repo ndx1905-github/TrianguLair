@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * @triangulair/import — bring places in from Google Takeout, KML/KMZ,
- * GeoJSON, CSV, Mapstr and Pin Drop (Pin Drop UNVERIFIED), match them to
+ * GeoJSON, CSV, Mapstr and Pin Drop, match them to
  * OpenStreetMap, preview, write them in batches; and the full GeoJSON export.
  */
 export * from './model.ts';
@@ -45,7 +45,7 @@ export {
   MAPSTR_ICON_CATEGORIES,
   type MapstrFiles,
 } from './formats/mapstr.ts';
-export { parsePinDropCsv, parsePinDropKml } from './formats/unverified/pindrop.ts';
+export { parsePinDrop, parsePinDropDate, pinDropIconCategory, isPinDropJson, looksLikePinDropText, PINDROP_ICON_CATEGORIES } from './formats/pindrop.ts';
 export {
   buildExport,
   exportGeoJson,

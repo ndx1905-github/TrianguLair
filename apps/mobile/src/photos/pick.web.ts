@@ -90,3 +90,9 @@ export async function processImage(p: Picked, q: QualitySpec): Promise<PhotoInpu
     bmp.close();
   }
 }
+
+/** A photo downloaded during an import (`Picked` from its bytes), processed like a picked one. */
+export async function processDownloaded(bytes: Uint8Array, mime: string | undefined, q: QualitySpec): Promise<PhotoInput> {
+  const file = new Blob([bytes as BlobPart], mime ? { type: mime } : {});
+  return processImage({ uri: '', width: 0, height: 0, file }, q);
+}

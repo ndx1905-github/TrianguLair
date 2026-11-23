@@ -47,15 +47,14 @@ await applyImport(store, plan, { addPhoto: (placeId, p) => photos.add(placeId, {
 | GeoJSON (uMap export, overpass-turbo, any) | `formats/geojson.ts` | Property names guessed (name/title/nom, description/comment/notes, tags/category/list, status, url, created…); OSM ids (`@id`, `osm_type`/`osm_id`) kept; uMap layers → tags with colors |
 | Generic CSV / TSV | `formats/csv.ts` | `,` `;` or tab, decimal commas, day-first dates; `guessMapping` from headers (en/fr/de/es/it synonyms) and from values (two numeric columns, a "lat, lon" column, Google links); the app's column-mapping screen corrects it |
 | Mapstr export (`mapstr.zip`, or its `mapstr.csv` / `mapstr.geojson` alone) | `formats/mapstr.ts` | Known format, checked on a real export (T-009); see "Mapstr" below |
-| **Pin Drop export** | `formats/unverified/pindrop.ts` | **UNVERIFIED** (T-009): KML through the KML reader, CSV through the generic reader plus guesses (`Group` → tag, `Visited` → tried) |
+| Pin Drop export (one JSON file) | `formats/pindrop.ts` | Known format, checked on a real export (T-009); see "Pin Drop" below |
 | TrianguLair export | `formats/triangulair.ts` | This package's own format (below) |
 
-Because the Pin Drop reader sits on the generic paths, an unknown variant of
-its files still imports as long as it is CSV or KML with recognizable columns.
 A CSV named `mapstr.csv` without Mapstr's header goes to the column-mapping
-screen. Fixtures: `test/fixtures` (all hand-made; `mapstr/` mirrors a real
-Mapstr export with invented places, `hypothetical/` holds the guessed Pin Drop
-layouts; see its README).
+screen; a KML or CSV named after Pin Drop goes through the plain KML reader or
+the column-mapping screen (Pin Drop exports JSON). Fixtures: `test/fixtures`
+(all hand-made; `mapstr/` and `pindrop/` mirror real exports with invented
+places; see its README).
 
 ### Mapstr
 
@@ -99,10 +98,57 @@ name), a CSV with exactly Mapstr's header, a GeoJSON whose properties have
   only when it has none, also when "merge" is off (`ratingsToFill`,
   `counts.ratingsAdded`); `undoImport` removes it again unless it was changed
   since. Re-importing the same file changes nothing.
-- **Photos** stay on Mapstr: their URLs are kept in memory
-  (`ImportedPlace.remotePhotos`) only to count them ("N photos stay on
-  Mapstr", `remote-photos`), never downloaded (that would contact a third
-  party) and never written to my data.
+- **Photos** are on Mapstr's server: see "Photos on the source's server"
+  below.
+
+### Pin Drop
+
+Pin Drop exports one JSON file: `{ data: [...], users, org, largeNumberOfPins,
+pinResultLimit, largeOrgFilteredPinTotal }`, `data` mixing items by `type`
+(`tag`, `pin`, `message`); a bare array of those items is read too. Detected by
+content (any file name); a file that starts like one but does not parse (cut
+short, edited by hand) is the error `invalid-pindrop`. The full layout and the
+mapping are in the header of `formats/pindrop.ts`; in short:
+
+- `name`, `lat`/`lng` (else the `location` Point), `address` (used to match
+  to OpenStreetMap); `description` → comment; `date_dropped` → date saved
+  (ISO with microseconds and an offset: parsed by hand, `parsePinDropDate`);
+  `id` → `ids.sourceId`. `website`, `phoneNumber`, `email` are not read (no
+  field, not used for matching).
+- `favourite` → favorite, `wishList` → to try; status-like tags ("À essayer")
+  → status, criteria stay tags, as for Mapstr.
+- `isSecret` → `sharing: 'private'` and `commentVisibility: 'private'` (the
+  `secret-places` warning counts them; a folded entry that is private keeps
+  the place private).
+- Tags (`tag_ids`) by name with their color; a reference to a tag absent from
+  the file, or nameless, is left out (`missing-tags` warning, one per place).
+  Only tags some place uses are listed. The tag icon gives an OSM category
+  (`PINDROP_ICON_CATEGORIES`: `coffee` → `amenity=cafe`, `croissant` →
+  `shop=bakery`, `martini-glass` → `amenity=bar`, `hotdog` →
+  `amenity=fast_food`…): the place's category (pin icon, "maybe closed"
+  check) and the new tag's `osmCategories`. Pin Drop icon names are not kept
+  as tag icons (not the app's set).
+- Photos: `media` (else `heroImageFull`/`heroImageThumb`), full size first,
+  keyed by Pin Drop's file name.
+
+### Photos on the source's server
+
+Mapstr and Pin Drop keep photos on their own servers. Their URLs stay in memory
+(`ImportedPlace.remotePhotos`, never written to my data or an export) and the
+preview counts them (`remote-photos`). It offers "Download the N photos from
+…", off by default, with a note that it contacts that server
+(`setDownloadRemotePhotos`). Then, once the places are written, `applyImport`
+downloads them through `ApplyOptions.fetchPhoto` (injected: the app's fetch
+without cookies or referrer), 3 at a time, 30 s per attempt, each URL of a
+photo in turn, and hands each file to `addDownloadedPhoto` (the app shrinks it
+like a picked photo and stores it with `Photos.add`). A failure is counted
+(`remotePhotosFailed`), never an import error; cancel stops the downloads.
+The photo id is `remotePhotoId(placeId, key)`: a re-import does not download
+or add a photo already there. A `PhotoDownloadBlockedError` from the fetcher
+(a browser's cross-origin refusal) stops the rest and sets
+`photoDownloadBlocked`: the app says photos can be downloaded from the phone
+app. Undo removes them with the import (new places to the trash with their
+photos, `addedMediaIds` on merged ones).
 
 ### Tags that are not categories
 
@@ -222,8 +268,8 @@ ignored, warning); a higher `version` is refused.
 
 ## Open questions
 
-1. **Pin Drop format** is a guess until T-009 provides a real export. Mapstr's
-   is verified; whether its export needs the paid plan is not known.
+1. **Mapstr and Pin Drop formats** are verified on one real export each;
+   whether Mapstr's export needs the paid plan is not known.
    Criteria from tags ("Openair" → terrace) would need a criterion of my own on
    a save, which the data model does not have.
 2. **Google Saved CSV without coordinates.** Most list links carry only a
