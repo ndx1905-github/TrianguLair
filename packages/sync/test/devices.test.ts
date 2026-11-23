@@ -309,3 +309,39 @@ describe('unsigned vault entries next to the signed ones (merge of PR #85 and PR
     expect(JSON.stringify(mine.records)).not.toContain('list:y');
   });
 });
+
+describe('my second device', () => {
+  it('projects the tags, statuses and lists it receives like the device that made them (map pins read them)', async () => {
+    const w = new World();
+    const user = makeUser(w, 'alice');
+    const a = addDevice(w, user);
+    const pizza = a.store.createTag({ name: 'Pizza', color: '#EA580C' });
+    a.store.putSave({ place: point(1, 'Luigi'), tagIds: [pizza], mainTagId: pizza });
+    await a.engine.sync();
+    // The second device joins, then gets later changes: a new tag (main), a status, a filter list.
+    const b = addDevice(w, user);
+    await b.engine.sync();
+    const bars = a.store.createTag({ name: 'Bars', color: '#8B5CF6' });
+    a.store.setSaveTags('osm:node/1', [pizza, bars], bars);
+    a.store.updateSave('osm:node/1', { status: 'favorite' });
+    a.store.putSave({ place: point(2, 'Le Zinc'), tagIds: [bars] });
+    const list = a.store.createList({ name: 'Bars', kind: 'filter', filter: { tags: [bars] } });
+    await a.engine.sync();
+    await b.engine.sync();
+
+    const facts = (d: typeof a) =>
+      d.store.repo
+        .queryPlaces({ source: 'mine', sort: 'name' })
+        .map((p) => ({ name: p.name, tags: p.mine?.tagIds, main: p.mine?.mainTagId, status: p.mine?.status }));
+    expect(facts(b)).toEqual([
+      { name: 'Le Zinc', tags: [bars], main: bars, status: null },
+      { name: 'Luigi', tags: [bars, pizza], main: bars, status: 'favorite' },
+    ]);
+    expect(facts(b)).toEqual(facts(a));
+    expect(b.store.repo.getMySaveForPlace('osm:node/1')?.tagIds).toEqual([bars, pizza]);
+    expect(b.store.repo.tags().map((t) => [t.name, t.color, t.active])).toEqual(a.store.repo.tags().map((t) => [t.name, t.color, t.active]));
+    expect(b.store.repo.listItems(list).sort()).toEqual(a.store.repo.listItems(list).sort());
+    expect(b.store.repo.listItems(list)).toHaveLength(2);
+    expect(b.store.repo.dumpOwnData()).toBe(a.store.repo.dumpOwnData());
+  });
+});

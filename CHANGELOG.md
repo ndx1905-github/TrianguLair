@@ -18,6 +18,11 @@ All notable changes to TrianguLair are listed here. The format follows
   theme, also when it differs from the system's: no more white bar above a dark app.
 - Places around a spot: a third public Overpass server is tried when the first two fail (the main one often answers
   502 when overloaded).
+- On a second device, the map could keep showing pins in the grey of untagged places (with the category icon) while
+  their cards listed the right tags. When a sync brought changes from your other device, the screens were only told
+  to read the data again if those changes arrived at the very end of the sync, which usually missed them. The map
+  kept the tags it had read before (none, right after adding the device). Your tags, statuses and lists were stored
+  correctly all along. After this update, the next sync or a restart of the app shows them.
 
 ## [0.9.0-beta.5] - 2026-11-23
 

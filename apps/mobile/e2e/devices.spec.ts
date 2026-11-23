@@ -20,7 +20,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 
-import { autostart, expect, jump, preparePage, test } from './helpers';
+import { autostart, expect, jump, openPin, pinColors, preparePage, test } from './helpers';
 
 const DAV = 'http://127.0.0.1:8081';
 const AUTH = 'Basic ' + Buffer.from('alice:s3cret').toString('base64');
@@ -29,6 +29,12 @@ const SHOTS = process.env['SHOTS'] === '1';
 const SHARED = 'Le Comptoir des Archives';
 const PRIVATE = 'Café Pendule';
 const FROM_TABLET = 'Fromagerie Martin';
+/** UNTAGGED_COLOR (src/theme/tags.ts): a pin without any of my tags. */
+const UNTAGGED = '#475569';
+const NEW_TAG = 'Rooftops';
+/** PALETTE.turquoise. */
+const TURQUOISE = '#0D9488';
+const SHARED_ID = 'osm:node/9123456701';
 
 let proxy: http.Server | null = null;
 let proxyUrl = '';
@@ -274,8 +280,54 @@ test('a second device by link + code, then declared lost: wiped at its next sync
   await sync({ page: t2 });
   await t2.goto('/');
   await expect(t2.locator('[data-pin-id]').first()).toBeAttached({ timeout: 60_000 });
+  // Its pins take my tag colors, like on the first device (not all the grey of untagged places).
+  await a.goto(autostart('/'));
+  await expect(a.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
+  await jump(a, 48.8594, 2.3624, 14);
+  await jump(t2, 48.8594, 2.3624, 14);
+  const onFirst = await pinColors(a);
+  const onSecond = await pinColors(t2);
+  const common = Object.keys(onFirst).filter((id) => id in onSecond);
+  expect(common.length).toBeGreaterThan(0);
+  expect(common.some((id) => onFirst[id] !== UNTAGGED)).toBe(true);
+  expect(Object.fromEntries(common.map((id) => [id, onSecond[id]]))).toEqual(Object.fromEntries(common.map((id) => [id, onFirst[id]])));
   await listed(t2, SHARED);
   await listed(t2, PRIVATE);
+
+  // A tag created later on the first device and put on a place: the second device gets it at its
+  // next pass, its map open, and draws the pin with that tag's colour (its card listed the tag, but
+  // the map kept the tags it had read before the pass).
+  await a.goto(autostart('/tags'));
+  await a.getByTestId('tag-new').click();
+  await a.getByTestId('tag-name').fill(NEW_TAG);
+  await a.getByTestId('tag-color-turquoise').click();
+  await a.getByTestId('tag-save').click();
+  await expect(a.getByTestId(`tag-row-${NEW_TAG}`)).toBeVisible();
+  await settle(a);
+  await a.goto(autostart('/'));
+  await expect(a.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
+  await openPin(a, SHARED_ID, 48.8596123, 2.3631872);
+  await a.getByTestId('place-card').getByTestId(`tag-option-${NEW_TAG}`).click();
+  await expect(a.getByTestId('place-card').getByTestId(`tag-selected-${NEW_TAG}`)).toBeVisible();
+  await settle(a);
+  await sync(anna);
+  // The app opens on the map; its launch pass brings the change while the map is shown.
+  await t2.goto(autostart('/'));
+  await expect(t2.locator('[data-pin-id]').first()).toBeAttached({ timeout: 30_000 });
+  let nudge = 0;
+  await expect
+    .poll(
+      async () => {
+        // Moving the map reads the places of the new area.
+        await jump(t2, 48.8596 + (nudge++ % 2) * 1e-4, 2.3632, 16);
+        return (await pinColors(t2))[SHARED_ID] ?? 'no pin';
+      },
+      { timeout: 60_000, intervals: [1000] },
+    )
+    .toContain(TURQUOISE);
+  await openPin(t2, SHARED_ID, 48.8596123, 2.3631872);
+  await expect(t2.getByTestId('place-card').getByTestId(`tag-selected-${NEW_TAG}`)).toBeVisible();
+  await t2.getByTestId('card-close').click();
   // An edit on the new device reaches the first one.
   await addPlace(t2, FROM_TABLET);
   await sync({ page: t2 });
