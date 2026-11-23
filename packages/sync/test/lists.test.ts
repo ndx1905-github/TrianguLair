@@ -276,7 +276,7 @@ describe('public lists', () => {
     const ben = addDevice(w, makeUser(w, 'ben'));
     const s = a.store;
     const tag = s.createTag({ name: 'Brunch', color: '#16A34A' });
-    s.putSave({ place: point(1, 'Open'), comment: 'public note', commentVisibility: 'public' });
+    s.putSave({ place: point(1, 'Open'), comment: 'public note', commentVisibility: 'public', rating: 4 });
     s.putSave({ place: point(2, 'Friends note'), comment: 'friends only' });
     s.putSave({ place: point(3, 'Private'), sharing: 'private' });
     s.putSave({ place: { id: 'local:marketzone1', name: 'Market zone', category: null, kind: 'zone', geometry: { type: 'Polygon', coordinates: [[[2.34, 48.85], [2.35, 48.85], [2.35, 48.86], [2.34, 48.85]]] } } });
@@ -295,6 +295,7 @@ describe('public lists', () => {
       expect(typeof f.properties.name).toBe('string');
       expect(f.properties.list).toBe(list);
       expect(f.properties.list_name).toBe('Brunch spots');
+      expect(f.properties.rating).toBeUndefined(); // ratings go to friends only
     }
     expect(geo.attribution).toBe('Contains data © OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0');
     expect(geo.license).toEqual({ name: 'ODbL-1.0', url: 'https://opendatacommons.org/licenses/odbl/1-0/' });
@@ -311,7 +312,7 @@ describe('public lists', () => {
     expect(p).toMatchObject({ kind: 'public', name: 'Brunch spots', author: 'Anna', count: 3 });
     await ben.engine.followList(link);
     const id = followIdOf(parseListLinkFragment(link));
-    expect(friendSaves(ben, id).get('osm:node/1')).toEqual({ comment: 'public note', status: null });
+    expect(friendSaves(ben, id).get('osm:node/1')).toEqual({ comment: 'public note', status: null, rating: null });
     s.deleteList(list);
     await a.engine.sync();
     expect((await ben.engine.sync()).lists![0]).toMatchObject({ status: 'gone', gone: 'deleted' });

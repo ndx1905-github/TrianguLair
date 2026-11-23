@@ -29,7 +29,7 @@ import {
   maybeClosedItems,
   pendingTagSuggestions,
   ratedCount,
-  ratingsInComments,
+  ratingsToFill,
   setMaybeClosedSkipped,
   setMergeExisting,
   summarizePlan,
@@ -303,12 +303,13 @@ function ImportScreen() {
                 ['alreadySaved', n.alreadySaved ?? 0],
                 ['unchanged', n.unchanged ?? 0],
                 ['maybeClosed', n.maybeClosed ?? 0],
+                ['ratingsAdded', n.ratingsAdded ?? 0],
                 ['photos', n.photos ?? 0],
                 ['photosSkipped', n.photosSkipped ?? 0],
                 ['skipped', n.skipped + n.duplicates],
               ] as const
             )
-              .filter(([k, count]) => count > 0 || !['photos', 'photosSkipped', 'alreadySaved', 'unchanged', 'maybeClosed'].includes(k))
+              .filter(([k, count]) => count > 0 || !['photos', 'photosSkipped', 'alreadySaved', 'unchanged', 'maybeClosed', 'ratingsAdded'].includes(k))
               .map(([k, count]) => (
               <Text key={k} style={[k === 'imported' ? styles.big : styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
                 {t(`import.done.${k}`, { count })}
@@ -367,7 +368,6 @@ function Preview({
   const { t } = useI18n();
   const { repo } = useData();
   const { plan } = step;
-  const [ratings, setRatings] = useState(false);
   const groups = useMemo(() => itemsByGroup(plan), [plan]);
   const summary = useMemo(() => summarizePlan(plan), [plan]);
   const tagNames = useMemo(() => new Map(plan.tags.map((e) => [e.source.key, e.source.name])), [plan]);
@@ -375,9 +375,9 @@ function Preview({
   const closed = useMemo(() => maybeClosedItems(plan), [plan]);
   const closedSkipped = closed.length > 0 && closed.every((it) => it.resolution.kind === 'skip');
   const rated = ratedCount(plan);
-  const count = toWrite(plan);
+  const count = toWrite(plan) + ratingsToFill(plan, repo);
   const shown = groups[step.group];
-  const confirmPlan = () => onConfirm(ratings ? ratingsInComments(plan, (rating) => t('import.rating.line', { rating })) : plan);
+  const confirmPlan = () => onConfirm(plan);
   return (
     <View style={{ gap: 12 }} testID="import-preview">
       <Text style={[styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
@@ -393,7 +393,7 @@ function Preview({
       </Text>
       {step.offline ? <Banner tone="warning">{t('import.offline')}</Banner> : null}
       {warnings.map((w) => (
-        <Banner key={w.code} tone={w.code === 'remote-photos' ? 'info' : 'warning'} testID={`preview-warning-${w.code}`}>
+        <Banner key={w.code} tone={w.code === 'remote-photos' || w.code === 'ratings-out-of-10' ? 'info' : 'warning'} testID={`preview-warning-${w.code}`}>
           {t(`import.warning.${w.code}`, { count: w.count })}
         </Banner>
       ))}
@@ -426,7 +426,9 @@ function Preview({
       ) : null}
       {rated > 0 ? (
         <View style={{ gap: 6 }}>
-          <Pill label={t('import.rating.toggle', { count: rated })} selected={ratings} onPress={() => setRatings((v) => !v)} testID="preview-ratings" />
+          <Text style={[styles.p, { color: c.text }]} maxFontSizeMultiplier={2} testID="preview-ratings">
+            ★ {t('import.rating.count', { count: rated })}
+          </Text>
           <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
             {t('import.rating.hint')}
           </Text>

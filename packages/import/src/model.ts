@@ -4,7 +4,7 @@
  * places"): one `ImportedPlace` per place found in the file, whatever the
  * source, plus the source's tags/lists with their colors when it has them.
  */
-import type { ListFilter, PlaceGeometry, PlaceKind, CommentVisibility, OsmType, PriceLevel, SaveStatus, Sharing, ZoneEdge } from '@triangulair/data';
+import type { ListFilter, PlaceGeometry, PlaceKind, CommentVisibility, OsmType, PriceLevel, Rating, SaveStatus, Sharing, ZoneEdge } from '@triangulair/data';
 
 export type ZoneGeometry = Exclude<PlaceGeometry, { type: 'Point' }>;
 
@@ -95,11 +95,11 @@ export interface ImportedPlace {
    */
   media?: ImportedPhoto[];
   /**
-   * The source's own rating, as written (Mapstr: an undocumented scale). The data model has no
-   * rating: it is never written as such; `ratingsInComments` adds it to the comment when the
-   * user asks for it in the preview.
+   * My rating of the place, 1 to 5 stars: from a TrianguLair export as it was, from Mapstr after
+   * `normalizeRatings` (the scale is decided for the whole file). Written on a new save, and on a
+   * save already in my places only when it has no rating yet (even without "merge").
    */
-  rating?: string;
+  rating?: Rating;
   /**
    * Photos the source keeps on its own server (Mapstr: URLs on its image host). Counted in the
    * preview only: never downloaded (that would contact a third party) and never written.
@@ -177,7 +177,11 @@ export interface ParseWarning {
     /** Mapstr ZIP: a CSV row with no matching GeoJSON feature (no position). */
     | 'row-not-joined'
     /** Photos left on the source's server (`detail`: how many). */
-    | 'remote-photos';
+    | 'remote-photos'
+    /** Ratings that are not a number from 0 to 10 (`detail`: how many): left out. */
+    | 'unreadable-ratings'
+    /** The file rates out of 10 (some ratings above 5): each was halved and rounded to 1–5 stars. */
+    | 'ratings-out-of-10';
   /** Place key or row number, when it concerns one entry. */
   at?: string;
   detail?: string;

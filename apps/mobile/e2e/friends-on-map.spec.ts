@@ -132,6 +132,10 @@ test('the card says whose maps a place is on; a name shows only theirs', async (
   const card = page.getByTestId('place-card');
   await expect(card).toBeVisible();
   await expect(card.getByTestId('card-on-maps')).toContainText('On the maps of:');
+  // Léa's rating, compact, with her name at the top of the card (she wrote no comment there).
+  const rating = card.getByTestId('card-friend-rating');
+  await expect(rating).toHaveText('★ 4');
+  await expect(rating).toHaveAccessibleName('4 stars');
   await expect(card.getByTestId(`card-on-map-${NAME}`)).toHaveAccessibleName(`Show only ${NAME}’s places`);
   if (SHOTS) {
     await card.getByTestId('card-friends-toggle').click();

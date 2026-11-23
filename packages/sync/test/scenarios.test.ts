@@ -9,8 +9,8 @@ describe('owner publishes, friend reads', () => {
     const alice = addDevice(w, makeUser(w, 'alice'));
     const bob = addDevice(w, makeUser(w, 'bob'));
     const s = alice.store;
-    s.putSave({ place: point(1, 'Chez Lili'), comment: 'Great pizza', status: 'favorite' });
-    s.putSave({ place: point(2, 'Secret spot'), sharing: 'private', comment: 'home' });
+    s.putSave({ place: point(1, 'Chez Lili'), comment: 'Great pizza', status: 'favorite', rating: 5 });
+    s.putSave({ place: point(2, 'Secret spot'), sharing: 'private', comment: 'home', rating: 3 });
     s.putSave({ place: point(3, 'Bistro'), comment: 'only me', commentVisibility: 'private' });
     const tag = s.createTag({ name: 'Pizza', color: '#EF4444', icon: 'pizza' });
     s.addSaveTag('osm:node/1', tag);
@@ -26,7 +26,7 @@ describe('owner publishes, friend reads', () => {
     expect(f.whatsNew.added.sort()).toEqual(['osm:node/1', 'osm:node/3']);
     const saves = friendSaves(bob, alice.user.owner);
     expect([...saves.keys()]).toEqual(['osm:node/1', 'osm:node/3']);
-    expect(saves.get('osm:node/1')).toEqual({ comment: 'Great pizza', status: 'favorite' });
+    expect(saves.get('osm:node/1')).toEqual({ comment: 'Great pizza', status: 'favorite', rating: 5 });
     expect(saves.get('osm:node/3')!.comment).toBe(''); // private comment not shared
     expect(bob.store.repo.friendTags()).toMatchObject([{ name: 'Pizza', color: '#EF4444', icon: 'pizza' }]);
     // The private place's name never reached Bob's database at all.
@@ -55,6 +55,7 @@ describe('owner publishes, friend reads', () => {
     alice.store.updateSave('osm:node/5', { status: 'tried' });
     alice.store.updateSave('osm:node/6', { comment: 'New comment' });
     alice.store.updateSave('osm:node/7', { priceLevel: 2 });
+    alice.store.updateSave('osm:node/10', { rating: 4 });
     alice.store.deleteSave('osm:node/8'); // trash: disappears at friends'
     alice.store.updateSave('osm:node/9', { sharing: 'private' });
     alice.store.putSave({ place: point(31, 'New one') });
@@ -67,9 +68,11 @@ describe('owner publishes, friend reads', () => {
     expect(ch['osm:node/5']).toMatchObject({ meaningful: true, fields: ['status'] });
     expect(ch['osm:node/6']).toMatchObject({ meaningful: true, fields: ['comment'] });
     expect(ch['osm:node/7']).toMatchObject({ meaningful: false, fields: ['price_level'] });
+    expect(ch['osm:node/10']).toMatchObject({ meaningful: false, fields: ['rating'] });
     const saves = friendSaves(bob, alice.user.owner);
     expect(saves.size).toBe(29);
     expect(saves.get('osm:node/6')!.comment).toBe('New comment');
+    expect(saves.get('osm:node/10')!.rating).toBe(4);
     expect(bob.store.repo.getPlace('osm:node/9')).toBeNull(); // pruned: its data came from Alice
   });
 

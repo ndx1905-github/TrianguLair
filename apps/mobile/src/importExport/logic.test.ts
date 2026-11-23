@@ -22,6 +22,8 @@ describe('import screen logic', () => {
   it('a place already saved: left as it is unless the user merges; Mapstr warnings counted', () => {
     const plan = buildPlan({ format: 'mapstr', places: [{ key: 'm0', name: 'A', lat: 48.86, lon: 2.36, tags: [], ids: {} }], tags: [], warnings: [
       { code: 'remote-photos', detail: '3' },
+      { code: 'unreadable-ratings', detail: '2' },
+      { code: 'ratings-out-of-10' },
       { code: 'row-not-joined', at: 'm0' },
       { code: 'row-not-joined', at: 'm1' },
       { code: 'no-coordinates', at: 'm1' },
@@ -34,6 +36,8 @@ describe('import screen logic', () => {
     expect(previewWarnings(plan)).toEqual([
       { code: 'row-not-joined', count: 2 },
       { code: 'remote-photos', count: 3 },
+      { code: 'ratings-out-of-10', count: 1 },
+      { code: 'unreadable-ratings', count: 2 },
     ]);
   });
 

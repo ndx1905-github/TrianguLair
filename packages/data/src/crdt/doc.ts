@@ -20,7 +20,7 @@
  * A save entry is one flat Y.Map (the bulk of the document, so kept small):
  * `place` (snapshot: name, category, kind, edge, geometry, a point as
  * `[lon, lat]`; the OSM identity is the place id), `comment` (Y.Text),
- * `commentVisibility`, `status`, `priceLevel`, `mainTagId`, `createdAt`,
+ * `commentVisibility`, `status`, `priceLevel`, `rating`, `mainTagId`, `createdAt`,
  * `updatedAt`, and keyed elements: `t:<tagId>` (tag set), `m:<mediaId>`
  * (photo metadata), `u:<mediaId>` (where that photo is on my storage, its key;
  * kept apart from `m:` so that an upload racing a removal cannot bring the
@@ -80,6 +80,7 @@ import type {
   PlaceKind,
   PlaceSnapshot,
   PriceLevel,
+  Rating,
   SaveStatus,
   Sharing,
   ZoneEdge,
@@ -103,7 +104,7 @@ const BASE_CLIENT = 0;
 const SEP = '\n';
 
 /** Scalar keys and element prefixes of a save entry that this version knows (others are preserved and copied). */
-const SAVE_KEYS = new Set(['place', 'comment', 'commentVisibility', 'status', 'priceLevel', 'mainTagId', 'createdAt', 'updatedAt']);
+const SAVE_KEYS = new Set(['place', 'comment', 'commentVisibility', 'status', 'priceLevel', 'rating', 'mainTagId', 'createdAt', 'updatedAt']);
 const TAG = 't:';
 const MEDIA = 'm:';
 const SHARING = 's:';
@@ -537,6 +538,8 @@ export interface SaveInput {
   commentVisibility?: CommentVisibility;
   status?: SaveStatus | null;
   priceLevel?: PriceLevel | null;
+  /** My rating, 1 to 5 stars (null: none). */
+  rating?: Rating | null;
   /** Default "friends" (spec). */
   sharing?: Sharing;
   tagIds?: readonly string[];
@@ -554,6 +557,7 @@ export interface SavePatch {
   commentVisibility?: CommentVisibility;
   status?: SaveStatus | null;
   priceLevel?: PriceLevel | null;
+  rating?: Rating | null;
   sharing?: Sharing;
   mainTagId?: string | null;
   /** Manual places and drawn zones only: rename, move, redraw. */
@@ -649,6 +653,18 @@ function checkPrice(p: PriceLevel | null): PriceLevel | null {
   if (p !== null && ![1, 2, 3, 4].includes(p)) throw new TypeError(`invalid price level: ${String(p)}`);
   return p;
 }
+function checkRating(r: Rating | null): Rating | null {
+  if (r !== null && ![1, 2, 3, 4, 5].includes(r)) throw new TypeError(`invalid rating: ${String(r)}`);
+  return r;
+}
+/**
+ * The rating of a save entry: a whole number of stars from 1 to 5, anything
+ * else (absent, or a value this version cannot read) is "no rating".
+ */
+export function readRating(m: YMap): Rating | null {
+  const v = m.get('rating');
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5 ? (v as Rating) : null;
+}
 
 /**
  * All edits of the user's own data, applied to a Yjs document. Use through
@@ -711,6 +727,7 @@ export class DocTx {
       const commentVisibility = check(input.commentVisibility ?? 'friends', COMMENT_VIS, 'comment visibility');
       const status = input.status == null ? null : check(input.status, SAVE_STATUSES, 'status');
       const priceLevel = checkPrice(input.priceLevel ?? null);
+      const rating = checkRating(input.rating ?? null);
       const sharing = check(input.sharing ?? 'friends', SHARINGS, 'sharing');
       const tags = [...new Set(input.tagIds ?? [])];
       const main = input.mainTagId ?? tags[0] ?? null;
@@ -721,6 +738,7 @@ export class DocTx {
       if (commentVisibility !== 'friends') e.set('commentVisibility', commentVisibility);
       if (status !== null) e.set('status', status);
       if (priceLevel !== null) e.set('priceLevel', priceLevel);
+      if (rating !== null) e.set('rating', rating);
       if (sharing !== 'friends') e.set(SHARING + this.me, sharing);
       if (main !== null) e.set('mainTagId', main);
       for (const id of tags) e.set(TAG + id, true);
@@ -733,6 +751,7 @@ export class DocTx {
       ...(input.commentVisibility !== undefined && { commentVisibility: input.commentVisibility }),
       ...(input.status !== undefined && { status: input.status }),
       ...(input.priceLevel !== undefined && { priceLevel: input.priceLevel }),
+      ...(input.rating !== undefined && { rating: input.rating }),
       ...(input.sharing !== undefined && { sharing: input.sharing }),
       ...(input.mainTagId !== undefined && { mainTagId: input.mainTagId }),
     });
@@ -750,6 +769,7 @@ export class DocTx {
     const status =
       patch.status === undefined ? undefined : patch.status === null ? null : check(patch.status, SAVE_STATUSES, 'status');
     const priceLevel = patch.priceLevel === undefined ? undefined : checkPrice(patch.priceLevel);
+    const rating = patch.rating === undefined ? undefined : checkRating(patch.rating);
     const sharing = patch.sharing === undefined ? undefined : check(patch.sharing, SHARINGS, 'sharing');
     let place: PlaceSnapshot | null = null;
     if (patch.name !== undefined || patch.geometry !== undefined || patch.edge !== undefined || patch.category !== undefined) {
@@ -770,6 +790,12 @@ export class DocTx {
     if (commentVisibility !== undefined) s.set('commentVisibility', commentVisibility);
     if (status !== undefined) s.set('status', status);
     if (priceLevel !== undefined) s.set('priceLevel', priceLevel);
+    if (rating !== undefined) {
+      // No rating: the key is removed (absent means none, as when the save was created without one).
+      if (rating === null) {
+        if (s.has('rating')) s.delete('rating');
+      } else s.set('rating', rating);
+    }
     if (sharing !== undefined) mvSet(new Slots(s, SHARING), this.me, sharing);
     if (patch.mainTagId !== undefined) {
       if (patch.mainTagId !== null && !s.has(TAG + patch.mainTagId)) s.set(TAG + patch.mainTagId, true);
@@ -874,6 +900,7 @@ export class DocTx {
     const fromMain = getStrOrNull(from, 'mainTagId');
     const fromStatus = getStrOrNull(from, 'status') as SaveStatus | null;
     const fromPrice = getNum(from, 'priceLevel') as PriceLevel | null;
+    const fromRating = readRating(from);
     let dest = saveEntry(this.doc, target.id);
     if (!dest) {
       this.putSave({
@@ -882,6 +909,7 @@ export class DocTx {
         commentVisibility: (getStrOrNull(from, 'commentVisibility') ?? 'friends') as CommentVisibility,
         status: fromStatus,
         priceLevel: fromPrice,
+        rating: fromRating,
         sharing: readSharing(from),
         tagIds: fromTags,
         mainTagId: fromMain,
@@ -898,6 +926,7 @@ export class DocTx {
       if (fromComment && fromComment !== cur) updateText(textOf(t, 'comment'), cur ? `${cur}\n\n${fromComment}` : fromComment);
       if (getStrOrNull(t, 'status') === null && fromStatus !== null) t.set('status', fromStatus);
       if (getNum(t, 'priceLevel') === null && fromPrice !== null) t.set('priceLevel', fromPrice);
+      if (readRating(t) === null && fromRating !== null) t.set('rating', fromRating);
       if (readSharing(from) === 'private') mvSet(new Slots(t, SHARING), this.me, 'private');
       this.touch(t);
     }
@@ -1160,7 +1189,7 @@ function fold(w: YMap, l: YMap, lk: string): void {
   const wc = getText(w, 'comment');
   const lc = getText(l, 'comment');
   if (lc && !wc.includes(lc)) w.set('comment', new Y.Text(wc ? `${wc}\n\n${lc}` : lc));
-  for (const k of ['status', 'priceLevel', 'mainTagId', 'commentVisibility'] as const) {
+  for (const k of ['status', 'priceLevel', 'rating', 'mainTagId', 'commentVisibility'] as const) {
     if (w.get(k) == null && l.get(k) != null) w.set(k, l.get(k));
   }
   const lc0 = getNum(l, 'createdAt');

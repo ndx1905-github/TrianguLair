@@ -18,6 +18,13 @@ All notable changes to TrianguLair are listed here. The format follows
   without friends. They are kept on this device only.
 - The closed-place check also runs from time to time while the app stays open (a browser tab left open for days),
   not only when it opens or comes back to the foreground.
+- My rating of a place: five stars on its card, next to the status (tap the same star again to remove it), and when
+  adding a place. My friends see it next to my name on the card, like my status; it is not published in public or
+  link-only lists.
+- Import from Mapstr: the rating becomes my rating instead of an optional line in the comment. Ratings up to 5 are
+  stars; a file that rates out of 10 is halved. A place already in my places gets the rating only if it has none
+  (even without merging), undo removes it, and importing the same file again changes nothing. TrianguLair's own
+  export now carries the rating too.
 
 ## [0.9.0-beta.6] - 2026-11-23
 
