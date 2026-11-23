@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.10] - 2026-11-23
+
+Sync to a WebDAV storage behind a compressing proxy (YunoHost's nginx) no longer fails with 412.
+
 ### Fixed
 
 - Sync to a WebDAV storage behind a compressing proxy (nginx `gzip`, as on YunoHost; Apache `mod_deflate`) could
