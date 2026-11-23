@@ -218,20 +218,30 @@ export class WebDavAdapter implements StorageAdapter {
   private rootReady = false;
 
   /**
-   * Create the base collection (e.g. `.../files/alice/triangulair/`) and any
-   * missing ancestors. Ancestors above it may legitimately refuse MKCOL
-   * (`/remote.php/` on Nextcloud): only the base itself must end up existing.
+   * Create the base collection (e.g. `.../files/alice/triangulair/`). Its ancestors are only
+   * created when the server says one is missing (409), and their failures are ignored: above the
+   * user's folder they legitimately refuse MKCOL (`/remote.php/` on Nextcloud), and in a browser a
+   * server's CORS rule usually covers only the WebDAV paths, so such a request does not even get an
+   * answer the page may read (it throws). Only the base itself must end up existing.
    */
   private async ensureRoot(): Promise<void> {
     if (this.rootReady) return;
     const u = new URL(this.base);
-    const segs = u.pathname.split('/').filter(Boolean);
-    for (let i = 1; i <= segs.length; i++) {
-      const url = `${u.origin}/${segs.slice(0, i).join('/')}/`;
-      const res = await doFetch(this.fetch, url, { method: 'MKCOL', headers: this.headers() }, '');
-      if (i === segs.length && !(res.ok || res.status === 405 || res.status === 301)) {
-        if (!(await this.propfind('', '0'))?.[0]) throw httpError(res, 'MKCOL <root>', '');
+    const mkcolBase = () => doFetch(this.fetch, this.base, { method: 'MKCOL', headers: this.headers() }, '');
+    let res = await mkcolBase();
+    if (res.status === 409) {
+      const segs = u.pathname.split('/').filter(Boolean);
+      for (let i = 1; i < segs.length; i++) {
+        try {
+          await doFetch(this.fetch, `${u.origin}/${segs.slice(0, i).join('/')}/`, { method: 'MKCOL', headers: this.headers() }, '');
+        } catch {
+          // An ancestor out of reach (outside the CORS rule, or refused): the next ones may still work.
+        }
       }
+      res = await mkcolBase();
+    }
+    if (!(res.ok || res.status === 405 || res.status === 301)) {
+      if (!(await this.propfind('', '0'))?.[0]) throw httpError(res, 'MKCOL <root>', '');
     }
     this.rootReady = true;
   }
