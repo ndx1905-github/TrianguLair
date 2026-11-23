@@ -7,6 +7,11 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A place's card shows my comment and my friends' comments first, right under its name (each friend in their
+  colour), before the opening hours, address and photos. My comment is still edited further down.
+
 ## [0.9.0-beta.5] - 2026-11-23
 
 Tap the map to pick a place around that spot, and web sync to Nextcloud works.
