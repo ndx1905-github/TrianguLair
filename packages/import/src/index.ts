@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * @triangulair/import — bring places in from Google Takeout, KML/KMZ,
- * GeoJSON, CSV, Mapstr and Pin Drop (the last two UNVERIFIED), match them to
+ * GeoJSON, CSV, Mapstr and Pin Drop (Pin Drop UNVERIFIED), match them to
  * OpenStreetMap, preview, write them in batches; and the full GeoJSON export.
  */
 export * from './model.ts';
@@ -28,7 +28,23 @@ export {
   type CsvField,
 } from './formats/csv.ts';
 export { parseKml, parseKmz, kmlFromKmz, isZip } from './formats/kml.ts';
-export { parseMapstrCsv, parseMapstrGeoJson } from './formats/unverified/mapstr.ts';
+export {
+  parseMapstr,
+  parseMapstrZip,
+  parseMapstrCsv,
+  parseMapstrGeoJson,
+  parseMapstrDate,
+  splitMapstrTags,
+  joinMapstrRows,
+  mapstrIconCategory,
+  isMapstrCsv,
+  isMapstrGeoJson,
+  isMapstrZip,
+  InvalidGeoJsonError,
+  MAPSTR_CSV_HEADER,
+  MAPSTR_ICON_CATEGORIES,
+  type MapstrFiles,
+} from './formats/mapstr.ts';
 export { parsePinDropCsv, parsePinDropKml } from './formats/unverified/pindrop.ts';
 export {
   buildExport,
@@ -55,4 +71,4 @@ export { readImportFile, readCsvWithMapping, type ReadOutcome } from './detect.t
 export * from './match.ts';
 export * from './plan.ts';
 export * from './apply.ts';
-export { suggestTag, tagKey, editDistance, TAG_SYNONYMS, type TagSuggestion, type TagMatchReason, type MatchableTag } from './tagMatch.ts';
+export { suggestTag, tagKey, tagRole, editDistance, TAG_SYNONYMS, TAG_ROLE_NAMES, type TagSuggestion, type TagMatchReason, type MatchableTag, type TagRole } from './tagMatch.ts';

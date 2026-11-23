@@ -129,7 +129,8 @@ async function reimport(file: string | Uint8Array, into: DataStore) {
   if (o.kind !== 'parsed') throw new Error(JSON.stringify(o));
   const r: ParseResult = o.result;
   expect(r.format).toBe('triangulair');
-  const plan = buildPlan(r, await matchPlaces(r.places, null), into.repo);
+  // Merging into my existing saves is the user's choice in the preview; a restore asks for it.
+  const plan = { ...buildPlan(r, await matchPlaces(r.places, null), into.repo), mergeExisting: true };
   return applyImport(into, plan, { yieldFn: noYield, batchSize: 2, addPhoto: addPhotoTo(into) });
 }
 

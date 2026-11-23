@@ -150,3 +150,37 @@ export function suggestTag(sourceName: string, myTags: readonly MatchableTag[]):
   const close = pick(scored, (m) => m.score);
   return close ? { tagId: close.t.id, reason: 'close' } : null;
 }
+
+// ------------------------------------------------------------------ tags that are not categories
+
+/**
+ * A tag of the file that says something other than a category (owner feedback on Mapstr exports):
+ *
+ * - `status`: "À essayer" is the status "to try", not a tag. The import proposes the status
+ *   (a `status` tag action), which the user can change in the tag step.
+ * - `criterion`: "Openair", "Vege friendly", "A emporter" are practical criteria (terrace,
+ *   vegetarian, takeaway). TrianguLair reads those from OpenStreetMap only (`outdoor_seating`,
+ *   `diet:vegetarian`, `takeaway`); a save has no criterion of its own, so they stay tags and
+ *   the tag step says why.
+ *
+ * Compared through `tagKey` (case, accents, spaces, punctuation and plurals ignored).
+ */
+export type TagRole = { kind: 'status'; status: 'to_try' } | { kind: 'criterion'; criterion: 'terrace' | 'vegetarian' | 'takeaway' };
+
+export const TAG_ROLE_NAMES: { role: TagRole; names: readonly string[] }[] = [
+  { role: { kind: 'status', status: 'to_try' }, names: ['to try', 'want to try', 'à essayer', 'à tester', 'à goûter', 'to test'] },
+  { role: { kind: 'criterion', criterion: 'terrace' }, names: ['terrace', 'open air', 'openair', 'outdoor', 'outdoor seating', 'terrasse', 'en terrasse', 'plein air'] },
+  { role: { kind: 'criterion', criterion: 'vegetarian' }, names: ['vegetarian', 'veggie', 'vege friendly', 'veggie friendly', 'vegetarian friendly', 'végétarien', 'végé', 'vege'] },
+  { role: { kind: 'criterion', criterion: 'takeaway' }, names: ['takeaway', 'take away', 'take-away', 'takeout', 'take out', 'à emporter', 'vente à emporter'] },
+];
+
+let roleIndex: Map<string, TagRole> | null = null;
+
+/** What a tag name of the file stands for, when it is not a plain category. */
+export function tagRole(name: string): TagRole | null {
+  if (!roleIndex) {
+    roleIndex = new Map();
+    for (const { role, names } of TAG_ROLE_NAMES) for (const n of names) roleIndex.set(tagKey(n), role);
+  }
+  return roleIndex.get(tagKey(name)) ?? null;
+}

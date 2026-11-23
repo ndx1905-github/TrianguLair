@@ -95,7 +95,7 @@ describe('the import tag step', () => {
   function plan(tags: string[]): ImportPlan {
     const sourceTags = tags.map((name) => ({ key: name, name }));
     const places = tags.map((name, i) => ({ key: `p${i}`, name: `Place ${i}`, lat: 48, lon: 2, tags: [name], ids: {} }));
-    return { format: 'csv', verified: true, items: [], tags: proposeTagActions(sourceTags, places, mine), warnings: [] };
+    return { format: 'csv', verified: true, items: [], tags: proposeTagActions(sourceTags, places, mine), warnings: [], mergeExisting: false, observedAt: '2026-01-01T00:00:00.000Z' };
   }
 
   it('preselects my tag for the same name, only suggests synonyms and close names, creates the others', () => {

@@ -6,6 +6,7 @@ import {
   buildPlan,
   matchPlaces,
   readImportFile,
+  setMergeExisting,
   setTagAction,
   undoImport,
   type ImportedPlace,
@@ -90,6 +91,8 @@ describe('applyImport', () => {
     const saved = store.repo.tags().find((t) => t.name === 'Saved places')!;
     kPlan = setTagAction(kPlan, 'Culture', { kind: 'map', tagId: saved.id });
     kPlan = setTagAction(kPlan, 'Restaurants', { kind: 'skip' });
+    // The user chose to add the file's tags and comments to the places already saved.
+    kPlan = setMergeExisting(kPlan, true);
     const kReport = await applyImport(store, kPlan, { yieldFn: noYield });
     expect(kReport.counts).toMatchObject({ created: 4, merged: 1, toCheck: 1 });
     const t2 = store.repo.getMySaveForPlace('osm:node/9123456702')!;
@@ -104,6 +107,7 @@ describe('applyImport', () => {
     const before = store.repo.queryPlaces({ source: 'mine' }).length;
     const r3 = await applyImport(store, again, { yieldFn: noYield });
     expect(r3.counts.created).toBe(0);
+    expect(r3.counts.alreadySaved).toBe(5);
     expect(store.repo.queryPlaces({ source: 'mine' }).length).toBe(before);
     expect(store.repo.getMySaveForPlace('osm:node/9123456702')!.comment).toBe('Fresh pasta\nBook on weekends');
 

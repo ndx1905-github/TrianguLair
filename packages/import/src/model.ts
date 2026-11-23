@@ -29,8 +29,9 @@ export const FORMAT_VERIFIED: Record<SourceFormat, boolean> = {
   kmz: true,
   geojson: true,
   csv: true,
-  // UNVERIFIED: no real Mapstr or Pin Drop export has been seen yet (task T-009).
-  mapstr: false,
+  // Checked against a real Mapstr export (T-009).
+  mapstr: true,
+  // UNVERIFIED: no real Pin Drop export has been seen yet (task T-009).
   pindrop: false,
   triangulair: true,
 };
@@ -93,6 +94,17 @@ export interface ImportedPlace {
    * is imported; a plain GeoJSON export carries their metadata only.
    */
   media?: ImportedPhoto[];
+  /**
+   * The source's own rating, as written (Mapstr: an undocumented scale). The data model has no
+   * rating: it is never written as such; `ratingsInComments` adds it to the comment when the
+   * user asks for it in the preview.
+   */
+  rating?: string;
+  /**
+   * Photos the source keeps on its own server (Mapstr: URLs on its image host). Counted in the
+   * preview only: never downloaded (that would contact a third party) and never written.
+   */
+  remotePhotos?: string[];
 }
 
 /** One of my photos from a TrianguLair export. */
@@ -112,6 +124,22 @@ export interface ImportedPhoto {
   author?: string;
   /** The images, from the archive (decrypted, without metadata). */
   images?: { full: Uint8Array; thumb: Uint8Array };
+}
+
+/**
+ * A "maybe closed" signal, the same shape as `ClosureSignal` of `@triangulair/osm` (this package
+ * does not depend on it: the app passes the osm package's `osmSignals` to `buildPlan`). Stored on
+ * the place like the monthly check's signals.
+ */
+export interface ClosureSignalLike {
+  code: string;
+  reliability: 'low' | 'medium' | 'high';
+  source: 'osm' | 'user' | 'friend';
+  detail: string;
+  since?: string;
+  observedAt: string;
+  osmVersion?: number;
+  data?: Record<string, string>;
 }
 
 /** A tag or list as defined in the source, with what we know about it. */
@@ -141,7 +169,15 @@ export interface ParseWarning {
     | 'bad-row'
     | 'newer-version'
     /** A TrianguLair export whose photos are not in the file (a plain GeoJSON, or an image missing from the archive). */
-    | 'photos-not-included';
+    | 'photos-not-included'
+    /** Mapstr ZIP: its GeoJSON is not valid JSON; the CSV was used alone (no positions). */
+    | 'invalid-geojson'
+    /** Places without coordinates in a file that has none (Mapstr CSV alone): found by name and address. `detail`: how many. */
+    | 'positions-from-address'
+    /** Mapstr ZIP: a CSV row with no matching GeoJSON feature (no position). */
+    | 'row-not-joined'
+    /** Photos left on the source's server (`detail`: how many). */
+    | 'remote-photos';
   /** Place key or row number, when it concerns one entry. */
   at?: string;
   detail?: string;
