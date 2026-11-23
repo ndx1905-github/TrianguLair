@@ -754,6 +754,8 @@ export class OwnSync {
     let conflicts = 0;
     const orphans = new Set<string>(this.st.get<string[]>('own:garbage') ?? []);
     const raceCheck = this.storage.capabilities.conditionalWrites ? 0 : Math.max(0, this.o.raceCheckMs ?? 500);
+    // Why each attempt was lost, for the error a stuck device shows ("412", "content", "read-back").
+    const lost: string[] = [];
     for (let attempt = 1; attempt <= 5; attempt++) {
       // After a lost race, never trust an unchanged ETag (coarse ETags: the winner's index may have the same one).
       const pull = await this.pull({ full: attempt > 1 });
@@ -802,11 +804,15 @@ export class OwnSync {
         const base = this.current?.text ?? null;
         if (pull.etag) {
           const cur = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
-          if (!cur || base === null || new TextDecoder().decode(cur.data) !== base) throw new PreconditionFailed(INDEX_PATH, { detail: 'index changed (content check)' });
+          if (!cur || base === null || new TextDecoder().decode(cur.data) !== base) {
+            lost.push(!cur ? 'content:gone' : base === null ? 'content:no-base' : 'content');
+            throw new PreconditionFailed(INDEX_PATH, { detail: 'index changed (content check)' });
+          }
         }
         await this.storage.put(INDEX_PATH, bytes, pull.etag ? { ifMatch: pull.etag, contentType: 'application/json' } : { ifNoneMatch: '*', contentType: 'application/json' });
         let back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
         ok = !!back && bytesEqual(back.data, bytes);
+        if (!ok) lost.push(back ? 'read-back' : 'read-back:gone');
         if (ok && raceCheck > 0) {
           // Emulated conditions (HEAD, then PUT): a device whose check passed before our PUT can still
           // overwrite our index after our read-back. Most such writes land within a request or two;
@@ -814,6 +820,7 @@ export class OwnSync {
           await sleep(raceCheck * (0.5 + 0.5 * Math.random()));
           back = await this.storage.get(INDEX_PATH, { maxBytes: this.limits.indexBytes });
           ok = !!back && bytesEqual(back.data, bytes);
+          if (!ok) lost.push('recheck');
         }
         if (ok) {
           // The next pull reads the index in full once (a later lost update may carry our ETag).
@@ -821,6 +828,7 @@ export class OwnSync {
         }
       } catch (e) {
         if (!(e instanceof PreconditionFailed)) throw e;
+        if (lost.length < attempt) lost.push(pull.etag ? '412' : 'exists');
         ok = false;
       }
       if (!ok) {
@@ -886,7 +894,7 @@ export class OwnSync {
       report.conflicts = conflicts;
       return report;
     }
-    throw new PreconditionFailed(INDEX_PATH, { detail: 'lost the race too many times' });
+    throw new PreconditionFailed(INDEX_PATH, { detail: `lost the race too many times: ${lost.join(', ')}` });
   }
 
   /** Builds the next index from the local state and what the pull found (synchronous). */
