@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.5] - 2026-11-23
+
+Tap the map to pick a place around that spot, and web sync to Nextcloud works.
+
 ### Added
 
 - Tap the map where a place is: the places around that spot (OpenStreetMap, and your own and your friends' places
