@@ -180,6 +180,17 @@ test('move to another storage: lossless copy, verified, certified, old storage k
 
   // The sync engine publishes the (demo) places on A once connected: packs, my document, vault, index.
   await expect.poll(async () => !!(await davGet(`${a}/index.json`)), { timeout: 30_000 }).toBe(true);
+  // Wait until the first publication is over (the listing stops changing): the move plan counts
+  // the files at that moment, and an old document file is kept one publication longer.
+  let last = '';
+  await expect
+    .poll(async () => {
+      const now = (await davList(a)).sort().join('|');
+      const stable = now === last;
+      last = now;
+      return stable;
+    }, { timeout: 30_000, intervals: [1500] })
+    .toBe(true);
   // A photo another device uploaded (not listed yet): copied too.
   await davPut(`${a}/media/photo-1.bin`, new Uint8Array(200_000).map((_, j) => (j * 7) % 251));
   const files: Record<string, Uint8Array> = {};

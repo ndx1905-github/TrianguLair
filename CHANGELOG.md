@@ -7,6 +7,12 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Tap the map where a place is: the places around that spot (OpenStreetMap, and your own and your friends' places
+  there) open in a list, nearest first, with category chips to narrow it. Pick one to save it pre-filled, with your
+  tags and comments, or "Create a point here". A tap still closes an open card or folds the filters first.
+
 ### Fixed
 
 - Web app: sync to a WebDAV folder never started when the server's CORS rule covers only the WebDAV paths (the
