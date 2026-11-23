@@ -229,6 +229,17 @@ export function httpError(res: Response, what: string, path?: string): StorageEr
  * the check and the write. Used only when the adapter is configured with
  * `conditionalWrites: false`.
  */
+/**
+ * Whether two ETags name the same version, compared weakly (RFC 9110 8.8.3.2): a proxy that compresses
+ * a response marks its ETag weak (nginx: `W/"abc"`) or suffixes it (Apache mod_deflate: `"abc-gzip"`),
+ * while a HEAD or PROPFIND of the same file gives the plain `"abc"`. Only used by the emulated check,
+ * which the callers back with a content comparison.
+ */
+export function sameEtag(a: string, b: string): boolean {
+  const core = (e: string) => e.trim().replace(/^W\//, '').replace(/^"(.*)"$/, '$1').replace(/[-;]gzip$/, '');
+  return core(a) === core(b);
+}
+
 export async function emulatePrecondition(
   head: (path: string) => Promise<{ etag: string } | null>,
   path: string,
@@ -238,7 +249,7 @@ export async function emulatePrecondition(
   if (ifMatch === undefined && ifNoneMatch === undefined) return;
   const cur = await head(path);
   if (ifNoneMatch === '*' && cur) throw new PreconditionFailed(path, { detail: 'exists (emulated)' });
-  if (ifMatch !== undefined && cur?.etag !== ifMatch)
+  if (ifMatch !== undefined && (!cur || !sameEtag(cur.etag, ifMatch)))
     throw new PreconditionFailed(path, { detail: cur ? 'etag mismatch (emulated)' : 'missing (emulated)' });
 }
 

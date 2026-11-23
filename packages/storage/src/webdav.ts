@@ -193,7 +193,7 @@ export class WebDavAdapter implements StorageAdapter {
     // A weak ETag (Apache marks files modified in the last second as W/"…")
     // never matches If-Match, which uses strong comparison (RFC 9110 13.1.1):
     // fall back to the emulated check for that request.
-    const weak = opts.ifMatch?.startsWith('W/') ?? false;
+    const weak = opts.ifMatch !== undefined && isTransformedEtag(opts.ifMatch);
     if (!this.nativeConditional || weak) {
       await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, opts.ifNoneMatch);
     } else {
@@ -272,7 +272,7 @@ export class WebDavAdapter implements StorageAdapter {
     checkPath(path);
     const extra: Record<string, string> = {};
     if (opts.ifMatch !== undefined) {
-      if (this.nativeConditional && !opts.ifMatch.startsWith('W/')) extra['If-Match'] = opts.ifMatch;
+      if (this.nativeConditional && !isTransformedEtag(opts.ifMatch)) extra['If-Match'] = opts.ifMatch;
       else await emulatePrecondition((p) => this.head(p), path, opts.ifMatch, undefined);
     }
     const res = await this.req(path, 'DELETE', {}, extra);
@@ -358,4 +358,12 @@ let noCacheSeq = 0;
 export function noCacheUrl(url: string): string {
   noCacheSeq = (noCacheSeq + 1) % 1_000_000;
   return `${url}${url.includes('?') ? '&' : '?'}tl=${Date.now().toString(36)}${noCacheSeq.toString(36)}`;
+}
+
+/**
+ * An ETag a compressing proxy rewrote (nginx `W/"…"`, Apache mod_deflate `"…-gzip"`): the server
+ * compares If-Match with the file's own ETag and would always answer 412, so the check is emulated.
+ */
+function isTransformedEtag(etag: string): boolean {
+  return etag.startsWith('W/') || /[-;]gzip"?$/.test(etag);
 }
