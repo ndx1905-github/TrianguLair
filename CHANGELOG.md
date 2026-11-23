@@ -7,6 +7,17 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Sync to a WebDAV storage behind a compressing proxy (nginx `gzip`, as on YunoHost; Apache `mod_deflate`) could
+  fail every time with "lost the race too many times: 412, …": the proxy rewrites the ETag of a compressed
+  response (`W/"…"` or `"…-gzip"`), which the server then never matches. Such an ETag is now checked by the app
+  (compared weakly, backed by the content check) instead of being sent to the server.
+
+### Changed
+
+- The 412 reason in that error shows the shape of the ETag sent and of the server's current one.
+
 ## [0.9.0-beta.9] - 2026-11-23
 
 A clearer sync error when a device keeps failing to publish.

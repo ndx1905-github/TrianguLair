@@ -828,7 +828,18 @@ export class OwnSync {
         }
       } catch (e) {
         if (!(e instanceof PreconditionFailed)) throw e;
-        if (lost.length < attempt) lost.push(pull.etag ? '412' : 'exists');
+        if (lost.length < attempt) {
+          // The ETag we sent and the one the server has now (shapes only: a proxy may rewrite them).
+          let now = '?';
+          if (pull.etag) {
+            try {
+              now = etagShape((await this.storage.head(INDEX_PATH))?.etag);
+            } catch {
+              // diagnostics only
+            }
+          }
+          lost.push(pull.etag ? `412 sent=${etagShape(pull.etag)} now=${now}` : 'exists');
+        }
         ok = false;
       }
       if (!ok) {
@@ -1299,4 +1310,10 @@ const okSide = (n: number | null | undefined): n is number => typeof n === 'numb
 
 function emptyIndexLike(): SignedIndex {
   return { packs: [] } as unknown as SignedIndex;
+}
+
+/** A short form of an ETag for diagnostics: weak marker, length and last characters. */
+function etagShape(etag: string | undefined): string {
+  if (!etag) return 'none';
+  return `${etag.startsWith('W/') ? 'W/' : ''}…${etag.slice(-7)}`;
 }
