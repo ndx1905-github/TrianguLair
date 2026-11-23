@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.8] - 2026-11-23
+
+Sync from an iPhone Home Screen web app no longer gets stuck on "lost the race too many times".
+
 ### Fixed
 
 - Sync on a Home Screen web app on iPhone could stop with "Precondition failed: index.json (lost the race too many
