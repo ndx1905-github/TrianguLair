@@ -107,7 +107,7 @@ export function patchFromResolution(decision: UserResolution['decision'], signal
 }
 
 const SIGNAL_CODES = new Set([
-  'deleted', 'not_found', 'lifecycle_prefix', 'lifecycle_tag', 'shop_vacant', 'end_date_past', 'name_changed',
+  'deleted', 'not_found', 'not_found_nearby', 'lifecycle_prefix', 'lifecycle_tag', 'shop_vacant', 'end_date_past', 'name_changed',
   'category_changed', 'opening_hours_removed', 'opening_hours_off', 'user_report', 'friend_report',
 ]);
 

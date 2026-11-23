@@ -110,16 +110,18 @@ export function PreviewRow({
   sourceTagNames,
   onResolve,
   initiallyOpen = false,
+  mergeExisting = false,
 }: {
   item: PlanItem;
   sourceTagNames: Map<string, string>;
   onResolve: (r: Resolution) => void;
   initiallyOpen?: boolean;
+  mergeExisting?: boolean;
 }) {
   const c = useUiColors();
   const { t } = useI18n();
   const [open, setOpen] = useState(initiallyOpen);
-  const outcome = rowOutcome(item);
+  const outcome = rowOutcome(item, mergeExisting);
   const r = item.resolution;
   const target =
     r.kind === 'osm'
@@ -135,7 +137,7 @@ export function PreviewRow({
     ...(item.position || item.place.shape ? [{ key: 'manual', label: t('import.choice.manual'), resolution: { kind: 'manual' as const } }] : []),
     { key: 'skip', label: t('import.choice.skip'), resolution: { kind: 'skip' as const } },
   ];
-  const tone = outcome === 'skip' ? c.textMuted : outcome === 'merge' || outcome === 'duplicate' ? c.warning : c.accent;
+  const tone = outcome === 'skip' ? c.textMuted : outcome === 'merge' || outcome === 'existing' || outcome === 'duplicate' ? c.warning : c.accent;
   return (
     <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border, opacity: outcome === 'skip' ? 0.6 : 1 }]} testID={`preview-row-${item.place.name}`}>
       <Pressable
@@ -157,6 +159,11 @@ export function PreviewRow({
             {target ? `→ ${target}` : t(`import.row.${outcome}`)}
             {target && outcome !== 'link' ? `  ·  ${t(`import.row.${outcome}`)}` : ''}
           </Text>
+          {item.closure.length > 0 ? (
+            <Text style={[styles.meta, { color: c.warning }]} maxFontSizeMultiplier={2} testID={`preview-closed-${item.place.name}`}>
+              {t('import.row.maybeClosed')}
+            </Text>
+          ) : null}
         </View>
         <Text style={[styles.chevron, { color: c.textMuted }]}>{open ? '▴' : '▾'}</Text>
       </Pressable>
@@ -178,6 +185,7 @@ export function TagMappingRow({ entry, myTags, onChange }: { entry: TagPlanEntry
   const { t } = useI18n();
   const a = entry.action;
   const newColor = a.kind === 'create' ? (a.color ?? c.textMuted) : entry.source.color ?? c.textMuted;
+  const role = entry.role;
   // A synonym or a close name of one of my tags (tagMatch.ts): first, not preselected. A tag of
   // the same name is already chosen and keeps its place in the list.
   const suggested = entry.suggestion && entry.suggestion.reason !== 'same' ? myTags.find((tag) => tag.id === entry.suggestion!.tagId) : undefined;
@@ -193,6 +201,14 @@ export function TagMappingRow({ entry, myTags, onChange }: { entry: TagPlanEntry
         </Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+        {role?.kind === 'status' ? (
+          <Pill
+            label={t('import.tags.status', { status: t(`import.tags.status.${role.status}`) })}
+            selected={a.kind === 'status'}
+            onPress={() => onChange({ kind: 'status', status: role.status })}
+            testID={`tag-${entry.source.name}-status`}
+          />
+        ) : null}
         <Pill
           label={t('import.tags.new')}
           color={newColor}
@@ -221,6 +237,15 @@ export function TagMappingRow({ entry, myTags, onChange }: { entry: TagPlanEntry
         ))}
         <Pill label={t('import.tags.skip')} selected={a.kind === 'skip'} onPress={() => onChange({ kind: 'skip' })} muted={a.kind !== 'skip'} testID={`tag-${entry.source.name}-skip`} />
       </ScrollView>
+      {a.kind === 'status' ? (
+        <Text style={[styles.meta, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
+          {t('import.tags.statusHint')}
+        </Text>
+      ) : role?.kind === 'criterion' ? (
+        <Text style={[styles.meta, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID={`tag-${entry.source.name}-criterion`}>
+          {t('import.tags.criterion', { criterion: t(`import.tags.criterion.${role.criterion}`) })}
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, readImportFile, type ImportReport } from '@triangulair/import';
 
-import { firstGroup, itemsByGroup, rowOutcome, toWrite, undoableReport, serializeReport, UNDO_DAYS } from './logic';
+import { firstGroup, itemsByGroup, previewWarnings, rowOutcome, toWrite, undoableReport, serializeReport, UNDO_DAYS } from './logic';
 
 const KML = `<kml><Document><Folder><name>Bars</name>
 <Placemark><name>A</name><Point><coordinates>2.36,48.86</coordinates></Point></Placemark>
@@ -15,8 +15,26 @@ describe('import screen logic', () => {
     const plan = buildPlan(o.result, new Map(), null);
     expect(itemsByGroup(plan).manual).toHaveLength(2);
     expect(firstGroup(plan)).toBe('manual');
-    expect(plan.items.map(rowOutcome)).toEqual(['manual', 'duplicate']);
+    expect(plan.items.map((it) => rowOutcome(it))).toEqual(['manual', 'duplicate']);
     expect(toWrite(plan)).toBe(1);
+  });
+
+  it('a place already saved: left as it is unless the user merges; Mapstr warnings counted', () => {
+    const plan = buildPlan({ format: 'mapstr', places: [{ key: 'm0', name: 'A', lat: 48.86, lon: 2.36, tags: [], ids: {} }], tags: [], warnings: [
+      { code: 'remote-photos', detail: '3' },
+      { code: 'row-not-joined', at: 'm0' },
+      { code: 'row-not-joined', at: 'm1' },
+      { code: 'no-coordinates', at: 'm1' },
+    ] }, new Map(), null);
+    const existing = { ...plan, items: plan.items.map((it) => ({ ...it, existing: { placeId: 'local:abcdefgh', name: 'A', reason: 'nearby-similar' as const, inTrash: false } })) };
+    expect(rowOutcome(existing.items[0]!)).toBe('existing');
+    expect(rowOutcome(existing.items[0]!, true)).toBe('merge');
+    expect(toWrite(existing)).toBe(0);
+    expect(toWrite({ ...existing, mergeExisting: true })).toBe(1);
+    expect(previewWarnings(plan)).toEqual([
+      { code: 'row-not-joined', count: 2 },
+      { code: 'remote-photos', count: 3 },
+    ]);
   });
 
   it('the last import can be undone for a few days', () => {
