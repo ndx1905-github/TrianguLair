@@ -197,6 +197,7 @@ export const devicesEn: Messages = {
   'changes.field.comment': 'comment',
   'changes.field.status': 'status',
   'changes.field.price': 'price',
+  'changes.field.rating': 'rating',
   'changes.field.sharing': 'sharing',
   'changes.field.tags': 'tags',
   'changes.by': 'From {device}, {date}',

@@ -9,7 +9,9 @@
  * Merging (spec "No duplicates"): a place already in my saves gets the new
  * tags added, its comment completed (never replaced), and a status or price
  * only if it had none. Places folded together in the file are merged the
- * same way before writing.
+ * same way before writing. A rating is filled in the same way (only when the
+ * save has none) even when merging is off: the file's ratings are mine too,
+ * and a re-import of the same file then changes nothing.
  */
 import {
   newLocalPlaceId,
@@ -18,6 +20,7 @@ import {
   type DocTx,
   type ListFilter,
   type PlaceSnapshotInput,
+  type Rating,
   type SaveStatus,
 } from '@triangulair/data';
 
@@ -93,6 +96,8 @@ export interface MergedSave {
   addedMediaIds?: string[];
   previousComment?: string;
   previousStatus?: SaveStatus | null;
+  /** The rating the import gave this save, which had none (undo clears it if it is still this one). */
+  addedRating?: Rating;
   restoredFromTrash?: boolean;
 }
 
@@ -130,6 +135,8 @@ export interface ImportReport {
     unchanged?: number;
     /** New places written with the "maybe closed" flag. */
     maybeClosed?: number;
+    /** Places already in my saves that had no rating and got the file's (merge on or off). */
+    ratingsAdded?: number;
   };
   /** The platform refused the photo downloads (web: cross-origin rule); the places are imported. */
   photoDownloadBlocked?: boolean;
@@ -151,11 +158,13 @@ function mergeImported(primary: ImportedPlace, others: readonly ImportedPlace[])
   const statuses = all.map((p) => p.status).filter((s): s is SaveStatus => !!s);
   const created = all.map((p) => p.createdAt).filter((t): t is number => t !== undefined);
   const status = statuses.sort((a, b) => STATUS_RANK[b] - STATUS_RANK[a])[0];
+  const rating = all.find((p) => p.rating !== undefined)?.rating;
   return {
     ...primary,
     tags: [...new Set(all.flatMap((p) => p.tags))],
     ...(comments.length > 0 && { comment: comments.join('\n\n') }),
     ...(status && { status }),
+    ...(rating !== undefined && { rating }),
     ...(created.length > 0 && { createdAt: Math.min(...created) }),
     ...(all.some((p) => p.media?.length) && { media: all.flatMap((p) => p.media ?? []).filter((m, i, a) => a.findIndex((x) => x.file === m.file) === i) }),
     ...(all.some((p) => p.remotePhotos?.length) && {
@@ -261,6 +270,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       alreadySaved: 0,
       unchanged: 0,
       maybeClosed: 0,
+      ratingsAdded: 0,
     },
   };
   const counts = report.counts as Required<ImportReport['counts']>;
@@ -276,6 +286,8 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
   const writable = plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && (it.resolution.kind === 'osm' || it.position || it.place.shape));
   // Places already in my saves are left as they are unless the user chose to merge.
   const work = plan.mergeExisting ? writable : writable.filter((it) => !it.existing);
+  // …except for their rating, filled in when they have none (below).
+  const fillOnly = plan.mergeExisting ? [] : writable.filter((it) => it.existing);
   counts.alreadySaved = writable.length - work.length;
   report.counts.skipped += plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && !writable.includes(it)).length;
   const total = work.length;
@@ -291,6 +303,24 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       .filter((x): x is SaveStatus => !!x)
       .sort((a, b) => STATUS_RANK[b] - STATUS_RANK[a])[0];
   const closureFlags: { placeId: string; signals: PlanItem['closure'] }[] = [];
+
+  // Places already in my saves, merge off: only an empty rating is filled in.
+  for (let i = 0; i < fillOnly.length; i += batchSize) {
+    if (opts.signal?.aborted) break;
+    const fills: { placeId: string; rating: Rating }[] = [];
+    for (const it of fillOnly.slice(i, i + batchSize)) {
+      const rating = mergeImported(it.place, folded.get(it.key) ?? []).rating;
+      const cur = rating === undefined ? null : store.repo.getMySaveForPlace(it.existing!.placeId);
+      if (cur && cur.rating === null && rating !== undefined) fills.push({ placeId: cur.placeId, rating });
+    }
+    if (fills.length === 0) continue;
+    store.change((tx) => {
+      for (const f of fills) tx.updateSave(f.placeId, { rating: f.rating });
+    }, 'import');
+    for (const f of fills) report.merged.push({ placeId: f.placeId, addedTagIds: [], addedRating: f.rating });
+    counts.ratingsAdded += fills.length;
+  }
+
   // Photos to download once the places are written (asked in the preview).
   const downloads: PhotoJob[] = [];
   const queued = new Set<string>();
@@ -342,12 +372,17 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             tx.updateSave(cur.placeId, { status: place.status });
           }
           if (!cur.priceLevel && place.priceLevel) tx.updateSave(cur.placeId, { priceLevel: place.priceLevel });
+          if (cur.rating === null && place.rating !== undefined) {
+            merged.addedRating = place.rating;
+            tx.updateSave(cur.placeId, { rating: place.rating });
+            counts.ratingsAdded++;
+          }
           if (merged.addedTagIds.length > 0) tx.setSaveTags(cur.placeId, [...cur.tagIds, ...merged.addedTagIds], cur.mainTagId ?? ordered[0] ?? null);
           if (cur.deletedAt !== null && !place.trashed) {
             tx.restoreSave(cur.placeId);
             merged.restoredFromTrash = true;
           }
-          if (comment === null && merged.previousStatus === undefined && merged.addedTagIds.length === 0 && !merged.restoredFromTrash && !(!cur.priceLevel && place.priceLevel)) {
+          if (comment === null && merged.previousStatus === undefined && merged.addedTagIds.length === 0 && !merged.restoredFromTrash && !(!cur.priceLevel && place.priceLevel) && merged.addedRating === undefined) {
             counts.unchanged++;
           }
           const have = new Set(store.repo.getMedia(cur.id).map((m) => m.file));
@@ -364,6 +399,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             ...(place.comment && { comment: place.comment }),
             ...(place.status && { status: place.status }),
             ...(place.priceLevel && { priceLevel: place.priceLevel }),
+            ...(place.rating !== undefined && { rating: place.rating }),
             ...(place.sharing && { sharing: place.sharing }),
             ...(place.commentVisibility && { commentVisibility: place.commentVisibility }),
             ...(place.createdAt && { createdAt: place.createdAt }),
@@ -526,8 +562,8 @@ async function downloadPhotos(jobs: readonly PhotoJob[], opts: ApplyOptions, rep
 
 /**
  * Undoes an import: new saves go to the trash (restorable for 30 days),
- * merged saves lose the tags the import added and get their comment and
- * status back, created tags and lists are deleted. Batched like the import.
+ * merged saves lose the tags the import added and get their comment,
+ * status and rating back (a rating changed since is kept), created tags and lists are deleted. Batched like the import.
  */
 export async function undoImport(store: DataStore, report: ImportReport, opts: Omit<ApplyOptions, 'newId' | 'now'> = {}): Promise<void> {
   const batchSize = Math.max(1, opts.batchSize ?? 200);
@@ -546,6 +582,7 @@ export async function undoImport(store: DataStore, report: ImportReport, opts: O
       if (m.addedTagIds.length > 0) tx.setSaveTags(m.placeId, s.tagIds.filter((t) => !m.addedTagIds.includes(t)));
       if (m.previousComment !== undefined) tx.updateSave(m.placeId, { comment: m.previousComment });
       if (m.previousStatus !== undefined) tx.updateSave(m.placeId, { status: m.previousStatus });
+      if (m.addedRating !== undefined && s.rating === m.addedRating) tx.updateSave(m.placeId, { rating: null });
       for (const id of m.addedMediaIds ?? []) tx.removeMedia(m.placeId, id);
       if (m.restoredFromTrash) tx.deleteSave(m.placeId);
     }),

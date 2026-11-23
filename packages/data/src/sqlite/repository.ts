@@ -50,6 +50,7 @@ import type {
   PlaceSnapshot,
   PlaceStatus,
   PriceLevel,
+  Rating,
   SaveRecord,
   SaveStatus,
   Sharing,
@@ -84,6 +85,7 @@ export interface MySaveSummary {
   status: SaveStatus | null;
   sharing: Sharing;
   priceLevel: PriceLevel | null;
+  rating: Rating | null;
   mainTagId: string | null;
   /** Active tags, main first. */
   tagIds: string[];
@@ -129,6 +131,7 @@ export interface ForeignSaveInput {
   commentVisibility?: CommentVisibility;
   status?: SaveStatus | null;
   priceLevel?: PriceLevel | null;
+  rating?: Rating | null;
   /**
    * The friend's tags on this save, as received: a name, or a name with the
    * color and icon chosen by its author (shown until I map it to one of mine).
@@ -214,6 +217,7 @@ type SaveRow = {
   comment_visibility: string;
   status: string | null;
   price_level: number | null;
+  rating: number | null;
   sharing: string;
   main_tag_id: string | null;
   created_at: number;
@@ -221,6 +225,10 @@ type SaveRow = {
   deleted_at: number | null;
   tag_ids: string | null;
 };
+
+/** A rating as stored: a whole number of stars from 1 to 5, anything else is none. */
+const validRating = (r: unknown): Rating | null =>
+  typeof r === 'number' && Number.isInteger(r) && r >= 1 && r <= 5 ? (r as Rating) : null;
 
 const json = <T>(s: string | null): T | null => (s == null ? null : (JSON.parse(s) as T));
 
@@ -272,6 +280,7 @@ function rowToSave(r: SaveRow): SaveRecord {
     commentVisibility: r.comment_visibility as CommentVisibility,
     status: r.status as SaveStatus | null,
     priceLevel: r.price_level as PriceLevel | null,
+    rating: r.rating as Rating | null,
     sharing: r.sharing as Sharing,
     mainTagId: r.main_tag_id,
     tagIds: r.tag_ids ? r.tag_ids.split(',') : [],
@@ -281,7 +290,7 @@ function rowToSave(r: SaveRow): SaveRecord {
   };
 }
 
-const SAVE_COLUMNS = `s.id, s.owner_id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level,
+const SAVE_COLUMNS = `s.id, s.owner_id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.rating,
   s.sharing, s.main_tag_id, s.created_at, s.updated_at, s.deleted_at,
   (SELECT group_concat(tag_id) FROM (SELECT st.tag_id FROM save_tags st JOIN tags t ON t.id = st.tag_id
      WHERE st.save_id = s.id AND t.active = 1 ORDER BY st.position, t.name, t.id)) AS tag_ids`;
@@ -537,16 +546,16 @@ export class Repository {
     this.upsertPlaceSnapshot(place);
     const prevPlace = this.db.get<{ place_id: string }>(`SELECT place_id FROM saves WHERE id = ?`, [save.id]);
     this.db.run(
-      `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, sharing, main_tag_id,
+      `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, rating, sharing, main_tag_id,
          their_tags, created_at, updated_at, deleted_at, place_snapshot)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET place_id = excluded.place_id, comment = excluded.comment,
          comment_visibility = excluded.comment_visibility, status = excluded.status, price_level = excluded.price_level,
-         sharing = excluded.sharing, main_tag_id = excluded.main_tag_id, created_at = excluded.created_at,
+         rating = excluded.rating, sharing = excluded.sharing, main_tag_id = excluded.main_tag_id, created_at = excluded.created_at,
          updated_at = excluded.updated_at, deleted_at = excluded.deleted_at, place_snapshot = excluded.place_snapshot`,
       [
         save.id, save.ownerId, save.placeId, save.comment, save.commentVisibility, save.status, save.priceLevel,
-        save.sharing, save.mainTagId, save.createdAt, save.updatedAt, save.deletedAt, snapshotJson(place),
+        save.rating ?? null, save.sharing, save.mainTagId, save.createdAt, save.updatedAt, save.deletedAt, snapshotJson(place),
       ],
     );
     this.db.run(`DELETE FROM save_tags WHERE save_id = ?`, [save.id]);
@@ -674,16 +683,16 @@ export class Repository {
       if (!this.getPerson(input.ownerId)) this.upsertPerson({ id: input.ownerId });
       this.upsertPlaceSnapshot(input.place, { foreignOwner: input.ownerId });
       this.db.run(
-        `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, sharing,
+        `INSERT INTO saves (id, owner_id, place_id, comment, comment_visibility, status, price_level, rating, sharing,
            main_tag_id, their_tags, created_at, updated_at, deleted_at, place_snapshot)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'friends', NULL, ?, ?, ?, NULL, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'friends', NULL, ?, ?, ?, NULL, ?)
          ON CONFLICT (id) DO UPDATE SET place_id = excluded.place_id, comment = excluded.comment,
            comment_visibility = excluded.comment_visibility, status = excluded.status,
-           price_level = excluded.price_level, their_tags = excluded.their_tags, created_at = excluded.created_at,
+           price_level = excluded.price_level, rating = excluded.rating, their_tags = excluded.their_tags, created_at = excluded.created_at,
            updated_at = excluded.updated_at, deleted_at = NULL, place_snapshot = excluded.place_snapshot`,
         [
           input.id, input.ownerId, input.place.id, input.comment ?? '', input.commentVisibility ?? 'friends',
-          input.status ?? null, input.priceLevel ?? null, JSON.stringify(parseTheirTags(input.theirTags ?? []).map((t) => (t.color || t.icon ? t : t.name))), input.createdAt,
+          input.status ?? null, input.priceLevel ?? null, validRating(input.rating), JSON.stringify(parseTheirTags(input.theirTags ?? []).map((t) => (t.color || t.icon ? t : t.name))), input.createdAt,
           input.updatedAt, snapshotJson(input.place),
         ],
       );
@@ -1088,7 +1097,7 @@ export class Repository {
     const sql = `
       SELECT p.id, p.name, p.lat, p.lon, p.kind, p.edge, p.category, p.status, p.osm_type, p.osm_id,
         ${q.within ? 'p.geom,' : ''}
-        ms.id AS my_id, ms.status AS my_status, ms.sharing AS my_sharing, ms.price_level AS my_price,
+        ms.id AS my_id, ms.status AS my_status, ms.sharing AS my_sharing, ms.price_level AS my_price, ms.rating AS my_rating,
         ms.main_tag_id AS my_main, ms.updated_at AS my_updated,
         (SELECT group_concat(tag_id) FROM (SELECT st.tag_id FROM save_tags st JOIN tags t ON t.id = st.tag_id
            WHERE st.save_id = ms.id AND t.active = 1 ORDER BY st.position, t.name, t.id)) AS my_tags,
@@ -1140,6 +1149,7 @@ export class Repository {
               status: r.my_status as SaveStatus | null,
               sharing: r.my_sharing as Sharing,
               priceLevel: r.my_price as PriceLevel | null,
+              rating: r.my_rating as Rating | null,
               mainTagId: r.my_main as string | null,
               tagIds: r.my_tags ? String(r.my_tags).split(',') : [],
               updatedAt: r.my_updated as number,
@@ -1220,7 +1230,7 @@ export class Repository {
     const q = (sql: string, params: SqlValue[] = []) => this.db.all(sql, params);
     return canonicalJson({
       saves: q(
-        `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.main_tag_id,
+        `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.rating, s.sharing, s.main_tag_id,
            s.created_at, s.updated_at, s.deleted_at FROM saves s WHERE s.owner_id = ? ORDER BY s.id`,
         [this.meId],
       ),

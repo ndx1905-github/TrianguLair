@@ -87,10 +87,17 @@ name), a CSV with exactly Mapstr's header, a GeoJSON whose properties have
   `amenity=restaurant`, `bar`, `cafe`, `museum`, `park`, `hotel`…; only
   `restaurant` has been seen in a real export, an unknown key gives none);
   `date` → creation date.
-- **Rating.** The data model has no rating, and Mapstr's scale is not known:
-  the rating is kept as written in `ImportedPlace.rating`, never written as
-  such. The preview offers "Add Mapstr's rating to the comment"
-  (`ratingsInComments`), off by default.
+- **Rating.** It becomes my rating (`ImportedPlace.rating`, 1 to 5 stars).
+  Mapstr's scale is not documented, so `normalizeRatings` decides it for the
+  whole file: when every rating is at most 5 they are stars (decimals
+  rounded); when some go above 5 but none above 10, the file rates out of 10
+  and each rating is halved, then rounded (`ratings-out-of-10` warning); `0`
+  is "not rated"; text, negatives and values above 10 are left out and
+  counted (`unreadable-ratings` warning). The preview shows how many places
+  have a rating (`ratedCount`). A place already in my places gets the rating
+  only when it has none, also when "merge" is off (`ratingsToFill`,
+  `counts.ratingsAdded`); `undoImport` removes it again unless it was changed
+  since. Re-importing the same file changes nothing.
 - **Photos** are on Mapstr's server: see "Photos on the source's server"
   below.
 
@@ -218,11 +225,13 @@ Original creation dates are kept: this package added an optional
 `buildExport` / `exportGeoJson`: one GeoJSON FeatureCollection (RFC 7946) that
 other tools open as is (each feature: name, `osm` reference and URL, category,
 tag names, comment, status…), with a foreign member `triangulair`
-(`format: "triangulair-export"`, `version` 1 / `minor` 1, as in the spec's
+(`format: "triangulair-export"`, `version` 1 / `minor` 2, as in the spec's
 "Format versions") holding what a lossless re-import needs: tags (tree, colors,
 icons, OSM categories, trash), lists (filters, manual items, visibility, link
 key), tag mappings. Features: every save of mine, places and zones, trash
-included, with comment visibility, price, sharing, dates and my photos.
+included, with comment visibility, price, my rating (`rating`, 1 to 5 or
+null: minor 2; an earlier version reads the file without it), sharing, dates
+and my photos.
 
 **Photos** (minor 1). Each feature's `media` lists my photos on that place:
 `id`, `file` and `thumb` (content hashes of the images), `mime`, `width`,

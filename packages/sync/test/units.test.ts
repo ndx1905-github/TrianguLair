@@ -6,7 +6,8 @@ import { deflateSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { ContactBook, mergeBooks } from '../src/contacts.ts';
 import { DeviceRevokedError, NeedsKeyError, PayloadError, classifyError } from '../src/errors.ts';
-import { parsePlaces, placesCollection, zOrder, type PlaceFeature } from '../src/features.ts';
+import { featureFor, parsePlaces, placesCollection, zOrder, type OwnItem, type PlaceFeature } from '../src/features.ts';
+import { parseLists } from '../src/lists.ts';
 import { PAYLOAD_PAD_FLOOR, decodePayload, encodePayload, utf8 } from '../src/payload.ts';
 import { ByteBudget, LimitError } from '../src/util.ts';
 import { planPacks, type DesiredItem, type ExistingPack } from '../src/planner.ts';
@@ -135,6 +136,33 @@ describe('payload', () => {
     expect(() => parsePlaces(utf8(text.replace('osm:node/1', '../../etc')))).toThrow(/place id/);
     expect(() => parsePlaces(utf8(text.replace('[2.35,48.85]', '[2.35,"x"]')))).toThrow(PayloadError);
     expect(() => parsePlaces(utf8(text.replace(' ', '')).slice(0, 10))).toThrow(PayloadError);
+  });
+
+  it('places: a rating goes to friends only, under minor 2 (older readers read the pack without it)', () => {
+    const item: OwnItem = {
+      placeId: 'osm:node/1', saveId: 's1', sharing: 'friends', comment: '', commentVisibility: 'friends', status: 'tried',
+      priceLevel: null, rating: 4, createdAt: 0, updatedAt: 0, name: 'A', category: null, kind: 'place', edge: 'sharp',
+      geometry: { type: 'Point', coordinates: [2.35, 48.85] }, lat: 48.85, lon: 2.35, placeStatus: 'open', address: null, tags: [],
+    };
+    const friends = featureFor(item, 'friends');
+    expect(friends.properties).toMatchObject({ status: 'tried', rating: 4 });
+    // Lists packs and the public file: read strictly by every earlier version, so never there.
+    expect(featureFor(item, 'public').properties.rating).toBeUndefined();
+    const body = placesCollection([friends]);
+    const text = new TextDecoder().decode(body);
+    expect(text).toContain('"minor":2');
+    expect(parsePlaces(body)[0]!.feature.properties.rating).toBe(4);
+    // Without a rating, no minor 2 (photos alone stay minor 1, nothing at all stays minor 0).
+    expect(new TextDecoder().decode(placesCollection([featureFor({ ...item, rating: null }, 'friends')]))).not.toContain('minor');
+    // An earlier reader (minor 1) sees minor 2 > 1 and ignores what it does not know, as here with minor 3.
+    expect(parsePlaces(utf8(text.replace('"minor":2', '"minor":3').replace('"rating":4', '"rating":4,"future":1')))[0]!.feature.properties.rating).toBe(4);
+    for (const bad of ['0', '6', '2.5', '"4"']) {
+      expect(() => parsePlaces(utf8(text.replace('"rating":4', `"rating":${bad}`)))).toThrow(/bad rating/);
+    }
+    const lists = utf8(JSON.stringify({
+      type: 'FeatureCollection', triangulair: { kind: 'lists', version: 1, lists: [] }, features: [friends],
+    }));
+    expect(() => parseLists(lists)).toThrow(/rating is not allowed/);
   });
 
   it('Z-order keeps neighbours together', () => {

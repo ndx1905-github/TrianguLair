@@ -121,12 +121,12 @@ export function point(id: number, name: string, lat = 48.85 + id * 1e-4, lon = 2
 }
 
 /** Friends' saves of `owner` in `d`'s cache, by place id. */
-export function friendSaves(d: Device, owner: string): Map<string, { comment: string; status: string | null }> {
-  const rows = d.store.repo.db.all<{ place_id: string; comment: string; status: string | null }>(
-    `SELECT place_id, comment, status FROM saves WHERE owner_id = ? ORDER BY place_id`,
+export function friendSaves(d: Device, owner: string): Map<string, { comment: string; status: string | null; rating: number | null }> {
+  const rows = d.store.repo.db.all<{ place_id: string; comment: string; status: string | null; rating: number | null }>(
+    `SELECT place_id, comment, status, rating FROM saves WHERE owner_id = ? ORDER BY place_id`,
     [owner],
   );
-  return new Map(rows.map((r) => [r.place_id, { comment: r.comment, status: r.status }]));
+  return new Map(rows.map((r) => [r.place_id, { comment: r.comment, status: r.status, rating: r.rating }]));
 }
 
 /** Storage adapter wrapper that counts requests. */

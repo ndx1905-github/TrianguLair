@@ -9,6 +9,7 @@ import {
   type CommentVisibility,
   type PlaceHit,
   type PriceLevel,
+  type Rating,
   type SaveInput,
   type SaveStatus,
   type Sharing,
@@ -152,6 +153,7 @@ export interface SaveForm {
   tagIds: string[];
   status: SaveStatus | null;
   priceLevel: PriceLevel | null;
+  rating: Rating | null;
   comment: string;
   commentVisibility: CommentVisibility;
   sharing: Sharing;
@@ -163,6 +165,7 @@ export function defaultForm(c: Candidate, suggested: string[]): SaveForm {
     tagIds: suggested,
     status: null,
     priceLevel: null,
+    rating: null,
     comment: '',
     // Spec: comment visibility and sharing are "friends" by default.
     commentVisibility: 'friends',
@@ -186,6 +189,7 @@ export function toSaveInput(c: Candidate, form: SaveForm, newId?: () => string):
     mainTagId: form.tagIds[0] ?? null,
     status: form.status,
     priceLevel: form.priceLevel,
+    ...(form.rating !== null && { rating: form.rating }),
     sharing: form.sharing,
     ...(form.comment.trim() ? { comment: form.comment.trim() } : {}),
     commentVisibility: form.commentVisibility,

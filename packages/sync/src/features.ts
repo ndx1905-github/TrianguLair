@@ -8,7 +8,7 @@
  *   {"type":"FeatureCollection","triangulair":{"kind":"places","version":1},"features":[
  *     {"type":"Feature","id":"osm:node/123","geometry":{"type":"Point","coordinates":[2.35,48.85]},
  *      "properties":{"name":"Chez Lili","category":"amenity=restaurant","comment":"…","comment_visibility":"friends",
- *                    "status":"tried","price_level":2,
+ *                    "status":"tried","price_level":2,"rating":4,
  *                    "tags":[{"name":"Pizza","color":"#EF4444","icon":"pizza","parent":"Restaurant"}],
  *                    "created":"2026-10-13T15:10:00.000Z","updated":"2026-10-14T09:00:00.000Z"}}]}
  *
@@ -18,6 +18,10 @@
  * visibility lets this audience read it. `minor` (absent = 0) follows the
  * spec's versioning: unknown fields are an error unless the collection
  * declares a higher minor than this reader's.
+ *
+ * `rating` (minor 2): the owner's rating, 1 to 5 stars. Only in friends'
+ * packs (like photos): lists packs and the public file are read strictly by
+ * every earlier version, which would refuse the whole file for it.
  */
 import {
   assertValidGeometry,
@@ -30,6 +34,7 @@ import {
   type ForeignTag,
   type PlaceGeometry,
   type PriceLevel,
+  type Rating,
   type Repository,
   type SavePlaceSnapshot,
   type SaveStatus,
@@ -44,7 +49,11 @@ export const PLACES_VERSION = 1;
  * Minor 1 (T-111b): `photos` on a place (photos.ts). A pack declares it only when one of its places
  * has photos, so an older reader (minor 0) reads such a pack leniently, without the photos.
  */
-export const PLACES_MINOR = 1;
+/**
+ * Minor 2: `rating` on a place. A pack declares it only when one of its places has a rating, so an
+ * older reader reads such a pack leniently, without the ratings (and keeps reading the photos).
+ */
+export const PLACES_MINOR = 2;
 /**
  * Reader limits (checked before projecting anything). The writer puts at
  * most `capacity` places in a pack (default 200, never more than this).
@@ -79,6 +88,8 @@ export interface PlaceFeature {
     comment_visibility?: 'friends' | 'public';
     status?: SaveStatus;
     price_level?: PriceLevel;
+    /** The owner's rating, 1 to 5 stars (minor 2; friends' packs only). */
+    rating?: Rating;
     tags?: TagOut[];
     /** Personal photos (minor 1), oldest first. */
     photos?: PhotoRef[];
@@ -96,6 +107,7 @@ export interface OwnItem {
   commentVisibility: CommentVisibility;
   status: SaveStatus | null;
   priceLevel: PriceLevel | null;
+  rating: Rating | null;
   createdAt: number;
   updatedAt: number;
   name: string;
@@ -149,11 +161,11 @@ export function readOwnItems(repo: Repository): OwnItem[] {
   return repo.db
     .all<{
       id: string; place_id: string; comment: string; comment_visibility: CommentVisibility; status: SaveStatus | null;
-      price_level: PriceLevel | null; sharing: 'private' | 'friends'; created_at: number; updated_at: number;
+      price_level: PriceLevel | null; rating: Rating | null; sharing: 'private' | 'friends'; created_at: number; updated_at: number;
       snap: string | null; osm_fields: string; name: string; category: string | null; kind: 'place' | 'zone';
       edge: 'sharp' | 'blurred'; geom: string; pstatus: string; address: string | null;
     }>(
-      `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.created_at,
+      `SELECT s.id, s.place_id, s.comment, s.comment_visibility, s.status, s.price_level, s.rating, s.sharing, s.created_at,
          s.updated_at, s.place_snapshot AS snap, p.osm_fields, p.name, p.category, p.kind, p.edge, p.geom, p.status AS pstatus, p.address
        FROM saves s JOIN places p ON p.id = s.place_id
        WHERE s.owner_id = ? AND s.deleted_at IS NULL ORDER BY s.place_id`,
@@ -173,6 +185,7 @@ export function readOwnItems(repo: Repository): OwnItem[] {
         commentVisibility: r.comment_visibility,
         status: r.status,
         priceLevel: r.price_level,
+        rating: r.rating,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
         name: osm.has('name') ? r.name : mine.name,
@@ -220,6 +233,7 @@ export function featureFor(item: OwnItem, audience: 'friends' | 'public', opts: 
   }
   if (item.status) props.status = item.status;
   if (item.priceLevel) props.price_level = item.priceLevel;
+  if (audience === 'friends' && item.rating) props.rating = item.rating;
   if (item.tags.length && (audience === 'friends' || opts.tagNames)) {
     props.tags = item.tags.map((t) => {
       const o: TagOut = { ...t, name: clean(t.name, 100) };
@@ -245,14 +259,18 @@ export function featureHash(f: PlaceFeature): string {
 }
 
 export function placesCollection(features: PlaceFeature[]): Uint8Array {
-  const minor = features.some((f) => f.properties.photos?.length) ? { minor: 1 } : {};
+  const minor = features.some((f) => f.properties.rating !== undefined)
+    ? { minor: 2 }
+    : features.some((f) => f.properties.photos?.length)
+      ? { minor: 1 }
+      : {};
   return utf8(JSON.stringify({ type: 'FeatureCollection', triangulair: { kind: 'places', version: PLACES_VERSION, ...minor }, features }));
 }
 
 // ------------------------------------------------------------------ reader side
 
 const STATUSES = new Set(['to_try', 'tried', 'favorite']);
-const PROPS = new Set(['name', 'category', 'kind', 'edge', 'comment', 'comment_visibility', 'status', 'price_level', 'tags', 'photos', 'created', 'updated']);
+const PROPS = new Set(['name', 'category', 'kind', 'edge', 'comment', 'comment_visibility', 'status', 'price_level', 'rating', 'tags', 'photos', 'created', 'updated']);
 const TAG_KEYS = new Set(['name', 'color', 'icon', 'parent']);
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
@@ -305,14 +323,14 @@ export function parsePlaces(body: Uint8Array): ParsedFeature[] {
   const lenient = minor > PLACES_MINOR;
   for (const k of Object.keys(doc)) if (!['type', 'triangulair', 'features'].includes(k) && !lenient) fail(`unknown field ${k}`);
   for (const k of Object.keys(meta)) if (!['kind', 'version', 'minor'].includes(k) && !lenient) fail(`unknown field triangulair.${k}`);
-  return parseFeatureArray(doc.features, lenient, { photos: true });
+  return parseFeatureArray(doc.features, lenient, { friendsPack: true });
 }
 
 /**
  * Validates the `features` of a places (or lists) payload: the same strict rules (see the module
  * comment). `lenient`: the document declares a higher minor than this reader's (unknown fields ignored).
  */
-export function parseFeatureArray(features: unknown, lenient: boolean, opts: { photos?: boolean } = {}): ParsedFeature[] {
+export function parseFeatureArray(features: unknown, lenient: boolean, opts: { friendsPack?: boolean } = {}): ParsedFeature[] {
   if (!Array.isArray(features) || features.length > MAX_FEATURES_PER_PACK) fail('features must be an array (bounded)');
   return features.map((f: unknown) => {
     if (!isObj(f) || f.type !== 'Feature') fail('feature expected');
@@ -338,6 +356,11 @@ export function parseFeatureArray(features: unknown, lenient: boolean, opts: { p
     if (p.comment_visibility !== undefined && p.comment_visibility !== 'friends' && p.comment_visibility !== 'public') fail('bad comment_visibility');
     if (p.status !== undefined && !STATUSES.has(p.status as string)) fail('bad status');
     if (p.price_level !== undefined && ![1, 2, 3, 4].includes(p.price_level as number)) fail('bad price_level');
+    if (p.rating !== undefined) {
+      // Only friends' places packs carry ratings (lists packs and public files never do: older readers refuse them).
+      if (!opts.friendsPack) fail('rating is not allowed here');
+      if (![1, 2, 3, 4, 5].includes(p.rating as number)) fail('bad rating');
+    }
     if (p.tags !== undefined) {
       if (!Array.isArray(p.tags) || p.tags.length > MAX_TAGS) fail('bad tags');
       for (const t of p.tags) {
@@ -351,7 +374,7 @@ export function parseFeatureArray(features: unknown, lenient: boolean, opts: { p
     }
     if (p.photos !== undefined) {
       // Only friends' places packs carry photos (lists packs and public files never do).
-      if (!opts.photos) fail('photos are not allowed here');
+      if (!opts.friendsPack) fail('photos are not allowed here');
       checkPhotoRefs(p.photos, lenient);
     }
     date(p.created, 'created');
@@ -393,6 +416,7 @@ export function toForeignSave(owner: string, f: PlaceFeature, now: number = Date
     commentVisibility: p.comment_visibility ?? 'friends',
     status: p.status ?? null,
     priceLevel: p.price_level ?? null,
+    rating: p.rating ?? null,
     theirTags,
     createdAt: clamp(p.created),
     updatedAt: clamp(p.updated),

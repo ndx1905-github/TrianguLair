@@ -22,6 +22,8 @@ export interface SaveSnapshot {
   commentVisibility: string;
   status: string | null;
   priceLevel: number | null;
+  /** Absent in snapshots recorded before ratings. */
+  rating?: number | null;
   sharing: string;
   mainTagId: string | null;
   tagIds: string[];
@@ -53,9 +55,9 @@ export function ownSaves(store: DataStore): SaveMap {
   const db = store.repo.db;
   const rows = db.all<{
     id: string; place_id: string; name: string | null; comment: string; comment_visibility: string; status: string | null;
-    price_level: number | null; sharing: string; main_tag_id: string | null; deleted_at: number | null;
+    price_level: number | null; rating: number | null; sharing: string; main_tag_id: string | null; deleted_at: number | null;
   }>(
-    `SELECT s.id, s.place_id, p.name, s.comment, s.comment_visibility, s.status, s.price_level, s.sharing, s.main_tag_id, s.deleted_at
+    `SELECT s.id, s.place_id, p.name, s.comment, s.comment_visibility, s.status, s.price_level, s.rating, s.sharing, s.main_tag_id, s.deleted_at
        FROM saves s LEFT JOIN places p ON p.id = s.place_id WHERE s.owner_id = ?`,
     [store.meId],
   );
@@ -71,6 +73,7 @@ export function ownSaves(store: DataStore): SaveMap {
       commentVisibility: r.comment_visibility,
       status: r.status,
       priceLevel: r.price_level,
+      rating: r.rating,
       sharing: r.sharing,
       mainTagId: r.main_tag_id,
       tagIds: (tags.get(r.id) ?? []).sort(),
@@ -139,6 +142,7 @@ export function changedFields(c: JournalChange): string[] {
   if (b.comment !== a.comment || b.commentVisibility !== a.commentVisibility) f.push('comment');
   if (b.status !== a.status) f.push('status');
   if (b.priceLevel !== a.priceLevel) f.push('price');
+  if (b.rating !== undefined && a.rating !== undefined && b.rating !== a.rating) f.push('rating');
   if (b.sharing !== a.sharing) f.push('sharing');
   if (b.mainTagId !== a.mainTagId || b.tagIds.join() !== a.tagIds.join()) f.push('tags');
   return f;
@@ -184,6 +188,7 @@ export function revertChange(store: DataStore, change: JournalChange): void {
     commentVisibility: b.commentVisibility as never,
     status: b.status as never,
     priceLevel: b.priceLevel as never,
+    ...(b.rating !== undefined && { rating: b.rating as never }),
     sharing: b.sharing as never,
   });
   if (b.tagIds.join() !== change.after.tagIds.join() || b.mainTagId !== change.after.mainTagId) {

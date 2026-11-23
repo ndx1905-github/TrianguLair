@@ -50,6 +50,7 @@ export {
   readTombstones,
   readDeletedAt,
   readSharing,
+  readRating,
   updateText,
 } from './crdt/doc.ts';
 export type { DataDoc, EditContext, SaveInput, SavePatch, TagInput, ListInput, ListPatch, MediaInput, DocMedia, MediaUpload, TrashItemRef } from './crdt/doc.ts';

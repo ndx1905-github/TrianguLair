@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { CommentVisibility, PriceLevel, SaveStatus, Sharing } from '@triangulair/data';
+import type { CommentVisibility, PriceLevel, Rating, SaveStatus, Sharing } from '@triangulair/data';
 
 import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
@@ -7,12 +7,15 @@ import type { AppTag } from '../places/model';
 import { makeMain } from '../places/add';
 import { toggleIn } from '../places/filters';
 import { tagPath } from '../tags/tree';
+import { RatingStars } from './RatingStars';
 import { SectionTitle, Segmented } from './ui';
 
 export interface SaveFields {
   tagIds: string[];
   status: SaveStatus | null;
   priceLevel: PriceLevel | null;
+  /** My rating; leave it out where a rating is not offered (zones). */
+  rating?: Rating | null;
   comment: string;
   commentVisibility: CommentVisibility;
   sharing: Sharing;
@@ -32,7 +35,7 @@ const VISIBILITIES: CommentVisibility[] = ['private', 'friends', 'public'];
 
 /**
  * My part of a place: tags (first = main tag, long press to make one main),
- * status, price level, comment with its own visibility, sharing.
+ * status, my rating (places), price level, comment with its own visibility, sharing.
  */
 export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
   const c = useUiColors();
@@ -92,6 +95,13 @@ export function SaveEditor({ value, tags, onChange, onCommentCommit }: Props) {
         onChange={(s) => onChange({ status: s === 'none' ? null : s })}
         testID="status"
       />
+
+      {value.rating !== undefined ? (
+        <>
+          <SectionTitle>{t('save.rating')}</SectionTitle>
+          <RatingStars value={value.rating} onChange={(rating) => onChange({ rating })} />
+        </>
+      ) : null}
 
       <SectionTitle>{t('save.price')}</SectionTitle>
       <Segmented

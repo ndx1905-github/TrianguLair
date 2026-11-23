@@ -201,7 +201,7 @@ The MVP covers solo use and sharing between friends via WebDAV storage and per-p
 - [ ] Personal tags with color and icon, sub-tags possible ("Restaurant › Neapolitan pizza")
 - [ ] **Filter bar** on the map and the list: categories, sub-filters of the category (types of cuisine, museum, shop), practical criteria from OSM (open now, happy hour, terrace, diet, reservation, free entry, entry price), status, visibility, price level, text search; collapsible into a one-line summary, state remembered
 - [ ] Filtered display: matching pins stay in color, the others are grayed out, faded and smaller
-- [ ] Comment with its own visibility: private, friends or public (friends by default; "public" makes it visible in public lists); status "to try / tried / favorite", price level (€ to €€€€), personal photos
+- [ ] Comment with its own visibility: private, friends or public (friends by default; "public" makes it visible in public lists); status "to try / tried / favorite", my rating (1 to 5 stars, seen by my friends but not in public or link-only lists), price level (€ to €€€€), personal photos
 - [ ] **Sharing a place**: shared with friends by default; the Sharing section of the card lets you make it private, or add it to one or more sharing lists; a private place never appears for others, nor in the "friends" counters, nor in any list
 - [ ] Follow and share, independently in each direction: invitation link, request by return link, QR code face to face, or simple subscription to a public or link-only list
 - [ ] **Friends' places**: "Also at my friends'" filter and "Whose places" (mine, one friend, several or everyone, remembered); a small dot in the friend's colour on their pins; "3 friends" mention in the list, the card and the add screen, which opens who saved it, when, and their comments, within the limit of what each has made visible; What's new view that lists what has changed at friends' since the last visit
@@ -301,6 +301,7 @@ Processing:
 
 - Each imported place is matched to an OpenStreetMap place by its name and position, or by its address. Confident matches are automatic; doubtful ones are presented for validation, on the map; with no match, the place becomes a manually placed point.
 - The source's tags become my tags, with their colors if the export contains them; notes become comments; known statuses (tried, to try) are carried over.
+- The source's rating becomes my rating (1 to 5 stars). Mapstr does not document its scale, so it is decided per file: ratings up to 5 are stars (decimals rounded); a file with ratings above 5 but none above 10 rates out of 10, and each rating is halved and rounded; `0` means "not rated"; anything else is left out and counted in the preview. A place already in my places gets the rating only if it has none, even when I do not merge the file into it, and undoing the import removes it again; re-importing the same file changes nothing.
 - No duplicates: re-importing a file or importing from two sources never creates a place twice. Rows of one file for the same place are folded; a place already in my places (same OSM object, or same name within about 50 m) is shown as "already in my places" and left as it is, unless I choose to add the file's tags and comments to it.
 - A tag of the source that is really a status ("À essayer", "to try") becomes the status. Practical criteria (terrace, vegetarian, takeaway) come from OpenStreetMap, so such tags stay tags.
 - Places that may no longer exist according to OpenStreetMap (the matched object carries a closed signal of "Closed place detection", or the source gives a category and OSM has no place of that name nearby) are counted in the preview; I keep them, flagged "maybe closed", or leave them out. Nothing is dropped silently.
@@ -722,7 +723,7 @@ On the phone, a local SQLite database; on the storage, only encrypted packs. The
 | people | id, display\_name, avatar, public\_key, read\_url (HTTPS read address, the one certified in their sharing certificate), is\_me, i\_follow, follows\_me, request\_state (received / sent / accepted request), last\_etag, last\_sync | Me and my friends; one key per person |
 | groups, group\_members | id, name ; group\_id, person\_id | Local shortcuts ("friends", "family"), never shared |
 | places | id, osm\_type, osm\_id, name, category, geom (point, line or polygon), kind (place / zone), edge (sharp / blurred), address, opening\_hours, website, phone, osm\_tags (JSON: cuisine, diet:\*, outdoor\_seating, happy\_hours, reservation, fee, charge, museum, shop…), photos (Commons, Panoramax links), osm\_synced\_at, status (open / maybe closed / closed), closed\_signals | Shared place card, cache of OSM data |
-| saves | id, owner\_id, place\_id, comment, comment\_visibility (private / friends / public), status, price\_level (1 to 4), sharing (private / friends, friends by default), main\_tag\_id, created\_at, updated\_at | "I saved this place"; also contains friends' decrypted saves |
+| saves | id, owner\_id, place\_id, comment, comment\_visibility (private / friends / public), status, price\_level (1 to 4), rating (1 to 5, my rating), sharing (private / friends, friends by default), main\_tag\_id, created\_at, updated\_at | "I saved this place"; also contains friends' decrypted saves |
 | tags, save\_tags | id, owner\_id, parent\_id (sub-tags), name, color, icon, osm\_categories ; save\_id, tag\_id ; tag\_mappings: person\_id, their\_tag, my\_tag\_id | Personal tags |
 | lists, list\_items | id, owner\_id, name, description, visibility (link / public), link\_key, kind (filter / manual), filter (JSON: tags, categories, statuses, zones by OSM identifier or polygon, exceptions) ; list\_id, save\_id | Sharing lists |
 | access | save\_id or list\_id, person\_id | Who can open what: used to compute key wraps |
@@ -764,7 +765,7 @@ On the storage, a signed index describes the packs:
 - Rewriting: the index is always written from the owner's current state, never copied; a device drops the fields it does not know (see Format versions).
 - Each pack is bound to its owner (the owner key is part of the authenticated data): a pack copied into someone else's index does not open, so nobody can re-publish my content under their name.
 
-Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, OSM identifier), which makes plaintext export immediate.
+Each pack contains batches: a batch key wrapped for each recipient, then the places, zones and comments encrypted with that key. Once decrypted, a place is a GeoJSON object (a Feature with name, tags, status, comment, price, rating, OSM identifier), which makes plaintext export immediate.
 
 ## Tech stack and self-hosting
 

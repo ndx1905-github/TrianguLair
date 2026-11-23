@@ -41,7 +41,7 @@ export function toWrite(plan: ImportPlan): number {
 }
 
 /** Parse warnings the preview shows, with their count (warnings about single places are summed). */
-export const SHOWN_WARNINGS = ['invalid-geojson', 'positions-from-address', 'row-not-joined', 'missing-tags', 'secret-places', 'remote-photos'] as const;
+export const SHOWN_WARNINGS = ['invalid-geojson', 'positions-from-address', 'row-not-joined', 'missing-tags', 'secret-places', 'remote-photos', 'ratings-out-of-10', 'unreadable-ratings'] as const;
 export type ShownWarning = (typeof SHOWN_WARNINGS)[number];
 
 export function previewWarnings(plan: ImportPlan): { code: ShownWarning; count: number }[] {

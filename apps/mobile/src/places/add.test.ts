@@ -54,14 +54,14 @@ describe('form and save', () => {
   it('pre-selects my tags linked to the OSM category; spec defaults', () => {
     const c = fromNearby(nearby[0]!)!;
     const form = defaultForm(c, suggestTags(c, TAGS));
-    expect(form).toMatchObject({ tagIds: ['t-resto'], commentVisibility: 'friends', sharing: 'friends', status: null, priceLevel: null });
+    expect(form).toMatchObject({ tagIds: ['t-resto'], commentVisibility: 'friends', sharing: 'friends', status: null, priceLevel: null, rating: null });
   });
 
   it('an OSM candidate saves under its OSM id with tags, status, price and comment visibility', () => {
     const c = fromNearby(nearby[0]!)!;
-    const input = toSaveInput(c, { ...defaultForm(c, ['t-bar', 't-resto']), status: 'to_try', priceLevel: 2, comment: ' Ask for the terrace ', commentVisibility: 'public', sharing: 'private' });
+    const input = toSaveInput(c, { ...defaultForm(c, ['t-bar', 't-resto']), status: 'to_try', priceLevel: 2, rating: 4, comment: ' Ask for the terrace ', commentVisibility: 'public', sharing: 'private' });
     expect(input.place).toMatchObject({ osm: { type: 'node', id: 2 }, name: 'Trattoria', category: 'amenity=restaurant' });
-    expect(input).toMatchObject({ tagIds: ['t-bar', 't-resto'], mainTagId: 't-bar', status: 'to_try', priceLevel: 2, comment: 'Ask for the terrace', commentVisibility: 'public', sharing: 'private' });
+    expect(input).toMatchObject({ tagIds: ['t-bar', 't-resto'], mainTagId: 't-bar', status: 'to_try', priceLevel: 2, rating: 4, comment: 'Ask for the terrace', commentVisibility: 'public', sharing: 'private' });
   });
 
   it('a manual point needs a name and gets a local id', () => {

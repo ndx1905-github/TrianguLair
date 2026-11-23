@@ -47,6 +47,17 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
   await expect(page2).toBeVisible();
   await page2.getByTestId('status').getByRole('radio', { name: 'Favorite' }).click();
   await expect(page2.getByTestId('status').getByRole('radio', { name: 'Favorite' })).toBeChecked();
+  // My rating: five stars next to the status; the same star again removes it.
+  const stars = page2.getByTestId('rating');
+  const star = (n: number) => stars.getByRole('radio', { name: n === 1 ? '1 star' : `${n} stars`, exact: true });
+  await expect(stars.getByRole('radio')).toHaveCount(5);
+  await star(4).click();
+  await expect(star(4)).toBeChecked();
+  await star(4).click();
+  await expect(star(4)).not.toBeChecked();
+  for (let n = 1; n <= 5; n++) await expect(star(n)).not.toBeChecked();
+  await star(3).click();
+  await expect(star(3)).toBeChecked();
   await page.getByTestId('back').filter({ visible: true }).click();
   await expect(row).toContainText('Favorite');
   // The card's screen is gone (its closing transition can still be mounted under load).
@@ -69,6 +80,8 @@ test('add a place from the nearby list, find it in the list, edit, trash and und
   await page.waitForTimeout(1500); // the database file is written after a short debounce
   await page.goto(autostart('/list'));
   await expect(page.getByTestId(`row-${NAME}`)).toContainText('Favorite');
+  await page.getByTestId(`row-${NAME}`).click();
+  await expect(page.getByTestId('place-card').filter({ visible: true }).getByTestId('rating').getByRole('radio', { name: '3 stars', exact: true })).toBeChecked();
 });
 
 test('a place of mine that may no longer exist shows up in What\'s new; its card asks', async ({ page }) => {
