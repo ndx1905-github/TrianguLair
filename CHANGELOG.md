@@ -38,6 +38,8 @@ Whose places on the map, editing many places at once, optional examples, and the
 
 ### Changed
 
+- The address of your links is no longer asked at first launch. The web app always uses its own address; the phone
+  apps take it when added from the web app (the device link is at its address), or from Settings › Friends.
 - A first launch no longer adds sample places and an invented friend to your data: only the starter tags. If you
   installed 0.9.0-beta.1, its sample places were saved as yours (and so synced to your storage, if you connected
   one): "Delete the example places" removes them, there too.

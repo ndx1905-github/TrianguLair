@@ -3,11 +3,13 @@
  * /d#). The keys are after "#", which browsers never send, but the page served at that address
  * could read them: it must be a site the user trusts, typically where they host the web app.
  *
- * Asked at first launch (profile step) and changeable in Settings; stored on this device only
- * (`link-origin`). Nothing about it is written in the code or the build. Until it is set:
- * - the web app uses its own address (with its sub-path);
- * - the phone apps use the reserved placeholder example.org (RFC 2606: no one can own it), or
- *   EXPO_PUBLIC_LINK_ORIGIN for a local build.
+ * - The web app always uses its own address (where it is served, with its sub-path): the page
+ *   that opens the links is the one handing them out. Nothing to ask.
+ * - The phone apps are served by no site. They learn the address when this phone is added from
+ *   the web app (the device link is at the web app's address), or from Settings › Friends; it is
+ *   stored on the device only (`link-origin`). Until then: EXPO_PUBLIC_LINK_ORIGIN for a local
+ *   build, else the reserved placeholder example.org (RFC 2606: no one can own it).
+ * Nothing about the host is written in the code or the build.
  */
 import { getSetting, setSetting } from '../data/deviceSettings';
 
@@ -20,9 +22,12 @@ function webOrigin(): string | null {
   return loc.origin + (process.env.EXPO_BASE_URL ?? '');
 }
 
-/** The address suggested before the user chose one. */
-export function defaultLinkOrigin(): string {
-  return (process.env.EXPO_PUBLIC_LINK_ORIGIN || webOrigin() || PLACEHOLDER_ORIGIN).replace(/\/+$/, '');
+/** Whether the address can be set by the user (phone apps); the web app uses its own. */
+// (No react-native import: this module is shared with plain Node tests. Phones have no `document`.)
+export const LINK_ORIGIN_EDITABLE = typeof document === 'undefined';
+
+function fallbackOrigin(): string {
+  return (process.env.EXPO_PUBLIC_LINK_ORIGIN || PLACEHOLDER_ORIGIN).replace(/\/+$/, '');
 }
 
 function stored(): string | null {
@@ -33,9 +38,10 @@ function stored(): string | null {
   }
 }
 
-/** The address in use: the user's choice, else the default. No trailing slash. */
+/** The address in use. No trailing slash. */
 export function linkOrigin(): string {
-  return stored() || defaultLinkOrigin();
+  if (!LINK_ORIGIN_EDITABLE) return (webOrigin() ?? fallbackOrigin()).replace(/\/+$/, '');
+  return stored() || fallbackOrigin();
 }
 
 /** Whether links still use the placeholder, which friends without the app cannot open. */
@@ -66,4 +72,15 @@ export function parseLinkOrigin(input: string): string | null {
 /** Saves the address (already parsed); an empty value goes back to the default. */
 export function saveLinkOrigin(origin: string | null): void {
   setSetting(LINK_ORIGIN_SETTING, origin ?? '');
+}
+
+/**
+ * A phone added from the web app learns its address from the device link
+ * ("https://<web app>[/<sub-path>]/d#…"), unless the user already chose one.
+ */
+export function adoptLinkOriginFrom(deviceLinkText: string): void {
+  if (!LINK_ORIGIN_EDITABLE || stored()) return;
+  const m = /(https:\/\/[^\s#]+?)\/d#/.exec(deviceLinkText.trim());
+  const origin = m ? parseLinkOrigin(m[1]!) : null;
+  if (origin && new URL(origin).hostname !== 'example.org') saveLinkOrigin(origin);
 }

@@ -31,6 +31,7 @@ import { PhotoSettings } from '../photos/PhotoSettings';
 import { MyContentSection } from '../privacy/SettingsSection';
 import { BrowserStorageSection } from '../pwa/BrowserStorageSection';
 import { LinkOriginSection } from '../links/LinkOriginSection';
+import { LINK_ORIGIN_EDITABLE } from '../links/origin';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -164,7 +165,7 @@ function SettingsScreen() {
             <Muted>{t('settings.friendsHelp')}</Muted>
             <Button label={t('inviting.title')} onPress={() => router.push('/invite')} testID="settings-invite" />
             <Button kind="secondary" label={t('contacts.open')} onPress={() => router.push('/contacts')} testID="settings-contacts" />
-            <LinkOriginSection />
+            {LINK_ORIGIN_EDITABLE && <LinkOriginSection />}
           </Section>
 
           <Section title={t('settings.lock')}>

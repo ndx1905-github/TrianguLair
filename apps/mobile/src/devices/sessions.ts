@@ -40,6 +40,7 @@ import {
 import type { StorageAdapter } from '@triangulair/storage';
 import { ContactBook, keyPath, VAULT_PATH } from '@triangulair/sync';
 
+import { adoptLinkOriginFrom } from '../links/origin';
 import type { MasterKeySource } from '../storage/certify';
 import { parseConfig, type StorageConfig } from '../storage/config';
 import {
@@ -489,6 +490,7 @@ export type LinkReceiverState =
 export class LinkReceiver extends Machine<LinkReceiverState> {
   readonly deviceKeys: DeviceKeys;
   private ctx: { invite: DeviceInvite; reader: StorageAdapter } | null = null;
+  private linkText = '';
   constructor(private readonly d: NewDeviceDeps, private readonly deviceName: string) {
     super({ phase: 'enter' });
     this.deviceKeys = generateDeviceKeys();
@@ -528,6 +530,7 @@ export class LinkReceiver extends Machine<LinkReceiverState> {
     } catch {
       return this.set({ phase: 'enter', error: 'failed' });
     }
+    this.linkText = linkText;
     const pub = devicePublicKeys(this.deviceKeys);
     const sealed = sealRequest({ device: pub.device, box: pub.box, name: this.deviceName }, invite.key, invite.slot);
     this.ctx = { invite, reader };
@@ -554,6 +557,8 @@ export class LinkReceiver extends Machine<LinkReceiverState> {
     } catch {
       return; // not there yet, or not for me
     }
+    // Added from the web app: its address becomes this phone's link address (src/links/origin.ts).
+    adoptLinkOriginFrom(this.linkText);
     // Picked up: the old device sees the file gone and lists this device.
     if (joined.storage && joined.storage.kind !== 'https') {
       const w = this.d.writeAdapter(joined.storage);
