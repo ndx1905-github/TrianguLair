@@ -7,6 +7,15 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.9] - 2026-11-23
+
+A clearer sync error when a device keeps failing to publish.
+
+### Changed
+
+- When sync keeps failing with "lost the race too many times", the error now says why each attempt failed, so the
+  technical log shows the cause.
+
 ## [0.9.0-beta.8] - 2026-11-23
 
 Sync from an iPhone Home Screen web app no longer gets stuck on "lost the race too many times".
