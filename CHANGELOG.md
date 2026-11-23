@@ -7,6 +7,10 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0-beta.7] - 2026-11-23
+
+A real star rating, places that may no longer exist in What's new, and the Pin Drop import checked on a real export, with optional photo download.
+
 ### Added
 
 - What's new lists my places that may no longer exist according to OpenStreetMap, dated when the check found
