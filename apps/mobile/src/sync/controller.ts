@@ -489,8 +489,7 @@ export class SyncController implements StorageMoveHooks {
 
   private recordJournal(before: SaveMap | null, report: SyncReport): void {
     if (!before || report.wiped) return;
-    const imported = (report.pulled?.imported ?? 0) + (report.own?.pull.imported ?? 0);
-    if (!imported) return;
+    if (!ownImported(report)) return;
     try {
       const changes = diffSaves(before, ownSaves(this.d.store));
       if (!changes.length) return;
@@ -833,7 +832,7 @@ export class SyncController implements StorageMoveHooks {
     const changed =
       report.friends.some((f) => f.status === 'updated') ||
       (report.lists ?? []).some((l) => l.status === 'updated' || (l.status === 'gone' && l.whatsNew.removed.length > 0)) ||
-      (report.own?.pull.imported ?? 0) > 0;
+      ownImported(report) > 0;
     if (changed) this.d.onData();
     this.d.onChange();
   }
@@ -1370,6 +1369,14 @@ export class SyncController implements StorageMoveHooks {
 }
 
 /** A followed list's report, in the shape What's new records (its places' owner is the list's id). */
+/**
+ * Changes of my other devices merged into my document during a pass: by its first pull (most of
+ * them) and by the pull before publishing (those that arrived meanwhile, or after a lost race).
+ */
+export function ownImported(report: Pick<SyncReport, 'pulled' | 'own'>): number {
+  return (report.pulled?.imported ?? 0) + (report.own?.pull.imported ?? 0);
+}
+
 function asFriendReport(l: ListReport): FriendReport {
   return { owner: l.id, status: l.status === 'gone' ? 'updated' : l.status, whatsNew: l.whatsNew, downloaded: { packs: 0, bytes: 0 }, ...(l.problem && { problem: l.problem }) };
 }

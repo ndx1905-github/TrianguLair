@@ -57,6 +57,8 @@ function makePinElement(pin: MapPin, selected: boolean, onPress: (id: string) =>
   el.setAttribute('aria-label', pin.label);
   el.title = pin.label;
   el.dataset.pinId = pin.id;
+  // The band colors, for the end-to-end tests (what the pin is drawn with).
+  el.dataset.colors = pin.colors.join(',');
   if (pin.greyed) el.dataset.greyed = '1';
   if (pin.badge) el.dataset.badge = '1';
   if (pin.dots) el.dataset.dots = `${pin.dots.colors.length + pin.dots.more}`;

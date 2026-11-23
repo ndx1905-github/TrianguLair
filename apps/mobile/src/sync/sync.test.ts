@@ -328,6 +328,32 @@ describe('SyncController', () => {
     expect(a.wiped).toEqual(['secrets', 'data']);
   });
 
+  it('changes pulled from my other device refresh the screens, even when the publish step pulls nothing more', async () => {
+    // This device (the controller) is the second one: no friends, so only my own changes can refresh it.
+    const a = makeUser('ivy');
+    await a.ctl.refresh();
+    // My first device: same identity and sharing key, its own device certificate.
+    const identity = identityFromPhrase(a.created.phrase);
+    const keys = generateDeviceKeys();
+    const signer = { keys, cert: issueDeviceCert(identity, devicePublicKeys(keys)) };
+    const { sharing } = openSyncKeys(a.created.record, { deviceKeys: a.created.secrets.deviceKeys, sharingKey: a.sharingKey, syncKeys: null });
+    const first = openStore(a.created.record.owner);
+    const engine = new SyncEngine({ store: first.store, state: new MemoryStateStore(), sharing, device: signer, storage: a.storage });
+    await engine.sync();
+    const pizza = first.store.createTag({ name: 'Pizza', color: '#EA580C' });
+    first.store.putSave({ place: place(40, 'Luigi'), tagIds: [pizza], mainTagId: pizza });
+    expect((await engine.sync()).own?.published).toBe(true);
+
+    const before = a.data;
+    await a.ctl.refresh();
+    // The projection has the tags (map pins and the card read the same rows)…
+    const mine = a.store.repo.queryPlaces({ source: 'mine' });
+    expect(mine.map((p) => [p.name, p.mine?.tagIds])).toEqual([['Luigi', [pizza]]]);
+    expect(a.store.repo.tags().map((t) => t.id)).toContain(pizza);
+    // …and the screens are told to read them again (the pass's first pull imported them).
+    expect(a.data).toBeGreaterThan(before);
+  });
+
   it('open invitations under the previous certificate are listed as cancelled', async () => {
     const a = makeUser('hal');
     await a.ctl.refresh();
