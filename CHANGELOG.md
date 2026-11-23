@@ -7,6 +7,11 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Web app: the browser's bars (the iPhone status bar of a Home Screen app, the Android address bar) follow the app's
+  theme, also when it differs from the system's: no more white bar above a dark app.
+
 ## [0.9.0-beta.5] - 2026-11-23
 
 Tap the map to pick a place around that spot, and web sync to Nextcloud works.

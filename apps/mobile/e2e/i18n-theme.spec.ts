@@ -47,5 +47,9 @@ test('the theme button switches light and dark', async ({ page }) => {
   await expect.poll(() => bg(bar)).toBe(DARK_SURFACE);
   // The base map follows the app theme, not only the system one.
   await darkStyle;
+  // The browser's bars (iPhone status bar of a Home Screen app) follow the app theme too.
+  await expect
+    .poll(() => page.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => (m as HTMLMetaElement).content)))
+    .toEqual(expect.arrayContaining(['#0B0F14']));
   await expect(page.locator('[data-pin-id]').first()).toBeAttached();
 });
