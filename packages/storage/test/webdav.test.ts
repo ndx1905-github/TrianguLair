@@ -51,6 +51,30 @@ runAdapterConformance('WebDAV (webdav-server, emulated conditionals)', async () 
 });
 
 describe('WebDAV specifics', () => {
+  it('creates its folder when the parent folders are out of reach (a browser outside the CORS rule)', async () => {
+    const srv = await startDav();
+    try {
+      const base = `${srv.url}/dav/a/b/TrianguLair/`;
+      const blocked: string[] = [];
+      // As in a browser: the server's CORS rule covers only the WebDAV folders; anything above
+      // throws before any answer (Safari: "access control checks").
+      const corsFetch: typeof fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (!url.startsWith(`${srv.url}/dav/a/`)) {
+          blocked.push(`${init?.method ?? 'GET'} ${url}`);
+          throw new TypeError('Load failed');
+        }
+        return fetch(input, init);
+      };
+      const a = new WebDavAdapter({ baseUrl: base, auth: { username: 'alice', password: 's3cret' }, fetch: corsFetch });
+      await a.put('index.json', new TextEncoder().encode('{}'));
+      expect(new TextDecoder().decode((await a.get('index.json'))!.data)).toBe('{}');
+      expect(blocked.every((b) => b.startsWith('MKCOL '))).toBe(true);
+    } finally {
+      await srv.close();
+    }
+  });
+
   it('probe detects a server that ignores conditional headers (webdav-server)', async () => {
     const srv = await startWebdavServer();
     try {

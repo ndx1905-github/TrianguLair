@@ -7,6 +7,13 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Web app: sync to a WebDAV folder never started when the server's CORS rule covers only the WebDAV paths (the
+  suggested Nextcloud rule): before its first write, the app tried to create every parent folder, starting with
+  `/remote.php/`, which the browser blocks. It now creates its folder first, and only tries the parents (ignoring
+  their failures) when the server says one is missing.
+
 ## [0.9.0-beta.4] - 2026-11-23
 
 Sync problems are never silent any more.
