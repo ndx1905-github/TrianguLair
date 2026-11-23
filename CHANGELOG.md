@@ -7,6 +7,12 @@ All notable changes to TrianguLair are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Sync on a Home Screen web app on iPhone could stop with "Precondition failed: index.json (lost the race too many
+  times)": Safari can answer a read from its cache even when told not to, so the app kept writing against an old
+  version of its own index. Reads from a WebDAV storage (Nextcloud included) now always reach the server.
+
 ## [0.9.0-beta.7] - 2026-11-23
 
 A real star rating, places that may no longer exist in What's new, and the Pin Drop import checked on a real export, with optional photo download.

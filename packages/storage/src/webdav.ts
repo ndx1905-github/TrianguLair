@@ -129,7 +129,12 @@ export class WebDavAdapter implements StorageAdapter {
   }
 
   private req(path: string, method: string, init: RequestInit = {}, extra: Record<string, string> = {}) {
-    return doFetch(this.fetch, this.url(path), { ...init, method, headers: this.headers(extra) }, path);
+    // Reads carry a unique query: some HTTP caches (Safari's, notably in a Home Screen web app) can
+    // still answer `cache: 'no-store'` from a stored copy, and a stale index.json gives a stale ETag
+    // that every conditional write then fails on ("lost the race too many times"). WebDAV servers
+    // ignore the query of a GET or HEAD.
+    const url = method === 'GET' || method === 'HEAD' ? noCacheUrl(this.url(path)) : this.url(path);
+    return doFetch(this.fetch, url, { ...init, method, headers: this.headers(extra) }, path);
   }
 
   async get(path: string, opts: GetOptions = {}): Promise<GetResult | null> {
@@ -345,4 +350,12 @@ export class WebDavAdapter implements StorageAdapter {
     }
     return out;
   }
+}
+
+let noCacheSeq = 0;
+
+/** The URL with a query no cache has seen (`?tl=<unique>`), for reads that must reach the server. */
+export function noCacheUrl(url: string): string {
+  noCacheSeq = (noCacheSeq + 1) % 1_000_000;
+  return `${url}${url.includes('?') ? '&' : '?'}tl=${Date.now().toString(36)}${noCacheSeq.toString(36)}`;
 }
