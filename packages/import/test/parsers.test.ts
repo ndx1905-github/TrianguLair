@@ -248,29 +248,7 @@ describe('generic CSV with column mapping', () => {
   });
 });
 
-describe('HYPOTHETICAL app exports (unverified layouts, T-009)', () => {
-  it('Mapstr CSV: tags with colors, user and public comments; flagged unverified', () => {
-    const r = parsed(read('hypothetical/mapstr-export.csv'));
-    expect(r.format).toBe('mapstr');
-    expect(r.warnings[0]).toEqual({ code: 'unverified-format', detail: 'mapstr' });
-    expect(byName(r, 'Trattoria Da Lucia')).toMatchObject({
-      tags: ['Restaurant', 'Italian'],
-      mainTag: 'Restaurant',
-      comment: 'Order the carbonara\n\nFamily-run trattoria',
-      createdAt: Date.UTC(2020, 8, 1, 12),
-      ids: { sourceId: 'mp_001' },
-    });
-    expect(r.tags.find((t) => t.name === 'Italian')?.color).toBe('#43A047');
-    expect(r.tags.find((t) => t.name === 'Bar')?.color).toBe('#3949AB');
-  });
-
-  it('Mapstr GeoJSON: tags as objects with colors, userComment', () => {
-    const r = parsed(read('hypothetical/mapstr-export.geojson'));
-    expect(r.format).toBe('mapstr');
-    expect(r.places[0]).toMatchObject({ name: 'Café Pendule', tags: ['Coffee', 'Work spot'], comment: 'Quiet before 10' });
-    expect(r.tags.find((t) => t.name === 'Coffee')?.color).toBe('#6D4C41');
-  });
-
+describe('HYPOTHETICAL Pin Drop exports (unverified layouts, T-009)', () => {
   it('Pin Drop CSV: group as a tag, visited as status; flagged unverified', () => {
     const r = parsed(read('hypothetical/pindrop-export.csv'));
     expect(r.format).toBe('pindrop');
@@ -285,16 +263,16 @@ describe('HYPOTHETICAL app exports (unverified layouts, T-009)', () => {
     expect(r.places[0]).toMatchObject({ name: 'Le Comptoir des Archives', tags: ['Paris bars'], comment: 'Great terrace' });
   });
 
-  it('an unknown Mapstr-like CSV variant still goes through the generic path', () => {
-    const r = parsed(readImportFile({ name: 'mapstr.csv', text: 'Lieu;Lat;Lng;Notes\nCafé Pendule;48,8590377;2,3619902;Calme\n' }));
-    expect(r.places[0]).toMatchObject({ name: 'Café Pendule', lat: 48.8590377, comment: 'Calme' });
+  it('a CSV named mapstr.csv without the Mapstr header goes through the generic path', () => {
+    const o = readImportFile({ name: 'mapstr.csv', text: 'Lieu;Lat;Lng;Notes\nCafé Pendule;48,8590377;2,3619902;Calme\n' });
+    expect(o.kind).toBe('needsMapping');
   });
 });
 
 describe('errors', () => {
   it('empty, unreadable and unknown files', () => {
     expect(readImportFile({ name: 'x.csv', text: '  ' })).toEqual({ kind: 'error', code: 'empty' });
-    expect(readImportFile({ name: 'x.json', text: '{oops' })).toMatchObject({ kind: 'error', code: 'unreadable' });
+    expect(readImportFile({ name: 'x.json', text: '{oops' })).toMatchObject({ kind: 'error', code: 'invalid-json' });
     expect(readImportFile({ name: 'x.xml', text: '<svg></svg>' })).toMatchObject({ kind: 'error', code: 'unknown-format' });
     expect(readImportFile({ name: 'x.kmz', bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0]) })).toMatchObject({ kind: 'error', code: 'unreadable' });
     expect(readImportFile({ name: 'x.json', text: '{"triangulair":{"format":"triangulair-export","version":99},"type":"FeatureCollection","features":[]}' })).toMatchObject({

@@ -6,7 +6,9 @@
  * everything as GeoJSON, in a ZIP archive with my photos (decrypted) when I
  * have some; friends' photos are never exported. All the logic is in
  * @triangulair/import; the photos come from and go to the photo store
- * (`Photos`, sync package).
+ * (`Photos`, sync package). Places already saved are left as they are unless I
+ * choose to merge; places OpenStreetMap says may no longer exist are flagged
+ * "Maybe closed" (closure signals of the osm package), which I can leave out.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -24,7 +26,12 @@ import {
   resolveItem,
   setTagAction,
   applyTagSuggestions,
+  maybeClosedItems,
   pendingTagSuggestions,
+  ratedCount,
+  ratingsInComments,
+  setMaybeClosedSkipped,
+  setMergeExisting,
   summarizePlan,
   undoImport,
   type ColumnMapping,
@@ -34,11 +41,13 @@ import {
   type ImportReport,
   type ItemGroup,
   type ParseResult,
+  type PlanOptions,
 } from '@triangulair/import';
+import { osmSignals } from '@triangulair/osm';
 
 import { DataGate } from '../components/DataGate';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { Banner, Button, SectionTitle, Segmented } from '../components/ui';
+import { Banner, Button, Pill, SectionTitle, Segmented } from '../components/ui';
 import { APP_VERSION } from '../config';
 import { useData } from '../data/DataProvider';
 import { getSetting, setSetting } from '../data/deviceSettings';
@@ -48,7 +57,7 @@ import { useUiColors } from '../hooks/useUiColors';
 import { useI18n } from '../i18n';
 import { ColumnMappingEditor, PreviewRow, ProgressBar, TagMappingRow } from '../importExport/components';
 import { pickImportFile, saveExportFile } from '../importExport/files';
-import { firstGroup, GROUP_ORDER, itemsByGroup, LAST_IMPORT_KEY, serializeReport, toWrite, undoableReport, UNDO_DAYS } from '../importExport/logic';
+import { firstGroup, GROUP_ORDER, itemsByGroup, LAST_IMPORT_KEY, previewWarnings, serializeReport, toWrite, undoableReport, UNDO_DAYS } from '../importExport/logic';
 import { osmClient } from '../osm/client';
 import { usePhotosService } from '../photos/usePhotos';
 
@@ -62,6 +71,10 @@ type Step =
   | { kind: 'done'; report: ImportReport };
 
 const isAbort = (e: unknown) => (e as { name?: string } | null)?.name === 'AbortError';
+
+/** "Maybe closed" signals of a matched OSM object: the monthly check's own rules (lifecycle tags, vacant, end date…). */
+const closureSignals: PlanOptions['closureSignals'] = (c, now) =>
+  osmSignals({ kind: 'present', element: { type: c.ref.type, id: c.ref.id, tags: c.tags ?? {} } }, undefined, now);
 
 function ImportScreen() {
   const c = useUiColors();
@@ -89,7 +102,7 @@ function ImportScreen() {
           signal: ac.signal,
           onProgress: (done, total) => setStep({ kind: 'matching', done, total }),
         });
-        const plan = buildPlan(result, matches, repo);
+        const plan = buildPlan(result, matches, repo, { closureSignals });
         const offline = [...matches.values()].some((m) => (m.kind === 'manual' || m.kind === 'unlocated') && m.lookupFailed);
         setStep({ kind: 'preview', plan, group: firstGroup(plan), fileName, offline });
       } catch (e) {
@@ -273,12 +286,15 @@ function ImportScreen() {
                 ['toCheck', n.toCheck],
                 ['manual', n.manual],
                 ['merged', n.merged],
+                ['alreadySaved', n.alreadySaved ?? 0],
+                ['unchanged', n.unchanged ?? 0],
+                ['maybeClosed', n.maybeClosed ?? 0],
                 ['photos', n.photos ?? 0],
                 ['photosSkipped', n.photosSkipped ?? 0],
                 ['skipped', n.skipped + n.duplicates],
               ] as const
             )
-              .filter(([k, count]) => count > 0 || !k.startsWith('photos'))
+              .filter(([k, count]) => count > 0 || !['photos', 'photosSkipped', 'alreadySaved', 'unchanged', 'maybeClosed'].includes(k))
               .map(([k, count]) => (
               <Text key={k} style={[k === 'imported' ? styles.big : styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
                 {t(`import.done.${k}`, { count })}
@@ -337,11 +353,17 @@ function Preview({
   const { t } = useI18n();
   const { repo } = useData();
   const { plan } = step;
+  const [ratings, setRatings] = useState(false);
   const groups = useMemo(() => itemsByGroup(plan), [plan]);
   const summary = useMemo(() => summarizePlan(plan), [plan]);
   const tagNames = useMemo(() => new Map(plan.tags.map((e) => [e.source.key, e.source.name])), [plan]);
+  const warnings = useMemo(() => previewWarnings(plan), [plan]);
+  const closed = useMemo(() => maybeClosedItems(plan), [plan]);
+  const closedSkipped = closed.length > 0 && closed.every((it) => it.resolution.kind === 'skip');
+  const rated = ratedCount(plan);
   const count = toWrite(plan);
   const shown = groups[step.group];
+  const confirmPlan = () => onConfirm(ratings ? ratingsInComments(plan, (rating) => t('import.rating.line', { rating })) : plan);
   return (
     <View style={{ gap: 12 }} testID="import-preview">
       <Text style={[styles.p, { color: c.text }]} maxFontSizeMultiplier={2}>
@@ -352,7 +374,50 @@ function Preview({
           {t('import.unverified', { format: t(`import.format.${plan.format}`) })}
         </Banner>
       ) : null}
+      <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2} testID="preview-counts">
+        {t('import.preview.counts', { created: summary.toCreate, existing: summary.toMerge, duplicates: summary.duplicates })}
+      </Text>
       {step.offline ? <Banner tone="warning">{t('import.offline')}</Banner> : null}
+      {warnings.map((w) => (
+        <Banner key={w.code} tone={w.code === 'remote-photos' ? 'info' : 'warning'} testID={`preview-warning-${w.code}`}>
+          {t(`import.warning.${w.code}`, { count: w.count })}
+        </Banner>
+      ))}
+      {summary.toMerge > 0 ? (
+        <View style={{ gap: 6 }} testID="preview-existing">
+          <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
+            {t('import.existing.mergeHint', { count: summary.toMerge })}
+          </Text>
+          <Pill
+            label={t('import.existing.merge')}
+            selected={plan.mergeExisting}
+            onPress={() => setStep({ ...step, plan: setMergeExisting(plan, !plan.mergeExisting) })}
+            testID="preview-merge-existing"
+          />
+        </View>
+      ) : null}
+      {closed.length > 0 ? (
+        <View style={[styles.box, { borderColor: c.warning }]} testID="preview-closure">
+          <Text style={[styles.p, { color: c.text, fontWeight: '600' }]} maxFontSizeMultiplier={2}>
+            {t('import.closure.title', { count: closed.length })}
+          </Text>
+          <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
+            {t('import.closure.body')}
+          </Text>
+          <View style={styles.pillRow}>
+            <Pill label={t('import.closure.keep')} selected={!closedSkipped} onPress={() => setStep({ ...step, plan: setMaybeClosedSkipped(plan, false, repo) })} testID="preview-closure-keep" />
+            <Pill label={t('import.closure.skip')} selected={closedSkipped} onPress={() => setStep({ ...step, plan: setMaybeClosedSkipped(plan, true, repo) })} testID="preview-closure-skip" />
+          </View>
+        </View>
+      ) : null}
+      {rated > 0 ? (
+        <View style={{ gap: 6 }}>
+          <Pill label={t('import.rating.toggle', { count: rated })} selected={ratings} onPress={() => setRatings((v) => !v)} testID="preview-ratings" />
+          <Text style={[styles.small, { color: c.textMuted }]} maxFontSizeMultiplier={2}>
+            {t('import.rating.hint')}
+          </Text>
+        </View>
+      ) : null}
       <Segmented
         options={GROUP_ORDER.map((g) => ({ value: g, label: `${t(`import.group.${g}`)} ${groups[g].length}` }))}
         value={step.group}
@@ -368,6 +433,7 @@ function Preview({
           item={item}
           sourceTagNames={tagNames}
           initiallyOpen={step.group === 'ambiguous' && i === 0}
+          mergeExisting={plan.mergeExisting}
           onResolve={(r) => setStep({ ...step, plan: resolveItem(plan, item.key, r, repo) })}
         />
       ))}
@@ -390,7 +456,7 @@ function Preview({
           ))}
         </>
       ) : null}
-      <Button label={t('import.confirm', { count })} disabled={count === 0} onPress={() => onConfirm(plan)} testID="import-confirm" />
+      <Button label={t('import.confirm', { count })} disabled={count === 0} onPress={confirmPlan} testID="import-confirm" />
     </View>
   );
 }
@@ -409,4 +475,6 @@ const styles = StyleSheet.create({
   big: { fontSize: 20, fontWeight: '700' },
   small: { fontSize: 13 },
   busy: { alignItems: 'stretch', gap: 14, paddingVertical: 40 },
+  box: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 6 },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });

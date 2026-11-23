@@ -149,6 +149,7 @@ export const enFiltersTags: Messages = {
   'closure.since': 'Since {date}',
   'closure.signal.deleted': 'Removed from OpenStreetMap',
   'closure.signal.not_found': 'No longer found in OpenStreetMap',
+  'closure.signal.not_found_nearby': 'Not found in OpenStreetMap near this spot when imported',
   'closure.signal.lifecycle_prefix': 'Marked “no longer in use” in OpenStreetMap ({tag})',
   'closure.signal.lifecycle_tag': 'Marked disused in OpenStreetMap',
   'closure.signal.shop_vacant': 'Premises marked vacant in OpenStreetMap',

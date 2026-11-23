@@ -10,6 +10,8 @@ import * as Sharing from 'expo-sharing';
 import type { ImportFile } from '@triangulair/import';
 
 export async function pickImportFile(): Promise<ImportFile | null> {
+  // Any type: the formats are told apart by content (a Mapstr or TrianguLair ZIP, KMZ, CSV, GeoJSON…);
+  // pickers often give a .geojson or .kmz a generic type, so a type list would grey them out.
   const r = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
   if (r.canceled || !r.assets?.[0]) return null;
   const asset = r.assets[0];

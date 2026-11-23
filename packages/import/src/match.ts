@@ -13,7 +13,7 @@
  */
 import { haversineM, nameSimilarity, normalizeText, type LatLon, type OsmType } from '@triangulair/data';
 
-import type { ImportedPlace } from './model.ts';
+import type { ClosureSignalLike, ImportedPlace } from './model.ts';
 
 export interface OsmCandidate {
   ref: { type: OsmType; id: number };
@@ -53,6 +53,8 @@ export interface OsmLookup {
 }
 
 export interface ScoredCandidate extends OsmCandidate {
+  /** "Maybe closed" signals of this OSM object (lifecycle tags…), set by `buildPlan`. */
+  closure?: ClosureSignalLike[];
   similarity: number;
   /** Meters from the imported point; null when the import had no coordinates. */
   distanceM: number | null;

@@ -75,6 +75,12 @@ export interface ImportReport {
     photos?: number;
     /** Photos not added: images not in the file, refused, or no photo support. */
     photosSkipped?: number;
+    /** Already in my saves and left as they were (`plan.mergeExisting` off). */
+    alreadySaved?: number;
+    /** Already in my saves, merge asked, but the file added nothing new. */
+    unchanged?: number;
+    /** New places written with the "maybe closed" flag. */
+    maybeClosed?: number;
   };
 }
 
@@ -182,7 +188,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
     merged: [],
     createdTagIds: [],
     createdListIds: [],
-    counts: { imported: 0, created: 0, merged: 0, linkedToOsm: 0, manual: 0, toCheck: 0, skipped: 0, duplicates: 0, photos: 0, photosSkipped: 0 },
+    counts: { imported: 0, created: 0, merged: 0, linkedToOsm: 0, manual: 0, toCheck: 0, skipped: 0, duplicates: 0, photos: 0, photosSkipped: 0, alreadySaved: 0, unchanged: 0, maybeClosed: 0 },
   };
   const counts = report.counts as Required<ImportReport['counts']>;
   // Fold duplicates into their primary item.
@@ -194,13 +200,24 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       (folded.get(it.duplicateOf) ?? folded.set(it.duplicateOf, []).get(it.duplicateOf)!).push(it.place);
     }
   }
-  const work = plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && (it.resolution.kind === 'osm' || it.position || it.place.shape));
-  report.counts.skipped += plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && !work.includes(it)).length;
+  const writable = plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && (it.resolution.kind === 'osm' || it.position || it.place.shape));
+  // Places already in my saves are left as they are unless the user chose to merge.
+  const work = plan.mergeExisting ? writable : writable.filter((it) => !it.existing);
+  counts.alreadySaved = writable.length - work.length;
+  report.counts.skipped += plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && !writable.includes(it)).length;
   const total = work.length;
   opts.onProgress?.(0, total);
 
   const tagIds = store.change((tx) => writeTags(tx, plan, report), 'import');
   const mapTags = (keys: readonly string[]) => [...new Set(keys.map((k) => tagIds.get(k)).filter((x): x is string => !!x))];
+  // Source tags that stand for a status ("À essayer" → to try): the best one wins over the place's own.
+  const tagStatus = new Map<string, SaveStatus>();
+  for (const t of plan.tags) if (t.action.kind === 'status') tagStatus.set(t.source.key, t.action.status);
+  const statusOf = (place: ImportedPlace): SaveStatus | undefined =>
+    [place.status, ...place.tags.map((k) => tagStatus.get(k))]
+      .filter((x): x is SaveStatus => !!x)
+      .sort((a, b) => STATUS_RANK[b] - STATUS_RANK[a])[0];
+  const closureFlags: { placeId: string; signals: PlanItem['closure'] }[] = [];
   const osmCache: { placeId: string; tags: Record<string, string>; address?: string }[] = [];
 
   let written = 0;
@@ -219,7 +236,9 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
     const photos: { placeId: string; photo: ImportedPhoto; merged?: MergedSave }[] = [];
     store.change((tx) => {
       for (const it of batch) {
-        const place = mergeImported(it.place, folded.get(it.key) ?? []);
+        const merged0 = mergeImported(it.place, folded.get(it.key) ?? []);
+        const status = statusOf(merged0);
+        const place: ImportedPlace = { ...merged0, ...(status && { status }) };
         const tags = mapTags(place.tags);
         const main = place.mainTag ? tagIds.get(place.mainTag) : undefined;
         const ordered = main ? [main, ...tags.filter((t) => t !== main)] : tags;
@@ -241,6 +260,9 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
             tx.restoreSave(cur.placeId);
             merged.restoredFromTrash = true;
           }
+          if (comment === null && merged.previousStatus === undefined && merged.addedTagIds.length === 0 && !merged.restoredFromTrash && !(!cur.priceLevel && place.priceLevel)) {
+            counts.unchanged++;
+          }
           const have = new Set(store.repo.getMedia(cur.id).map((m) => m.file));
           for (const m of place.media ?? []) if (!have.has(m.file)) photos.push({ placeId: cur.placeId, photo: m, merged });
           report.merged.push(merged);
@@ -260,6 +282,7 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
           });
           for (const m of place.media ?? []) photos.push({ placeId, photo: m });
           if (place.trashed) tx.deleteSave(placeId);
+          if (it.closure.length > 0) closureFlags.push({ placeId, signals: it.closure });
           report.createdPlaceIds.push(placeId);
           report.counts.created++;
           if (it.resolution.kind === 'osm' && it.resolution.candidate.tags) {
@@ -325,6 +348,15 @@ export async function applyImport(store: DataStore, plan: ImportPlan, opts: Appl
       } catch {
         // the place card is refreshed later anyway
       }
+    }
+  }
+  // "Maybe closed", the closure system's flag (place cache): the card shows the badge and asks.
+  for (const f of closureFlags) {
+    try {
+      store.repo.updatePlaceOsmData(f.placeId, { status: 'maybe_closed', closedSignals: f.signals });
+      counts.maybeClosed++;
+    } catch {
+      // the monthly check looks again
     }
   }
   return report;

@@ -5,7 +5,7 @@
  */
 import type { ImportFile } from '@triangulair/import';
 
-export const IMPORT_ACCEPT = '.json,.geojson,.umap,.kml,.kmz,.zip,.csv,.tsv,.txt,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/zip,text/csv';
+export const IMPORT_ACCEPT = '.json,.geojson,.umap,.kml,.kmz,.zip,.csv,.tsv,.txt,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/zip,application/x-zip-compressed,text/csv';
 
 export function pickImportFile(): Promise<ImportFile | null> {
   return new Promise((resolve, reject) => {

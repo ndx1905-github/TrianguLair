@@ -18,12 +18,13 @@ import {
   placeIdFromOsm,
   type LatLon,
   type Repository,
+  type SaveStatus,
   type TagRecord,
 } from '@triangulair/data';
 
 import type { MatchOutcome, OsmCandidate, ScoredCandidate } from './match.ts';
-import { suggestTag, type TagSuggestion } from './tagMatch.ts';
-import type { ExportExtras, ImportedPlace, ParseResult, ParseWarning, SourceFormat, SourceTag } from './model.ts';
+import { suggestTag, tagRole, type TagRole, type TagSuggestion } from './tagMatch.ts';
+import type { ClosureSignalLike, ExportExtras, ImportedPlace, ParseResult, ParseWarning, SourceFormat, SourceTag } from './model.ts';
 import { FORMAT_VERIFIED } from './model.ts';
 
 export type Resolution =
@@ -56,11 +57,20 @@ export interface PlanItem {
   duplicateOf: string | null;
   /** My save it will be merged into, if any. */
   existing: ExistingSave | null;
+  /**
+   * "Maybe closed" signals (empty: none): the chosen OSM object is tagged closed (lifecycle
+   * prefixes, vacant, end date passed, hours "off"), or no OSM place with this name is near the
+   * imported position although the source gives a category. Kept while the item is left out, so
+   * "keep them" can bring it back.
+   */
+  closure: ClosureSignalLike[];
 }
 
 export type TagAction =
   | { kind: 'map'; tagId: string }
   | { kind: 'create'; name: string; color: string | null }
+  /** Not a tag: places with it get this status ("À essayer" → to try). */
+  | { kind: 'status'; status: SaveStatus }
   | { kind: 'skip' };
 
 export interface TagPlanEntry {
@@ -73,6 +83,8 @@ export interface TagPlanEntry {
    * action), a synonym or a close name (only suggested). Null when none.
    */
   suggestion: TagSuggestion | null;
+  /** What the name stands for when it is not a category (a status, a practical criterion), else null. */
+  role: TagRole | null;
 }
 
 export interface ImportPlan {
@@ -82,6 +94,24 @@ export interface ImportPlan {
   tags: TagPlanEntry[];
   warnings: ParseWarning[];
   extras?: ExportExtras;
+  /**
+   * Places already in my saves: false (default) leaves them as they are ("already in my places");
+   * true adds the file's tags, completes the comment, sets an empty status or price, restores
+   * one from the trash.
+   */
+  mergeExisting: boolean;
+  /** When the matching ran (ISO 8601): the date of the closure signals. */
+  observedAt: string;
+}
+
+export interface PlanOptions {
+  /**
+   * Closure signals of a matched OSM object, from its tags (the app: `osmSignals` of
+   * `@triangulair/osm` on a `present` observation). Without it, only the "not found nearby"
+   * signal is computed.
+   */
+  closureSignals?: (candidate: OsmCandidate, now: Date) => ClosureSignalLike[];
+  now?: () => number;
 }
 
 /** Colors for new tags without a source color: the app's vivid palette (spec "Colors and categories"). */
@@ -173,9 +203,10 @@ export function proposeTagActions(
   sourceTags: readonly SourceTag[],
   places: readonly ImportedPlace[],
   myTags: readonly (TagRecord & { active?: boolean })[],
-  opts: { paletteForMissing?: boolean } = {},
+  opts: { paletteForMissing?: boolean; roles?: boolean } = {},
 ): TagPlanEntry[] {
   const palette = opts.paletteForMissing ?? true;
+  const roles = opts.roles ?? true;
   const counts = new Map<string, number>();
   for (const p of places) for (const t of new Set(p.tags)) counts.set(t, (counts.get(t) ?? 0) + 1);
   const defs = new Map(sourceTags.map((t) => [t.key, t]));
@@ -209,16 +240,26 @@ export function proposeTagActions(
     // Sub-tags of an export keep the path rule only; a deleted tag only meets my trashed one.
     const suggestion = existing ? { tagId: existing, reason: 'same' as const } : source.parentKey || source.deleted ? null : suggestTag(source.name, matchable);
     const mapTo = existing ?? (suggestion?.reason === 'same' ? suggestion.tagId : undefined);
-    const action: TagAction = mapTo
-      ? { kind: 'map', tagId: mapTo }
-      : { kind: 'create', name: source.name, color: source.color ?? (palette ? nextColor() : null) };
-    return { source, count: counts.get(source.key) ?? 0, action, suggestion };
+    const role = roles && !source.parentKey && !source.deleted ? tagRole(source.name) : null;
+    // A status name ("À essayer") becomes the status; criteria stay tags (no criterion of my own on a save).
+    const action: TagAction =
+      role?.kind === 'status'
+        ? { kind: 'status', status: role.status }
+        : mapTo
+          ? { kind: 'map', tagId: mapTo }
+          : { kind: 'create', name: source.name, color: source.color ?? (palette ? nextColor() : null) };
+    return { source, count: counts.get(source.key) ?? 0, action, suggestion, role };
   });
 }
 
 // ------------------------------------------------------------------ duplicates
 
-const MERGE_RADIUS_M = DEDUP_DEFAULTS.maxDistanceM;
+/**
+ * Imports fold a bit wider than the data package's duplicate suggestions (30 m): an app's pin
+ * and the OSM object of the same place are often 30 to 50 m apart (owner feedback, Mapstr).
+ */
+export const IMPORT_MERGE_RADIUS_M = Math.max(50, DEDUP_DEFAULTS.maxDistanceM);
+const MERGE_RADIUS_M = IMPORT_MERGE_RADIUS_M;
 const MERGE_SIMILARITY = DEDUP_DEFAULTS.minSimilarity;
 
 /**
@@ -228,7 +269,12 @@ const MERGE_SIMILARITY = DEDUP_DEFAULTS.minSimilarity;
  * package's duplicate suggestions).
  */
 export function refreshPlan(plan: ImportPlan, repo: Repository | null): ImportPlan {
-  const items = plan.items.map((it) => ({ ...it, duplicateOf: null as string | null, existing: null as ExistingSave | null }));
+  const items = plan.items.map((it) => ({
+    ...it,
+    duplicateOf: null as string | null,
+    existing: null as ExistingSave | null,
+    closure: it.resolution.kind === 'skip' ? it.closure : closureOf(it, plan.observedAt),
+  }));
   const byTarget = new Map<string, string>();
   const manual: PlanItem[] = [];
   for (const it of items) {
@@ -275,22 +321,110 @@ export function refreshPlan(plan: ImportPlan, repo: Repository | null): ImportPl
   return { ...plan, items };
 }
 
-export function buildPlan(result: ParseResult, matches: Map<string, MatchOutcome>, repo: Repository | null): ImportPlan {
+export function buildPlan(result: ParseResult, matches: Map<string, MatchOutcome>, repo: Repository | null, opts: PlanOptions = {}): ImportPlan {
+  const now = new Date((opts.now ?? Date.now)());
   const items: PlanItem[] = result.places.map((place) => {
-    const match = matches.get(place.key) ?? { kind: place.lat === undefined ? 'unlocated' : 'manual', candidates: [] };
+    const found = matches.get(place.key) ?? { kind: place.lat === undefined ? 'unlocated' : 'manual', candidates: [] };
+    // Closure signals on each OSM candidate (the user may pick another one).
+    const match = opts.closureSignals ? withClosure(found, opts.closureSignals, now) : found;
     const position = positionOf(place, match);
-    return { key: place.key, place, match, resolution: initialResolution(match, position), position, duplicateOf: null, existing: null };
+    return { key: place.key, place, match, resolution: initialResolution(match, position), position, duplicateOf: null, existing: null, closure: [] };
   });
+  const mine = result.format === 'triangulair';
   const plan: ImportPlan = {
     format: result.format,
     verified: FORMAT_VERIFIED[result.format],
     items,
-    // My own export keeps tags without a color as they were.
-    tags: proposeTagActions(result.tags, result.places, repo ? repo.tags() : [], { paletteForMissing: result.format !== 'triangulair' }),
+    // My own export keeps tags without a color as they were, and its tags as tags.
+    tags: proposeTagActions(result.tags, result.places, repo ? repo.tags() : [], { paletteForMissing: !mine, roles: !mine }),
     warnings: result.warnings,
     ...(result.extras && { extras: result.extras }),
+    mergeExisting: false,
+    observedAt: now.toISOString(),
   };
   return refreshPlan(plan, repo);
+}
+
+function withClosure(m: MatchOutcome, signals: NonNullable<PlanOptions['closureSignals']>, now: Date): MatchOutcome {
+  const memo = new Map<ScoredCandidate, ScoredCandidate>();
+  const mark = (c: ScoredCandidate): ScoredCandidate => {
+    if (!memo.has(c)) {
+      let closure: ClosureSignalLike[] = [];
+      try {
+        closure = c.tags ? signals(c, now) : [];
+      } catch {
+        // a signal that cannot be read is no signal
+      }
+      memo.set(c, closure.length > 0 ? { ...c, closure } : c);
+    }
+    return memo.get(c)!;
+  };
+  const candidates = m.candidates.map(mark);
+  return m.kind === 'matched' ? { ...m, best: mark(m.best), candidates } : { ...m, candidates };
+}
+
+/** The signal of a manual point the source puts somewhere OSM has no place of that name. */
+export const NOT_FOUND_NEARBY = 'not_found_nearby';
+
+/** "Maybe closed" signals of an item, for its current choice (see `PlanItem.closure`). */
+export function closureOf(item: Pick<PlanItem, 'place' | 'match' | 'resolution'>, observedAt: string): ClosureSignalLike[] {
+  const r = item.resolution;
+  if (r.kind === 'osm') return (r.candidate as Partial<ScoredCandidate>).closure ?? [];
+  const p = item.place;
+  // Only a position from the source (not geocoded), a category to go by, and an OSM answer.
+  if (r.kind === 'manual' && item.match.kind === 'manual' && !item.match.lookupFailed && p.lat !== undefined && p.category && !p.shape && !p.ids.osm && !p.ids.placeId) {
+    return [{ code: NOT_FOUND_NEARBY, reliability: 'low', source: 'osm', detail: 'No OpenStreetMap place with this name near this position', observedAt, data: { category: p.category } }];
+  }
+  return [];
+}
+
+/** Items flagged "maybe closed" (whether left out or kept). */
+export function maybeClosedItems(plan: ImportPlan): PlanItem[] {
+  return plan.items.filter((it) => it.closure.length > 0);
+}
+
+/** "Leave them out" / "Keep them" for every place flagged maybe closed. */
+export function setMaybeClosedSkipped(plan: ImportPlan, skip: boolean, repo: Repository | null): ImportPlan {
+  return refreshPlan(
+    {
+      ...plan,
+      items: plan.items.map((it) =>
+        it.closure.length === 0 ? it : { ...it, resolution: skip ? { kind: 'skip' } : it.resolution.kind === 'skip' ? initialResolution(it.match, it.position) : it.resolution },
+      ),
+    },
+    repo,
+  );
+}
+
+/** Whether the places already in my saves get the file's tags and comment ("merge"), or are left as they are. */
+export function setMergeExisting(plan: ImportPlan, mergeExisting: boolean): ImportPlan {
+  return { ...plan, mergeExisting };
+}
+
+/**
+ * The source's rating added to each place's comment, as one line made by `line` (the app gives a
+ * translated "Mapstr rating: 4"). The data model has no rating field: the preview asks first.
+ */
+export function ratingsInComments(plan: ImportPlan, line: (rating: string) => string): ImportPlan {
+  return {
+    ...plan,
+    items: plan.items.map((it) => {
+      const r = it.place.rating?.trim();
+      if (!r) return it;
+      const comment = [it.place.comment?.trim(), line(r)].filter(Boolean).join('\n\n');
+      return { ...it, place: { ...it.place, comment } };
+    }),
+  };
+}
+
+/** Places with a rating in the file. */
+export function ratedCount(plan: ImportPlan): number {
+  return plan.items.filter((it) => it.place.rating?.trim()).length;
+}
+
+/** Photos the source keeps on its server (counted, never downloaded). */
+export function remotePhotoCount(plan: ImportPlan): number {
+  return plan.items.reduce((n, it) => n + (it.place.remotePhotos?.length ?? 0), 0);
 }
 
 /** Changes one item's resolution (the preview's choice), then recomputes duplicates. */
@@ -331,8 +465,10 @@ export interface PlanSummary {
   unlocated: number;
   /** Will be written as new saves. */
   toCreate: number;
-  /** Folded into an existing save of mine. */
+  /** Already in my saves: merged when `mergeExisting`, else left as they are. */
   toMerge: number;
+  /** Flagged "maybe closed" (see `PlanItem.closure`), left out or not. */
+  maybeClosed: number;
   /** Folded into another place of the same file. */
   duplicates: number;
   skipped: number;
@@ -340,8 +476,9 @@ export interface PlanSummary {
 }
 
 export function summarizePlan(plan: ImportPlan): PlanSummary {
-  const s: PlanSummary = { total: plan.items.length, matched: 0, ambiguous: 0, manual: 0, unlocated: 0, toCreate: 0, toMerge: 0, duplicates: 0, skipped: 0, linkedToOsm: 0 };
+  const s: PlanSummary = { total: plan.items.length, matched: 0, ambiguous: 0, manual: 0, unlocated: 0, toCreate: 0, toMerge: 0, maybeClosed: 0, duplicates: 0, skipped: 0, linkedToOsm: 0 };
   for (const it of plan.items) {
+    if (it.closure.length > 0) s.maybeClosed++;
     s[groupOf(it)]++;
     if (it.resolution.kind === 'skip') s.skipped++;
     else if (it.duplicateOf) s.duplicates++;

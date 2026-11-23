@@ -149,6 +149,7 @@ export const frFiltersTags: Messages = {
   'closure.since': 'Depuis le {date}',
   'closure.signal.deleted': 'Supprimé d’OpenStreetMap',
   'closure.signal.not_found': 'Introuvable dans OpenStreetMap',
+  'closure.signal.not_found_nearby': 'Introuvable dans OpenStreetMap à cet endroit lors de l’import',
   'closure.signal.lifecycle_prefix': 'Marqué « plus en activité » dans OpenStreetMap ({tag})',
   'closure.signal.lifecycle_tag': 'Marqué désaffecté dans OpenStreetMap',
   'closure.signal.shop_vacant': 'Local marqué vacant dans OpenStreetMap',

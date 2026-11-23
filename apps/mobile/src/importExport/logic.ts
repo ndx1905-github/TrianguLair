@@ -8,12 +8,13 @@ import { groupOf, type ImportPlan, type ImportReport, type ItemGroup, type PlanI
 export const UNDO_DAYS = 7;
 export const LAST_IMPORT_KEY = 'last-import';
 
-export type RowOutcome = 'link' | 'merge' | 'duplicate' | 'manual' | 'skip';
+export type RowOutcome = 'link' | 'merge' | 'existing' | 'duplicate' | 'manual' | 'skip';
 
-export function rowOutcome(item: PlanItem): RowOutcome {
+/** `mergeExisting`: the preview's choice for places already in my saves (merged, or left as they are). */
+export function rowOutcome(item: PlanItem, mergeExisting = false): RowOutcome {
   if (item.resolution.kind === 'skip') return 'skip';
   if (item.duplicateOf) return 'duplicate';
-  if (item.existing) return 'merge';
+  if (item.existing) return mergeExisting ? 'merge' : 'existing';
   if (item.resolution.kind === 'manual') return 'manual';
   return 'link';
 }
@@ -32,9 +33,26 @@ export function firstGroup(plan: ImportPlan): ItemGroup {
   return GROUP_ORDER.find((k) => g[k].length > 0) ?? 'matched';
 }
 
-/** Number of places that will be written (new or merged). */
+/** Number of places that will be written (new, or merged when the user chose to). */
 export function toWrite(plan: ImportPlan): number {
-  return plan.items.filter((it) => it.resolution.kind !== 'skip' && !it.duplicateOf && (it.resolution.kind === 'osm' || it.position || it.place.shape)).length;
+  return plan.items.filter(
+    (it) => it.resolution.kind !== 'skip' && !it.duplicateOf && (plan.mergeExisting || !it.existing) && (it.resolution.kind === 'osm' || it.position || it.place.shape),
+  ).length;
+}
+
+/** Parse warnings the preview shows, with their count (warnings about single places are summed). */
+export const SHOWN_WARNINGS = ['invalid-geojson', 'positions-from-address', 'row-not-joined', 'remote-photos'] as const;
+export type ShownWarning = (typeof SHOWN_WARNINGS)[number];
+
+export function previewWarnings(plan: ImportPlan): { code: ShownWarning; count: number }[] {
+  const out: { code: ShownWarning; count: number }[] = [];
+  for (const code of SHOWN_WARNINGS) {
+    const ws = plan.warnings.filter((w) => w.code === code);
+    if (ws.length === 0) continue;
+    const count = ws.reduce((n, w) => n + (w.detail && /^\d+$/.test(w.detail) ? Number(w.detail) : 1), 0);
+    out.push({ code, count });
+  }
+  return out;
 }
 
 export function serializeReport(r: ImportReport): string {

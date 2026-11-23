@@ -16,6 +16,8 @@ export type Reliability = 'low' | 'medium' | 'high';
 export type ClosureSignalCode =
   | 'deleted'
   | 'not_found'
+  /** At import: no OSM place of that name near the position the source gave (low reliability). */
+  | 'not_found_nearby'
   | 'lifecycle_prefix'
   | 'lifecycle_tag'
   | 'shop_vacant'

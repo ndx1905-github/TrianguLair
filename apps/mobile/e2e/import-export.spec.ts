@@ -4,6 +4,8 @@ import type { Page } from '@playwright/test';
 import { expect, openMap, preparePage, test } from './helpers';
 
 const SMALL = path.join(__dirname, 'fixtures/small.geojson');
+/** The import package's INVENTED Mapstr export (4 places, macOS junk included). */
+const MAPSTR_ZIP = path.join(__dirname, '../../../packages/import/test/fixtures/mapstr/mapstr.zip');
 
 async function openImport(page: Page): Promise<void> {
   await page.getByTestId('open-list').click();
@@ -129,4 +131,55 @@ test('tags of the file: my tag preselected for the same name, suggested for a sy
   await expect(suggested).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('tag-Sushi-new')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('import-tags-same')).toHaveCount(0);
+});
+
+test('import a Mapstr ZIP: counts, tags matched, status, comment, date; a second import adds nothing', async ({ page }) => {
+  await openMap(page);
+  await openImport(page);
+  await expect(page.getByTestId('import-screen')).toContainText('Mapstr export (the ZIP');
+  await pickFile(page, MAPSTR_ZIP);
+
+  const preview = page.getByTestId('import-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Mapstr export · 4 places in mapstr.zip');
+  await expect(page.getByTestId('unverified-banner')).toHaveCount(0);
+  await expect(page.getByTestId('preview-counts')).toHaveText('New: 4 · Already in my places: 0 · Duplicates in this file: 0');
+  // Photos stay on Mapstr; the rating is optional.
+  await expect(page.getByTestId('preview-warning-remote-photos')).toHaveText('2 photos stay on Mapstr: they are not imported.');
+  await expect(page.getByTestId('preview-ratings')).toContainText('(2 places)');
+  // Categorized places OpenStreetMap does not know there: flagged, kept by default.
+  await expect(page.getByTestId('preview-closure')).toContainText('3 places may no longer exist according to OpenStreetMap');
+  await expect(page.getByTestId('preview-closure-keep')).toHaveAttribute('aria-checked', 'true');
+  // Tags: my "Restaurant" and "Bar" for the same names; "À essayer" is the status; criteria explained.
+  await expect(page.getByTestId('tag-Restaurant-map-Restaurant')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-Bar-map-Bar')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-À essayer-status')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('tag-Openair-criterion')).toContainText('Terrace');
+  await expect(page.getByTestId('tag-Lire commentaire-new')).toHaveAttribute('aria-checked', 'true');
+  // The comment with a comma, on its row.
+  await page.getByTestId('preview-groups').getByText(/^Manual points/).click();
+  await expect(page.getByTestId('preview-row-Crêperie des Lanternes')).toContainText('Buckwheat crêpes, cider, friendly staff');
+
+  await page.getByTestId('import-confirm').click();
+  const done = page.getByTestId('import-done');
+  await expect(done).toBeVisible();
+  await expect(done).toContainText('4 places imported');
+
+  // The original date is kept (local time of the export, Europe/Paris here), photos and rating are not written.
+  await page.getByText('Import another file').click();
+  const download = page.waitForEvent('download');
+  await page.getByTestId('export-all').click();
+  const text = await readFile(await (await download).path(), 'utf8');
+  const data = JSON.parse(text) as { features: { properties: { name: string; comment?: string; created_at: string; status?: string | null } }[] };
+  const crepe = data.features.find((f) => f.properties.name === 'Crêperie des Lanternes');
+  expect(crepe?.properties.created_at.startsWith('2022-03-05T18:07')).toBe(true);
+  expect(crepe?.properties.comment).toBe('Buckwheat crêpes, cider, friendly staff');
+  expect(crepe?.properties.status).toBe('to_try');
+  expect(text).not.toContain('images.example.invalid');
+  expect(text).not.toContain('Mapstr rating');
+
+  // The same file again: everything is already in my places, nothing is written.
+  await pickFile(page, MAPSTR_ZIP);
+  await expect(page.getByTestId('preview-counts')).toHaveText('New: 0 · Already in my places: 4 · Duplicates in this file: 0');
+  await expect(page.getByTestId('import-confirm')).toBeDisabled();
 });

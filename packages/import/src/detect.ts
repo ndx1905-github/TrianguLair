@@ -10,7 +10,7 @@ import { guessMapping, isGoogleSavedCsv, parseCsvWithMapping, parseGoogleSavedCs
 import { isGoogleLabeledPlaces, isGoogleSavedPlaces, parseGenericGeoJson, parseGoogleLabeledPlaces, parseGoogleSavedPlaces } from './formats/geojson.ts';
 import { isZip, looksLikeKml, parseKml, parseKmz } from './formats/kml.ts';
 import { isTriangulairArchive, isTriangulairExport, parseTriangulairArchive, parseTriangulairExport } from './formats/triangulair.ts';
-import { isMapstrCsv, isMapstrGeoJson, parseMapstrCsv, parseMapstrGeoJson } from './formats/unverified/mapstr.ts';
+import { isMapstrCsv, isMapstrGeoJson, isMapstrZip, parseMapstr, parseMapstrZip } from './formats/mapstr.ts';
 import { isPinDropCsv, isPinDropKml, parsePinDropCsv, parsePinDropKml } from './formats/unverified/pindrop.ts';
 import type { ImportFile, ParseResult } from './model.ts';
 import { baseName, bytesToText } from './util.ts';
@@ -19,7 +19,8 @@ export type ReadOutcome =
   | { kind: 'parsed'; result: ParseResult }
   /** A generic CSV: confirm or correct the mapping, then call `parseCsvWithMapping`. */
   | { kind: 'needsMapping'; table: CsvTable; mapping: ColumnMapping; unmapped: number[]; fileName: string }
-  | { kind: 'error'; code: 'unreadable' | 'unknown-format' | 'empty' | 'too-new'; detail?: string };
+  /** `invalid-json`: the file starts like JSON (GeoJSON) but is not valid JSON, e.g. cut short. */
+  | { kind: 'error'; code: 'unreadable' | 'unknown-format' | 'empty' | 'too-new' | 'invalid-json'; detail?: string };
 
 function textOf(file: ImportFile): string {
   if (file.text !== undefined) return stripBom(file.text);
@@ -33,7 +34,15 @@ export function readImportFile(file: ImportFile): ReadOutcome {
   try {
     if (isZip(file.bytes) || ext === 'kmz' || ext === 'zip') {
       if (!file.bytes) return { kind: 'error', code: 'unreadable' };
-      // My own export with photos, or a KMZ.
+      // My own export with photos, a Mapstr export, or a KMZ.
+      if (isMapstrZip(file.bytes)) {
+        try {
+          return { kind: 'parsed', result: parseMapstrZip(file.bytes) };
+        } catch (e) {
+          // Both files unusable (no CSV, and a GeoJSON that is not valid JSON).
+          return { kind: 'error', code: 'invalid-json', detail: e instanceof Error ? e.message : String(e) };
+        }
+      }
       if (isTriangulairArchive(file.bytes)) {
         try {
           return { kind: 'parsed', result: parseTriangulairArchive(file.bytes) };
@@ -52,7 +61,7 @@ export function readImportFile(file: ImportFile): ReadOutcome {
       try {
         json = JSON.parse(text);
       } catch {
-        return { kind: 'error', code: 'unreadable', detail: 'json' };
+        return { kind: 'error', code: 'invalid-json' };
       }
       if (isTriangulairExport(json)) {
         try {
@@ -63,7 +72,7 @@ export function readImportFile(file: ImportFile): ReadOutcome {
       }
       if (isGoogleSavedPlaces(json)) return { kind: 'parsed', result: parseGoogleSavedPlaces(json) };
       if (isGoogleLabeledPlaces(json, name)) return { kind: 'parsed', result: parseGoogleLabeledPlaces(json) };
-      if (isMapstrGeoJson(json, name)) return { kind: 'parsed', result: parseMapstrGeoJson(json) };
+      if (isMapstrGeoJson(json)) return { kind: 'parsed', result: parseMapstr({ geojson: text }) };
       const r = parseGenericGeoJson(json);
       if (r.places.length === 0 && !(json as { type?: string }).type) return { kind: 'error', code: 'unknown-format' };
       return { kind: 'parsed', result: r };
@@ -77,7 +86,7 @@ export function readImportFile(file: ImportFile): ReadOutcome {
     const table = parseCsv(text);
     if (table.headers.length < 2 || table.rows.length === 0) return { kind: 'error', code: table.headers.length < 2 ? 'unknown-format' : 'empty' };
     if (isGoogleSavedCsv(table)) return { kind: 'parsed', result: parseGoogleSavedCsv(table, name) };
-    if (isMapstrCsv(table, name)) return { kind: 'parsed', result: parseMapstrCsv(text) };
+    if (isMapstrCsv(table)) return { kind: 'parsed', result: parseMapstr({ csv: text }) };
     if (isPinDropCsv(table, name)) return { kind: 'parsed', result: parsePinDropCsv(text) };
     const { mapping, unmapped } = guessMapping(table);
     return { kind: 'needsMapping', table, mapping, unmapped, fileName: baseName(name) };

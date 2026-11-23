@@ -44,8 +44,8 @@ t("T-008","P0","Administrative and legal checks",["legal","maintainer"],
   "Cryptology declaration to ANSSI (current procedure); ODbL impact on public lists; triangulair / triangulaire domains; TMview trademarks in classes 9 and 42.",
   ["Results reflected in \"Legal and publishing\""])
 t("T-009","P0","Mapstr and Pin Drop export formats",["import","maintainer"],
-  "Get a real export from a Mapstr and a Pin Drop account, document columns and formats, anonymize a sample for tests.",
-  ["Samples in packages/import/fixtures/","Columns documented in the spec"])
+  "Get a real export from a Mapstr and a Pin Drop account, document columns and formats, anonymize a sample for tests. Mapstr: done (a ZIP with mapstr.csv and mapstr.geojson, read by packages/import/src/formats/mapstr.ts; invented fixtures that mirror it). Pin Drop: still to get.",
+  ["[x] Mapstr: sample layout in packages/import/test/fixtures/mapstr/ (invented places)","[x] Mapstr: columns documented in the spec and the import README","Pin Drop: sample in packages/import/test/fixtures/","Pin Drop: columns documented in the spec"],status="wip")
 t("T-010","P0","Forgejo mirror of the repository",["infra","maintainer"],
   "Automatic mirror from GitHub to the maintainer's Forgejo instance, with a read-only token.",
   ["Mirror up to date after each push"])
